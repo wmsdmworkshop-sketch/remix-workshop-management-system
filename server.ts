@@ -628,7 +628,7 @@ async function startServer() {
 
         // Check in user_access_master first
         const [rows] = await dbPool.query(
-          "SELECT * FROM user_access_master WHERE username = ? OR email = ? OR username = ? OR email = ?", 
+          "SELECT * FROM user_access_master WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)", 
           [username, username, searchIdentifier, searchIdentifier]
         ) as any[];
         
@@ -921,7 +921,7 @@ async function startServer() {
            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
           [
             full_name,
-            employee_id || null,
+            employee_id || 0,
             username,
             email || null,
             role,          // maps to user_role column

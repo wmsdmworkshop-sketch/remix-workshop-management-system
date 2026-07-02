@@ -183,12 +183,12 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                   <div className="p-2 bg-slate-900/80 rounded-lg">
                     <p className="font-bold text-orange-400 uppercase tracking-widest text-[9px]">Developer</p>
                     <p className="mt-1">User: <strong className="text-white">developer</strong></p>
-                    <p>Pass: <strong className="text-white">developer</strong></p>
+                    <p>Pass: <strong className="text-white">Dev@DWIP2026</strong></p>
                   </div>
                   <div className="p-2 bg-slate-900/80 rounded-lg">
                     <p className="font-bold text-indigo-400 uppercase tracking-widest text-[9px]">Admin</p>
                     <p className="mt-1">User: <strong className="text-white">admin</strong></p>
-                    <p>Pass: <strong className="text-white">admin123</strong></p>
+                    <p>Pass: <strong className="text-white">Admin@DWIP2026</strong></p>
                   </div>
                 </div>
               </div>
