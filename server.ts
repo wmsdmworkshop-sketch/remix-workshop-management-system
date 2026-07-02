@@ -653,25 +653,26 @@ async function startServer() {
         return res.status(401).json({ error: "Invalid username or password." });
       }
 
-      // Generate 6-digit OTP valid for 5 minutes
-      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-      const otpHash = await bcrypt.hash(otpCode, 10);
-      const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
-
-      // Save OTP hash in user_access_master (representing user_sessions table as required by the schema addition)
-      await dbPool.execute(
-        "UPDATE user_access_master SET otp_hash = ?, otp_expiry = ? WHERE user_id = ?",
-        [otpHash, otpExpiry, user.user_id]
+      // Issue JWT directly on successful password verification
+      const token = jwt.sign(
+        {
+          user_id: user.user_id,
+          username: user.username,
+          full_name: user.full_name || user.username,
+          role: user.user_role || "reception",
+        },
+        JWT_SECRET,
+        { expiresIn: "24h" }
       );
 
-      // Fetch mobile number or use fallback
-      const mobileNo = user.mobile_no || "9876543210";
-      console.log(`[SMS API] Sending OTP Code: ${otpCode} to registered mobile number: ${mobileNo}`);
-
       res.json({
-        otpRequired: true,
-        username: user.username,
-        mobile: mobileNo
+        token,
+        user: {
+          user_id: user.user_id,
+          username: user.username,
+          full_name: user.full_name || user.username,
+          role: user.user_role || "reception",
+        },
       });
     } catch (err: any) {
       console.error("Login error:", err);
@@ -853,8 +854,20 @@ async function startServer() {
   // USER MANAGEMENT API: Get all users
   app.get("/api/users", authenticateToken, requireRoles(["developer", "admin", "dealer_principal"]), async (req, res) => {
     try {
-      const [rows] = await dbPool.query("SELECT user_id, full_name, username, role, employee_id, is_active, created_by, created_at, last_login FROM users ORDER BY user_id DESC") as any[];
-      res.json(rows);
+      const [rows] = await dbPool.query("SELECT user_id, full_name, employee_id, username, email, user_role, access_level, is_active, created_at, mobile_no FROM user_access_master ORDER BY user_id DESC") as any[];
+      // Map user_role to role for frontend compatibility
+      const mapped = (rows as any[]).map((u: any) => ({
+        user_id: u.user_id,
+        full_name: u.full_name,
+        username: u.username,
+        email: u.email,
+        role: u.user_role,
+        employee_id: u.employee_id,
+        is_active: u.is_active,
+        created_at: u.created_at,
+        mobile_no: u.mobile_no
+      }));
+      res.json(mapped);
     } catch (err: any) {
       console.warn("Fetch users DB query failed, falling back to local memory:", err);
       const localUsers = await getLocalUsers();
@@ -862,12 +875,10 @@ async function startServer() {
         user_id: u.user_id,
         full_name: u.full_name,
         username: u.username,
-        role: u.role,
+        role: u.role || u.user_role,
         employee_id: u.employee_id,
         is_active: u.is_active,
-        created_by: u.created_by,
-        created_at: u.created_at,
-        last_login: u.last_login
+        created_at: u.created_at
       }));
       filtered.sort((a, b) => b.user_id - a.user_id);
       res.json(filtered);
@@ -876,15 +887,16 @@ async function startServer() {
 
   // USER MANAGEMENT API: Create new user
   app.post("/api/users", authenticateToken, requireRoles(["developer", "admin", "dealer_principal"]), async (req: any, res) => {
-    const { full_name, username, password, role, employee_id } = req.body;
+    const { full_name, username, password, role, employee_id, email, mobile_no } = req.body;
     if (!full_name || !username || !password || !role) {
       return res.status(400).json({ error: "Missing required fields." });
     }
 
     try {
+      // Check for duplicate username in user_access_master
       let usernameTaken = false;
       try {
-        const [existing] = await dbPool.query("SELECT user_id FROM users WHERE username = ?", [username]) as any[];
+        const [existing] = await dbPool.query("SELECT user_id FROM user_access_master WHERE username = ?", [username]) as any[];
         if (existing && existing.length > 0) {
           usernameTaken = true;
         }
@@ -904,8 +916,19 @@ async function startServer() {
 
       try {
         const [result] = await dbPool.execute(
-          "INSERT INTO users (full_name, username, password_hash, role, employee_id, is_active, created_by) VALUES (?, ?, ?, ?, ?, 1, ?)",
-          [full_name, username, password_hash, role, employee_id || null, req.user.user_id]
+          `INSERT INTO user_access_master
+            (full_name, employee_id, username, email, user_role, access_level, is_active, mobile_no, password_hash)
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+          [
+            full_name,
+            employee_id || null,
+            username,
+            email || null,
+            role,          // maps to user_role column
+            role,          // access_level defaults to same as role
+            mobile_no || null,
+            password_hash
+          ]
         ) as any;
         newUserId = result.insertId;
       } catch (dbErr) {
@@ -921,9 +944,7 @@ async function startServer() {
         role,
         employee_id: employee_id || null,
         is_active: 1,
-        created_by: req.user.user_id,
-        created_at: new Date().toISOString(),
-        last_login: null
+        created_at: new Date().toISOString()
       };
       localUsers.push(newUser);
       saveDB(cachedDB);
@@ -950,7 +971,7 @@ async function startServer() {
     try {
       let existingUser: any = null;
       try {
-        const [existing] = await dbPool.query("SELECT * FROM users WHERE user_id = ?", [userId]) as any[];
+        const [existing] = await dbPool.query("SELECT * FROM user_access_master WHERE user_id = ?", [userId]) as any[];
         if (existing && existing.length > 0) {
           existingUser = existing[0];
         }
@@ -975,14 +996,14 @@ async function startServer() {
       }
 
       const finalFullName = full_name !== undefined ? full_name : existingUser.full_name;
-      const finalRole = role !== undefined ? role : existingUser.role;
+      const finalRole = role !== undefined ? role : (existingUser.user_role || existingUser.role);
       const finalEmployeeId = employee_id !== undefined ? employee_id : existingUser.employee_id;
       const finalIsActive = is_active !== undefined ? (is_active ? 1 : 0) : existingUser.is_active;
 
       try {
         await dbPool.execute(
-          "UPDATE users SET full_name = ?, role = ?, employee_id = ?, is_active = ?, password_hash = ? WHERE user_id = ?",
-          [finalFullName, finalRole, finalEmployeeId, finalIsActive, password_hash, userId]
+          "UPDATE user_access_master SET full_name = ?, user_role = ?, access_level = ?, employee_id = ?, is_active = ?, password_hash = ? WHERE user_id = ?",
+          [finalFullName, finalRole, finalRole, finalEmployeeId, finalIsActive, password_hash, userId]
         );
       } catch (dbErr) {
         console.warn("MySQL user update failed, updating local cache only:", dbErr);
