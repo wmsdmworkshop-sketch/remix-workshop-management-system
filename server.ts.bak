@@ -1,0 +1,2267 @@
+import express from "express";
+import path from "path";
+import fs from "fs";
+import "dotenv/config";
+import { GoogleGenAI } from "@google/genai";
+import { createServer as createViteServer } from "vite";
+import { syncLoad, syncSave } from "./src/db/sync.ts";
+import { db } from "./src/db/index.ts";
+import * as schema from "./src/db/schema.ts";
+import { eq, sql } from "drizzle-orm";
+
+let cachedDB: any = null;
+
+import {
+  Employee,
+  Bay,
+  SRType,
+  JobCard,
+  JobTechnicianMap,
+  RevenueSplitMaster,
+  JobRevenue,
+  JobRevenueSplitDetail,
+  CarryForwardLog,
+  ReworkLog,
+  AlertConfigMaster,
+  AlertLog,
+  DMSImportBatch,
+  DMSImportRow,
+  JobRevenueSplit,
+  TechnicianKPIDaily,
+  ProductivityAlert,
+  ReworkTracking
+} from "./src/types";
+
+import { calculateRevenueSplit } from "./src/engines/revenue-split-engine";
+import { calculateTechnicianKPIs } from "./src/engines/technician-kpi-calculator";
+import { runDailyKPISnapshot } from "./src/engines/daily-kpi-snapshot-job";
+import { getLeaderboardData } from "./src/engines/technician-leaderboard-service";
+import { detectAndCreateRework, getReworkHistoryForTechnician } from "./src/engines/rework-tracking-service";
+
+// In-memory file-backed database path
+const DATA_FILE = path.join(process.cwd(), "workshop_db.json");
+
+// Default initial data to mirror the SQL tables (empty fallback arrays)
+const INITIAL_DATA = {
+  employees: [] as Employee[],
+  users: [] as any[],
+  bays: [] as Bay[],
+  srTypes: [] as SRType[],
+  revenueSplits: [] as RevenueSplitMaster[],
+  alertConfigs: [] as AlertConfigMaster[],
+  jobCards: [] as JobCard[],
+  jobTechnicianMaps: [] as JobTechnicianMap[],
+  jobRevenues: [] as JobRevenue[],
+  jobRevenueSplitDetails: [] as JobRevenueSplitDetail[],
+  carryForwardLogs: [] as CarryForwardLog[],
+  reworkLogs: [] as ReworkLog[],
+  alertLogs: [] as AlertLog[],
+  dmsImportBatches: [] as DMSImportBatch[],
+  dmsImportRows: [] as DMSImportRow[],
+  gateEntries: [] as any[],
+  jobRevenueSplits: [] as JobRevenueSplit[],
+  technicianKpiDailies: [] as TechnicianKPIDaily[],
+  productivityAlerts: [] as ProductivityAlert[],
+  reworkTrackings: [] as ReworkTracking[]
+};
+
+
+// Load database from file or initial data
+function loadDB() {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const content = fs.readFileSync(DATA_FILE, "utf-8");
+      return JSON.parse(content);
+    }
+  } catch (error) {
+    console.error("Error reading data file, using default data:", error);
+  }
+  // Save initial data
+  saveDB(INITIAL_DATA);
+  return INITIAL_DATA;
+}
+
+// Save database to file
+function saveDB(data: any) {
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf-8");
+  } catch (error) {
+    console.error("Error writing data file:", error);
+  }
+}
+
+// Start the Express app
+async function startServer() {
+  const app = express();
+  const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
+
+  // Body parser limit expanded for DMS imports or custom attachments
+  app.use(express.json({ limit: "10mb" }));
+
+  // Initialize database state from Cloud SQL (or local fallback)
+  try {
+    cachedDB = await syncLoad();
+    console.log("Database state successfully loaded from MySQL / local file cache.");
+  } catch (error) {
+    console.error("Critical error loading database state on startup, using local fallback:", error);
+    if (fs.existsSync(DATA_FILE)) {
+      try {
+        cachedDB = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
+      } catch (fileErr) {
+        console.error("Failed to parse workshop_db.json fallback, using INITIAL_DATA:", fileErr);
+        cachedDB = { ...INITIAL_DATA };
+      }
+    } else {
+      console.log("No local database cache file found. Initializing with empty structures.");
+      cachedDB = { ...INITIAL_DATA };
+    }
+  }
+
+  // Ensure arrays exist
+  if (!cachedDB) cachedDB = { ...INITIAL_DATA };
+  cachedDB.employees = cachedDB.employees || [];
+  cachedDB.jobRevenueSplitDetails = cachedDB.jobRevenueSplitDetails || [];
+  cachedDB.jobRevenueSplits = cachedDB.jobRevenueSplits || [];
+  cachedDB.technicianKpiDailies = cachedDB.technicianKpiDailies || [];
+  cachedDB.productivityAlerts = cachedDB.productivityAlerts || [];
+  cachedDB.reworkTrackings = cachedDB.reworkTrackings || [];
+
+  const recalculateAllocatedRevenue = (db: any) => {
+    // Only sum from jobRevenueSplits (labor-only splits from the productivity engine).
+    // The old jobRevenueSplitDetails table is NOT included to avoid double-counting
+    // and to ensure only labor revenue is reflected (matching the Google Sheets formula).
+    db.employees.forEach((emp: any) => {
+      const splitSum = (db.jobRevenueSplits || [])
+        .filter((s: any) => s.employee_id === emp.employee_id)
+        .reduce((sum: number, s: any) => sum + Number(s.allocated_amount || 0), 0);
+      emp.allocated_revenue = Math.round(splitSum * 100) / 100;
+    });
+  };
+
+  // Recalculate allocated revenue on startup
+  recalculateAllocatedRevenue(cachedDB);
+
+  // Helper middleware to get the DB
+  const getDB = () => cachedDB;
+  const setDB = (db: any) => {
+    // Ensure all arrays exist
+    db.jobRevenueSplits = db.jobRevenueSplits || [];
+    db.technicianKpiDailies = db.technicianKpiDailies || [];
+    db.productivityAlerts = db.productivityAlerts || [];
+    db.reworkTrackings = db.reworkTrackings || [];
+
+    // Recalculate allocated revenue on any state changes
+    recalculateAllocatedRevenue(db);
+
+
+    cachedDB = db;
+    saveDB(db); // locally for safety
+    syncSave(db); // async to Cloud SQL
+  };
+
+  // API: Get App Status / Health
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", time: new Date().toISOString() });
+  });
+
+  // API: Reload Database state from MySQL (Source of truth)
+  app.post("/api/db/reload", async (req, res) => {
+    try {
+      console.log("Reloading database memory cache from MySQL...");
+      const freshData = await syncLoad();
+
+      // Update the local in-memory DB cache
+      cachedDB = freshData;
+
+      // Recalculate allocated revenue
+      recalculateAllocatedRevenue(cachedDB);
+
+
+      res.json({ success: true, message: "Database reloaded from MySQL successfully.", data: cachedDB });
+    } catch (err: any) {
+      console.error("Manual reload from MySQL failed:", err);
+      res.status(500).json({ error: err.message || "Failed to reload database from MySQL." });
+    }
+  });
+
+  // --- USERS ENDPOINTS ---
+  app.get("/api/users", async (req, res) => {
+    try {
+      const dbUsers = await db.select().from(schema.users);
+      res.json({ users: dbUsers });
+    } catch (err: any) {
+      console.error("Get users error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/users", async (req, res) => {
+    try {
+      const newUser = req.body;
+      let passwordHash = "";
+      if (newUser.password) {
+        const bcrypt = await import("bcryptjs");
+        passwordHash = await bcrypt.hash(newUser.password, 10);
+      }
+
+      const insertObj = {
+        fullName: newUser.fullName ?? null,
+        username: newUser.email ?? null,
+        passwordHash: passwordHash,
+        passwordPlain: newUser.password ?? null,
+        role: newUser.role ?? "reception",
+        isActive: newUser.isActive ?? true,
+        dateOfJoining: newUser.dateOfJoining ?? null,
+        dob: newUser.dob ?? null,
+        qualification: newUser.qualification ?? null,
+        designation: newUser.designation ?? null,
+        grade: newUser.grade ?? null,
+        floorTeam: newUser.floorTeam ?? null,
+        clericalTeam: newUser.clericalTeam ?? null,
+        empId: newUser.empId ?? null,
+        aadhaarNo: newUser.aadhaarNo ?? null,
+        mobileNo: newUser.mobileNo ?? null
+      };
+
+      await db.insert(schema.users).values(insertObj);
+
+      // Sync cache
+      const freshUsers = await db.select().from(schema.users);
+      cachedDB.users = freshUsers;
+      saveDB(cachedDB);
+
+      res.json({ success: true, user: insertObj });
+    } catch (err: any) {
+      console.error("Create user error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/users/:id", async (req, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      const updateData = req.body;
+
+      const updateObj: any = {
+        fullName: updateData.fullName,
+        username: updateData.email,
+        role: updateData.role,
+        isActive: updateData.isActive ?? true,
+        dateOfJoining: updateData.dateOfJoining ?? null,
+        dob: updateData.dob ?? null,
+        qualification: updateData.qualification ?? null,
+        designation: updateData.designation ?? null,
+        grade: updateData.grade ?? null,
+        floorTeam: updateData.floorTeam ?? null,
+        clericalTeam: updateData.clericalTeam ?? null,
+        empId: updateData.empId ?? null,
+        aadhaarNo: updateData.aadhaarNo ?? null,
+        mobileNo: updateData.mobileNo ?? null
+      };
+
+      if (updateData.password) {
+        const bcrypt = await import("bcryptjs");
+        updateObj.passwordHash = await bcrypt.hash(updateData.password, 10);
+        updateObj.passwordPlain = updateData.password;
+      }
+
+      await db.update(schema.users).set(updateObj).where(eq(schema.users.id, userId));
+
+      // Sync cache
+      const freshUsers = await db.select().from(schema.users);
+      cachedDB.users = freshUsers;
+      saveDB(cachedDB);
+
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Update user error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/users/:id", async (req, res) => {
+    try {
+      const userId = parseInt(req.params.id);
+      await db.delete(schema.users).where(eq(schema.users.id, userId));
+
+      // Sync cache
+      const freshUsers = await db.select().from(schema.users);
+      cachedDB.users = freshUsers;
+      saveDB(cachedDB);
+
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Delete user error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- EMPLOYEES ENDPOINTS ---
+  app.get("/api/employees", (req, res) => {
+    const db = getDB();
+    res.json(db.employees);
+  });
+
+  app.post("/api/employees", async (req, res) => {
+    const dbCache = getDB();
+    const newEmp: Employee = req.body;
+    const nextId = dbCache.employees.reduce((max: number, e: Employee) => Math.max(max, e.employee_id), 0) + 1;
+    newEmp.employee_id = nextId;
+    if (!newEmp.employee_code) {
+      newEmp.employee_code = `EMP${String(nextId).padStart(3, "0")}`;
+    }
+    if (newEmp.is_active === undefined) {
+      newEmp.is_active = true;
+    }
+
+    // Insert directly into MySQL!
+    try {
+      await db.insert(schema.employees).values(newEmp);
+      console.log(`Successfully added employee ${newEmp.full_name} directly to MySQL.`);
+    } catch (err) {
+      console.error("Failed to insert employee into MySQL:", err);
+    }
+
+    dbCache.employees.push(newEmp);
+    setDB(dbCache);
+    res.json(newEmp);
+  });
+
+  app.post("/api/employees/bulk", async (req, res) => {
+    const dbCache = getDB();
+    const employeesList = req.body.employees || [];
+    const added: Employee[] = [];
+
+    let nextId = dbCache.employees.reduce((max: number, e: Employee) => Math.max(max, e.employee_id), 0) + 1;
+
+    for (const item of employeesList) {
+      const newEmp: Employee = {
+        employee_id: nextId,
+        full_name: item.full_name || "Unknown",
+        employee_code: item.employee_code || `EMP${String(nextId).padStart(3, "0")}`,
+        role: item.role || "Technician",
+        employee_grade: item.employee_grade || "Junior",
+        basic_salary: Number(item.basic_salary) || 15000,
+        mobile: item.mobile || "+919999999999",
+        is_active: item.is_active !== undefined ? item.is_active : true,
+        created_at: new Date().toISOString()
+      };
+
+      try {
+        await db.insert(schema.employees).values(newEmp);
+      } catch (err) {
+        console.error("Failed to insert bulk employee into MySQL:", err);
+      }
+
+      dbCache.employees.push(newEmp);
+      added.push(newEmp);
+      nextId++;
+    }
+
+    setDB(dbCache);
+    res.json({ success: true, count: added.length, added });
+  });
+
+  app.post("/api/employees/bulk-productivity", async (req, res) => {
+    const dbCache = getDB();
+    const updates = req.body.updates || [];
+    const isAdmin = req.body.isAdmin === true;
+    let updatedCount = 0;
+    let addedCount = 0;
+    let skippedCount = 0;
+
+    let nextId = dbCache.employees.reduce((max: number, e: Employee) => Math.max(max, e.employee_id), 0) + 1;
+
+    for (const item of updates) {
+      const name = item.full_name?.trim();
+      if (!name) continue;
+
+      const existingIdx = dbCache.employees.findIndex(
+        (e: Employee) => e.full_name.trim().toLowerCase() === name.toLowerCase()
+      );
+
+      if (existingIdx !== -1) {
+        const updated = {
+          ...dbCache.employees[existingIdx],
+          allocated_revenue: Math.round(Number(item.allocated_revenue)) || 0,
+          target_revenue: Math.round(Number(item.target_revenue)) || 0,
+          paid_pct: item.paid_pct || "0.00%",
+          tml_claim_pct: item.tml_claim_pct || "0.00%",
+        };
+
+        try {
+          await db.update(schema.employees)
+            .set({
+              allocated_revenue: updated.allocated_revenue,
+              target_revenue: updated.target_revenue,
+              paid_pct: updated.paid_pct,
+              tml_claim_pct: updated.tml_claim_pct
+            })
+            .where(eq(schema.employees.employee_id, updated.employee_id));
+        } catch (err) {
+          console.error("Failed to update employee productivity in MySQL:", err);
+        }
+
+        dbCache.employees[existingIdx] = updated;
+        updatedCount++;
+      } else {
+        if (isAdmin) {
+          const newEmp: Employee = {
+            employee_id: nextId,
+            full_name: name,
+            employee_code: item.employee_code || `EMP${String(nextId).padStart(3, "0")}`,
+            role: item.role || "Technician",
+            employee_grade: "Senior",
+            basic_salary: 25000,
+            mobile: "+919999999999",
+            is_active: true,
+            created_at: new Date().toISOString(),
+            allocated_revenue: Math.round(Number(item.allocated_revenue)) || 0,
+            target_revenue: Math.round(Number(item.target_revenue)) || 0,
+            paid_pct: item.paid_pct || "0.00%",
+            tml_claim_pct: item.tml_claim_pct || "0.00%",
+          };
+
+          try {
+            await db.insert(schema.employees).values(newEmp);
+          } catch (err) {
+            console.error("Failed to insert employee productivity in MySQL:", err);
+          }
+
+          dbCache.employees.push(newEmp);
+          addedCount++;
+          nextId++;
+        } else {
+          skippedCount++;
+        }
+      }
+    }
+
+    setDB(dbCache);
+    res.json({ success: true, updatedCount, addedCount, skippedCount, total: dbCache.employees.length });
+  });
+
+  app.put("/api/employees/:id", async (req, res) => {
+    const dbCache = getDB();
+    const id = parseInt(req.params.id);
+    const index = dbCache.employees.findIndex((e: Employee) => e.employee_id === id);
+    if (index !== -1) {
+      const updatedEmp = { ...dbCache.employees[index], ...req.body };
+
+      try {
+        await db.update(schema.employees).set(req.body).where(eq(schema.employees.employee_id, id));
+        console.log(`Successfully updated employee ID ${id} directly in MySQL.`);
+      } catch (err) {
+        console.error("Failed to update employee in MySQL:", err);
+      }
+
+      dbCache.employees[index] = updatedEmp;
+      setDB(dbCache);
+      res.json(dbCache.employees[index]);
+    } else {
+      res.status(404).json({ error: "Employee not found" });
+    }
+  });
+
+  app.delete("/api/employees/:id", async (req, res) => {
+    const dbCache = getDB();
+    const id = parseInt(req.params.id);
+    const index = dbCache.employees.findIndex((e: Employee) => e.employee_id === id);
+    if (index !== -1) {
+      const removed = dbCache.employees.splice(index, 1)[0];
+
+      try {
+        await db.delete(schema.employees).where(eq(schema.employees.employee_id, id));
+        console.log(`Successfully deleted employee ID ${id} directly from MySQL.`);
+      } catch (err) {
+        console.error("Failed to delete employee from MySQL:", err);
+      }
+
+      setDB(dbCache);
+      res.json({ success: true, removed });
+    } else {
+      res.status(404).json({ error: "Employee not found" });
+    }
+  });
+
+  app.post("/api/employees/purge-mistakes", async (req, res) => {
+    const dbCache = getDB();
+    const beforeCount = dbCache.employees.length;
+
+    const defaultIds = [1, 2, 3, 4, 5, 6, 7];
+    const filtered = dbCache.employees.filter((e: Employee) => {
+      if (defaultIds.includes(e.employee_id) && e.employee_id <= 7) {
+        return true;
+      }
+
+      const roleLower = (e.role || "").toLowerCase();
+      const nameLower = (e.full_name || "").toLowerCase();
+
+      const isJobCard = roleLower.startsWith("jc") || roleLower.includes("jc-") || roleLower.includes("job card") || roleLower.includes("jobcard");
+      const isVrn = /^[a-z]{2}[- ]?\d/i.test(nameLower) || /\d{2}[a-z]{2}\d{4}/i.test(nameLower) || /^[a-z]{2}\d{2}[a-z]/i.test(nameLower);
+      const isVehicleModel = ["hyundai", "maruti", "tata", "nexon", "swift", "i20", "honda", "toyota", "mahindra", "suzuki", "scorpio", "alto", "baleno", "creta"].some(v => nameLower.includes(v) || roleLower.includes(v));
+      const isSummary = ["total", "grand total", "summary", "average", "dashboard", "report", "subtotal", "aggregate"].some(s => nameLower === s || nameLower.includes(s));
+      const isCustomerRow = nameLower.includes("customer") || roleLower.includes("customer") || nameLower.includes("translines") || nameLower.includes("transport") || nameLower.includes("logistics");
+
+      if (isJobCard || isVrn || isVehicleModel || isSummary || isCustomerRow) {
+        return false;
+      }
+
+      if (e.mobile === "+919999999999" && (nameLower.includes("concrete") || nameLower.includes("earth movers") || nameLower.includes("road lines") || nameLower.includes("roadlines"))) {
+        return false;
+      }
+
+      return true;
+    });
+
+    const purgedIds = dbCache.employees
+      .filter((e: Employee) => !filtered.some(f => f.employee_id === e.employee_id))
+      .map(e => e.employee_id);
+
+    if (purgedIds.length > 0) {
+      try {
+        const { notInArray } = await import("drizzle-orm");
+        await db.delete(schema.employees).where(notInArray(schema.employees.employee_id, filtered.map(e => e.employee_id)));
+        console.log(`Successfully purged mistakes from MySQL (deleted ${purgedIds.length} rows).`);
+      } catch (err) {
+        console.error("Failed to purge mistakes in MySQL:", err);
+      }
+    }
+
+    dbCache.employees = filtered;
+    setDB(dbCache);
+    res.json({ success: true, beforeCount, afterCount: filtered.length, purgedCount: beforeCount - filtered.length });
+  });
+
+  // --- BAYS ENDPOINTS ---
+  app.get("/api/bays", (req, res) => {
+    const db = getDB();
+    res.json(db.bays);
+  });
+
+  app.post("/api/bays", (req, res) => {
+    const db = getDB();
+    const newBay: Bay = req.body;
+    const nextId = db.bays.reduce((max: number, b: Bay) => Math.max(max, b.bay_id), 0) + 1;
+    newBay.bay_id = nextId;
+    if (newBay.is_active === undefined) newBay.is_active = true;
+    if (!newBay.status) newBay.status = "Idle";
+    db.bays.push(newBay);
+    setDB(db);
+    res.json(newBay);
+  });
+
+  app.put("/api/bays/:id", (req, res) => {
+    const db = getDB();
+    const id = parseInt(req.params.id);
+    const index = db.bays.findIndex((b: Bay) => b.bay_id === id);
+    if (index !== -1) {
+      db.bays[index] = { ...db.bays[index], ...req.body };
+      setDB(db);
+      res.json(db.bays[index]);
+    } else {
+      res.status(404).json({ error: "Bay not found" });
+    }
+  });
+
+  app.delete("/api/bays/:id", (req, res) => {
+    const db = getDB();
+    const id = parseInt(req.params.id);
+    const index = db.bays.findIndex((b: Bay) => b.bay_id === id);
+    if (index !== -1) {
+      const removed = db.bays.splice(index, 1)[0];
+      setDB(db);
+      res.json({ success: true, removed });
+    } else {
+      res.status(404).json({ error: "Bay not found" });
+    }
+  });
+
+  // --- SR TYPES ---
+  app.get("/api/sr-types", (req, res) => {
+    const db = getDB();
+    res.json(db.srTypes);
+  });
+
+  app.post("/api/sr-types", (req, res) => {
+    const db = getDB();
+    const newType: SRType = req.body;
+    const nextId = db.srTypes.reduce((max: number, s: SRType) => Math.max(max, s.sr_type_id), 0) + 1;
+    newType.sr_type_id = nextId;
+    if (newType.is_active === undefined) newType.is_active = true;
+    db.srTypes.push(newType);
+    setDB(db);
+    res.json(newType);
+  });
+
+  app.put("/api/sr-types/:id", (req, res) => {
+    const db = getDB();
+    const id = parseInt(req.params.id);
+    const index = db.srTypes.findIndex((s: SRType) => s.sr_type_id === id);
+    if (index !== -1) {
+      db.srTypes[index] = { ...db.srTypes[index], ...req.body };
+      setDB(db);
+      res.json(db.srTypes[index]);
+    } else {
+      res.status(404).json({ error: "Service Type not found" });
+    }
+  });
+
+  app.delete("/api/sr-types/:id", (req, res) => {
+    const db = getDB();
+    const id = parseInt(req.params.id);
+    const index = db.srTypes.findIndex((s: SRType) => s.sr_type_id === id);
+    if (index !== -1) {
+      const removed = db.srTypes.splice(index, 1)[0];
+      setDB(db);
+      res.json({ success: true, removed });
+    } else {
+      res.status(404).json({ error: "Service Type not found" });
+    }
+  });
+
+  // --- REVENUE SPLIT CONFIG ---
+  app.get("/api/revenue-splits", (req, res) => {
+    const db = getDB();
+    res.json(db.revenueSplits);
+  });
+
+  app.post("/api/revenue-splits", (req, res) => {
+    const db = getDB();
+    const newSplit: RevenueSplitMaster = req.body;
+    const nextId = db.revenueSplits.reduce((max: number, r: RevenueSplitMaster) => Math.max(max, r.split_id), 0) + 1;
+    newSplit.split_id = nextId;
+    if (newSplit.is_active === undefined) newSplit.is_active = true;
+    db.revenueSplits.push(newSplit);
+    setDB(db);
+    res.json(newSplit);
+  });
+
+  app.put("/api/revenue-splits/:id", (req, res) => {
+    const db = getDB();
+    const id = parseInt(req.params.id);
+    const index = db.revenueSplits.findIndex((r: RevenueSplitMaster) => r.split_id === id);
+    if (index !== -1) {
+      db.revenueSplits[index] = { ...db.revenueSplits[index], ...req.body };
+      setDB(db);
+      res.json(db.revenueSplits[index]);
+    } else {
+      res.status(404).json({ error: "Revenue split combination not found" });
+    }
+  });
+
+  app.delete("/api/revenue-splits/:id", (req, res) => {
+    const db = getDB();
+    const id = parseInt(req.params.id);
+    const index = db.revenueSplits.findIndex((r: RevenueSplitMaster) => r.split_id === id);
+    if (index !== -1) {
+      const removed = db.revenueSplits.splice(index, 1)[0];
+      setDB(db);
+      res.json({ success: true, removed });
+    } else {
+      res.status(404).json({ error: "Revenue split combination not found" });
+    }
+  });
+
+  // --- JOB CARDS ENDPOINTS ---
+  app.get("/api/job-cards", (req, res) => {
+    const db = getDB();
+    res.json({
+      jobCards: db.jobCards,
+      technicianMaps: db.jobTechnicianMaps
+    });
+  });
+
+  app.post("/api/job-cards", (req, res) => {
+    const db = getDB();
+    const newJob: JobCard = req.body;
+    const nextId = db.jobCards.reduce((max: number, j: JobCard) => Math.max(max, j.job_id), 0) + 1;
+    newJob.job_id = nextId;
+    newJob.job_card_no = `JC${String(nextId).padStart(3, "0")}`;
+    newJob.status = "Waiting";
+    newJob.started_at = null;
+    newJob.completed_at = null;
+    newJob.invoiced_at = null;
+    newJob.created_by = Number(newJob.created_by) || 1;
+    newJob.created_at = new Date().toISOString();
+
+    db.jobCards.push(newJob);
+
+    // Automatically detect and log rework if this VRN is returning within 7 days
+    try {
+      const reworkResult = detectAndCreateRework(newJob, db);
+      if (reworkResult) {
+        console.log(`Auto-detected return visit rework for VRN ${newJob.vrn}. Original Job ID: ${reworkResult.original_job_id}`);
+      }
+    } catch (reworkErr) {
+      console.error("Error running auto-rework detection on creation:", reworkErr);
+    }
+
+    setDB(db);
+    res.json(newJob);
+  });
+
+
+  app.put("/api/job-cards/:id", (req, res) => {
+    const db = getDB();
+    const id = parseInt(req.params.id);
+    const index = db.jobCards.findIndex((j: JobCard) => j.job_id === id);
+    if (index !== -1) {
+      const oldJob = db.jobCards[index];
+      const updatedJob = { ...oldJob, ...req.body, updated_at: new Date().toISOString() };
+
+      // Automatic bay status transition
+      if (updatedJob.bay_id && updatedJob.status !== oldJob.status) {
+        const bayIndex = db.bays.findIndex((b: Bay) => b.bay_id === updatedJob.bay_id);
+        if (bayIndex !== -1) {
+          updatedJob.bay_no = db.bays[bayIndex].bay_name;
+          if (updatedJob.status === "Active") {
+            db.bays[bayIndex].status = "Active";
+            updatedJob.started_at = new Date().toISOString();
+          } else if (updatedJob.status === "Completed") {
+            db.bays[bayIndex].status = "Idle";
+            updatedJob.completed_at = new Date().toISOString();
+            updatedJob.date_completed = new Date().toISOString().split('T')[0];
+
+            // Auto calculate actual time taken if not already supplied
+            if (!updatedJob.actual_time_taken) {
+              const startStr = updatedJob.started_at || updatedJob.created_at;
+              if (startStr && updatedJob.completed_at) {
+                try {
+                  const start = new Date(startStr);
+                  const end = new Date(updatedJob.completed_at);
+                  const diffMins = Math.floor((end.getTime() - start.getTime()) / (1000 * 60));
+                  if (diffMins >= 0) {
+                    const h = Math.floor(diffMins / 60);
+                    const m = diffMins % 60;
+                    updatedJob.actual_time_taken = `${h}h ${m}m`;
+                  }
+                } catch (e) {
+                  console.error("Auto calculation of duration failed:", e);
+                }
+              }
+            }
+          } else if (updatedJob.status === "Carry Forward") {
+            db.bays[bayIndex].status = "Carry Forward";
+          } else if (updatedJob.status === "Rework") {
+            db.bays[bayIndex].status = "Rework";
+          } else if (updatedJob.status === "Invoiced" || updatedJob.status === "Cancelled") {
+            db.bays[bayIndex].status = "Idle";
+            if (updatedJob.status === "Invoiced") {
+              updatedJob.invoiced_at = new Date().toISOString();
+            }
+          }
+        }
+      }
+
+      if ((updatedJob.status === "Completed" || updatedJob.status === "Invoiced") && oldJob.status !== updatedJob.status) {
+        try {
+          const laborVal = Number(updatedJob.labor_price || 0);
+          const partsVal = Number(updatedJob.parts_price || 0);
+          const maps = db.jobTechnicianMaps.filter((m: any) => m.job_id === id);
+          if (maps.length > 0) {
+            const assignedTo = maps.map((m: any) => m.employee_id);
+            const { splits } = calculateRevenueSplit(id, assignedTo, laborVal, partsVal, db);
+            db.jobRevenueSplits = db.jobRevenueSplits || [];
+            db.jobRevenueSplits = db.jobRevenueSplits.filter((s: any) => s.job_id !== id);
+            let nextSplitId = db.jobRevenueSplits.reduce((max: number, s: any) => Math.max(max, s.id), 0) + 1;
+            splits.forEach((split: any) => {
+              db.jobRevenueSplits.push({
+                id: nextSplitId++,
+                ...split
+              });
+            });
+            console.log(`Auto-calculated revenue split for completed Job ID ${id}. Total splits: ${splits.length}`);
+          }
+        } catch (splitErr) {
+          console.error("Auto-revenue split calculation failed:", splitErr);
+        }
+      }
+
+      db.jobCards[index] = updatedJob;
+      setDB(db);
+      res.json(updatedJob);
+
+    } else {
+      res.status(404).json({ error: "Job card not found" });
+    }
+  });
+
+  // Assign technicians to a job
+  app.post("/api/job-cards/:id/assign", (req, res) => {
+    const db = getDB();
+    const id = parseInt(req.params.id);
+    const allocations: { employee_id: number; tech_role: string }[] = req.body.allocations;
+
+    // Filter out old maps for this job
+    db.jobTechnicianMaps = db.jobTechnicianMaps.filter((m: JobTechnicianMap) => m.job_id !== id);
+
+    let nextMapId = db.jobTechnicianMaps.reduce((max: number, m: JobTechnicianMap) => Math.max(max, m.map_id), 0) + 1;
+    const newMaps = allocations.map((alloc) => ({
+      map_id: nextMapId++,
+      job_id: id,
+      employee_id: alloc.employee_id,
+      tech_role: alloc.tech_role as any,
+      assigned_at: new Date().toISOString()
+    }));
+
+    db.jobTechnicianMaps.push(...newMaps);
+    setDB(db);
+    res.json({ success: true, allocations: newMaps });
+  });
+
+  // --- UN-NESTED START REPAIR ROUTE ---
+  app.post("/api/job-cards/:id/start-repair", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { started_by } = req.body;
+
+      if (!id || !started_by) {
+        return res.status(400).json({ success: false, error: 'Missing job_id or started_by' });
+      }
+
+      const db = getDB();
+      const jobCardIndex = db.jobCards.findIndex((jc: any) => jc.job_id === parseInt(id));
+
+      if (jobCardIndex === -1) {
+        return res.status(404).json({ success: false, error: 'Job card not found' });
+      }
+
+      db.jobCards[jobCardIndex] = {
+        ...db.jobCards[jobCardIndex],
+        status: "In Progress",
+        started_at: new Date().toISOString(),
+        started_by: started_by
+      };
+
+      setDB(db);
+
+      res.json({
+        success: true,
+        message: 'Repair started successfully',
+        job_id: id,
+        started_by,
+        started_at: new Date().toISOString()
+      });
+    } catch (error: any) {
+      console.error('Start repair error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Calculate and save dynamic revenue splits!
+  app.post("/api/job-cards/:id/revenue", (req, res) => {
+    const db = getDB();
+    const jobId = parseInt(req.params.id);
+    const { labour_amount, parts_amount } = req.body;
+    const total_amount = parseFloat(labour_amount) + parseFloat(parts_amount);
+
+    // Get assigned technicians
+    const maps = db.jobTechnicianMaps.filter((m: JobTechnicianMap) => m.job_id === jobId);
+    if (maps.length === 0) {
+      return res.status(400).json({ error: "No technicians assigned to this job card." });
+    }
+
+    // Determine the split combination code
+    const hasPrimary = maps.some((m: JobTechnicianMap) => m.tech_role === "Primary Technician");
+    const hasCoTech = maps.some((m: JobTechnicianMap) => m.tech_role === "Co-Technician");
+    const hasElec = maps.some((m: JobTechnicianMap) => m.tech_role === "Electrician");
+    const hasAddTech = maps.some((m: JobTechnicianMap) => m.tech_role === "Add Tech");
+    const techCount = maps.length;
+
+    let comboCode = "SOLO_TECH";
+    if (techCount >= 5) {
+      comboCode = "SALARY_WT_5PLUS";
+    } else if (techCount === 1) {
+      if (hasElec) comboCode = "SOLO_ELEC";
+      else if (hasAddTech) comboCode = "SOLO_ADDTECH";
+      else comboCode = "SOLO_TECH";
+    } else if (techCount === 2) {
+      if (hasPrimary && hasCoTech) comboCode = "TECH_COTECH";
+      else if (hasPrimary && hasElec) {
+        // Check if primary technician is Senior
+        const primaryMap = maps.find((m: JobTechnicianMap) => m.tech_role === "Primary Technician");
+        const emp = db.employees.find((e: Employee) => e.employee_id === primaryMap?.employee_id);
+        if (emp?.employee_grade === "Senior") {
+          comboCode = "TECH_ELEC_SR";
+        } else {
+          comboCode = "TECH_ELEC_STD";
+        }
+      } else if (hasPrimary && hasAddTech) comboCode = "TECH_ADDTECH";
+    } else if (techCount === 3) {
+      if (hasPrimary && hasCoTech && hasElec) comboCode = "TECH_COTECH_ELEC";
+      else if (hasPrimary && hasCoTech && hasAddTech) comboCode = "TECH_COTECH_ADDTECH";
+      else if (hasPrimary && hasElec && hasAddTech) comboCode = "TECH_ELEC_ADDTECH";
+    }
+
+
+    // ===== START REPAIR ROUTE =====
+    app.post("/api/job-cards/:id/start-repair", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { started_by } = req.body;
+
+        // Validate inputs
+        if (!id || !started_by) {
+          return res.status(400).json({
+            success: false,
+            error: 'Missing job_id or started_by'
+          });
+        }
+
+        const db = getDB();
+
+        // Update local DB using "job_id" instead of "job_card_id"
+        const jobCardIndex = db.jobCards.findIndex((jc: any) =>
+          jc.job_id === parseInt(id)
+        );
+
+        if (jobCardIndex === -1) {
+          return res.status(404).json({
+            success: false,
+            error: 'Job card not found'
+          });
+        }
+
+        // Update using "status" instead of "job_status"
+        db.jobCards[jobCardIndex] = {
+          ...db.jobCards[jobCardIndex],
+          status: "In Progress",
+          started_at: new Date().toISOString(),
+          started_by: started_by
+        };
+
+        setDB(db);
+
+        res.json({
+          success: true,
+          message: 'Repair started successfully',
+          job_id: id,
+          started_by: started_by,
+          started_at: new Date().toISOString()
+        });
+      } catch (error: any) {
+        console.error('Start repair error:', error);
+        res.status(500).json({
+          success: false,
+          error: error.message
+        });
+      }
+    });
+    // Find split template
+    const splitTemplate = db.revenueSplits.find((s: RevenueSplitMaster) => s.combination_code === comboCode) || db.revenueSplits[0];
+
+    // Compute details
+    const nextRevId = db.jobRevenues.reduce((max: number, r: JobRevenue) => Math.max(max, r.revenue_id), 0) + 1;
+    const newRevenue: JobRevenue = {
+      revenue_id: nextRevId,
+      job_id: jobId,
+      labour_amount: parseFloat(labour_amount),
+      parts_amount: parseFloat(parts_amount),
+      total_amount,
+      split_id: splitTemplate.split_id,
+      calculated_at: new Date().toISOString()
+    };
+
+    // Remove old revenue records for this job
+    db.jobRevenues = db.jobRevenues.filter((r: JobRevenue) => r.job_id !== jobId);
+    db.jobRevenueSplitDetails = db.jobRevenueSplitDetails.filter((d: JobRevenueSplitDetail) => {
+      const rev = db.jobRevenues.find((r: JobRevenue) => r.revenue_id === d.revenue_id);
+      return rev?.job_id !== jobId;
+    });
+
+    db.jobRevenues.push(newRevenue);
+
+    let nextDetailId = db.jobRevenueSplitDetails.reduce((max: number, d: JobRevenueSplitDetail) => Math.max(max, d.detail_id), 0) + 1;
+    const details: JobRevenueSplitDetail[] = [];
+
+    if (splitTemplate.uses_salary_wt) {
+      // Weightage by basic salary of all assigned technicians
+      const empsWithSalaries = maps.map((m: JobTechnicianMap) => {
+        const emp = db.employees.find((e: Employee) => e.employee_id === m.employee_id);
+        return {
+          map: m,
+          salary: emp?.basic_salary || 20000
+        };
+      });
+      const totalSalary = empsWithSalaries.reduce((sum, item) => sum + item.salary, 0);
+
+      empsWithSalaries.forEach((item) => {
+        const pct = totalSalary > 0 ? (item.salary / totalSalary) * 100 : 100 / maps.length;
+        const amt = (newRevenue.labour_amount * pct) / 100;
+        details.push({
+          detail_id: nextDetailId++,
+          revenue_id: nextRevId,
+          employee_id: item.map.employee_id,
+          tech_role: item.map.tech_role,
+          split_pct: Math.round(pct * 100) / 100,
+          split_amount: Math.round(amt * 100) / 100
+        });
+      });
+    } else {
+      // Standard static split percentages
+      maps.forEach((m: JobTechnicianMap) => {
+        let pct = 0;
+        if (m.tech_role === "Primary Technician") pct = splitTemplate.tech_pct;
+        else if (m.tech_role === "Co-Technician") pct = splitTemplate.co_tech_pct;
+        else if (m.tech_role === "Electrician") pct = splitTemplate.electrician_pct;
+        else if (m.tech_role === "Add Tech") pct = splitTemplate.add_tech_pct;
+
+        const amt = (newRevenue.labour_amount * pct) / 100;
+        details.push({
+          detail_id: nextDetailId++,
+          revenue_id: nextRevId,
+          employee_id: m.employee_id,
+          tech_role: m.tech_role,
+          split_pct: pct,
+          split_amount: Math.round(amt * 100) / 100
+        });
+      });
+    }
+
+    db.jobRevenueSplitDetails.push(...details);
+    setDB(db);
+
+    res.json({
+      revenue: newRevenue,
+      details,
+      splitTemplate
+    });
+  });
+
+  // Get job revenue and split details
+  app.get("/api/job-revenues", (req, res) => {
+    const db = getDB();
+    res.json({
+      revenues: db.jobRevenues,
+      details: db.jobRevenueSplitDetails
+    });
+  });
+
+  // --- CARRY FORWARD ENDPOINTS ---
+  app.get("/api/carry-forward", (req, res) => {
+    const db = getDB();
+    res.json(db.carryForwardLogs);
+  });
+
+  app.post("/api/carry-forward", (req, res) => {
+    const db = getDB();
+    const { job_id, cf_reason } = req.body;
+    const nextId = db.carryForwardLogs.reduce((max: number, c: CarryForwardLog) => Math.max(max, c.cf_id), 0) + 1;
+    const newLog: CarryForwardLog = {
+      cf_id: nextId,
+      job_id,
+      cf_reason,
+      raised_by: 1, // default supervisor
+      approved_by: null,
+      cf_status: "Pending",
+      raised_at: new Date().toISOString()
+    };
+    db.carryForwardLogs.push(newLog);
+
+    // Update job card status
+    const jobIndex = db.jobCards.findIndex((j: JobCard) => j.job_id === job_id);
+    if (jobIndex !== -1) {
+      db.jobCards[jobIndex].status = "Carry Forward";
+      // Update bay
+      if (db.jobCards[jobIndex].bay_id) {
+        const bayIndex = db.bays.findIndex((b: Bay) => b.bay_id === db.jobCards[jobIndex].bay_id);
+        if (bayIndex !== -1) db.bays[bayIndex].status = "Carry Forward";
+      }
+    }
+
+    setDB(db);
+    res.json(newLog);
+  });
+
+  app.put("/api/carry-forward/:id", (req, res) => {
+    const db = getDB();
+    const id = parseInt(req.params.id);
+    const { cf_status, approved_by } = req.body;
+    const index = db.carryForwardLogs.findIndex((c: CarryForwardLog) => c.cf_id === id);
+    if (index !== -1) {
+      db.carryForwardLogs[index].cf_status = cf_status;
+      db.carryForwardLogs[index].approved_by = approved_by || 1;
+      db.carryForwardLogs[index].actioned_at = new Date().toISOString();
+
+      // If approved, complete the transition or update status.
+      // If rejected, set job back to Active.
+      if (cf_status === "Rejected") {
+        const jobId = db.carryForwardLogs[index].job_id;
+        const jobIndex = db.jobCards.findIndex((j: JobCard) => j.job_id === jobId);
+        if (jobIndex !== -1) {
+          db.jobCards[jobIndex].status = "Active";
+          if (db.jobCards[jobIndex].bay_id) {
+            const bayIndex = db.bays.findIndex((b: Bay) => b.bay_id === db.jobCards[jobIndex].bay_id);
+            if (bayIndex !== -1) db.bays[bayIndex].status = "Active";
+          }
+        }
+      }
+      setDB(db);
+      res.json(db.carryForwardLogs[index]);
+    } else {
+      res.status(404).json({ error: "Carry forward record not found" });
+    }
+  });
+
+  // --- REWORK ENDPOINTS ---
+  app.get("/api/rework", (req, res) => {
+    const db = getDB();
+    res.json(db.reworkLogs);
+  });
+
+  app.post("/api/rework", (req, res) => {
+    const db = getDB();
+    const { original_job_id, rework_reason, original_tech_id } = req.body;
+    const nextId = db.reworkLogs.reduce((max: number, r: ReworkLog) => Math.max(max, r.rework_id), 0) + 1;
+    const newLog: ReworkLog = {
+      rework_id: nextId,
+      original_job_id,
+      new_job_id: null,
+      rework_reason,
+      original_tech_id,
+      raised_by: 1,
+      approved_by: null,
+      rework_status: "Pending",
+      raised_at: new Date().toISOString()
+    };
+    db.reworkLogs.push(newLog);
+
+    // Update job card status
+    const jobIndex = db.jobCards.findIndex((j: JobCard) => j.job_id === original_job_id);
+    if (jobIndex !== -1) {
+      db.jobCards[jobIndex].status = "Rework";
+      if (db.jobCards[jobIndex].bay_id) {
+        const bayIndex = db.bays.findIndex((b: Bay) => b.bay_id === db.jobCards[jobIndex].bay_id);
+        if (bayIndex !== -1) db.bays[bayIndex].status = "Rework";
+      }
+    }
+
+    setDB(db);
+    res.json(newLog);
+  });
+
+  app.put("/api/rework/:id", (req, res) => {
+    const db = getDB();
+    const id = parseInt(req.params.id);
+    const { rework_status, approved_by } = req.body;
+    const index = db.reworkLogs.findIndex((r: ReworkLog) => r.rework_id === id);
+    if (index !== -1) {
+      db.reworkLogs[index].rework_status = rework_status;
+      db.reworkLogs[index].approved_by = approved_by || 1;
+      db.reworkLogs[index].actioned_at = new Date().toISOString();
+
+      if (rework_status === "Approved") {
+        // Create a new linked Job Card specifically for the rework!
+        const originalJob = db.jobCards.find((j: JobCard) => j.job_id === db.reworkLogs[index].original_job_id);
+        if (originalJob) {
+          const nextJobId = db.jobCards.reduce((max: number, j: JobCard) => Math.max(max, j.job_id), 0) + 1;
+          const newReworkJob: JobCard = {
+            ...originalJob,
+            job_id: nextJobId,
+            job_card_no: `JC${String(nextJobId).padStart(3, "0")}-RW`,
+            status: "Waiting",
+            started_at: null,
+            completed_at: null,
+            invoiced_at: null,
+            created_at: new Date().toISOString(),
+            job_description: `[REWORK OF ${originalJob.job_card_no}]: ${db.reworkLogs[index].rework_reason}`
+          };
+          db.jobCards.push(newReworkJob);
+          db.reworkLogs[index].new_job_id = nextJobId;
+
+          // Copy assignments but flag as co-technician/electrician
+          const originalMaps = db.jobTechnicianMaps.filter((m: JobTechnicianMap) => m.job_id === originalJob.job_id);
+          let nextMapId = db.jobTechnicianMaps.reduce((max: number, m: JobTechnicianMap) => Math.max(max, m.map_id), 0) + 1;
+          originalMaps.forEach((oldMap) => {
+            db.jobTechnicianMaps.push({
+              map_id: nextMapId++,
+              job_id: nextJobId,
+              employee_id: oldMap.employee_id,
+              tech_role: oldMap.tech_role,
+              assigned_at: new Date().toISOString()
+            });
+          });
+        }
+      } else if (rework_status === "Rejected") {
+        // Set original job back to completed or active
+        const jobId = db.reworkLogs[index].original_job_id;
+        const jobIndex = db.jobCards.findIndex((j: JobCard) => j.job_id === jobId);
+        if (jobIndex !== -1) {
+          db.jobCards[jobIndex].status = "Active";
+          if (db.jobCards[jobIndex].bay_id) {
+            const bayIndex = db.bays.findIndex((b: Bay) => b.bay_id === db.jobCards[jobIndex].bay_id);
+            if (bayIndex !== -1) db.bays[bayIndex].status = "Active";
+          }
+        }
+      }
+
+      setDB(db);
+      res.json(db.reworkLogs[index]);
+    } else {
+      res.status(404).json({ error: "Rework record not found" });
+    }
+  });
+
+  app.get("/api/rework/technician/:id", async (req, res) => {
+    try {
+      const techId = parseInt(req.params.id);
+      const db = getDB();
+      const history = getReworkHistoryForTechnician(techId, db);
+      res.json({ employee_id: techId, history });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // --- ALERTS ENDPOINTS ---
+  app.get("/api/alerts", (req, res) => {
+    const db = getDB();
+    res.json(db.alertLogs);
+  });
+
+  app.post("/api/alerts/acknowledge", (req, res) => {
+    const db = getDB();
+    const { alert_id } = req.body;
+    const index = db.alertLogs.findIndex((a: AlertLog) => a.alert_id === alert_id);
+    if (index !== -1) {
+      db.alertLogs[index].status = "Acknowledged";
+      db.alertLogs[index].acknowledged_by = 1;
+      db.alertLogs[index].acknowledged_at = new Date().toISOString();
+      setDB(db);
+      res.json(db.alertLogs[index]);
+    } else {
+      res.status(404).json({ error: "Alert not found" });
+    }
+  });
+
+  // --- TECHNICIAN PRODUCTIVITY ENGINE ENDPOINTS ---
+
+  // POST /api/kpi/calculate-daily
+  app.post("/api/kpi/calculate-daily", async (req, res) => {
+    const db = getDB();
+    const dateQuery = req.query.date || req.body.date;
+    const kpiDate = dateQuery ? String(dateQuery) : new Date().toISOString().split("T")[0];
+
+    try {
+      console.log(`Manual trigger: Calculating daily KPIs for date ${kpiDate}`);
+      const result = await runDailyKPISnapshot(kpiDate, db, setDB);
+      res.json({
+        success: true,
+        message: `Daily KPIs successfully calculated for date ${kpiDate}`,
+        ...result
+      });
+    } catch (err: any) {
+      console.error("Manual KPI calculation failed:", err);
+      res.status(500).json({ error: err.message || "Failed to calculate daily KPIs." });
+    }
+  });
+
+  // GET /api/leaderboard/:timeframe
+  app.get("/api/leaderboard/:timeframe", (req, res) => {
+    const db = getDB();
+    const timeframe = req.params.timeframe as "daily" | "weekly" | "monthly";
+    const sortBy = (req.query.sortBy || "earned_amount") as any;
+
+    if (!["daily", "weekly", "monthly"].includes(timeframe)) {
+      return res.status(400).json({ error: "Invalid timeframe. Must be daily, weekly, or monthly." });
+    }
+
+    const validSortKeys = ["earned_amount", "jobs_completed", "efficiency_percent", "utilization_percent", "quality_score"];
+    if (!validSortKeys.includes(sortBy)) {
+      return res.status(400).json({ error: `Invalid sortBy. Must be one of: ${validSortKeys.join(", ")}` });
+    }
+
+    try {
+      const leaderboard = getLeaderboardData(timeframe, sortBy, db);
+      res.json(leaderboard);
+    } catch (err: any) {
+      console.error("Leaderboard retrieval failed:", err);
+      res.status(500).json({ error: err.message || "Failed to retrieve leaderboard." });
+    }
+  });
+
+  // GET /api/technician/:id/kpi
+  app.get("/api/technician/:id/kpi", (req, res) => {
+    const db = getDB();
+    const employeeId = parseInt(req.params.id);
+
+    const techKpis = (db.technicianKpiDailies || []).filter(
+      (k: TechnicianKPIDaily) => k.employee_id === employeeId
+    );
+
+    if (techKpis.length === 0) {
+      return res.status(404).json({ error: "No KPI snapshots found for this technician." });
+    }
+
+    const sorted = [...techKpis].sort((a, b) => b.kpi_date.localeCompare(a.kpi_date));
+    res.json(sorted[0]);
+  });
+
+  // GET /api/alerts/active
+  app.get("/api/alerts/active", (req, res) => {
+    const db = getDB();
+    const severityFilter = req.query.severity;
+    const employeeIdFilter = req.query.employee_id ? parseInt(String(req.query.employee_id)) : null;
+
+    let activeAlerts = (db.productivityAlerts || []).filter(
+      (a: ProductivityAlert) => a.status === "Active"
+    );
+
+    if (severityFilter) {
+      activeAlerts = activeAlerts.filter((a: any) => a.severity.toLowerCase() === String(severityFilter).toLowerCase());
+    }
+
+    if (employeeIdFilter) {
+      activeAlerts = activeAlerts.filter((a: any) => a.employee_id === employeeIdFilter);
+    }
+
+    res.json(activeAlerts);
+  });
+
+  // GET /api/technician/:id/rework
+  app.get("/api/technician/:id/rework", (req, res) => {
+    const db = getDB();
+    const employeeId = parseInt(req.params.id);
+
+    try {
+      const history = getReworkHistoryForTechnician(employeeId, db);
+      res.json(history);
+    } catch (err: any) {
+      console.error("Rework history retrieval failed:", err);
+      res.status(500).json({ error: err.message || "Failed to retrieve rework history." });
+    }
+  });
+
+  // POST /api/revenue-split/calculate
+  app.post("/api/revenue-split/calculate", (req, res) => {
+    const db = getDB();
+    const jobId = parseInt(req.body.job_id);
+
+    if (isNaN(jobId)) {
+      return res.status(400).json({ error: "Invalid or missing job_id in request body." });
+    }
+
+    const job = (db.jobCards || []).find((j: JobCard) => j.job_id === jobId);
+    if (!job) {
+      return res.status(404).json({ error: "Job card not found." });
+    }
+
+    const laborAmount = Number(job.labor_price || 0);
+    const sparesAmount = Number(job.parts_price || 0);
+
+    const maps = (db.jobTechnicianMaps || []).filter((m: JobTechnicianMap) => m.job_id === jobId);
+    if (maps.length === 0) {
+      return res.status(400).json({ error: "No technicians assigned to this job card." });
+    }
+
+    const assignedTo = maps.map((m: JobTechnicianMap) => m.employee_id);
+
+    try {
+      const result = calculateRevenueSplit(jobId, assignedTo, laborAmount, sparesAmount, db);
+
+      db.jobRevenueSplits = db.jobRevenueSplits || [];
+      db.jobRevenueSplits = db.jobRevenueSplits.filter((s: any) => s.job_id !== jobId);
+
+      let nextSplitId = db.jobRevenueSplits.reduce((max: number, s: any) => Math.max(max, s.id), 0) + 1;
+      const savedSplits = result.splits.map(split => {
+        const record = { id: nextSplitId++, ...split };
+        db.jobRevenueSplits.push(record);
+        return record;
+      });
+
+      setDB(db);
+
+      res.json({
+        job_id: jobId,
+        total_revenue: laborAmount + sparesAmount,
+        labor_amount: laborAmount,
+        spares_amount: sparesAmount,
+        carry_forward_percentage: result.carryForwardPct,
+        carry_forward_amount: result.carryForwardAmount,
+        allocations: savedSplits
+      });
+    } catch (err: any) {
+      console.error("Revenue split calculation failed:", err);
+      res.status(500).json({ error: err.message || "Failed to calculate revenue split." });
+    }
+  });
+
+  // GET /api/productivity/dashboard
+  app.get('/api/productivity/dashboard', async (req, res) => {
+    try {
+      const query = sql`
+        SELECT 
+          SUM(revenue_earned) as total_allocated_revenue,
+          ROUND(AVG(completion_efficiency), 2) as overall_achievement_percent,
+          (SELECT CONCAT(full_name, ' - ₹', ROUND(revenue_earned, 2)) 
+           FROM technician_kpi_daily t
+           JOIN employees e ON t.employee_id = e.employee_id
+           ORDER BY t.revenue_earned DESC
+           LIMIT 1) as top_performer,
+          COUNT(DISTINCT DATE(kpi_date)) as days_tracked,
+          COUNT(*) as total_snapshots
+        FROM technician_kpi_daily
+        WHERE kpi_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      `;
+
+      const result = await db.execute(query);
+      const data = (result as any)[0][0];
+
+      res.json({
+        success: true,
+        data: {
+          total_allocated_revenue: Number(data.total_allocated_revenue || 0),
+          overall_achievement_percent: Number(data.overall_achievement_percent || 0),
+          top_performer: data.top_performer || "N/A",
+          days_tracked: Number(data.days_tracked || 0),
+          total_snapshots: Number(data.total_snapshots || 0)
+        }
+      });
+    } catch (error: any) {
+      console.error('Dashboard error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Daily Snapshot Scheduler (checks every minute, triggers at 18:00 local time)
+  setInterval(async () => {
+    try {
+      const now = new Date();
+      if (now.getHours() === 18 && now.getMinutes() === 0) {
+        console.log("CRON TRIGGER: Running Daily KPI Snapshot at 6:00 PM...");
+        const kpiDate = now.toISOString().split("T")[0];
+        const db = getDB();
+        await runDailyKPISnapshot(kpiDate, db, setDB);
+      }
+    } catch (cronErr) {
+      console.error("Failed to run scheduled Daily KPI Snapshot cron:", cronErr);
+    }
+  }, 60000);
+
+
+  // --- DMS IMPORT ENDPOINTS ---
+  app.get("/api/dms/batches", (req, res) => {
+    const db = getDB();
+    res.json({
+      batches: db.dmsImportBatches,
+      rows: db.dmsImportRows
+    });
+  });
+
+  app.post("/api/dms/import", (req, res) => {
+    const db = getDB();
+    const { file_name, rows } = req.body;
+
+    const nextBatchId = db.dmsImportBatches.reduce((max: number, b: DMSImportBatch) => Math.max(max, b.batch_id), 0) + 1;
+    const newBatch: DMSImportBatch = {
+      batch_id: nextBatchId,
+      imported_by: 1,
+      file_name,
+      total_rows: rows.length,
+      matched_rows: 0,
+      unmatched_rows: 0,
+      status: "Processing",
+      imported_at: new Date().toISOString()
+    };
+
+    let nextRowId = db.dmsImportRows.reduce((max: number, r: DMSImportRow) => Math.max(max, r.row_id), 0) + 1;
+    const parsedRows: DMSImportRow[] = rows.map((r: any, idx: number) => {
+      // Find matching job card by VRN (Registration Number) in active / waiting / completed states
+      const matchedJob = db.jobCards.find((j: JobCard) => j.vrn.toLowerCase().trim() === r.vrn?.toLowerCase().trim() && j.status !== "Invoiced" && j.status !== "Cancelled");
+
+      let status: 'Matched' | 'Unmatched' | 'Conflict' = "Unmatched";
+      let conflict_reason = null;
+
+      if (matchedJob) {
+        // Confirm SR Type also matches or raise conflict
+        const srTypeObj = db.srTypes.find((s: SRType) => s.sr_type_id === matchedJob.sr_type_id);
+        const inputSRCode = String(r.sr_type || "").trim().toUpperCase();
+
+        if (srTypeObj && (srTypeObj.sr_type_code === inputSRCode || srTypeObj.sr_type_name.toLowerCase() === inputSRCode.toLowerCase())) {
+          status = "Matched";
+        } else {
+          status = "Conflict";
+          conflict_reason = `VRN matched with job ${matchedJob.job_card_no}, but SR Type differs (DMS: '${r.sr_type}', App: '${srTypeObj?.sr_type_name}').`;
+        }
+      }
+
+      if (status === "Matched") newBatch.matched_rows++;
+      else newBatch.unmatched_rows++;
+
+      return {
+        row_id: nextRowId++,
+        batch_id: nextBatchId,
+        row_number: idx + 1,
+        vrn: r.vrn || "Unknown",
+        job_date: r.job_date || new Date().toISOString().split("T")[0],
+        sr_type: r.sr_type || "General",
+        labour_amount: parseFloat(r.labour_amount || 0),
+        parts_amount: parseFloat(r.parts_amount || 0),
+        total_amount: parseFloat(r.labour_amount || 0) + parseFloat(r.parts_amount || 0),
+        matched_job_id: matchedJob ? matchedJob.job_id : null,
+        match_status: status,
+        conflict_reason,
+        resolved_by: null,
+        resolved_at: null,
+        raw_data: r
+      };
+    });
+
+    newBatch.status = "Completed";
+    db.dmsImportBatches.push(newBatch);
+    db.dmsImportRows.push(...parsedRows);
+
+    setDB(db);
+    res.json({ batch: newBatch, rows: parsedRows });
+  });
+
+  app.post("/api/dms/resolve", (req, res) => {
+    const db = getDB();
+    const { row_id, match_status, matched_job_id } = req.body;
+
+    const rowIndex = db.dmsImportRows.findIndex((r: DMSImportRow) => r.row_id === row_id);
+    if (rowIndex !== -1) {
+      db.dmsImportRows[rowIndex].match_status = match_status;
+      db.dmsImportRows[rowIndex].matched_job_id = matched_job_id;
+      db.dmsImportRows[rowIndex].resolved_by = 1;
+      db.dmsImportRows[rowIndex].resolved_at = new Date().toISOString();
+
+      // If resolved as Matched, sync the revenue to the job card!
+      if (match_status === "Matched" && matched_job_id) {
+        const row = db.dmsImportRows[rowIndex];
+        // Trigger calculating split revenue automatically from imports
+        const maps = db.jobTechnicianMaps.filter((m: JobTechnicianMap) => m.job_id === matched_job_id);
+        if (maps.length > 0) {
+          // Trigger split logic inside database
+          // We can call a helper directly
+          calculateAndSaveSplit(db, matched_job_id, row.labour_amount, row.parts_amount);
+        }
+      }
+
+      setDB(db);
+      res.json(db.dmsImportRows[rowIndex]);
+    } else {
+      res.status(404).json({ error: "Import row not found" });
+    }
+  });
+
+  // --- GATE ENTRIES ENDPOINTS ---
+  app.get("/api/gate-entries", (req, res) => {
+    const db = getDB();
+    res.json(db.gateEntries || []);
+  });
+
+  app.post("/api/gate-entries", (req, res) => {
+    const db = getDB();
+    if (!db.gateEntries) db.gateEntries = [];
+
+    const newEntry = req.body;
+    const nextId = db.gateEntries.reduce((max: number, g: any) => Math.max(max, g.gate_id || 0), 0) + 1;
+
+    // Auto-generate token suffix
+    const tokenNum = `GT-${String(nextId).padStart(3, "0")}`;
+
+    // Calculate approximate wait time based on active/waiting jobs
+    const activeWaitingJobs = db.jobCards.filter((j: any) => ["Waiting", "Active"].includes(j.status)).length;
+    const waitingTimeMins = activeWaitingJobs * 30 + 15; // 30 mins per job + 15 mins base
+
+    newEntry.gate_id = nextId;
+    newEntry.token_number = tokenNum;
+    newEntry.waiting_time_mins = waitingTimeMins;
+    newEntry.status = "Waiting";
+    newEntry.created_at = new Date().toISOString();
+
+    db.gateEntries.push(newEntry);
+    setDB(db);
+
+    // Mock SMS push notifications
+    console.log(`[SMS PUSH] Token ${tokenNum} generated. Wait time: ${waitingTimeMins} mins.`);
+    console.log(`[SMS] Pushed to Driver ${newEntry.driver_name} (${newEntry.driver_mobile})`);
+    console.log(`[SMS] Pushed to Owner (${newEntry.customer_mobile || 'N/A'})`);
+
+    res.json({
+      ...newEntry,
+      sms_status: "SUCCESS",
+      sms_message: `Pushed Token ${tokenNum} to Driver & Owner. Approx waiting time: ${waitingTimeMins} mins.`
+    });
+  });
+
+  app.put("/api/gate-entries/:id", (req, res) => {
+    const db = getDB();
+    const id = parseInt(req.params.id);
+    const index = db.gateEntries.findIndex((g: any) => g.gate_id === id);
+    if (index !== -1) {
+      db.gateEntries[index] = { ...db.gateEntries[index], ...req.body };
+      setDB(db);
+      res.json(db.gateEntries[index]);
+    } else {
+      res.status(404).json({ error: "Gate entry not found" });
+    }
+  });
+
+  // --- LAST VISIT VRN LOOKUP ---
+  app.get("/api/job-cards/last-visit/:vrn", (req, res) => {
+    const db = getDB();
+    const vrn = req.params.vrn.toLowerCase().replace(/[- ]/g, "").trim();
+
+    // Find the latest job card for this vehicle that has been worked on previously
+    const previousJobs = db.jobCards
+      .filter((j: any) => j.vrn.toLowerCase().replace(/[- ]/g, "").trim() === vrn)
+      .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    if (previousJobs.length > 0) {
+      const latestJob = previousJobs[0];
+      res.json({
+        found: true,
+        chassis_number: latestJob.chassis_number || "",
+        last_odometer: latestJob.km_reading || 0,
+        last_visit_date: latestJob.date_in || latestJob.created_at?.split("T")[0] || "",
+        last_complaint_summary: latestJob.job_description || ""
+      });
+    } else {
+      res.json({
+        found: false,
+        chassis_number: "",
+        last_odometer: 0,
+        last_visit_date: "",
+        last_complaint_summary: ""
+      });
+    }
+  });
+
+  // Helper inside server to run revenue calculation
+  function calculateAndSaveSplit(db: any, jobId: number, labour: number, parts: number) {
+    const maps = db.jobTechnicianMaps.filter((m: JobTechnicianMap) => m.job_id === jobId);
+    if (maps.length === 0) return;
+
+    const hasPrimary = maps.some((m: JobTechnicianMap) => m.tech_role === "Primary Technician");
+    const hasCoTech = maps.some((m: JobTechnicianMap) => m.tech_role === "Co-Technician");
+    const hasElec = maps.some((m: JobTechnicianMap) => m.tech_role === "Electrician");
+    const hasAddTech = maps.some((m: JobTechnicianMap) => m.tech_role === "Add Tech");
+    const techCount = maps.length;
+
+    let comboCode = "SOLO_TECH";
+    if (techCount >= 5) comboCode = "SALARY_WT_5PLUS";
+    else if (techCount === 1) {
+      if (hasElec) comboCode = "SOLO_ELEC";
+      else if (hasAddTech) comboCode = "SOLO_ADDTECH";
+      else comboCode = "SOLO_TECH";
+    } else if (techCount === 2) {
+      if (hasPrimary && hasCoTech) comboCode = "TECH_COTECH";
+      else if (hasPrimary && hasElec) {
+        const primaryMap = maps.find((m: JobTechnicianMap) => m.tech_role === "Primary Technician");
+        const emp = db.employees.find((e: Employee) => e.employee_id === primaryMap?.employee_id);
+        comboCode = emp?.employee_grade === "Senior" ? "TECH_ELEC_SR" : "TECH_ELEC_STD";
+      } else if (hasPrimary && hasAddTech) comboCode = "TECH_ADDTECH";
+    } else if (techCount === 3) {
+      if (hasPrimary && hasCoTech && hasElec) comboCode = "TECH_COTECH_ELEC";
+      else if (hasPrimary && hasCoTech && hasAddTech) comboCode = "TECH_COTECH_ADDTECH";
+      else if (hasPrimary && hasElec && hasAddTech) comboCode = "TECH_ELEC_ADDTECH";
+    }
+
+    const splitTemplate = db.revenueSplits.find((s: RevenueSplitMaster) => s.combination_code === comboCode) || db.revenueSplits[0];
+    const nextRevId = db.jobRevenues.reduce((max: number, r: JobRevenue) => Math.max(max, r.revenue_id), 0) + 1;
+    const newRevenue = {
+      revenue_id: nextRevId,
+      job_id: jobId,
+      labour_amount: labour,
+      parts_amount: parts,
+      total_amount: labour + parts,
+      split_id: splitTemplate.split_id,
+      calculated_at: new Date().toISOString()
+    };
+
+    db.jobRevenues = db.jobRevenues.filter((r: JobRevenue) => r.job_id !== jobId);
+    db.jobRevenueSplitDetails = db.jobRevenueSplitDetails.filter((d: JobRevenueSplitDetail) => {
+      const r = db.jobRevenues.find((jr: JobRevenue) => jr.revenue_id === d.revenue_id);
+      return r?.job_id !== jobId;
+    });
+
+    db.jobRevenues.push(newRevenue);
+
+    let nextDetailId = db.jobRevenueSplitDetails.reduce((max: number, d: JobRevenueSplitDetail) => Math.max(max, d.detail_id), 0) + 1;
+
+    if (splitTemplate.uses_salary_wt) {
+      const empsWithSalaries = maps.map((m: JobTechnicianMap) => {
+        const emp = db.employees.find((e: Employee) => e.employee_id === m.employee_id);
+        return { map: m, salary: emp?.basic_salary || 20000 };
+      });
+      const totalSalary = empsWithSalaries.reduce((sum, item) => sum + item.salary, 0);
+
+      empsWithSalaries.forEach((item) => {
+        const pct = totalSalary > 0 ? (item.salary / totalSalary) * 100 : 100 / maps.length;
+        const amt = (labour * pct) / 100;
+        db.jobRevenueSplitDetails.push({
+          detail_id: nextDetailId++,
+          revenue_id: nextRevId,
+          employee_id: item.map.employee_id,
+          tech_role: item.map.tech_role,
+          split_pct: Math.round(pct * 100) / 100,
+          split_amount: Math.round(amt * 100) / 100
+        });
+      });
+    } else {
+      maps.forEach((m: JobTechnicianMap) => {
+        let pct = 0;
+        if (m.tech_role === "Primary Technician") pct = splitTemplate.tech_pct;
+        else if (m.tech_role === "Co-Technician") pct = splitTemplate.co_tech_pct;
+        else if (m.tech_role === "Electrician") pct = splitTemplate.electrician_pct;
+        else if (m.tech_role === "Add Tech") pct = splitTemplate.add_tech_pct;
+
+        const amt = (labour * pct) / 100;
+        db.jobRevenueSplitDetails.push({
+          detail_id: nextDetailId++,
+          revenue_id: nextRevId,
+          employee_id: m.employee_id,
+          tech_role: m.tech_role,
+          split_pct: pct,
+          split_amount: Math.round(amt * 100) / 100
+        });
+      });
+    }
+  }
+
+  // --- GOOGLE WORKSPACE API PROXY ENDPOINTS ---
+  // Authenticate & Export Active Job Cards & Revenue Breakdown to Google Sheets dynamically!
+  app.post("/api/google/export-sheets", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ error: "Missing authorization token. Please sign in with Google." });
+    }
+
+    const db = getDB();
+
+    try {
+      // 1. Create a new Spreadsheet via Google Sheets API
+      const createResponse = await fetch("https://sheets.googleapis.com/v4/spreadsheets", {
+        method: "POST",
+        headers: {
+          "Authorization": authHeader,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          properties: {
+            title: `Devanand Workforce Logs & Revenue Splits - ${new Date().toLocaleDateString()}`
+          }
+        })
+      });
+
+      if (!createResponse.ok) {
+        const errText = await createResponse.text();
+        throw new Error(`Sheets API Create failed: ${errText}`);
+      }
+
+      const spreadsheet = await createResponse.json();
+      const spreadsheetId = spreadsheet.spreadsheetId;
+      const spreadsheetUrl = spreadsheet.spreadsheetUrl;
+
+      // 2. Prepare visual table rows: Sheet 1 is "Job Cards", Sheet 2 is "Revenue Split Detail"
+      const jobHeader = [
+        "Job Card No",
+        "Vehicle Reg (VRN)",
+        "Customer Name",
+        "Customer Phone",
+        "Vehicle Make/Model",
+        "SR Type",
+        "Priority",
+        "Status",
+        "ETD",
+        "Created At"
+      ];
+
+      const jobRows = db.jobCards.map((j: JobCard) => {
+        const srTypeObj = db.srTypes.find((s: SRType) => s.sr_type_id === j.sr_type_id);
+        return [
+          j.job_card_no,
+          j.vrn,
+          j.customer_name,
+          j.customer_mobile,
+          `${j.vehicle_make} ${j.vehicle_model}`,
+          srTypeObj?.sr_type_name || "General",
+          j.priority,
+          j.status,
+          new Date(j.etd).toLocaleString(),
+          new Date(j.created_at).toLocaleString()
+        ];
+      });
+
+      const revenueHeader = [
+        "Revenue ID",
+        "Job Card No",
+        "Labour Amount",
+        "Parts Amount",
+        "Total Amount",
+        "Employee Code",
+        "Employee Name",
+        "Technician Role",
+        "Split %",
+        "Split Share"
+      ];
+
+      const revenueRows: any[] = [];
+      db.jobRevenues.forEach((rev: JobRevenue) => {
+        const job = db.jobCards.find((j: JobCard) => j.job_id === rev.job_id);
+        const splits = db.jobRevenueSplitDetails.filter((d: JobRevenueSplitDetail) => d.revenue_id === rev.revenue_id);
+
+        splits.forEach((s: JobRevenueSplitDetail) => {
+          const emp = db.employees.find((e: Employee) => e.employee_id === s.employee_id);
+          revenueRows.push([
+            rev.revenue_id,
+            job?.job_card_no || "Unknown",
+            rev.labour_amount,
+            rev.parts_amount,
+            rev.total_amount,
+            emp?.employee_code || "Unknown",
+            emp?.full_name || "Unknown",
+            s.tech_role,
+            s.split_pct,
+            s.split_amount
+          ]);
+        });
+      });
+
+      // Write values to Spreadsheet using batchUpdate
+      const writeResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, {
+        method: "POST",
+        headers: {
+          "Authorization": authHeader,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          valueInputOption: "RAW",
+          data: [
+            {
+              range: "Sheet1!A1",
+              values: [jobHeader, ...jobRows]
+            },
+            {
+              // Create sheet 2 dynamically or just append below Sheet1
+              range: "Sheet1!A" + (jobRows.length + 4),
+              values: [
+                ["--- REVENUE SPLITS DETAIL BREAKDOWN ---"],
+                [],
+                revenueHeader,
+                ...revenueRows
+              ]
+            }
+          ]
+        })
+      });
+
+      if (!writeResponse.ok) {
+        const errText = await writeResponse.text();
+        throw new Error(`Sheets API Write failed: ${errText}`);
+      }
+
+      res.json({ success: true, url: spreadsheetUrl, spreadsheetId });
+    } catch (error: any) {
+      console.error("Export Sheets error:", error);
+      res.status(500).json({ error: error.message || "Failed to export data to Google Sheets." });
+    }
+  });
+
+  // Backup files/Logs to Google Drive as custom text reports or JSON logs
+  app.post("/api/google/export-drive", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ error: "Missing authorization token. Please sign in with Google." });
+    }
+
+    const db = getDB();
+
+    try {
+      // Create a markdown summary or JSON dump
+      const reportTitle = `Devanand Workforce Backup - ${new Date().toISOString().split("T")[0]}.json`;
+      const reportContent = JSON.stringify(db, null, 2);
+
+      // Multi-part form-data body construction for Drive v3 files api
+      const boundary = "-------314159265358979323846";
+      const delimiter = `\r\n--${boundary}\r\n`;
+      const closeDelimiter = `\r\n--${boundary}--`;
+
+      const metadata = {
+        name: reportTitle,
+        mimeType: "application/json"
+      };
+
+      const multipartBody =
+        delimiter +
+        'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+        JSON.stringify(metadata) +
+        delimiter +
+        'Content-Type: application/json\r\n\r\n' +
+        reportContent +
+        closeDelimiter;
+
+      const driveResponse = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+        method: "POST",
+        headers: {
+          "Authorization": authHeader,
+          "Content-Type": `multipart/related; boundary=${boundary}`
+        },
+        body: multipartBody
+      });
+
+      if (!driveResponse.ok) {
+        const errText = await driveResponse.text();
+        throw new Error(`Drive API Upload failed: ${errText}`);
+      }
+
+      const driveFile = await driveResponse.json();
+      res.json({ success: true, fileId: driveFile.id, name: driveFile.name });
+    } catch (error: any) {
+      console.error("Drive upload error:", error);
+      res.status(500).json({ error: error.message || "Failed to upload file to Google Drive." });
+    }
+  });
+
+  // --- GMAIL INTEGRATION PROXIES ---
+
+  // List recent Gmail messages
+  app.get("/api/google/gmail/list", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ error: "Missing authorization token. Please sign in with Google." });
+    }
+
+    try {
+      const listResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10", {
+        headers: { "Authorization": authHeader }
+      });
+
+      if (!listResponse.ok) {
+        const errText = await listResponse.text();
+        throw new Error(`Gmail API list failed: ${errText}`);
+      }
+
+      const listData = await listResponse.json();
+      const messages = listData.messages || [];
+
+      // Fetch details for each message in parallel
+      const detailedMessages = await Promise.all(
+        messages.map(async (msg: any) => {
+          try {
+            const detailRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}`, {
+              headers: { "Authorization": authHeader }
+            });
+            if (detailRes.ok) {
+              const detail = await detailRes.json();
+              const headers = detail.payload?.headers || [];
+              const subject = headers.find((h: any) => h.name.toLowerCase() === "subject")?.value || "No Subject";
+              const from = headers.find((h: any) => h.name.toLowerCase() === "from")?.value || "Unknown Sender";
+              const date = headers.find((h: any) => h.name.toLowerCase() === "date")?.value || "";
+              return {
+                id: msg.id,
+                threadId: msg.threadId,
+                subject,
+                from,
+                date,
+                snippet: detail.snippet || ""
+              };
+            }
+          } catch (e) {
+            console.error(`Error fetching detail for msg ${msg.id}:`, e);
+          }
+          return { id: msg.id, threadId: msg.threadId, subject: "Error loading", from: "Error loading", date: "", snippet: "" };
+        })
+      );
+
+      res.json(detailedMessages);
+    } catch (error: any) {
+      console.error("Gmail list error:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch messages from Gmail." });
+    }
+  });
+
+  // Send email via Gmail
+  app.post("/api/google/gmail/send", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ error: "Missing authorization token. Please sign in with Google." });
+    }
+
+    const { to, subject, body } = req.body;
+    if (!to || !subject || !body) {
+      return res.status(400).json({ error: "Missing required fields: to, subject, body" });
+    }
+
+    try {
+      const emailLines = [
+        `To: ${to}`,
+        'Content-Type: text/plain; charset=utf-8',
+        'MIME-Version: 1.0',
+        `Subject: ${subject}`,
+        '',
+        body
+      ];
+      const emailContent = emailLines.join('\r\n');
+      const base64Safe = Buffer.from(emailContent)
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+
+      const sendResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+        method: "POST",
+        headers: {
+          "Authorization": authHeader,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ raw: base64Safe })
+      });
+
+      if (!sendResponse.ok) {
+        const errText = await sendResponse.text();
+        throw new Error(`Gmail API send failed: ${errText}`);
+      }
+
+      const data = await sendResponse.json();
+      res.json({ success: true, messageId: data.id });
+    } catch (error: any) {
+      console.error("Gmail send error:", error);
+      res.status(500).json({ error: error.message || "Failed to send email via Gmail." });
+    }
+  });
+
+  // --- CONTACTS INTEGRATION PROXIES ---
+
+  // List user's contacts
+  app.get("/api/google/contacts/list", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ error: "Missing authorization token. Please sign in with Google." });
+    }
+
+    try {
+      const contactsRes = await fetch("https://people.googleapis.com/v1/people/me/connections?personFields=names,emailAddresses,phoneNumbers&pageSize=50", {
+        headers: { "Authorization": authHeader }
+      });
+
+      if (!contactsRes.ok) {
+        const errText = await contactsRes.text();
+        throw new Error(`People API connection list failed: ${errText}`);
+      }
+
+      const data = await contactsRes.json();
+      const connections = data.connections || [];
+
+      const formattedContacts = connections.map((conn: any) => {
+        const nameObj = conn.names?.[0] || {};
+        const fullName = nameObj.displayName || "Unnamed Contact";
+        const email = conn.emailAddresses?.[0]?.value || "";
+        const phone = conn.phoneNumbers?.[0]?.value || "";
+        return {
+          resourceName: conn.resourceName,
+          fullName,
+          email,
+          phone
+        };
+      });
+
+      res.json(formattedContacts);
+    } catch (error: any) {
+      console.error("Contacts list error:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch Google Contacts." });
+    }
+  });
+
+  // Create a contact
+  app.post("/api/google/contacts/create", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ error: "Missing authorization token. Please sign in with Google." });
+    }
+
+    const { firstName, lastName, email, phone } = req.body;
+    if (!firstName && !lastName) {
+      return res.status(400).json({ error: "At least firstName or lastName is required." });
+    }
+
+    try {
+      const names = [];
+      if (firstName || lastName) {
+        names.push({
+          givenName: firstName || "",
+          familyName: lastName || ""
+        });
+      }
+
+      const emailAddresses = [];
+      if (email) {
+        emailAddresses.push({
+          value: email,
+          type: "work"
+        });
+      }
+
+      const phoneNumbers = [];
+      if (phone) {
+        phoneNumbers.push({
+          value: phone,
+          type: "mobile"
+        });
+      }
+
+      const createResponse = await fetch("https://people.googleapis.com/v1/people:createContact", {
+        method: "POST",
+        headers: {
+          "Authorization": authHeader,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          names,
+          emailAddresses,
+          phoneNumbers
+        })
+      });
+
+      if (!createResponse.ok) {
+        const errText = await createResponse.text();
+        throw new Error(`People API Create failed: ${errText}`);
+      }
+
+      const newContact = await createResponse.json();
+      const nameObj = newContact.names?.[0] || {};
+      res.json({
+        success: true,
+        resourceName: newContact.resourceName,
+        fullName: nameObj.displayName || "Unnamed Contact",
+        email: newContact.emailAddresses?.[0]?.value || "",
+        phone: newContact.phoneNumbers?.[0]?.value || ""
+      });
+    } catch (error: any) {
+      console.error("Contacts create error:", error);
+      res.status(500).json({ error: error.message || "Failed to create Google Contact." });
+    }
+  });
+
+  // --- GEMINI CO-PILOT ASSISTANT ENDPOINT ---
+  app.post("/api/gemini/chat", async (req, res) => {
+    const { messages, selectedRole } = req.body;
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(400).json({
+        error: "Gemini API key is not configured. Please add GEMINI_API_KEY to your Settings > Secrets in AI Studio."
+      });
+    }
+
+    try {
+      const db = getDB();
+
+      // Lazy load Gemini SDK client
+      const ai = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+
+      // Construct a highly customized, factual system instruction representing the workshop
+      let rolePrompt = "You are the Devanand Workforce Assistant, a helpful AI copilot.";
+      if (selectedRole === "service") {
+        rolePrompt = "You are the Devanand Workforce Service Advisor Copilot. Your job is to help the supervisor or service managers draft friendly customer updates (SMS/Email), explain repair plans simply, diagnose vehicle complaints, and craft detailed job descriptions.";
+      } else if (selectedRole === "ops") {
+        rolePrompt = "You are the Devanand Workforce Operations Coordinator Copilot. Your focus is to optimize technician assignments, ensure bays are utilized efficiently, sequence waiting jobs, and analyze active alerts like ETD breaches or idle bays.";
+      } else if (selectedRole === "revenue") {
+        rolePrompt = "You are the Devanand Workforce Revenue Analyst Copilot. Your focus is to analyze workshop revenue splits, explain allocation combination rules (SOLO_TECH, TECH_COTECH, etc.), calculate salary weightages for 5+ person jobs, and optimize profitability.";
+      }
+
+      // Add live context from the database so the AI knows exact facts
+      const contextSummary = {
+        activeBays: db.bays.map((b: any) => ({ code: b.bay_code, name: b.bay_name, status: b.status })),
+        employees: db.employees.map((e: any) => ({ name: e.full_name, role: e.role, grade: e.employee_grade, active: e.is_active })),
+        activeJobs: db.jobCards.filter((j: any) => j.status !== "Invoiced" && j.status !== "Cancelled").map((j: any) => {
+          const srType = db.srTypes.find((s: any) => s.sr_type_id === j.sr_type_id)?.sr_type_name || "General";
+          const bay = db.bays.find((b: any) => b.bay_id === j.bay_id)?.bay_code || "None";
+          const assignedTechs = db.jobTechnicianMaps
+            .filter((m: any) => m.job_id === j.job_id)
+            .map((m: any) => {
+              const emp = db.employees.find((e: any) => e.employee_id === m.employee_id);
+              return `${emp?.full_name} (${m.tech_role})`;
+            });
+          return {
+            jobCardNo: j.job_card_no,
+            customer: j.customer_name,
+            vehicle: `${j.vehicle_make} ${j.vehicle_model}`,
+            vrn: j.vrn,
+            serviceType: srType,
+            status: j.status,
+            priority: j.priority,
+            bay,
+            etd: j.etd,
+            assignedTechs
+          };
+        }),
+        activeAlerts: db.alertLogs.filter((a: any) => a.status === "Active").map((a: any) => a.alert_message),
+        revenueSplitRules: db.revenueSplits.filter((s: any) => s.is_active).map((s: any) => ({
+          name: s.combination_label,
+          code: s.combination_code,
+          shares: `Tech: ${s.tech_pct}%, Co-Tech: ${s.co_tech_pct}%, Electrician: ${s.electrician_pct}%, AddTech: ${s.add_tech_pct}%`,
+          notes: s.notes
+        }))
+      };
+
+      const systemInstruction = `
+        ${rolePrompt}
+        
+        You have direct real-time access to the Devanand Workforce Management System. 
+        Here is the current live status of the workshop database:
+        
+        \`\`\`json
+        ${JSON.stringify(contextSummary, null, 2)}
+        \`\`\`
+        
+        RULES:
+        1. Always refer to specific technicians, customer names, job cards (e.g. JC001), or bays (e.g. B01) mentioned in the JSON data when answering.
+        2. Keep your answers clear, concise, actionable, and visually structured (using clean markdown formatting, lists, and bold headers).
+        3. Do not invent or hallucinate data that is not present in the system. If asked about a job card or technician that doesn't exist, state clearly that it is not found.
+        4. When writing customer notifications, make them warm, polite, and professional.
+      `;
+
+      // Map incoming messages to Gemini parts structure
+      const contents = messages.map((m: any) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }]
+      }));
+
+      // Call Gemini 3.5-flash
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents,
+        config: {
+          systemInstruction
+        }
+      });
+
+      const reply = response.text || "I was unable to generate a response. Please try again.";
+      res.json({ reply });
+    } catch (error: any) {
+      console.error("Gemini Assistant API error:", error);
+      res.status(500).json({ error: error.message || "An error occurred while communicating with Gemini." });
+    }
+  });
+
+  // --- VITE MIDDLEWARE SETUP ---
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Devanand Workforce Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();

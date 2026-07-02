@@ -1,0 +1,326 @@
+{
+  "entities": {
+    "Employee": {
+      "title": "Employee",
+      "description": "Represents an employee/technician in the workshop",
+      "type": "object",
+      "properties": {
+        "employee_id": { "type": "integer", "description": "Unique integer ID of the employee" },
+        "full_name": { "type": "string", "description": "Full name of the employee" },
+        "employee_code": { "type": "string", "description": "Unique code for the employee" },
+        "role": { "type": "string", "description": "Role of the employee e.g. Technician, Supervisor, Service Manager" },
+        "employee_grade": { "type": "string", "description": "Grade: Senior or Junior" },
+        "basic_salary": { "type": "integer", "description": "Monthly basic salary in INR" },
+        "mobile": { "type": "string", "description": "Mobile number" },
+        "is_active": { "type": "boolean", "description": "Active status of employee" },
+        "created_at": { "type": "string", "description": "ISO timestamp or date string of creation" },
+        "allocated_revenue": { "type": "integer", "description": "Allocated revenue sum" },
+        "target_revenue": { "type": "integer", "description": "Monthly target revenue target in INR" },
+        "paid_pct": { "type": "string", "description": "Calculated paid percentage" },
+        "tml_claim_pct": { "type": "string", "description": "TML claim percentage" }
+      },
+      "required": ["employee_id", "full_name", "employee_code", "role", "employee_grade", "basic_salary", "mobile", "is_active"]
+    },
+    "Bay": {
+      "title": "Bay",
+      "description": "Represents a workshop repair/service bay",
+      "type": "object",
+      "properties": {
+        "bay_id": { "type": "integer", "description": "Unique integer ID of the bay" },
+        "bay_code": { "type": "string", "description": "Code identifying the bay" },
+        "bay_name": { "type": "string", "description": "Human-friendly name of the bay" },
+        "bay_type": { "type": "string", "description": "Bay type e.g. General, Express, Electrical" },
+        "status": { "type": "string", "description": "Status e.g. Active, Idle, Blocked" },
+        "is_active": { "type": "boolean", "description": "Active status" }
+      },
+      "required": ["bay_id", "bay_code", "bay_name", "bay_type", "status", "is_active"]
+    },
+    "SRType": {
+      "title": "SRType",
+      "description": "Service or Repair Type",
+      "type": "object",
+      "properties": {
+        "sr_type_id": { "type": "integer", "description": "Unique ID" },
+        "sr_type_code": { "type": "string", "description": "Short code" },
+        "sr_type_name": { "type": "string", "description": "Service name" },
+        "default_duration_mins": { "type": "integer", "description": "Default duration in minutes" },
+        "is_active": { "type": "boolean", "description": "Active status" }
+      },
+      "required": ["sr_type_id", "sr_type_code", "sr_type_name", "default_duration_mins", "is_active"]
+    },
+    "RevenueSplit": {
+      "title": "RevenueSplit",
+      "description": "Technician split percentages based on combinations",
+      "type": "object",
+      "properties": {
+        "split_id": { "type": "integer", "description": "Unique split ID" },
+        "combination_code": { "type": "string", "description": "Code for technician combo" },
+        "combination_label": { "type": "string", "description": "Label for combo" },
+        "person_count": { "type": "integer", "description": "Total persons" },
+        "tech_pct": { "type": "integer", "description": "Primary technician share percentage" },
+        "co_tech_pct": { "type": "integer", "description": "Co-technician share percentage" },
+        "electrician_pct": { "type": "integer", "description": "Electrician share percentage" },
+        "add_tech_pct": { "type": "integer", "description": "Additional technician share percentage" },
+        "uses_salary_wt": { "type": "boolean", "description": "Whether basic salary weights are used" },
+        "senior_override": { "type": "boolean", "description": "Senior technician override rule active" },
+        "notes": { "type": "string", "description": "Description of rules" },
+        "is_active": { "type": "boolean", "description": "Active status" }
+      },
+      "required": ["split_id", "combination_code", "combination_label", "person_count", "tech_pct", "co_tech_pct", "electrician_pct", "add_tech_pct", "uses_salary_wt", "senior_override", "is_active"]
+    },
+    "JobCard": {
+      "title": "JobCard",
+      "description": "A workshop job card detailing vehicle service request",
+      "type": "object",
+      "properties": {
+        "job_id": { "type": "integer", "description": "Unique ID" },
+        "job_card_no": { "type": "string", "description": "DMS unique format job card number" },
+        "vrn": { "type": "string", "description": "Vehicle registration number" },
+        "customer_name": { "type": "string", "description": "Customer Name" },
+        "customer_mobile": { "type": "string", "description": "Mobile number" },
+        "vehicle_make": { "type": "string", "description": "Vehicle Manufacturer" },
+        "vehicle_model": { "type": "string", "description": "Vehicle Model" },
+        "vehicle_year": { "type": "integer", "description": "Year of manufacture" },
+        "km_reading": { "type": "integer", "description": "Odometer reading" },
+        "sr_type_id": { "type": "integer", "description": "Service Type ID reference" },
+        "job_description": { "type": "string", "description": "Description of tasks" },
+        "priority": { "type": "string", "description": "Priority level: Normal, High, Critical" },
+        "bay_id": { "type": "integer", "description": "Bay ID reference" },
+        "status": { "type": "string", "description": "State of job: Queue, Active, Hold, Completed, Invoiced" },
+        "etd": { "type": "string", "description": "Estimated time of completion" },
+        "started_at": { "type": "string", "description": "Work starting timestamp" },
+        "completed_at": { "type": "string", "description": "Work completion timestamp" },
+        "invoiced_at": { "type": "string", "description": "Invoice creation timestamp" },
+        "created_by": { "type": "integer", "description": "Service Advisor Employee ID" },
+        "created_at": { "type": "string", "description": "Creation timestamp" },
+        "updated_at": { "type": "string", "description": "Last updated timestamp" },
+        "workshop_stage": { "type": "string", "description": "Detailed stage description" },
+        "l1_delay": { "type": "string", "description": "L1 delay type" },
+        "l2_delay": { "type": "string", "description": "L2 delay type" },
+        "l3_delay": { "type": "string", "description": "L3 delay type" },
+        "l5_delay": { "type": "string", "description": "L5 delay type" },
+        "delay_notes": { "type": "string", "description": "Explanation notes on delay reasons" },
+        "time_slot": { "type": "string", "description": "Assigned slot" },
+        "tat_status": { "type": "string", "description": "TAT rating e.g. WITHIN TAT, BREACHED" },
+        "pending_reason": { "type": "string", "description": "Reason for Hold/Pending" },
+        "remarks": { "type": "string", "description": "Final or general remarks" },
+        "date_in": { "type": "string", "description": "Vehicle intake date" },
+        "time_in": { "type": "string", "description": "Vehicle intake time" },
+        "expected_date_out": { "type": "string", "description": "Estimated date out" },
+        "expected_time_of_completion": { "type": "string", "description": "Estimated time out" },
+        "time_out": { "type": "string", "description": "Release time" },
+        "date_completed": { "type": "string", "description": "Completion date" }
+      },
+      "required": ["job_id", "job_card_no", "vrn", "customer_name", "customer_mobile", "vehicle_make", "vehicle_model", "vehicle_year", "km_reading", "sr_type_id", "job_description", "priority", "status", "etd", "created_by", "created_at"]
+    },
+    "JobTechnicianMap": {
+      "title": "JobTechnicianMap",
+      "description": "Technician assignment mapped to a Job Card",
+      "type": "object",
+      "properties": {
+        "map_id": { "type": "integer", "description": "Primary ID" },
+        "job_id": { "type": "integer", "description": "Job Card Reference ID" },
+        "employee_id": { "type": "integer", "description": "Technician Employee ID" },
+        "tech_role": { "type": "string", "description": "Assigned sub-role e.g. Tech, Co-Tech, Electrician" },
+        "assigned_at": { "type": "string", "description": "Assignment timestamp" }
+      },
+      "required": ["map_id", "job_id", "employee_id", "tech_role"]
+    },
+    "JobRevenue": {
+      "title": "JobRevenue",
+      "description": "Labour & parts revenue breakdown for a completed Job Card",
+      "type": "object",
+      "properties": {
+        "revenue_id": { "type": "integer", "description": "Revenue ID" },
+        "job_id": { "type": "integer", "description": "Job Card ID" },
+        "labour_amount": { "type": "integer", "description": "Labour bill in INR" },
+        "parts_amount": { "type": "integer", "description": "Parts bill in INR" },
+        "total_amount": { "type": "integer", "description": "Total bill in INR" },
+        "split_id": { "type": "integer", "description": "Applied RevenueSplit ID" },
+        "calculated_at": { "type": "string", "description": "Calculation timestamp" }
+      },
+      "required": ["revenue_id", "job_id", "labour_amount", "parts_amount", "total_amount", "split_id"]
+    },
+    "JobRevenueSplitDetail": {
+      "title": "JobRevenueSplitDetail",
+      "description": "Share of parts or labour amount distributed per technician",
+      "type": "object",
+      "properties": {
+        "detail_id": { "type": "integer", "description": "Split detail ID" },
+        "revenue_id": { "type": "integer", "description": "JobRevenue Reference ID" },
+        "employee_id": { "type": "integer", "description": "Technician Employee ID" },
+        "tech_role": { "type": "string", "description": "Role of technician during work" },
+        "split_pct": { "type": "integer", "description": "Individual split percentage credit" },
+        "split_amount": { "type": "integer", "description": "Revenue credited in INR" }
+      },
+      "required": ["detail_id", "revenue_id", "employee_id", "tech_role", "split_pct", "split_amount"]
+    },
+    "CarryForwardLog": {
+      "title": "CarryForwardLog",
+      "description": "Log records of work deferred or carry forward requests",
+      "type": "object",
+      "properties": {
+        "cf_id": { "type": "integer", "description": "Unique log ID" },
+        "job_id": { "type": "integer", "description": "Job Card ID" },
+        "cf_reason": { "type": "string", "description": "Reason of carry forward" },
+        "raised_by": { "type": "integer", "description": "Service Advisor Employee ID" },
+        "approved_by": { "type": "integer", "description": "Manager Employee ID" },
+        "cf_status": { "type": "string", "description": "Status: Pending, Approved, Rejected" },
+        "raised_at": { "type": "string", "description": "Creation timestamp" },
+        "actioned_at": { "type": "string", "description": "Manager action timestamp" }
+      },
+      "required": ["cf_id", "job_id", "cf_reason", "raised_by", "cf_status", "raised_at"]
+    },
+    "ReworkLog": {
+      "title": "ReworkLog",
+      "description": "Logs of customer rework / complaint jobs",
+      "type": "object",
+      "properties": {
+        "rework_id": { "type": "integer", "description": "Unique rework ID" },
+        "original_job_id": { "type": "integer", "description": "First Job Card ID" },
+        "new_job_id": { "type": "integer", "description": "New Rework Job Card ID" },
+        "rework_reason": { "type": "string", "description": "Detail on complaint/defect" },
+        "original_tech_id": { "type": "integer", "description": "Primary technician from original job" },
+        "raised_by": { "type": "integer", "description": "Employee ID who logged" },
+        "approved_by": { "type": "integer", "description": "Approving supervisor" },
+        "rework_status": { "type": "string", "description": "Status: Pending, Approved, Rejected" },
+        "raised_at": { "type": "string", "description": "Logged timestamp" },
+        "actioned_at": { "type": "string", "description": "Actioned timestamp" }
+      },
+      "required": ["rework_id", "original_job_id", "rework_reason", "original_tech_id", "raised_by", "rework_status", "raised_at"]
+    },
+    "AlertConfig": {
+      "title": "AlertConfig",
+      "description": "Trigger parameters for automated TAT and production alerts",
+      "type": "object",
+      "properties": {
+        "alert_config_id": { "type": "integer", "description": "Unique config ID" },
+        "alert_code": { "type": "string", "description": "Alert system code" },
+        "alert_name": { "type": "string", "description": "Alert title" },
+        "alert_category": { "type": "string", "description": "Alert category e.g. ETD, Bay, Productivity" },
+        "trigger_condition": { "type": "string", "description": "Rule explanation" },
+        "threshold_value": { "type": "integer", "description": "Numeric trigger threshold" },
+        "threshold_unit": { "type": "string", "description": "Unit e.g. Minutes, Jobs/Day" },
+        "severity": { "type": "string", "description": "Severity: Low, Medium, High, Critical" },
+        "is_active": { "type": "boolean", "description": "Is alert configuration live" }
+      },
+      "required": ["alert_config_id", "alert_code", "alert_name", "alert_category", "trigger_condition", "threshold_value", "threshold_unit", "severity", "is_active"]
+    },
+    "AlertLog": {
+      "title": "AlertLog",
+      "description": "Log of generated active alerts and their resolution state",
+      "type": "object",
+      "properties": {
+        "alert_id": { "type": "integer", "description": "Unique alert ID" },
+        "alert_config_id": { "type": "integer", "description": "Alert Configuration reference ID" },
+        "entity_type": { "type": "string", "description": "Associated entity e.g. JobCard, Bay" },
+        "entity_id": { "type": "integer", "description": "Associated entity integer ID" },
+        "alert_message": { "type": "string", "description": "Detailed warning text" },
+        "severity": { "type": "string", "description": "Severity scale" },
+        "status": { "type": "string", "description": "Status: Active, Acknowledged, Resolved" },
+        "acknowledged_by": { "type": "integer", "description": "Acknowledge advisor employee ID" },
+        "acknowledged_at": { "type": "string", "description": "Acknowledge timestamp" },
+        "resolved_at": { "type": "string", "description": "Resolution timestamp" },
+        "created_at": { "type": "string", "description": "Generated timestamp" }
+      },
+      "required": ["alert_id", "alert_config_id", "entity_type", "entity_id", "alert_message", "severity", "status", "created_at"]
+    },
+    "DMSImportBatch": {
+      "title": "DMSImportBatch",
+      "description": "Represents an import batch of external spreadsheet dms records",
+      "type": "object",
+      "properties": {
+        "batch_id": { "type": "integer", "description": "Unique batch ID" },
+        "imported_by": { "type": "integer", "description": "Employee ID who imported" },
+        "file_name": { "type": "string", "description": "Source spreadsheet filename" },
+        "total_rows": { "type": "integer", "description": "Total records inside" },
+        "matched_rows": { "type": "integer", "description": "Rows matched correctly" },
+        "unmatched_rows": { "type": "integer", "description": "Unmatched/conflict rows" },
+        "status": { "type": "string", "description": "Import result status" },
+        "imported_at": { "type": "string", "description": "Upload ISO timestamp" }
+      },
+      "required": ["batch_id", "imported_by", "file_name", "total_rows", "matched_rows", "unmatched_rows", "status", "imported_at"]
+    },
+    "DMSImportRow": {
+      "title": "DMSImportRow",
+      "description": "Individual row parsed from the DMS spreadsheet",
+      "type": "object",
+      "properties": {
+        "row_id": { "type": "integer", "description": "Unique row ID" },
+        "batch_id": { "type": "integer", "description": "Associated Import Batch ID" },
+        "row_number": { "type": "integer", "description": "Index in raw file" },
+        "vrn": { "type": "string", "description": "Vehicle Reg Number" },
+        "job_date": { "type": "string", "description": "DMS billing/job date" },
+        "sr_type": { "type": "string", "description": "Service category string" },
+        "labour_amount": { "type": "integer", "description": "Labour billing" },
+        "parts_amount": { "type": "integer", "description": "Parts billing" },
+        "total_amount": { "type": "integer", "description": "Sum billing" },
+        "matched_job_id": { "type": "integer", "description": "Internal matched Job ID" },
+        "match_status": { "type": "string", "description": "Match status e.g. MATCHED, MISMATCH, CONFLICT" },
+        "conflict_reason": { "type": "string", "description": "Explanation of validation error or difference" },
+        "resolved_by": { "type": "integer", "description": "Supervisor ID who resolved" },
+        "resolved_at": { "type": "string", "description": "Resolution timestamp" },
+        "raw_data": { "type": "string", "description": "Complete raw row serialized as JSON" }
+      },
+      "required": ["row_id", "batch_id", "row_number", "vrn", "job_date", "sr_type", "labour_amount", "parts_amount", "total_amount", "match_status"]
+    }
+  },
+  "firestore": {
+    "employees": {
+      "schema": "Employee",
+      "description": "Technicians and staff collection"
+    },
+    "bays": {
+      "schema": "Bay",
+      "description": "Workshop service bays collection"
+    },
+    "srTypes": {
+      "schema": "SRType",
+      "description": "Configured service repair types collection"
+    },
+    "revenueSplits": {
+      "schema": "RevenueSplit",
+      "description": "Revenue share distribution percentage guidelines"
+    },
+    "jobCards": {
+      "schema": "JobCard",
+      "description": "All job cards created or processed in the workshop"
+    },
+    "jobTechnicianMaps": {
+      "schema": "JobTechnicianMap",
+      "description": "Technicians assigned to workshop jobs"
+    },
+    "jobRevenues": {
+      "schema": "JobRevenue",
+      "description": "Completed work financial logs"
+    },
+    "jobRevenueSplitDetails": {
+      "schema": "JobRevenueSplitDetail",
+      "description": "Calculated actual incentive split credits for each active worker"
+    },
+    "carryForwardLogs": {
+      "schema": "CarryForwardLog",
+      "description": "Carry forward history and pending flags"
+    },
+    "reworkLogs": {
+      "schema": "ReworkLog",
+      "description": "Rework records"
+    },
+    "alertConfigs": {
+      "schema": "AlertConfig",
+      "description": "Alert categories and rules"
+    },
+    "alertLogs": {
+      "schema": "AlertLog",
+      "description": "Active and history alert log warnings"
+    },
+    "dmsImportBatches": {
+      "schema": "DMSImportBatch",
+      "description": "Imported DMS batches"
+    },
+    "dmsImportRows": {
+      "schema": "DMSImportRow",
+      "description": "Rows matching spreadsheet entries"
+    }
+  }
+}

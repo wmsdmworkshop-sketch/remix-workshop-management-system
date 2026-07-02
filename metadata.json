@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Workshop Management System",
+  "description": "A full-featured workshop management system with job cards, bay tracking, technician allocation, revenue splitting, and Google Sheets \u0026 Drive integrations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

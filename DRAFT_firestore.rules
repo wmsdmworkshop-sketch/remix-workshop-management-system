@@ -1,0 +1,137 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default-Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- REUSABLE SECURITY PRIMITIVES ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isManager() {
+      // Look up if user has manager privileges
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // --- COLLECTION MATCHES ---
+
+    // Employees
+    match /employees/{employeeId} {
+      allow read: if isSignedIn();
+      allow write: if isManager();
+    }
+
+    // Bays
+    match /bays/{bayId} {
+      allow read: if isSignedIn();
+      allow write: if isManager();
+    }
+
+    // SRTypes
+    match /srTypes/{srTypeId} {
+      allow read: if isSignedIn();
+      allow write: if isManager();
+    }
+
+    // RevenueSplits
+    match /revenueSplits/{splitId} {
+      allow read: if isSignedIn();
+      allow write: if isManager();
+    }
+
+    // Job Cards
+    match /jobCards/{jobId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() 
+        && incoming().job_id is int 
+        && incoming().job_card_no is string && incoming().job_card_no.size() < 64
+        && incoming().vrn is string && incoming().vrn.size() < 32
+        && incoming().customer_name is string && incoming().customer_name.size() < 128
+        && incoming().status == 'Queue';
+      
+      allow update: if isSignedIn() 
+        && (existing().status != 'Invoiced' || isManager()) // Prevent editing invoiced jobs unless manager
+        && incoming().job_id == existing().job_id;
+        
+      allow delete: if isManager();
+    }
+
+    // Job Technician Maps
+    match /jobTechnicianMaps/{mapId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Job Revenues
+    match /jobRevenues/{revenueId} {
+      allow read: if isSignedIn();
+      allow write: if isManager();
+    }
+
+    // Job Revenue Split Details
+    match /jobRevenueSplitDetails/{detailId} {
+      allow read: if isSignedIn();
+      allow write: if isManager();
+    }
+
+    // Carry Forward Logs
+    match /carryForwardLogs/{cfId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && incoming().cf_status == 'Pending';
+      allow update: if isManager() || (isSignedIn() && incoming().cf_status == existing().cf_status);
+      allow delete: if isManager();
+    }
+
+    // Rework Logs
+    match /reworkLogs/{reworkId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && incoming().rework_status == 'Pending';
+      allow update: if isManager() || (isSignedIn() && incoming().rework_status == existing().rework_status);
+      allow delete: if isManager();
+    }
+
+    // Alert Configs
+    match /alertConfigs/{alertConfigId} {
+      allow read: if isSignedIn();
+      allow write: if isManager();
+    }
+
+    // Alert Logs
+    match /alertLogs/{alertId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // DMS Import Batches
+    match /dmsImportBatches/{batchId} {
+      allow read: if isSignedIn();
+      allow write: if isManager();
+    }
+
+    // DMS Import Rows
+    match /dmsImportRows/{rowId} {
+      allow read: if isSignedIn();
+      allow write: if isManager();
+    }
+  }
+}
