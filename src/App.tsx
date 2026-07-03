@@ -249,6 +249,13 @@ export default function App() {
       { id: "jobs", label: "Job Cards", icon: Wrench },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
     ],
+    receptionist: [
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "vehicle-lookup", label: "Vehicle History", icon: History },
+      { id: "gate-entry", label: "Gate Entry", icon: Truck },
+      { id: "jobs", label: "Job Cards", icon: Wrench },
+      { id: "bay-tat", label: "Bay Monitor", icon: Clock },
+    ],
     tools_incharge: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
@@ -802,9 +809,9 @@ export default function App() {
     <div className="min-h-screen bg-[#f1f5f9] flex flex-col font-sans text-slate-900">
       
       {/* Sidebar Navigation - Desktop */}
-      <aside className="hidden md:flex flex-col h-screen overflow-y-auto fixed left-0 top-0 w-64 bg-[#1e293b] text-slate-400 p-5 shrink-0 justify-between z-40 shadow-xl">
-        <div className="space-y-6">
-          <div className="flex items-center gap-3 border-b border-slate-700/50 pb-5">
+      <aside className="hidden md:flex flex-col h-screen fixed left-0 top-0 w-64 bg-[#1e293b] text-slate-400 p-5 shrink-0 justify-between z-40 shadow-xl">
+        <div className="flex flex-col flex-1 min-h-0 space-y-4">
+          <div className="flex items-center gap-3 border-b border-slate-700/50 pb-4 shrink-0">
             <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center font-bold text-xl text-white">
               W
             </div>
@@ -814,7 +821,7 @@ export default function App() {
             </div>
           </div>
 
-          <nav className="space-y-1">
+          <nav className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar min-h-0">
             {((user && ROLE_TABS[user.role]) || ROLE_TABS["reception"]).map((tab) => {
               const TabIcon = tab.icon;
               const activeJobCount = tab.id === "jobs" ? jobCards.filter(j => !j.gate_out_time && !['Closed', 'Cancelled'].includes(j.status)).length : 0;
@@ -839,7 +846,7 @@ export default function App() {
           </nav>
           
           {(isAdmin || isDeveloper) && (
-            <div className="pt-4 border-t border-slate-700/50 space-y-2">
+            <div className="pt-3 border-t border-slate-700/50 space-y-2 shrink-0">
               <button
                 onClick={handleReloadDatabase}
                 disabled={isReloading}
