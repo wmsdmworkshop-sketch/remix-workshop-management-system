@@ -1,7 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { UploadCloud, CheckCircle, AlertTriangle, HelpCircle, RefreshCw, ClipboardList, Download } from "lucide-react";
 import { DMSImportBatch, DMSImportRow, JobCard } from "../types";
 import DmsImporterConsolidated from "./dms-import";
+import FunnySpinner from "./FunnySpinner";
+import { Database } from "lucide-react";
 
 interface DmsImporterProps {
   isAdmin?: boolean;
@@ -79,11 +81,12 @@ export default function DmsImporter({
       fetch("/api/master/vehicles")
         .then(res => res.json())
         .then(data => {
-          setMasterVehicles(data);
+          setMasterVehicles(Array.isArray(data) ? data : []);
           setLoadingMasterVehicles(false);
         })
         .catch(err => {
           console.error("Failed to load master vehicles:", err);
+          setMasterVehicles([]);
           setLoadingMasterVehicles(false);
         });
     }
@@ -929,9 +932,10 @@ export default function DmsImporter({
           </div>
           <button 
             onClick={() => {
+              const safeVehicles = Array.isArray(masterVehicles) ? masterVehicles : [];
               const csv = [
                 "VRN,Customer,Mobile,Latest Job Date,Latest Job Card,Labour,Parts",
-                ...masterVehicles.map(v => `${v.vrn},${v.customer_name},${v.customer_mobile},${v.job_date},${v.job_card_no},${v.labour_amount},${v.parts_amount}`)
+                ...safeVehicles.map(v => `${v.vrn},${v.customer_name},${v.customer_mobile},${v.job_date},${v.job_card_no},${v.labour_amount},${v.parts_amount}`)
               ].join("\n");
               const blob = new Blob([csv], { type: 'text/csv' });
               const url = window.URL.createObjectURL(blob);
@@ -966,7 +970,7 @@ export default function DmsImporter({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                {masterVehicles.length === 0 ? (
+                {(!Array.isArray(masterVehicles) || masterVehicles.length === 0) ? (
                   <tr>
                     <td colSpan={6} className="py-8 text-center text-slate-400 italic">No historical master data available.</td>
                   </tr>

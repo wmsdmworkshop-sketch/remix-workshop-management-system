@@ -1,3 +1,5 @@
+import { useEscapeKey } from "../hooks/useEscapeKey";
+import FunnySpinner from "./FunnySpinner";
 import React, { useState, useMemo } from "react";
 import { 
   TrendingUp, 
@@ -83,7 +85,7 @@ aslam,technician trainee,"1,292.10","36,000.00",3.59%,0.00%,55.56%
 MOHAMMED ZAKI,Jr. technician,590.00,"48,000.00",1.23%,0.00%,51.61%
 MAHMED ALTAF AHMED,Jr.Electrician,0.00,"45,120.00",0.00%,0.00%,100.00%`;
 
-export default function ProductivityDashboard({ employees, jobCards, onRefresh, isAdmin, setIsAdmin }: ProductivityProps) {
+export default function ProductivityDashboard({ employees, jobCards, onRefresh, isAdmin, isManager, setIsAdmin }: ProductivityProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
   const [activeTab, setActiveTab] = useState<"table" | "charts" | "importer" | "calculator">("table");

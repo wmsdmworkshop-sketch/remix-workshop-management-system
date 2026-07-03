@@ -116,6 +116,7 @@ export default function App() {
 
   const userRole = user ? user.role : "reception";
   const isAdmin = userRole === "admin" || userRole === "developer";
+  const isManager = isAdmin || userRole === "service_manager" || userRole === "workshop_manager";
   const isDeveloper = userRole === "developer";
   const employeeId = user ? user.employee_id : null;
 

@@ -1,3 +1,4 @@
+import FunnySpinner from "./FunnySpinner";
 import React, { useState, useEffect, useRef } from "react";
 import {
   Camera,

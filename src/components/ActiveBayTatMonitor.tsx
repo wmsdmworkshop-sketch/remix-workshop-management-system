@@ -1,3 +1,4 @@
+import FunnySpinner from "./FunnySpinner";
 import React, { useState, useMemo } from "react";
 import { 
   Clock, 

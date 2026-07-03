@@ -1,3 +1,4 @@
+import FunnySpinner from "./FunnySpinner";
 import React, { useState, useEffect } from "react";
 import {
   Calendar,
