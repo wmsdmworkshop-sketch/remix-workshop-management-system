@@ -28,7 +28,7 @@ export default function FsbManager() {
       ]);
       const jcData = await jcRes.json();
       const fsbData = await fsbRes.json();
-      setJobCards(jcData);
+      setJobCards(Array.isArray(jcData) ? jcData : (jcData.jobCards || []));
       setFsbRecords(fsbData);
     } catch (e) {
       console.error('Failed to load FSB data:', e);

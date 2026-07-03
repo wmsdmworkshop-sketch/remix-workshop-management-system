@@ -23,16 +23,15 @@ export default function BillingExit() {
     try {
       const res = await fetch('/api/job-cards');
       const data = await res.json();
-      if (Array.isArray(data)) {
-        // Filter: gate_out_time is null AND billing_status !== 'Invoiced' AND invoice_no does not start with 'IDEVAN2627'
-        const filtered = data.filter((jc: JobCard) => {
-          const isStillInWorkshop = jc.gate_out_time === null || jc.gate_out_time === undefined || jc.gate_out_time === '';
-          const isNotInvoiced = jc.billing_status !== 'Invoiced';
-          const isNotOldBilled = !(jc.invoice_no && jc.invoice_no.startsWith('IDEVAN2627'));
-          return isStillInWorkshop && isNotInvoiced && isNotOldBilled;
-        });
-        setJobCards(filtered);
-      }
+      const jobCardsArray = Array.isArray(data) ? data : (data.jobCards || []);
+      // Filter: gate_out_time is null AND billing_status !== 'Invoiced' AND invoice_no does not start with 'IDEVAN2627'
+      const filtered = jobCardsArray.filter((jc: JobCard) => {
+        const isStillInWorkshop = jc.gate_out_time === null || jc.gate_out_time === undefined || jc.gate_out_time === '';
+        const isNotInvoiced = jc.billing_status !== 'Invoiced';
+        const isNotOldBilled = !(jc.invoice_no && jc.invoice_no.startsWith('IDEVAN2627'));
+        return isStillInWorkshop && isNotInvoiced && isNotOldBilled;
+      });
+      setJobCards(filtered);
     } catch (e) {
       console.error('Failed to fetch job cards for billing:', e);
     } finally {
