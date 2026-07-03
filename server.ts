@@ -1919,7 +1919,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // --- JOB CARDS ENDPOINTS ---
-  app.get("/api/vehicle/history", (req, res) => {
+  app.get("/api/vehicle/history", async (req, res) => {
     const { query } = req.query;
     if (!query || typeof query !== "string") {
       return res.status(400).json({ error: "Query parameter is required" });
@@ -1948,12 +1948,38 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     const reworks = db.reworkLogs ? db.reworkLogs.filter((r: any) => jobIds.includes(r.original_job_id) || jobIds.includes(r.new_job_id)) : [];
     const carryForwards = db.carryForwardLogs ? db.carryForwardLogs.filter((c: any) => jobIds.includes(c.job_id)) : [];
 
+    // Prioritize these fields in DMS pull query: last_service_date, odometer_reading, vrn, chassis_no
+    let lastServiceDate: string | null = null;
+    let odometerReading: number | null = null;
+
+    try {
+      const [historyRows] = await dbPool.query(
+        "SELECT last_service_date, odometer_reading, vehicle_reg, chassis_no, actual_delivery, created_at " +
+        "FROM job_card_master " +
+        "WHERE REPLACE(REPLACE(UPPER(vehicle_reg), '-', ''), ' ', '') = ? " +
+        "   OR REPLACE(REPLACE(UPPER(vin), '-', ''), ' ', '') = ? " +
+        "   OR REPLACE(REPLACE(UPPER(chassis_no), '-', ''), ' ', '') = ? " +
+        "ORDER BY COALESCE(actual_delivery, created_at) DESC LIMIT 1",
+        [cleanSearch, cleanSearch, cleanSearch]
+      ) as any[];
+
+      if (historyRows && historyRows.length > 0) {
+        const row = historyRows[0];
+        lastServiceDate = row.last_service_date || row.actual_delivery || row.created_at || null;
+        odometerReading = row.odometer_reading || null;
+      }
+    } catch (e) {
+      console.error("DMS pull query failed or columns do not exist yet:", e);
+    }
+
     res.json({
       jobCards: matchingJobs,
       technicianMaps: maps,
       revenues,
       reworkLogs: reworks,
-      carryForwardLogs: carryForwards
+      carryForwardLogs: carryForwards,
+      last_service_date: lastServiceDate,
+      odometer_reading: odometerReading
     });
   });
 

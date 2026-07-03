@@ -125,7 +125,10 @@ async function saveJobCardsToMaster(jobCards: any[]) {
       created_by: row.created_by || 22,
       live_status: row.workshop_stage || 'Waiting',
       billing_status: row.status === 'Invoiced' ? 'Paid' : 'Pending',
-      estimated_amount: Number(row.labor_price || 0) + Number(row.parts_price || 0)
+      estimated_amount: Number(row.labor_price || 0) + Number(row.parts_price || 0),
+      last_service_date: row.last_service_date || row.completed_at || row.created_at || null,
+      odometer_reading: row.odometer_reading || row.km_reading || null,
+      chassis_no: row.chassis_number || row.vin || null
     };
 
     const keys = Object.keys(masterRow);
@@ -317,6 +320,9 @@ export async function ensureTablesExist(): Promise<void> {
       \`created_by\` INT NOT NULL DEFAULT 1,
       \`live_status\` VARCHAR(100) DEFAULT NULL,
       \`billing_status\` VARCHAR(50) DEFAULT NULL,
+      \`last_service_date\` VARCHAR(100) DEFAULT NULL,
+      \`odometer_reading\` INT DEFAULT NULL,
+      \`chassis_no\` VARCHAR(100) DEFAULT NULL,
       PRIMARY KEY (\`job_card_id\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
   `);
@@ -517,7 +523,32 @@ export async function ensureTablesExist(): Promise<void> {
     // Ignore error if column already exists
   }
   try {
+    await db.execute("ALTER TABLE `job_cards` ADD COLUMN `last_service_date` VARCHAR(100) DEFAULT NULL");
+  } catch (err) {
+    // Ignore error if column already exists
+  }
+  try {
+    await db.execute("ALTER TABLE `job_cards` ADD COLUMN `odometer_reading` INT DEFAULT NULL");
+  } catch (err) {
+    // Ignore error if column already exists
+  }
+  try {
     await db.execute("ALTER TABLE `job_card_master` ADD COLUMN `vin` VARCHAR(50) DEFAULT NULL");
+  } catch (err) {
+    // Ignore error if column already exists
+  }
+  try {
+    await db.execute("ALTER TABLE `job_card_master` ADD COLUMN `last_service_date` VARCHAR(100) DEFAULT NULL");
+  } catch (err) {
+    // Ignore error if column already exists
+  }
+  try {
+    await db.execute("ALTER TABLE `job_card_master` ADD COLUMN `odometer_reading` INT DEFAULT NULL");
+  } catch (err) {
+    // Ignore error if column already exists
+  }
+  try {
+    await db.execute("ALTER TABLE `job_card_master` ADD COLUMN `chassis_no` VARCHAR(100) DEFAULT NULL");
   } catch (err) {
     // Ignore error if column already exists
   }
@@ -619,7 +650,7 @@ export async function syncLoad(): Promise<any> {
     // Fetch job_cards to link fields like km_reading
     let jobCardsRows: any[] = [];
     try {
-      const [jcRows] = await db.query("SELECT job_id, km_reading, vehicle_make, vehicle_model, vehicle_year FROM job_cards") as any[];
+      const [jcRows] = await db.query("SELECT job_id, km_reading, vehicle_make, vehicle_model, vehicle_year, chassis_number, last_service_date, odometer_reading FROM job_cards") as any[];
       jobCardsRows = jcRows;
     } catch (e) {
       console.error("Could not load job_cards rows for mapping:", e);
@@ -724,12 +755,15 @@ export async function syncLoad(): Promise<any> {
         job_card_no: row.job_card_no,
         vrn: row.vehicle_reg || '',
         vin: row.vin || undefined,
+        chassis_number: row.chassis_no || (jcMatch ? jcMatch.chassis_number : undefined) || row.vin || undefined,
         customer_name: row.customer_name || 'Walk-in Customer',
         customer_mobile: row.mobile || row.driver_mobile || '0000000000',
         vehicle_make: jcMatch ? jcMatch.vehicle_make : 'Tata',
         vehicle_model: jcMatch && jcMatch.vehicle_model ? jcMatch.vehicle_model : (row.service_type || 'Commercial Vehicle'),
         vehicle_year: jcMatch ? jcMatch.vehicle_year : 2024,
-        km_reading: jcMatch && jcMatch.km_reading !== undefined ? jcMatch.km_reading : null,
+        km_reading: row.odometer_reading !== undefined && row.odometer_reading !== null ? row.odometer_reading : (jcMatch && jcMatch.km_reading !== undefined ? jcMatch.km_reading : null),
+        last_service_date: row.last_service_date || (jcMatch ? jcMatch.last_service_date : undefined) || row.actual_delivery || row.created_at || null,
+        odometer_reading: row.odometer_reading || (jcMatch ? jcMatch.odometer_reading : undefined) || (jcMatch ? jcMatch.km_reading : null) || null,
         sr_type_id: srTypeId,
         job_description: row.service_type || 'General Repair and Service',
         priority: 'Normal',

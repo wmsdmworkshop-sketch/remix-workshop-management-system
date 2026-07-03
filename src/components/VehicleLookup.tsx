@@ -36,6 +36,8 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
     revenues: any[];
     reworkLogs: any[];
     carryForwardLogs: any[];
+    last_service_date?: string | null;
+    odometer_reading?: number | null;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -366,6 +368,23 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
                   Order: Newest to Oldest
                 </span>
               </div>
+
+              {/* Last Service Date & Odometer reading info header */}
+              {(results.last_service_date || results.odometer_reading) && (
+                <div className="mb-6 p-4 bg-slate-950/80 border border-slate-800/85 rounded-xl flex items-center gap-2.5 text-slate-300 font-mono text-xs tracking-wide shadow-inner">
+                  <Clock className="w-4 h-4 text-indigo-400 shrink-0" />
+                  <span>
+                    Last Service: {results.last_service_date ? (() => {
+                      const d = new Date(results.last_service_date);
+                      if (isNaN(d.getTime())) return results.last_service_date;
+                      const dd = String(d.getDate()).padStart(2, '0');
+                      const mm = String(d.getMonth() + 1).padStart(2, '0');
+                      const yyyy = d.getFullYear();
+                      return `${dd}/${mm}/${yyyy}`;
+                    })() : "N/A"} | ODO: {results.odometer_reading ? results.odometer_reading.toLocaleString() : "XXXXX"} km
+                  </span>
+                </div>
+              )}
 
               {/* Timeline Container */}
               <div className="relative border-l border-slate-800 pl-6 ml-3 space-y-8">
