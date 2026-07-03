@@ -881,7 +881,7 @@ export default function App() {
         <div className="border-t border-slate-700/50 pt-4 flex flex-col gap-3">
           <div className="flex items-center space-x-3 px-2 py-2 mb-1 bg-orange-500/10 border border-orange-500/20 rounded-lg">
             <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
-            <span className="text-[10px] text-orange-400 font-bold uppercase tracking-wider">System Live • 2.4.1</span>
+            <span className="text-[10px] text-orange-400 font-bold uppercase tracking-wider">System Live • 2.5.0</span>
           </div>
 
           {user ? (
