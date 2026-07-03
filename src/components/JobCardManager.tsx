@@ -671,9 +671,11 @@ export default function JobCardManager({
     const defaultAdvisor = advisors[0] || employees.find(e => e.is_active && e.role && ["manager", "supervisor", "advisor", "admin"].some(role => e.role.toLowerCase().includes(role))) || employees[0];
 
     if (userObj) {
+      const userFullName = userObj.full_name || userObj.displayName || "";
+      const userUsername = userObj.username || "";
       const matchedEmp = employees.find(e => 
-        e.full_name.toLowerCase() === userObj.full_name.toLowerCase() ||
-        (e.employee_code && userObj.username && e.employee_code.toLowerCase() === userObj.username.toLowerCase())
+        (userFullName && e.full_name.toLowerCase() === userFullName.toLowerCase()) ||
+        (e.employee_code && userUsername && e.employee_code.toLowerCase() === userUsername.toLowerCase())
       );
       if (matchedEmp) {
         setCreatedBy(matchedEmp.employee_id);
