@@ -926,7 +926,7 @@ async function startServer() {
             email || null,
             role,          // maps to user_role column
             role,          // access_level defaults to same as role
-            mobile_no || null,
+            mobile_no || "",
             password_hash
           ]
         ) as any;
