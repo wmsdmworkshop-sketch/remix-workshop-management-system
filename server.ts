@@ -483,33 +483,56 @@ async function startServer() {
       console.error("Failed to verify or seed users table:", error);
     }
 
-  // Recalculate employee productivity metrics (Allocated Revenue, Paid %, TML Claim %) based strictly on user specifications
+  // Recalculate employee productivity metrics (Allocated Revenue, Paid %, TML Claim %) based strictly on user specifications (current month live data only)
   const recalculateEmployeeProductivity = (db: any) => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth(); // 0-indexed
+
+    // Identify job IDs for the current calendar month
+    const currentMonthJobIds = new Set<number>();
+    db.jobCards.forEach((j: any) => {
+      let jobDate: Date | null = null;
+      if (j.created_at) {
+        jobDate = new Date(j.created_at);
+      } else if (j.date_in) {
+        jobDate = new Date(j.date_in);
+      }
+      
+      if (jobDate && !isNaN(jobDate.getTime())) {
+        if (jobDate.getFullYear() === currentYear && jobDate.getMonth() === currentMonth) {
+          currentMonthJobIds.add(j.job_id);
+        }
+      }
+    });
+
     db.employees.forEach((emp: any) => {
-      // 1. Calculate allocated revenue based strictly on splits
-      const empSplits = db.jobRevenueSplitDetails.filter((d: any) => d.employee_id === emp.employee_id);
+      // 1. Calculate allocated revenue based strictly on splits of jobs in the current month
+      const empSplits = db.jobRevenueSplitDetails.filter((d: any) => {
+        const rev = db.jobRevenues.find((r: any) => r.revenue_id === d.revenue_id);
+        return d.employee_id === emp.employee_id && rev && currentMonthJobIds.has(rev.job_id);
+      });
+
       if (empSplits.length > 0) {
         const dynamicSum = empSplits.reduce((sum: number, d: any) => sum + (d.split_amount || 0), 0);
         emp.allocated_revenue = Math.round(dynamicSum);
       } else {
-        if (emp.allocated_revenue === undefined) {
-          emp.allocated_revenue = 0;
-        }
+        emp.allocated_revenue = 0;
       }
 
-      // 2. Find all job cards assigned to this employee
+      // 2. Find all job cards assigned to this employee (filtered to current month)
       const assignedJobIds = new Set<number>();
       
       // Check jobTechnicianMaps
       db.jobTechnicianMaps.forEach((m: any) => {
-        if (m.employee_id === emp.employee_id) {
+        if (m.employee_id === emp.employee_id && currentMonthJobIds.has(m.job_id)) {
           assignedJobIds.add(m.job_id);
         }
       });
 
       // Also check direct technician_name string matching for safety
       db.jobCards.forEach((j: any) => {
-        if (j.technician_name && j.technician_name.toLowerCase().trim() === emp.full_name.toLowerCase().trim()) {
+        if (j.technician_name && j.technician_name.toLowerCase().trim() === emp.full_name.toLowerCase().trim() && currentMonthJobIds.has(j.job_id)) {
           assignedJobIds.add(j.job_id);
         }
       });
@@ -549,8 +572,8 @@ async function startServer() {
         emp.paid_pct = ((paidCount / totalJCs) * 100).toFixed(2) + "%";
         emp.tml_claim_pct = ((tmlClaimCount / totalJCs) * 100).toFixed(2) + "%";
       } else {
-        if (emp.paid_pct === undefined) emp.paid_pct = "0.00%";
-        if (emp.tml_claim_pct === undefined) emp.tml_claim_pct = "0.00%";
+        emp.paid_pct = "0.00%";
+        emp.tml_claim_pct = "0.00%";
       }
     });
   };

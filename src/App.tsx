@@ -897,46 +897,48 @@ export default function App() {
               </div>
 
               {/* Dev Role Override Dropdown */}
-              <div className="pt-2.5 border-t border-slate-700/40 space-y-1">
-                <label className="text-[8px] font-extrabold text-slate-500 uppercase tracking-widest block">Dev Role Override</label>
-                <select
-                  value={user.role || ""}
-                  onChange={(e) => {
-                    const newRole = e.target.value;
-                    const updatedUser = { ...user, role: newRole };
-                    setUser(updatedUser);
-                    localStorage.setItem("wms_user", JSON.stringify(updatedUser));
-                    const permitted = ROLE_TABS[newRole] || [];
-                    if (permitted.length > 0) {
-                      setActiveTab(permitted[0].id);
-                    }
-                  }}
-                  className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[11px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-orange-500 font-bold cursor-pointer"
-                >
-                  <option value="developer">Developer</option>
-                  <option value="admin">Admin</option>
-                  <option value="dealer_principal">Dealer Principal</option>
-                  <option value="workshop_manager">Workshop Manager</option>
-                  <option value="billing">Billing (Accounts)</option>
-                  <option value="cashier">Cashier</option>
-                  <option value="service_advisor">Service Advisor</option>
-                  <option value="floor_supervisor">Floor Supervisor</option>
-                  <option value="floor_incharge">Floor Incharge</option>
-                  <option value="warranty_advisor">Warranty Advisor</option>
-                  <option value="warranty_manager">Warranty Manager</option>
-                  <option value="spares_manager">Spares Manager</option>
-                  <option value="dkam">D-KAM</option>
-                  <option value="reception">Receptionist</option>
-                  <option value="tools_incharge">Tools Incharge</option>
-                  <option value="security_agent">Security Agent</option>
-                  <option value="breakdown">Breakdown Personnel</option>
-                  <option value="service_manager">Service Manager</option>
-                  <option value="supervisor">Supervisor</option>
-                  <option value="accounts">Accounts fallback</option>
-                  <option value="gate_personnel">Gate Personnel</option>
-                  <option value="technician">Technician</option>
-                </select>
-              </div>
+              {user.username === "developer" && (
+                <div className="pt-2.5 border-t border-slate-700/40 space-y-1">
+                  <label className="text-[8px] font-extrabold text-slate-500 uppercase tracking-widest block">Dev Role Override</label>
+                  <select
+                    value={user.role || ""}
+                    onChange={(e) => {
+                      const newRole = e.target.value;
+                      const updatedUser = { ...user, role: newRole };
+                      setUser(updatedUser);
+                      localStorage.setItem("wms_user", JSON.stringify(updatedUser));
+                      const permitted = ROLE_TABS[newRole] || [];
+                      if (permitted.length > 0) {
+                        setActiveTab(permitted[0].id);
+                      }
+                    }}
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[11px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-orange-500 font-bold cursor-pointer"
+                  >
+                    <option value="developer">Developer</option>
+                    <option value="admin">Admin</option>
+                    <option value="dealer_principal">Dealer Principal</option>
+                    <option value="workshop_manager">Workshop Manager</option>
+                    <option value="billing">Billing (Accounts)</option>
+                    <option value="cashier">Cashier</option>
+                    <option value="service_advisor">Service Advisor</option>
+                    <option value="floor_supervisor">Floor Supervisor</option>
+                    <option value="floor_incharge">Floor Incharge</option>
+                    <option value="warranty_advisor">Warranty Advisor</option>
+                    <option value="warranty_manager">Warranty Manager</option>
+                    <option value="spares_manager">Spares Manager</option>
+                    <option value="dkam">D-KAM</option>
+                    <option value="reception">Receptionist</option>
+                    <option value="tools_incharge">Tools Incharge</option>
+                    <option value="security_agent">Security Agent</option>
+                    <option value="breakdown">Breakdown Personnel</option>
+                    <option value="service_manager">Service Manager</option>
+                    <option value="supervisor">Supervisor</option>
+                    <option value="accounts">Accounts fallback</option>
+                    <option value="gate_personnel">Gate Personnel</option>
+                    <option value="technician">Technician</option>
+                  </select>
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-xs text-slate-400">Not Signed In</div>
