@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { 
   Plus, 
   Wrench, 
@@ -73,6 +73,19 @@ export default function JobCardManager({
 }: JobCardManagerProps) {
   const [selectedJob, setSelectedJob] = useState<JobCard | null>(selectedJobExternal || jobCards[0] || null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // Escape key listener to close modals
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowCreateModal(false);
+        setShowEditModal(false);
+        setPreviewPhotoUrl(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // Form states for creating a new Job Card
   const [vrn, setVrn] = useState("");
@@ -1768,7 +1781,7 @@ export default function JobCardManager({
        {/* CREATE JOB CARD MODAL */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className={`bg-white rounded-xl border border-slate-200 shadow-md transition-all duration-300 w-full p-4 space-y-4 ${ocrTab === 'batch' ? 'max-w-3xl' : 'max-w-lg'}`}>
+          <div className={`bg-white rounded-xl border border-slate-200 shadow-md transition-all duration-300 w-full p-4 space-y-4 max-h-[90vh] overflow-y-auto ${ocrTab === 'batch' ? 'max-w-3xl' : 'max-w-lg'}`}>
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                 <Wrench className="h-4.5 w-4.5 text-orange-600" />
@@ -2821,7 +2834,7 @@ export default function JobCardManager({
       {/* EDIT JOB CARD MODAL */}
       {showEditModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-md max-w-lg w-full p-4 space-y-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-md max-w-lg w-full p-4 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                 <Wrench className="h-4.5 w-4.5 text-orange-600" />
@@ -3231,7 +3244,7 @@ export default function JobCardManager({
       {/* PHOTO PREVIEW OVERLAY MODAL */}
       {previewPhotoUrl && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-lg w-full p-4 space-y-4 relative overflow-hidden">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-lg w-full p-4 space-y-4 relative overflow-y-auto max-h-[90vh]">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                 <Camera className="h-4.5 w-4.5 text-orange-600" />
