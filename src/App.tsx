@@ -75,7 +75,6 @@ import VehicleLookup from "./components/VehicleLookup";
 import CpscCertificationPanel from "./components/CpscCertificationPanel";
 import AttendanceShiftLog from "./components/AttendanceShiftLog";
 import DmsImporterConsolidated from "./components/dms-import";
-import FsbManager from "./components/fsb";
 import QuerySearch from "./components/query";
 import BillingExit from "./components/billing-exit";
 
@@ -142,7 +141,6 @@ export default function App() {
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
-      { id: "fsb", label: "FSB Status", icon: ShieldCheck },
       { id: "query", label: "Multimedia Query", icon: HelpCircle },
       { id: "jobs", label: "Job Cards", icon: Wrench },
       { id: "productivity", label: "Productivity", icon: TrendingUp },
@@ -161,7 +159,6 @@ export default function App() {
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
-      { id: "fsb", label: "FSB Status", icon: ShieldCheck },
       { id: "query", label: "Multimedia Query", icon: HelpCircle },
       { id: "jobs", label: "Job Cards", icon: Wrench },
       { id: "productivity", label: "Productivity", icon: TrendingUp },
@@ -201,7 +198,6 @@ export default function App() {
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
       { id: "jobs", label: "Job Cards", icon: Wrench },
-      { id: "fsb", label: "FSB Status", icon: ShieldCheck },
     ],
     floor_incharge: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -219,7 +215,6 @@ export default function App() {
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
-      { id: "fsb", label: "FSB Status", icon: ShieldCheck },
       { id: "jobs", label: "Job Cards", icon: Wrench },
       { id: "productivity", label: "Productivity", icon: TrendingUp },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
@@ -289,7 +284,6 @@ export default function App() {
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
-      { id: "fsb", label: "FSB Status", icon: ShieldCheck },
       { id: "jobs", label: "Job Cards", icon: Wrench },
       { id: "productivity", label: "Productivity", icon: TrendingUp },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
@@ -1119,9 +1113,6 @@ export default function App() {
           />
         )}
 
-        {activeTab === "fsb" && (
-          <FsbManager />
-        )}
 
         {activeTab === "query" && (
           <QuerySearch />

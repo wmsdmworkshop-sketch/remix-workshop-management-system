@@ -15,7 +15,11 @@ import {
   Layers, 
   RefreshCw,
   Cpu,
-  BadgeCheck
+  BadgeCheck,
+  AlertCircle,
+  CheckCircle2,
+  HelpCircle,
+  Car
 } from "lucide-react";
 import { JobCard } from "../types";
 
@@ -79,6 +83,14 @@ export default function PartsWarrantyManager({
   const [valResult, setValResult] = useState<any | null>(null);
   const [valError, setValError] = useState<string | null>(null);
 
+  // --- VEHICLE SELECTOR & FSB AUDIT STATE ---
+  const [vehicleSearchQuery, setVehicleSearchQuery] = useState("");
+  const [onlyInWorkshop, setOnlyInWorkshop] = useState(true);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
+  const [fsbRecords, setFsbRecords] = useState<any[]>([]);
+  const [fsbLoading, setFsbLoading] = useState(false);
+  const [updatingFsbId, setUpdatingFsbId] = useState<number | null>(null);
+
   const fetchCirculars = async () => {
     setCirLoading(true);
     try {
@@ -94,8 +106,47 @@ export default function PartsWarrantyManager({
     }
   };
 
+  const fetchFsbRecords = async () => {
+    try {
+      const res = await fetch("/api/fsb");
+      if (res.ok) {
+        const data = await res.json();
+        setFsbRecords(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch FSB records:", e);
+    }
+  };
+
+  const handleUpdateFsbStatus = async (jobCardId: number, status: string) => {
+    setUpdatingFsbId(jobCardId);
+    try {
+      const res = await fetch("/api/fsb", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job_card_id: jobCardId,
+          fsb_status: status
+        })
+      });
+      if (res.ok) {
+        setSuccess("FSB Status updated successfully in database!");
+        fetchFsbRecords();
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to update FSB status.");
+      }
+    } catch (e: any) {
+      alert(e.message || "An error occurred.");
+    } finally {
+      setUpdatingFsbId(null);
+    }
+  };
+
   React.useEffect(() => {
     fetchCirculars();
+    fetchFsbRecords();
   }, []);
 
   const handleUploadCircular = async (e: React.FormEvent) => {
@@ -211,6 +262,53 @@ export default function PartsWarrantyManager({
   const activeJobCards = useMemo(() => {
     return jobCards.filter(j => j.status !== "Completed" && j.status !== "Invoiced");
   }, [jobCards]);
+
+  const getFsbStatusForJob = (jobId: number): 'Settled' | 'Rejected' | 'Deviation' | 'Pending' => {
+    const record = fsbRecords.find(r => Number(r.job_card_id) === Number(jobId));
+    return record ? record.fsb_status : 'Pending';
+  };
+
+  const getFsbBadgeClass = (status: string) => {
+    switch (status) {
+      case 'Settled':
+        return 'bg-emerald-100 text-emerald-800 border border-emerald-200';
+      case 'Rejected':
+        return 'bg-rose-100 text-rose-800 border border-rose-200';
+      case 'Deviation':
+        return 'bg-amber-100 text-amber-800 border border-amber-200';
+      default:
+        return 'bg-slate-100 text-slate-600 border border-slate-200';
+    }
+  };
+
+  const getFsbStatusIcon = (status: string) => {
+    switch (status) {
+      case 'Settled':
+        return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />;
+      case 'Rejected':
+        return <AlertCircle className="w-3.5 h-3.5 text-rose-600" />;
+      case 'Deviation':
+        return <HelpCircle className="w-3.5 h-3.5 text-amber-600" />;
+      default:
+        return <Clock className="w-3.5 h-3.5 text-slate-500" />;
+    }
+  };
+
+  const filteredSelectorVehicles = useMemo(() => {
+    return jobCards.filter(jc => {
+      const matchesSearch = 
+        (jc.vrn || "").toLowerCase().includes(vehicleSearchQuery.toLowerCase()) ||
+        (jc.job_card_no || "").toLowerCase().includes(vehicleSearchQuery.toLowerCase()) ||
+        (jc.vehicle_model || "").toLowerCase().includes(vehicleSearchQuery.toLowerCase());
+      
+      const isInWorkshop = jc.status !== "Completed" && jc.status !== "Invoiced";
+      
+      if (onlyInWorkshop) {
+        return matchesSearch && isInWorkshop;
+      }
+      return matchesSearch;
+    });
+  }, [jobCards, vehicleSearchQuery, onlyInWorkshop]);
 
   const handleAddRequisition = (e: React.FormEvent) => {
     e.preventDefault();
@@ -535,6 +633,220 @@ export default function PartsWarrantyManager({
 
       {activeTab === "warranty" && (
         <div className="space-y-6">
+          {/* Vehicle Selector & FSB Audit Control Panel */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+            <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-100 text-indigo-700 rounded-xl">
+                  <Car className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Vehicle Directory & FSB Status Audit</h3>
+                  <p className="text-xs text-slate-400 font-medium">Search vehicles, filter active workshop jobs, and audit Field Service Bulletin (FSB) claims.</p>
+                </div>
+              </div>
+              
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Search VRN */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search VRN or Job Card..."
+                    value={vehicleSearchQuery}
+                    onChange={(e) => setVehicleSearchQuery(e.target.value)}
+                    className="pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none w-56 font-semibold"
+                  />
+                </div>
+                
+                {/* Toggle workshop only */}
+                <label className="flex items-center gap-2 cursor-pointer select-none border border-slate-200 bg-slate-50 px-3 py-1.5 rounded-xl hover:bg-slate-100 transition">
+                  <input
+                    type="checkbox"
+                    checked={onlyInWorkshop}
+                    onChange={(e) => setOnlyInWorkshop(e.target.checked)}
+                    className="rounded text-orange-500 focus:ring-orange-500 border-slate-300 h-4 w-4"
+                  />
+                  <span className="text-xs font-bold text-slate-600 uppercase tracking-wide">In Workshop Only</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left Column: Vehicle List */}
+              <div className="lg:col-span-1 border border-slate-200 rounded-2xl flex flex-col overflow-hidden bg-slate-50/50">
+                <div className="p-3 border-b border-slate-200 bg-slate-100/50 flex justify-between items-center">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Matches ({filteredSelectorVehicles.length})</span>
+                  {selectedVehicleId && (
+                    <button
+                      onClick={() => setSelectedVehicleId(null)}
+                      className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800"
+                    >
+                      Clear Selection
+                    </button>
+                  )}
+                </div>
+                
+                <div className="divide-y divide-slate-200 overflow-y-auto max-h-72">
+                  {filteredSelectorVehicles.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 italic text-xs">
+                      No vehicles matching criteria.
+                    </div>
+                  ) : (
+                    filteredSelectorVehicles.map((jc) => {
+                      const isSelected = selectedVehicleId === jc.job_id;
+                      const fsbStatus = getFsbStatusForJob(jc.job_id);
+                      const isInWip = jc.status !== "Completed" && jc.status !== "Invoiced";
+                      
+                      return (
+                        <div
+                          key={jc.job_id}
+                          onClick={() => {
+                            setSelectedVehicleId(jc.job_id);
+                            // Auto-fill AI Validator
+                            setValJobCardId(jc.job_id.toString());
+                            setValModelNoPpl(jc.vehicle_model || "");
+                            const defaultDate = jc.date_in || new Date(Date.now() - 365 * 2 * 24 * 3600 * 1000).toISOString().split("T")[0];
+                            setValDateOfSale(defaultDate);
+                            setValFsbStatus(fsbStatus === "Pending" ? "Not Applicable" : fsbStatus);
+                            // Auto-fill claim form
+                            setWClaimJobNo(jc.job_card_no);
+                          }}
+                          className={`p-3 cursor-pointer transition-all flex flex-col gap-1.5 border-l-4 ${
+                            isSelected 
+                              ? "bg-white border-l-indigo-600 shadow-sm" 
+                              : "hover:bg-slate-100/60 border-l-transparent"
+                          }`}
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="font-mono font-bold text-slate-700 bg-slate-200/60 border px-1.5 py-0.5 rounded">
+                              {jc.job_card_no}
+                            </span>
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                              isInWip 
+                                ? "bg-amber-100 text-amber-800 border border-amber-200" 
+                                : "bg-slate-200 text-slate-600 border border-slate-300"
+                            }`}>
+                              {isInWip ? "In Workshop" : "Finished"}
+                            </span>
+                          </div>
+                          
+                          <div className="flex justify-between items-end">
+                            <div>
+                              <p className="font-bold text-slate-900 text-xs tracking-tight">{jc.vrn}</p>
+                              <p className="text-[10px] text-slate-400 font-medium">{jc.vehicle_model || "Unknown Model"}</p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold ${getFsbBadgeClass(fsbStatus)}`}>
+                                {getFsbStatusIcon(fsbStatus)}
+                                <span>{fsbStatus}</span>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: Vehicle Details & FSB Status Manager */}
+              <div className="lg:col-span-2 border border-slate-200 rounded-2xl p-5 bg-white flex flex-col justify-between">
+                {!selectedVehicleId ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-2">
+                    <Car className="h-10 w-10 text-slate-300 animate-pulse" />
+                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">No Vehicle Selected</h4>
+                    <p className="text-[10px] text-slate-400 max-w-sm">
+                      Select a vehicle from the matching list on the left to audit details, update Field Service Bulletin (FSB) claims status, and run automatic warranty validation checks.
+                    </p>
+                  </div>
+                ) : (
+                  (() => {
+                    const matched = jobCards.find(j => j.job_id === selectedVehicleId);
+                    if (!matched) return null;
+                    const fsbStatus = getFsbStatusForJob(matched.job_id);
+                    
+                    return (
+                      <div className="space-y-5 h-full flex flex-col justify-between">
+                        {/* Selected info card */}
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-slate-50 border border-slate-200 p-4 rounded-xl">
+                          <div>
+                            <span className="text-[9px] font-mono font-bold text-indigo-600 bg-indigo-50 border border-indigo-200/50 px-2 py-0.5 rounded uppercase tracking-wider">Selected Vehicle</span>
+                            <h4 className="text-sm font-extrabold text-slate-900 mt-1">{matched.vrn} <span className="font-semibold text-slate-400 text-xs">({matched.vehicle_model || "N/A"})</span></h4>
+                            <p className="text-[10px] text-slate-400 mt-0.5 font-medium">Job Card: <span className="font-bold text-slate-600">{matched.job_card_no}</span> • Status: <span className="font-bold text-slate-600">{matched.status}</span></p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase">Current FSB Status</span>
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${getFsbBadgeClass(fsbStatus)}`}>
+                              {getFsbStatusIcon(fsbStatus)}
+                              {fsbStatus}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* FSB Status update radio controls */}
+                        <div className="space-y-3">
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                            Update FSB Settlement Status
+                          </label>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            {[
+                              { value: 'Settled', desc: 'OEM settled claim', color: 'text-emerald-700 bg-emerald-50/50 border-emerald-200 hover:bg-emerald-50' },
+                              { value: 'Rejected', desc: 'OEM rejected bulletin', color: 'text-rose-700 bg-rose-50/50 border-rose-200 hover:bg-rose-50' },
+                              { value: 'Deviation', desc: 'Approved via deviation', color: 'text-amber-700 bg-amber-50/50 border-amber-200 hover:bg-amber-50' }
+                            ].map((opt) => (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                disabled={updatingFsbId !== null}
+                                onClick={() => handleUpdateFsbStatus(matched.job_id, opt.value)}
+                                className={`flex flex-col p-3 rounded-xl border text-left cursor-pointer transition-all active:scale-[0.98] ${
+                                  fsbStatus === opt.value
+                                    ? "border-indigo-600 bg-indigo-50/50 ring-2 ring-indigo-600/10 font-bold"
+                                    : `border-slate-200 hover:shadow-sm ${opt.color}`
+                                }`}
+                              >
+                                <span className="text-xs font-extrabold text-slate-800">{opt.value}</span>
+                                <span className="text-[9px] text-slate-400 font-medium mt-0.5 leading-snug">{opt.desc}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Quick links / Actions */}
+                        <div className="pt-3 border-t border-slate-100 flex flex-wrap gap-2.5 justify-end">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const validatorElem = document.getElementById("ai-warranty-validator-title");
+                              if (validatorElem) validatorElem.scrollIntoView({ behavior: "smooth" });
+                            }}
+                            className="px-3.5 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-[10px] uppercase tracking-wider rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Cpu className="h-3.5 w-3.5 text-indigo-500" />
+                            <span>Consult AI Validator</span>
+                          </button>
+                          
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const claimFormElem = document.getElementById("log-oem-claim-form-title");
+                              if (claimFormElem) claimFormElem.scrollIntoView({ behavior: "smooth" });
+                            }}
+                            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] uppercase tracking-wider rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            <span>Proceed to Log Claim</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* AI Warranty Eligibility Validator (Query Box) */}
           <div className="bg-slate-900 text-slate-100 rounded-2xl p-6 shadow-md border border-slate-800 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
@@ -543,7 +855,7 @@ export default function PartsWarrantyManager({
                   <Cpu className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+                  <h3 id="ai-warranty-validator-title" className="text-sm font-bold text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
                     AI Warranty Validator <span className="text-[10px] bg-indigo-600/30 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded font-black animate-pulse">ACTIVE</span>
                   </h3>
                   <p className="text-xs text-slate-400">Intelligent Service Circular Compliance & Claims Audit Assistant</p>
