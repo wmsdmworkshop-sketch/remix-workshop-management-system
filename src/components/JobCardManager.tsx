@@ -98,6 +98,42 @@ export default function JobCardManager({
   const [vehicleMake, setVehicleMake] = useState("Tata Motors");
   const [vehicleModel, setVehicleModel] = useState("");
   const [vehicleYear, setVehicleYear] = useState(new Date().getFullYear());
+
+  // Suggestion list states for VRN search & hybrid model selector
+  const [activeVrnSuggestions, setActiveVrnSuggestions] = useState<any[]>([]);
+  const [showVrnSuggestions, setShowVrnSuggestions] = useState(false);
+  const [modelsList, setModelsList] = useState<string[]>([]);
+  const [showModelSuggestions, setShowModelSuggestions] = useState(false);
+
+  useEffect(() => {
+    fetchModels();
+  }, []);
+
+  const fetchModels = async () => {
+    try {
+      const res = await fetch("/api/models");
+      const data = await res.json();
+      setModelsList(data);
+    } catch (e) {
+      console.error("Failed to load vehicle models:", e);
+    }
+  };
+
+  const filteredModels = useMemo(() => {
+    if (!vehicleModel) return modelsList;
+    return modelsList.filter(m => m.toLowerCase().includes(vehicleModel.toLowerCase()));
+  }, [modelsList, vehicleModel]);
+
+  const fetchActiveVrns = async (query: string) => {
+    try {
+      const res = await fetch(`/api/job-cards/active-vrns?q=${query}`);
+      const data = await res.json();
+      setActiveVrnSuggestions(data);
+      setShowVrnSuggestions(data.length > 0);
+    } catch (e) {
+      console.error("Failed to fetch active VRN suggestions:", e);
+    }
+  };
   const [kmReading, setKmReading] = useState<number | "">("");
   const [srTypeId, setSrTypeId] = useState(1);
   const [priority, setPriority] = useState<"Normal" | "Express">("Normal");
@@ -839,9 +875,14 @@ export default function JobCardManager({
   const [listSearch, setListSearch] = useState("");
   const [listDate, setListDate] = useState("");
   const [listStatus, setListStatus] = useState("All");
+  const [showBilledClosed, setShowBilledClosed] = useState(false);
 
   const filteredJobCards = useMemo(() => {
     return jobCards.filter(job => {
+      const s = String(job.status || '').toLowerCase();
+      const isClosed = s === 'billed' || s === 'out of workshop' || s === 'invoiced';
+      if (!showBilledClosed && isClosed) return false;
+
       const matchesSearch = 
         job.vrn.toLowerCase().includes(listSearch.toLowerCase()) ||
         job.job_card_no.toLowerCase().includes(listSearch.toLowerCase()) ||
@@ -852,7 +893,7 @@ export default function JobCardManager({
 
       return matchesSearch && matchesDate && matchesStatus;
     });
-  }, [jobCards, listSearch, listDate, listStatus]);
+  }, [jobCards, listSearch, listDate, listStatus, showBilledClosed]);
 
   const handleExportCSV = () => {
     const headers = [
@@ -988,6 +1029,19 @@ export default function JobCardManager({
       numberplate_photo: numberplatePhoto,
       odometer_photo: odometerPhoto
     });
+
+    // Save new model to models table on submit if not present
+    if (vehicleModel && vehicleModel.trim() && !modelsList.includes(vehicleModel.trim())) {
+      fetch("/api/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modelName: vehicleModel.trim() })
+      }).then(res => res.json()).then(data => {
+        if (data.success) {
+          setModelsList(prev => [...prev, vehicleModel.trim()]);
+        }
+      }).catch(err => console.error("Failed to save new model:", err));
+    }
 
     // Reset Form
     setVrn("");
@@ -1210,15 +1264,28 @@ export default function JobCardManager({
               <option value="Carry Forward">Carry Forward</option>
             </select>
           </div>
+          <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showBilledClosed}
+                  onChange={(e) => setShowBilledClosed(e.target.checked)}
+                  className="rounded border-slate-350 text-orange-500 focus:ring-orange-400 h-3.5 w-3.5"
+                />
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Show Billed/Closed</span>
+              </label>
 
-          <div className="flex items-center justify-between pt-1">
-            <button
-              onClick={handleExportCSV}
-              className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded flex items-center gap-1 transition-all shadow-xs cursor-pointer"
-            >
-              <Download className="h-3 w-3" />
-              Export CSV ({filteredJobCards.length})
-            </button>
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded flex items-center gap-1 transition-all shadow-xs cursor-pointer"
+              >
+                <Download className="h-3 w-3" />
+                Export CSV ({filteredJobCards.length})
+              </button>
+            </div>
+          </div>
             {(listSearch || listDate || listStatus !== "All") && (
               <button
                 onClick={() => {
@@ -1232,7 +1299,6 @@ export default function JobCardManager({
               </button>
             )}
           </div>
-        </div>
 
         <div className="space-y-3 pt-1">
           {filteredJobCards.map((job) => {
@@ -2301,40 +2367,74 @@ export default function JobCardManager({
                 </div>
                 <div>
                   <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Registration No (VRN)*</label>
-                  <div className="relative flex items-center">
-                    <input 
-                      type="text" 
-                      required 
-                      value={vrn}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setVrn(val);
-                        const cleanVrn = val.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-                        if (cleanVrn.length >= 4) {
-                          const latestVisit = [...jobCards]
-                            .reverse()
-                            .filter(j => j.status !== "Cancelled")
-                            .find(j => j.vrn.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") === cleanVrn);
-                          if (latestVisit) {
-                            setCustomerName(latestVisit.customer_name);
-                            setCustomerMobile(latestVisit.customer_mobile);
-                            if (latestVisit.vehicle_model) setVehicleModel(latestVisit.vehicle_model);
-                            if (latestVisit.vehicle_make) setVehicleMake(latestVisit.vehicle_make);
-                          }
-                        }
-                      }}
-                      placeholder="e.g. MH-12-AB-1234"
-                      className="w-full bg-slate-50 border border-slate-200 rounded p-2 pr-9 text-xs font-semibold uppercase focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
-                    />
-                    <label className="absolute right-2 cursor-pointer text-slate-400 hover:text-orange-500 transition-colors" title="Scan Numberplate Photo">
-                      <Camera className="h-4.5 w-4.5" />
+                  <div className="relative">
+                    <div className="relative flex items-center">
                       <input 
-                        type="file" 
-                        accept="image/*" 
-                        onChange={(e) => handleNumberplateUpload(e, false)} 
-                        className="hidden" 
+                        type="text" 
+                        required 
+                        value={vrn}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setVrn(val);
+                          const cleanVrn = val.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+                          if (cleanVrn.length >= 2) {
+                            fetchActiveVrns(cleanVrn);
+                          } else {
+                            setActiveVrnSuggestions([]);
+                            setShowVrnSuggestions(false);
+                          }
+
+                          if (cleanVrn.length >= 4) {
+                            const latestVisit = [...jobCards]
+                              .reverse()
+                              .filter(j => j.status !== "Cancelled")
+                              .find(j => j.vrn.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") === cleanVrn);
+                            if (latestVisit) {
+                              setCustomerName(latestVisit.customer_name);
+                              setCustomerMobile(latestVisit.customer_mobile);
+                              if (latestVisit.vehicle_model) setVehicleModel(latestVisit.vehicle_model);
+                              if (latestVisit.vehicle_make) setVehicleMake(latestVisit.vehicle_make);
+                            }
+                          }
+                        }}
+                        placeholder="e.g. MH-12-AB-1234"
+                        className="w-full bg-slate-50 border border-slate-200 rounded p-2 pr-9 text-xs font-semibold uppercase focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
                       />
-                    </label>
+                      <label className="absolute right-2 cursor-pointer text-slate-400 hover:text-orange-500 transition-colors" title="Scan Numberplate Photo">
+                        <Camera className="h-4.5 w-4.5" />
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          onChange={(e) => handleNumberplateUpload(e, false)} 
+                          className="hidden" 
+                        />
+                      </label>
+                    </div>
+
+                    {showVrnSuggestions && activeVrnSuggestions.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 z-40 bg-slate-900 border border-slate-800 rounded-lg shadow-xl max-h-40 overflow-y-auto mt-1 divide-y divide-slate-800">
+                        {activeVrnSuggestions.map((sugg) => (
+                          <div
+                            key={sugg.vrn}
+                            onClick={() => {
+                              setVrn(sugg.vrn);
+                              setCustomerName(sugg.customer_name || "");
+                              setCustomerMobile(sugg.customer_mobile || "");
+                              setVehicleModel(sugg.vehicle_model || "");
+                              setVehicleMake(sugg.vehicle_make || "Tata Motors");
+                              if (sugg.odometer_reading) setKmReading(sugg.odometer_reading);
+                              setShowVrnSuggestions(false);
+                            }}
+                            className="p-2 hover:bg-slate-800 cursor-pointer text-left transition-colors"
+                          >
+                            <div className="text-[10px] font-bold text-orange-400 font-mono">{sugg.vrn}</div>
+                            <div className="text-[9px] text-slate-350">
+                              {sugg.customer_name} • {sugg.vehicle_model}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   {isOcrReadingVrn && (
                     <div className="text-[9px] text-orange-500 font-semibold animate-pulse mt-0.5 flex items-center gap-1">
@@ -2427,16 +2527,40 @@ export default function JobCardManager({
                     className="w-full bg-slate-100 border border-slate-200 rounded p-2 text-xs font-semibold focus:outline-hidden cursor-not-allowed text-slate-500"
                   />
                 </div>
-                <div className="col-span-1">
+                <div className="col-span-1 relative">
                   <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Model*</label>
-                  <input 
-                    type="text" 
-                    required 
-                    value={vehicleModel}
-                    onChange={(e) => setVehicleModel(e.target.value)}
-                    placeholder="e.g. i20"
-                    className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
-                  />
+                  <div className="relative">
+                    <input 
+                      type="text" 
+                      required 
+                      value={vehicleModel}
+                      onFocus={() => setShowModelSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowModelSuggestions(false), 200)}
+                      onChange={(e) => {
+                        setVehicleModel(e.target.value);
+                        setShowModelSuggestions(true);
+                      }}
+                      placeholder="e.g. Nexon EV"
+                      className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
+                    />
+                    
+                    {showModelSuggestions && filteredModels.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 z-50 bg-slate-900 border border-slate-800 rounded-lg shadow-xl max-h-40 overflow-y-auto mt-1 divide-y divide-slate-800">
+                        {filteredModels.map((m) => (
+                          <div
+                            key={m}
+                            onMouseDown={() => {
+                              setVehicleModel(m);
+                              setShowModelSuggestions(false);
+                            }}
+                            className="p-2 hover:bg-slate-800 text-slate-200 text-[10px] font-semibold cursor-pointer text-left transition-colors"
+                          >
+                            {m}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="col-span-1">
                   <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Year</label>

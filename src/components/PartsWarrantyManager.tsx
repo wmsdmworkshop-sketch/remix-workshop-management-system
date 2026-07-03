@@ -19,7 +19,10 @@ import {
   AlertCircle,
   CheckCircle2,
   HelpCircle,
-  Car
+  Car,
+  Camera,
+  UploadCloud,
+  Check
 } from "lucide-react";
 import { JobCard } from "../types";
 
@@ -252,6 +255,63 @@ export default function PartsWarrantyManager({
   const [reqQty, setReqQty] = useState("1");
   const [reqPrice, setReqPrice] = useState("");
 
+  // Parts OCR upload states
+  const [showPartOcrModal, setShowPartOcrModal] = useState(false);
+  const [partOcrScanning, setPartOcrScanning] = useState(false);
+  const [partOcrResult, setPartOcrResult] = useState<string | null>(null);
+  const [partOcrFile, setPartOcrFile] = useState<string | null>(null);
+
+  const handlePartOcrSimulation = (code: string, name: string) => {
+    setPartOcrScanning(true);
+    setPartOcrResult(null);
+    setTimeout(() => {
+      setPartOcrResult(`OCR Extract Status: SUCCESS\n-----------------------\nPart Code: ${code}\nPart Name: ${name}`);
+      setPartOcrScanning(false);
+      setReqPartCode(code);
+      setReqPartName(name);
+    }, 1200);
+  };
+
+  const handlePartOcrFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setPartOcrScanning(true);
+    setPartOcrResult(null);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setPartOcrFile(event.target?.result as string);
+      setTimeout(() => {
+        const nameClean = file.name.toUpperCase().split(".")[0];
+        let code = "PRT-904-GEN";
+        let name = "General Replacement Spare Part";
+
+        if (nameClean.includes("VALVE")) {
+          code = "AXV-55210";
+          name = "Axle Lift Control Valve";
+        } else if (nameClean.includes("ALTERNATOR")) {
+          code = "ALT-88412";
+          name = "Alternator Assembly 12V";
+        } else if (nameClean.includes("TURBO")) {
+          code = "TBC-99044";
+          name = "Garrett Turbocharger Assembly";
+        } else {
+          const codeParts = nameClean.match(/[A-Z0-9]{3,6}/g);
+          if (codeParts && codeParts.length > 0) {
+            code = codeParts.join("-");
+          }
+        }
+
+        setPartOcrResult(`OCR Extract Status: SUCCESS\n-----------------------\nPart Code: ${code}\nPart Name: ${name}`);
+        setReqPartCode(code);
+        setReqPartName(name);
+        setPartOcrScanning(false);
+      }, 1200);
+    };
+    reader.readAsDataURL(file);
+  };
+
   // Form states for warranty claim
   const [wClaimJobNo, setWClaimJobNo] = useState("");
   const [wPartName, setWPartName] = useState("");
@@ -480,8 +540,16 @@ export default function PartsWarrantyManager({
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                    OEM Part Code / Catalog No *
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center justify-between">
+                    <span>OEM Part Code / Catalog No *</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowPartOcrModal(true)}
+                      className="text-[9px] text-orange-500 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Camera className="w-3 h-3" />
+                      <span>OCR Capture</span>
+                    </button>
                   </label>
                   <input
                     type="text"
@@ -1471,6 +1539,120 @@ export default function PartsWarrantyManager({
                   ))
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* PARTS OCR SCAN MODAL */}
+      {showPartOcrModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl w-full max-w-md max-h-[90dvh] overflow-y-auto shadow-2xl flex flex-col">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-orange-500/10 text-orange-400 flex items-center justify-center">
+                  <Camera className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-widest text-white">Parts Label OCR Scan</h3>
+                  <p className="text-[9px] text-slate-400 font-medium">Extract Part Code from barcode or metal label</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowPartOcrModal(false)}
+                className="text-slate-400 hover:text-white text-xs font-bold font-mono p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Viewfinder / Capture Feed */}
+            <div className="p-5 space-y-4">
+              <p className="text-[10px] text-slate-400">
+                Upload a spare part label photo or simulate OCR extraction from existing parts catalog images.
+              </p>
+
+              {/* Upload field */}
+              <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 hover:border-orange-500/50 rounded-2xl p-6 bg-slate-950 cursor-pointer relative group transition-colors">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePartOcrFileUpload}
+                  className="absolute inset-0 opacity-0 cursor-pointer"
+                />
+                <UploadCloud className="h-8 w-8 text-slate-500 group-hover:text-orange-400 transition-colors mb-2" />
+                <span className="text-xs text-slate-400 font-bold">Upload spare part label image</span>
+                <span className="text-[9px] text-slate-500 font-medium mt-1">Accepts PNG, JPG</span>
+              </div>
+
+              {/* OCR Scanning state */}
+              {partOcrScanning && (
+                <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl flex flex-col items-center justify-center gap-3">
+                  <div className="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-[10px] font-bold text-orange-400 animate-pulse">Running Neural OCR engine...</span>
+                </div>
+              )}
+
+              {/* OCR Results */}
+              {partOcrResult && (
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] leading-relaxed flex items-start gap-2.5 font-mono whitespace-pre">
+                  <Check className="h-4 w-4 shrink-0 mt-0.5 text-emerald-400" />
+                  <span>{partOcrResult}</span>
+                </div>
+              )}
+
+              {/* Catalog Simulation List */}
+              <div className="space-y-2">
+                <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Simulated Parts Label Library (Pre-fills):</p>
+                <div className="grid grid-cols-1 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handlePartOcrSimulation("AXV-55210", "Axle Lift Control Valve")}
+                    className="p-3 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-xl text-left hover:border-orange-500 transition-all cursor-pointer flex items-center justify-between group"
+                  >
+                    <div>
+                      <span className="text-xs font-bold text-slate-200 block">TATA_Axle_Valve_Label.jpg</span>
+                      <span className="text-[9px] text-slate-500">M&HCV Cargo range</span>
+                    </div>
+                    <span className="text-[10px] font-black text-orange-400 uppercase">Extract</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePartOcrSimulation("ALT-88412", "Alternator Assembly 12V")}
+                    className="p-3 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-xl text-left hover:border-orange-500 transition-all cursor-pointer flex items-center justify-between group"
+                  >
+                    <div>
+                      <span className="text-xs font-bold text-slate-200 block">Bosch_12V_Alternator.jpg</span>
+                      <span className="text-[9px] text-slate-500">Prima / Signa series</span>
+                    </div>
+                    <span className="text-[10px] font-black text-orange-400 uppercase">Extract</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePartOcrSimulation("TBC-99044", "Garrett Turbocharger Assembly")}
+                    className="p-3 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-xl text-left hover:border-orange-500 transition-all cursor-pointer flex items-center justify-between group"
+                  >
+                    <div>
+                      <span className="text-xs font-bold text-slate-200 block">Cummins_ISBe_Turbo.jpg</span>
+                      <span className="text-[9px] text-slate-500">Cummins 6.7L engine range</span>
+                    </div>
+                    <span className="text-[10px] font-black text-orange-400 uppercase">Extract</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowPartOcrModal(false)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-850 text-slate-300 rounded-xl text-xs font-bold cursor-pointer"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

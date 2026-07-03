@@ -553,6 +553,48 @@ export async function ensureTablesExist(): Promise<void> {
     // Ignore error if column already exists
   }
 
+  // 21. models table
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS \`models\` (
+      \`model_id\` INT NOT NULL AUTO_INCREMENT,
+      \`model_name\` VARCHAR(255) NOT NULL UNIQUE,
+      PRIMARY KEY (\`model_id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  `);
+
+  // Seed default models if empty
+  try {
+    const [rows] = await db.execute("SELECT COUNT(*) as count FROM `models`") as any[];
+    if (rows && rows[0].count === 0) {
+      const defaultModels = [
+        "Prima 5530.S",
+        "Signa 4825.TK",
+        "Ultra T.7",
+        "Nexon EV",
+        "Harrier",
+        "Safari",
+        "Intra V30"
+      ];
+      for (const m of defaultModels) {
+        await db.execute("INSERT INTO `models` (`model_name`) VALUES (?) ON DUPLICATE KEY UPDATE `model_name`=\`model_name\`", [m]);
+      }
+    }
+  } catch (err) {
+    console.error("Failed to seed models table:", err);
+  }
+
+  // 22. Ensure column `invoice_ocr_data` exists
+  try {
+    await db.execute("ALTER TABLE `job_cards` ADD COLUMN `invoice_ocr_data` TEXT DEFAULT NULL");
+  } catch (err) {
+    // Ignore error if column already exists
+  }
+  try {
+    await db.execute("ALTER TABLE `job_card_master` ADD COLUMN `invoice_ocr_data` TEXT DEFAULT NULL");
+  } catch (err) {
+    // Ignore error if column already exists
+  }
+
   console.log("Database table verification completed.");
 }
 

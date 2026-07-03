@@ -1248,6 +1248,76 @@ async function startServer() {
     }
   });
 
+  // --- VEHICLE MODELS ENDPOINTS ---
+  app.get("/api/models", async (req, res) => {
+    try {
+      const [rows] = await dbPool.query("SELECT model_name FROM models ORDER BY model_name ASC") as any[];
+      res.json(rows.map((r: any) => r.model_name));
+    } catch (e) {
+      console.error("Failed to fetch vehicle models:", e);
+      res.json(["Prima 5530.S", "Signa 4825.TK", "Ultra T.7", "Nexon EV", "Harrier", "Safari"]);
+    }
+  });
+
+  app.post("/api/models", express.json(), async (req, res) => {
+    const { modelName } = req.body;
+    if (!modelName || !modelName.trim()) {
+      return res.status(400).json({ error: "modelName is required" });
+    }
+    const cleanModel = modelName.trim();
+    try {
+      await dbPool.execute("INSERT INTO models (model_name) VALUES (?) ON DUPLICATE KEY UPDATE model_name=model_name", [cleanModel]);
+      res.json({ success: true, model_name: cleanModel });
+    } catch (e: any) {
+      console.error("Failed to save model:", e);
+      res.status(500).json({ error: e.message || "Failed to save model" });
+    }
+  });
+
+  // --- ACTIVE VRNS SEARCH ENDPOINT ---
+  app.get("/api/job-cards/active-vrns", async (req, res) => {
+    const { q } = req.query;
+    if (!q) return res.json([]);
+    const cleanQ = String(q).trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    
+    try {
+      const [rows] = await dbPool.query(
+        "SELECT DISTINCT vehicle_reg AS vrn, customer_name, customer_mobile, vehicle_make, vehicle_model, odometer_reading, chassis_no " +
+        "FROM job_card_master " +
+        "WHERE REPLACE(REPLACE(UPPER(vehicle_reg), '-', ''), ' ', '') LIKE ? " +
+        "  AND LOWER(job_status) NOT IN ('billed', 'out of workshop', 'invoiced', 'completed')",
+        [`%${cleanQ}%`]
+      ) as any[];
+      res.json(rows);
+    } catch (e) {
+      console.error("Failed to query active VRNs from job_card_master:", e);
+      res.json([]);
+    }
+  });
+
+  // --- INVOICE OCR DATA ENDPOINT ---
+  app.post("/api/job-cards/:jobId/invoice-ocr", express.json(), async (req, res) => {
+    const { jobId } = req.params;
+    const { ocrText } = req.body;
+    const db = getDB();
+    const id = parseInt(jobId);
+
+    const job = db.jobCards.find((j: any) => j.job_id === id);
+    if (job) {
+      job.invoice_ocr_data = ocrText;
+      setDB(db);
+    }
+
+    try {
+      await dbPool.execute("UPDATE job_cards SET invoice_ocr_data = ? WHERE job_id = ?", [ocrText, id]);
+      await dbPool.execute("UPDATE job_card_master SET invoice_ocr_data = ? WHERE job_card_id = ?", [ocrText, id]);
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("Failed to save invoice_ocr_data:", e);
+      res.status(500).json({ error: e.message || "Failed to save invoice ocr data" });
+    }
+  });
+
   // --- EMPLOYEES ENDPOINTS ---
   app.get("/api/employees", (req, res) => {
     const db = getDB();
