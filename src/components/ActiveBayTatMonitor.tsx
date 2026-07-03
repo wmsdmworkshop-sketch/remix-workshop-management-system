@@ -1237,7 +1237,7 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
                 >
                   {isSyncing ? (
                     <>
-                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      <FunnySpinner className="h-3.5 w-3.5" />
                       Synchronizing active indicators...
                     </>
                   ) : (
@@ -1287,7 +1287,7 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
       {/* 7. DETAILED DELAY LOGGER DIALOGUE (MODAL) */}
       {loggingJobId !== null && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl border border-slate-200 max-w-xl w-full p-6 space-y-4 shadow-xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 max-w-xl w-full p-6 space-y-4 shadow-xl max-h-[90dvh] overflow-y-auto">
             
             <div className="flex items-center justify-between border-b pb-3">
               <div className="flex items-center gap-2 text-indigo-600">

@@ -1,8 +1,11 @@
 import React, { useState } from "react";
 import { UploadCloud, CheckCircle, AlertTriangle, HelpCircle, RefreshCw, ClipboardList, Download } from "lucide-react";
 import { DMSImportBatch, DMSImportRow, JobCard } from "../types";
+import DmsImporterConsolidated from "./dms-import";
 
 interface DmsImporterProps {
+  isAdmin?: boolean;
+  userRole?: string;
   batches: DMSImportBatch[];
   rows: DMSImportRow[];
   jobCards: JobCard[];
@@ -35,7 +38,9 @@ export default function DmsImporter({
   rows,
   jobCards,
   onImportRows,
-  onResolveRow
+  onResolveRow,
+  isAdmin,
+  userRole
 }: DmsImporterProps) {
   const [dragActive, setDragActive] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
@@ -43,7 +48,7 @@ export default function DmsImporter({
   const [targetJobId, setTargetJobId] = useState<number | "">("");
   const [pastedData, setPastedData] = useState("");
   const [showPasteArea, setShowPasteArea] = useState(false);
-  const [activeMode, setActiveMode] = useState<"reconcile" | "backdated">("reconcile");
+  const [activeMode, setActiveMode] = useState<"reconcile" | "backdated" | "master-data" | "other-imports">("reconcile");
   const [backdatedText, setBackdatedText] = useState("");
   const [isUploadingBackdated, setIsUploadingBackdated] = useState(false);
   const [backdatedResult, setBackdatedResult] = useState<{
@@ -63,6 +68,26 @@ export default function DmsImporter({
   const [rowStatusFilter, setRowStatusFilter] = useState("All");
   const [rowSortField, setRowSortField] = useState<string | null>(null);
   const [rowSortDirection, setRowSortDirection] = useState<"asc" | "desc">("asc");
+  
+  // Master Data state
+  const [masterVehicles, setMasterVehicles] = useState<any[]>([]);
+  const [loadingMasterVehicles, setLoadingMasterVehicles] = useState(false);
+
+  React.useEffect(() => {
+    if (activeMode === "master-data") {
+      setLoadingMasterVehicles(true);
+      fetch("/api/master/vehicles")
+        .then(res => res.json())
+        .then(data => {
+          setMasterVehicles(data);
+          setLoadingMasterVehicles(false);
+        })
+        .catch(err => {
+          console.error("Failed to load master vehicles:", err);
+          setLoadingMasterVehicles(false);
+        });
+    }
+  }, [activeMode]);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -777,7 +802,7 @@ export default function DmsImporter({
                 >
                   {isUploadingBackdated ? (
                     <>
-                      <RefreshCw className="h-3 w-3 animate-spin" />
+                      <FunnySpinner className="h-3 w-3" />
                       Syncing database...
                     </>
                   ) : (
@@ -874,7 +899,7 @@ export default function DmsImporter({
                 >
                   {isUploadingBackdated ? (
                     <>
-                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      <FunnySpinner className="h-4 w-4" />
                       Fuzzy Matching...
                     </>
                   ) : (
@@ -885,6 +910,82 @@ export default function DmsImporter({
             </form>
           </div>
         </details>
+      </div>
+    );
+  };
+
+  const renderMasterData = () => {
+    return (
+      <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6 shadow-sm animate-fade-in">
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <h2 className="text-sm font-bold text-indigo-800 uppercase tracking-wider flex items-center gap-2">
+              <Database className="h-4 w-4" />
+              Master Vehicle Data (Compiled)
+            </h2>
+            <p className="text-[11px] text-slate-500 font-medium">
+              This data is continuously compiled and merged from historical uploads to preserve the most available data without duplicates.
+            </p>
+          </div>
+          <button 
+            onClick={() => {
+              const csv = [
+                "VRN,Customer,Mobile,Latest Job Date,Latest Job Card,Labour,Parts",
+                ...masterVehicles.map(v => `${v.vrn},${v.customer_name},${v.customer_mobile},${v.job_date},${v.job_card_no},${v.labour_amount},${v.parts_amount}`)
+              ].join("\n");
+              const blob = new Blob([csv], { type: 'text/csv' });
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = "Master_Vehicle_Data.csv";
+              a.click();
+            }}
+            className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition-colors cursor-pointer border border-indigo-200"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Download Compiled CSV
+          </button>
+        </div>
+
+        {loadingMasterVehicles ? (
+          <div className="py-12 text-center text-slate-500 font-medium text-xs flex flex-col items-center">
+            <RefreshCw className="h-6 w-6 animate-spin text-indigo-400 mb-2" />
+            Compiling Master Data...
+          </div>
+        ) : (
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase text-slate-500">
+                <tr>
+                  <th className="py-2.5 px-3">Vehicle (VRN)</th>
+                  <th className="py-2.5 px-3">Customer</th>
+                  <th className="py-2.5 px-3">Mobile</th>
+                  <th className="py-2.5 px-3">Latest Service Date</th>
+                  <th className="py-2.5 px-3">Job Card</th>
+                  <th className="py-2.5 px-3">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                {masterVehicles.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-8 text-center text-slate-400 italic">No historical master data available.</td>
+                  </tr>
+                ) : (
+                  masterVehicles.map((row, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50/50">
+                      <td className="p-3 font-bold text-slate-900">{row.vrn}</td>
+                      <td className="p-3">{row.customer_name || 'N/A'}</td>
+                      <td className="p-3">{row.customer_mobile || 'N/A'}</td>
+                      <td className="p-3 font-mono text-indigo-600">{row.job_date || 'N/A'}</td>
+                      <td className="p-3 font-mono text-slate-400 font-bold">{row.job_card_no}</td>
+                      <td className="p-3 text-emerald-600">{row.status}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     );
   };
@@ -935,25 +1036,51 @@ export default function DmsImporter({
           className={`px-5 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
             activeMode === "reconcile"
               ? "border-orange-500 text-orange-600 font-extrabold"
-              : "border-transparent text-slate-500 hover:text-slate-800"
+              : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50"
           }`}
         >
-          📋 DMS Billings Reconciler
+          ⏱️ DMS Billings Reconciler
         </button>
         <button
           onClick={() => setActiveMode("backdated")}
           className={`px-5 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
             activeMode === "backdated"
               ? "border-orange-500 text-orange-600 font-extrabold"
-              : "border-transparent text-slate-500 hover:text-slate-800"
+              : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50"
           }`}
         >
-          ⚙️ June Backdated Job Card Uploader
+          📂 Historical / Backdated
         </button>
+        <button
+          onClick={() => setActiveMode("other-imports")}
+          className={`px-5 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
+            activeMode === "other-imports"
+              ? "border-orange-500 text-orange-600 font-extrabold"
+              : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+          }`}
+        >
+          📦 Other Imports
+        </button>
+        {(isAdmin || userRole === 'developer') && (
+          <button
+            onClick={() => setActiveMode("master-data")}
+            className={`px-5 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
+              activeMode === "master-data"
+                ? "border-indigo-500 text-indigo-600 font-extrabold"
+                : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            🛡️ Master Data (Admin)
+          </button>
+        )}
       </div>
 
       {activeMode === "backdated" ? (
         renderBackdatedUploader()
+      ) : activeMode === "master-data" ? (
+        renderMasterData()
+      ) : activeMode === "other-imports" ? (
+        <DmsImporterConsolidated />
       ) : (
         <>
           {/* Optional Raw Paste Area */}

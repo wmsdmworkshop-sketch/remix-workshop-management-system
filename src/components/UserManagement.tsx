@@ -540,7 +540,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                 className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5"
               >
                 {addLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <FunnySpinner className="h-4 w-4" />
                 ) : (
                   <>
                     <UserPlus className="h-4 w-4" />

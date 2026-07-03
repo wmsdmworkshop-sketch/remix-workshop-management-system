@@ -49,6 +49,7 @@ interface ProductivityProps {
   jobCards: JobCard[];
   onRefresh: () => Promise<void>;
   isAdmin: boolean;
+  isManager?: boolean;
   setIsAdmin: (isAdmin: boolean) => void;
 }
 
@@ -91,6 +92,7 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
 
   // Admin Login / Credentials state
   const [showAdminLogin, setShowAdminLogin] = useState(false);
+  useEscapeKey(() => setShowAdminLogin(false), showAdminLogin);
   const [adminPin, setAdminPin] = useState("");
   const [pinError, setPinError] = useState(false);
 
@@ -483,7 +485,7 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
               <FileSpreadsheet className="h-5 w-5 text-orange-500" />
               <h1 className="text-xl font-bold tracking-tight text-slate-900 uppercase">Workshop Productivity</h1>
             </div>
-            {isAdmin ? (
+            {(isAdmin || isManager) ? (
               <span className="flex items-center gap-1 text-[10px] font-black uppercase text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 shrink-0">
                 <Shield className="h-3 w-3" /> Admin Mode Active
               </span>
@@ -789,7 +791,7 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
                               </button>
                             </div>
                           ) : (
-                            isAdmin ? (
+                            (isAdmin || isManager) ? (
                               <button 
                                 onClick={() => startEditing(emp)}
                                 className="p-1.5 rounded-lg border border-slate-200 text-slate-500 bg-white hover:bg-slate-50 hover:text-slate-700 transition-all shadow-2xs"
@@ -1005,7 +1007,7 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
                 >
                   {isImporting ? (
                     <>
-                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      <FunnySpinner className="h-3.5 w-3.5" />
                       Synchronizing...
                     </>
                   ) : (

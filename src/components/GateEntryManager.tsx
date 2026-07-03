@@ -60,13 +60,16 @@ export default function GateEntryManager({
 
   // Modals & UI States
   const [showAnprModal, setShowAnprModal] = useState(false);
+  useEscapeKey(() => setShowAnprModal(false), showAnprModal);
   const [anprScanning, setAnprScanning] = useState(false);
   
   const [showOdoModal, setShowOdoModal] = useState(false);
+  useEscapeKey(() => setShowOdoModal(false), showOdoModal);
   const [odoScanning, setOdoScanning] = useState(false);
   const [odoCapturedText, setOdoCapturedText] = useState<string | null>(null);
   
   const [showFuelModal, setShowFuelModal] = useState(false);
+  useEscapeKey(() => setShowFuelModal(false), showFuelModal);
   const [fuelScanning, setFuelScanning] = useState(false);
   const [fuelCapturedText, setFuelCapturedText] = useState<string | null>(null);
 
@@ -757,7 +760,7 @@ export default function GateEntryManager({
       {/* ======================================= */}
       {showAnprModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
+          <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl w-full max-w-lg max-h-[90dvh] overflow-y-auto shadow-2xl flex flex-col">
             {/* Header */}
             <div className="p-5 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -857,7 +860,7 @@ export default function GateEntryManager({
       {/* ======================================= */}
       {showOdoModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
+          <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl w-full max-w-md max-h-[90dvh] overflow-y-auto shadow-2xl flex flex-col">
             {/* Header */}
             <div className="p-5 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -977,7 +980,7 @@ export default function GateEntryManager({
       {/* ======================================= */}
       {showFuelModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
+          <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl w-full max-w-md max-h-[90dvh] overflow-y-auto shadow-2xl flex flex-col">
             {/* Header */}
             <div className="p-5 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">

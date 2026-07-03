@@ -1091,6 +1091,7 @@ export default function App() {
             jobCards={jobCards}
             onRefresh={fetchAllData}
             isAdmin={isAdmin}
+            isManager={isManager}
             setIsAdmin={() => {}}
           />
         )}
@@ -1112,6 +1113,8 @@ export default function App() {
             jobCards={jobCards}
             onImportRows={handleImportRows}
             onResolveRow={handleResolveRow}
+            isAdmin={isAdmin}
+            userRole={userRole}
           />
         )}
 

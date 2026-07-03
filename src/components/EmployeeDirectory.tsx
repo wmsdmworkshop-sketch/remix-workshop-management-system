@@ -77,6 +77,7 @@ export default function EmployeeDirectory({
 }: EmployeeDirectoryProps) {
   // Admin Login / Credentials state
   const [showAdminLogin, setShowAdminLogin] = useState(false);
+  useEscapeKey(() => setShowAdminLogin(false), showAdminLogin);
   const [adminPin, setAdminPin] = useState("");
   const [pinError, setPinError] = useState(false);
 
@@ -208,6 +209,7 @@ export default function EmployeeDirectory({
   // States and handler for purging incorrect customer imports
   const [isPurging, setIsPurging] = useState(false);
   const [showPurgeConfirm, setShowPurgeConfirm] = useState(false);
+  useEscapeKey(() => setShowPurgeConfirm(false), showPurgeConfirm);
   const [purgeResult, setPurgeResult] = useState<{ success: boolean; msg: string } | null>(null);
 
   const handlePurgeMistakes = async () => {

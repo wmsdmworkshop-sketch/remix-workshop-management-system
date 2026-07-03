@@ -410,7 +410,7 @@ export default function AttendanceShiftLog({ employees, currentUser }: Attendanc
               disabled={!formEmployeeId || saving}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-1.5"
             >
-              {saving ? <RefreshCw className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+              {saving ? <FunnySpinner className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
               Save Attendance
             </button>
           </div>
@@ -420,7 +420,7 @@ export default function AttendanceShiftLog({ employees, currentUser }: Attendanc
       {/* Records Table */}
       {loading ? (
         <div className="flex items-center justify-center h-32">
-          <RefreshCw className="h-5 w-5 animate-spin text-blue-400" />
+          <FunnySpinner className="h-5 w-5  text-blue-400" />
           <span className="ml-2 text-slate-400 text-sm">Loading attendance...</span>
         </div>
       ) : records.length === 0 ? (

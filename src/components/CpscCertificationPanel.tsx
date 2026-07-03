@@ -98,7 +98,7 @@ export default function CpscCertificationPanel() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <RefreshCw className="h-6 w-6 animate-spin text-amber-400" />
+        <FunnySpinner className="h-6 w-6  text-amber-400" />
         <span className="ml-2 text-slate-400 text-sm">Loading CPSC L2 data...</span>
       </div>
     );
@@ -314,7 +314,7 @@ export default function CpscCertificationPanel() {
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
                 >
                   {upgradeLoading === c.employee_id ? (
-                    <RefreshCw className="h-3 w-3 animate-spin" />
+                    <FunnySpinner className="h-3 w-3" />
                   ) : (
                     <ChevronUp className="h-3 w-3" />
                   )}

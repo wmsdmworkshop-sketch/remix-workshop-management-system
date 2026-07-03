@@ -561,7 +561,7 @@ export default function GoogleIntegration({
                 >
                   {exportingSheets ? (
                     <>
-                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      <FunnySpinner className="h-4 w-4" />
                       Generating Spreadsheet...
                     </>
                   ) : (
@@ -609,7 +609,7 @@ export default function GoogleIntegration({
                 >
                   {exportingDrive ? (
                     <>
-                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      <FunnySpinner className="h-4 w-4" />
                       Creating Backup...
                     </>
                   ) : (
@@ -748,7 +748,7 @@ export default function GoogleIntegration({
                     >
                       {sendingEmail ? (
                         <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <FunnySpinner className="h-4 w-4" />
                           Sending Email via Gmail...
                         </>
                       ) : (
@@ -774,14 +774,14 @@ export default function GoogleIntegration({
                         disabled={loadingEmails}
                         className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-1 cursor-pointer"
                       >
-                        {loadingEmails ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                        {loadingEmails ? <FunnySpinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
                         Reload Messages
                       </button>
                     </div>
 
                     {loadingEmails ? (
                       <div className="py-20 text-center space-y-2">
-                        <Loader2 className="h-8 w-8 text-indigo-600 animate-spin mx-auto" />
+                        <FunnySpinner className="h-8 w-8 text-indigo-600  mx-auto" />
                         <p className="text-xs text-slate-500 font-medium">Loading messages from Gmail inbox...</p>
                       </div>
                     ) : emails.length === 0 ? (
@@ -911,7 +911,7 @@ export default function GoogleIntegration({
                     >
                       {savingContact ? (
                         <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <FunnySpinner className="h-4 w-4" />
                           Saving Contact...
                         </>
                       ) : (
@@ -937,7 +937,7 @@ export default function GoogleIntegration({
                         disabled={loadingContacts}
                         className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-1 cursor-pointer self-end sm:self-auto"
                       >
-                        {loadingContacts ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                        {loadingContacts ? <FunnySpinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
                         Reload Connections
                       </button>
                     </div>
@@ -956,7 +956,7 @@ export default function GoogleIntegration({
 
                     {loadingContacts ? (
                       <div className="py-20 text-center space-y-2">
-                        <Loader2 className="h-8 w-8 text-indigo-600 animate-spin mx-auto" />
+                        <FunnySpinner className="h-8 w-8 text-indigo-600  mx-auto" />
                         <p className="text-xs text-slate-500 font-medium">Loading Google Contacts...</p>
                       </div>
                     ) : filteredContacts.length === 0 ? (

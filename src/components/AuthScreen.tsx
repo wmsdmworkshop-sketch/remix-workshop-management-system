@@ -33,6 +33,13 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
   const [otpUsername, setOtpUsername] = useState("");
   const otpInputRef = useRef<HTMLInputElement>(null);
 
+  // Forgot Password State
+  const [forgotPasswordStep, setForgotPasswordStep] = useState<"none" | "request" | "verify">("none");
+  const [resetMobile, setResetMobile] = useState("");
+  const [resetOtp, setResetOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+
+
   useEffect(() => {
     if (otpStep && otpInputRef.current) {
       otpInputRef.current.focus();
@@ -129,7 +136,64 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
     setOtpCode("");
     setOtpMobile("");
     setOtpUsername("");
+    setForgotPasswordStep("none");
+    setResetMobile("");
+    setResetOtp("");
+    setNewPassword("");
     setError(null);
+  };
+
+  const handleResetRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!resetMobile) {
+      setError("Please enter your registered mobile number.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/reset-password-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mobile_no: resetMobile })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to request OTP.");
+      setForgotPasswordStep("verify");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!resetOtp || !newPassword) {
+      setError("Please fill in all fields.");
+      return;
+    }
+    if (newPassword.length < 4) {
+      setError("Password must be at least 4 characters long.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/reset-password-verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mobile_no: resetMobile, otp: resetOtp, newPassword })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to reset password.");
+      alert("Password reset successfully. You can now login with your new password.");
+      handleBackToLogin();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -151,12 +215,16 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
         </div>
         
         <h2 className="mt-6 text-center text-xl font-bold tracking-tight text-slate-100">
-          {otpStep ? "OTP Verification" : "Sign in to your account"}
+          {forgotPasswordStep !== "none" ? "Reset Password" : otpStep ? "OTP Verification" : "Sign in to your account"}
         </h2>
         <p className="mt-2 text-center text-xs text-slate-400">
-          {otpStep 
-            ? `Enter the OTP sent to your registered mobile${otpMobile ? ` (****${otpMobile.slice(-4)})` : ""}`
-            : "Enter your operator username and password below"
+          {forgotPasswordStep === "request" 
+            ? "Enter your authorized mobile number to receive an OTP"
+            : forgotPasswordStep === "verify" 
+              ? `Enter the OTP sent to your registered mobile (****${resetMobile.slice(-4)})`
+              : otpStep 
+                ? `Enter the OTP sent to your registered mobile${otpMobile ? ` (****${otpMobile.slice(-4)})` : ""}`
+                : "Enter your operator username and password below"
           }
         </p>
       </div>
@@ -172,7 +240,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
             </div>
           )}
 
-          {!otpStep ? (
+          {!otpStep && forgotPasswordStep === "none" ? (
             /* ======= LOGIN FORM ======= */
             <form className="space-y-6" onSubmit={handleSubmit}>
               <div>
@@ -222,6 +290,15 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                <div className="flex justify-end mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setForgotPasswordStep("request")}
+                    className="text-xs text-orange-400 hover:text-orange-300 font-medium transition-colors"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
               </div>
 
               <div className="pt-2">
@@ -233,7 +310,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                 >
                   {loading ? (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <FunnySpinner className="h-4 w-4" />
                       <span>Verifying Credentials...</span>
                     </>
                   ) : (
@@ -242,6 +319,126 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                       <ArrowRight className="h-4 w-4" />
                     </>
                   )}
+                </button>
+              </div>
+            </form>
+          ) : forgotPasswordStep === "request" ? (
+            /* ======= FORGOT PASSWORD REQUEST FORM ======= */
+            <form className="space-y-6" onSubmit={handleResetRequest}>
+              <div>
+                <label htmlFor="resetMobile" className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Authorized Mobile No
+                </label>
+                <div className="mt-1.5 relative rounded-xl shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                    <UserIcon className="h-4 w-4" />
+                  </div>
+                  <input
+                    id="resetMobile"
+                    name="resetMobile"
+                    type="text"
+                    required
+                    value={resetMobile}
+                    onChange={(e) => setResetMobile(e.target.value)}
+                    className="block w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
+                    placeholder="e.g. 9876543210"
+                  />
+                </div>
+              </div>
+              <div className="pt-2 space-y-3">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-lg shadow-orange-500/15 text-sm font-bold text-white bg-orange-500 hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  {loading ? (
+                    <><FunnySpinner className="h-4 w-4" /><span>Sending OTP...</span></>
+                  ) : (
+                    <><span>Send Reset OTP</span><ArrowRight className="h-4 w-4" /></>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBackToLogin}
+                  disabled={loading}
+                  className="w-full py-3 px-4 border border-slate-600 rounded-xl text-sm font-bold text-slate-300 hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 transition-all"
+                >
+                  Back to Login
+                </button>
+              </div>
+            </form>
+          ) : forgotPasswordStep === "verify" ? (
+            /* ======= FORGOT PASSWORD VERIFY FORM ======= */
+            <form className="space-y-6" onSubmit={handleResetVerify}>
+              <div>
+                <label htmlFor="resetOtp" className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Enter OTP Code
+                </label>
+                <div className="mt-1.5 relative rounded-xl shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                    <ShieldCheck className="h-4 w-4" />
+                  </div>
+                  <input
+                    id="resetOtp"
+                    name="resetOtp"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    required
+                    value={resetOtp}
+                    onChange={(e) => setResetOtp(e.target.value.replace(/\D/g, ""))}
+                    className="block w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium tracking-[0.5em] text-center text-lg"
+                    placeholder="• • • • • •"
+                  />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="newPassword" className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+                  New Password
+                </label>
+                <div className="mt-1.5 relative rounded-xl shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                    <Lock className="h-4 w-4" />
+                  </div>
+                  <input
+                    id="newPassword"
+                    name="newPassword"
+                    type={showPassword ? "text" : "password"}
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="block w-full pl-10 pr-10 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium"
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-400 focus:outline-none"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="pt-2 space-y-3">
+                <button
+                  type="submit"
+                  disabled={loading || resetOtp.length < 6}
+                  className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-lg shadow-emerald-500/15 text-sm font-bold text-white bg-emerald-500 hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  {loading ? (
+                    <><FunnySpinner className="h-4 w-4" /><span>Resetting...</span></>
+                  ) : (
+                    <><ShieldCheck className="h-4 w-4" /><span>Reset Password</span></>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBackToLogin}
+                  disabled={loading}
+                  className="w-full py-3 px-4 border border-slate-600 rounded-xl text-sm font-bold text-slate-300 hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 transition-all"
+                >
+                  Cancel
                 </button>
               </div>
             </form>
@@ -291,7 +488,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                 >
                   {loading ? (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <FunnySpinner className="h-4 w-4" />
                       <span>Verifying OTP...</span>
                     </>
                   ) : (

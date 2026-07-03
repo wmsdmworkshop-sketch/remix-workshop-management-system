@@ -72,7 +72,7 @@ export default function PartsWarrantyManager({
   // --- WARRANTY AI VALIDATION STATE ---
   const [valJobCardId, setValJobCardId] = useState("");
   const [valDateOfSale, setValDateOfSale] = useState(new Date(Date.now() - 365 * 2 * 24 * 3600 * 1000).toISOString().split("T")[0]); // Default to 2 years ago
-  const [valModelNoPpl, setValModelNoPpl] = useState("");
+  const [valModelNoPpl, setValModelNoPpl] = useState("Prima");
   const [valFsbStatus, setValFsbStatus] = useState("Not Applicable");
   const [valQuery, setValQuery] = useState("");
   const [valLoading, setValLoading] = useState(false);
@@ -589,13 +589,15 @@ export default function PartsWarrantyManager({
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                   3. Vehicle Model / PPL Segment
                 </label>
-                <input
-                  type="text"
-                  placeholder="e.g. TATA SIGNA 4830.T"
+                <select
                   value={valModelNoPpl}
                   onChange={(e) => setValModelNoPpl(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-                />
+                >
+                  {['Prima', 'Signa', 'Ultra', 'Intra', 'Ace', 'Winger', 'LPT 407', 'LPT 709', 'LPT 1109', 'LPT 1412', 'LPT 2518', 'LPT 3118', 'Starbus', 'Cityride', 'Divo'].map((model) => (
+                    <option key={model} value={model}>{model}</option>
+                  ))}
+                </select>
               </div>
 
               <div>

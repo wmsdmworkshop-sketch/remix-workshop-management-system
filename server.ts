@@ -811,7 +811,7 @@ async function startServer() {
       const user = rows[0];
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
       const otpHash = await bcrypt.hash(otpCode, 10);
-      const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
+      const otpExpiry = new Date(Date.now() + 15 * 60 * 1000);
 
       await dbPool.execute(
         "UPDATE user_access_master SET otp_hash = ?, otp_expiry = ? WHERE user_id = ?",
@@ -1251,7 +1251,11 @@ async function startServer() {
   // --- EMPLOYEES ENDPOINTS ---
   app.get("/api/employees", (req, res) => {
     const db = getDB();
-    res.json(db.employees);
+    const employeesWithDefaults = db.employees.map((e: any) => ({
+      ...e,
+      target_revenue: e.target_revenue || ((e.basic_salary || 0) * 3)
+    }));
+    res.json(employeesWithDefaults);
   });
 
   app.post("/api/employees", (req, res) => {
@@ -1951,6 +1955,64 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       reworkLogs: reworks,
       carryForwardLogs: carryForwards
     });
+  });
+
+  // --- MASTER DATA ENDPOINT ---
+  app.get("/api/master/vehicles", (req, res) => {
+    const db = getDB();
+    const masterMap = new Map<string, any>();
+
+    // Compile unique vehicles from job cards taking the most available data
+    if (db.jobCards && Array.isArray(db.jobCards)) {
+      // Sort job cards by job_date ascending so that newer dates overwrite older ones
+      // if they have valid data, or at least we process them sequentially
+      const sortedJobs = [...db.jobCards].sort((a, b) => {
+        return new Date(a.job_date).getTime() - new Date(b.job_date).getTime();
+      });
+
+      sortedJobs.forEach((job) => {
+        if (!job.vrn) return;
+        const key = String(job.vrn).trim().toUpperCase();
+        if (!key) return;
+
+        if (!masterMap.has(key)) {
+          masterMap.set(key, { ...job });
+        } else {
+          const existing = masterMap.get(key);
+          // For each field in the incoming job, if existing is null, 0, or "", and incoming is valid, overwrite.
+          // Because we sorted ascending, for "last_service_date" equivalent (job_date), it naturally gets overwritten 
+          // to the latest because we always overwrite if we specifically check for date fields, 
+          // but for general fields we only overwrite if the new one is 'better' (non null/0) OR if it's the latest service date.
+          
+          Object.keys(job).forEach(k => {
+            const newVal = job[k];
+            const oldVal = existing[k];
+            
+            const isNewValid = newVal !== null && newVal !== undefined && newVal !== "" && newVal !== 0 && newVal !== "0";
+            const isOldEmpty = oldVal === null || oldVal === undefined || oldVal === "" || oldVal === 0 || oldVal === "0";
+            
+            // Special handling for odometer: take the max
+            if (k === 'km_reading' || k === 'odometer') {
+              const newNum = parseInt(newVal) || 0;
+              const oldNum = parseInt(oldVal) || 0;
+              if (newNum > oldNum) existing[k] = newNum;
+            } else if (isOldEmpty && isNewValid) {
+              // If old is empty and new is valid, take it
+              existing[k] = newVal;
+            } else if (k === 'job_date') {
+              // Always keep the latest date
+              const newDate = new Date(newVal).getTime();
+              const oldDate = new Date(oldVal).getTime();
+              if (newDate > oldDate) {
+                existing[k] = newVal;
+              }
+            }
+          });
+        }
+      });
+    }
+
+    res.json(Array.from(masterMap.values()));
   });
 
   app.get("/api/job-cards", async (req, res) => {

@@ -947,7 +947,7 @@ export default function GeminiAssistant({
                       <span className="h-5 w-1 bg-emerald-400 rounded animate-bounce [animation-delay:0.6s] [animation-duration:1.1s]"></span>
                     </div>
                   ) : voiceConnecting ? (
-                    <Loader className="h-8 w-8 text-amber-400 animate-spin" />
+                    <FunnySpinner className="h-8 w-8 text-amber-400" />
                   ) : (
                     <Mic className="h-10 w-10 text-slate-500" />
                   )}
@@ -1115,7 +1115,7 @@ export default function GeminiAssistant({
                   >
                     {videoGenerating ? (
                       <>
-                        <Loader className="h-4 w-4 animate-spin" />
+                        <FunnySpinner className="h-4 w-4" />
                         Rendering Animation...
                       </>
                     ) : (
@@ -1148,7 +1148,7 @@ export default function GeminiAssistant({
                       
                       {/* Bouncing rendering orb */}
                       <div className="relative h-16 w-16 bg-rose-500/10 rounded-full flex items-center justify-center shadow-inner">
-                        <Loader className="h-8 w-8 text-rose-600 animate-spin" />
+                        <FunnySpinner className="h-8 w-8 text-rose-600" />
                       </div>
 
                       <div className="text-center space-y-1">

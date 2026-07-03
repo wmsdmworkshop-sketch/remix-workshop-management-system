@@ -264,7 +264,7 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center p-8 bg-slate-900 border border-slate-800 rounded-xl space-y-3">
-        <RefreshCw className="h-6 w-6 animate-spin text-blue-400" />
+        <FunnySpinner className="h-6 w-6  text-blue-400" />
         <span className="text-sm text-slate-400 font-bold">Synchronizing biometric credentials...</span>
       </div>
     );
@@ -413,7 +413,7 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
         >
           {punching ? (
             <>
-              <RefreshCw className="h-4 w-4 animate-spin" />
+              <FunnySpinner className="h-4 w-4" />
               Verifying Biometrics...
             </>
           ) : attendance?.check_in && attendance?.check_out ? (
