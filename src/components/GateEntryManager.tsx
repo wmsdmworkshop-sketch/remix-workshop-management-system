@@ -59,13 +59,34 @@ export default function GateEntryManager({
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
+  // Camera & Location States
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+
+  // ANPR Fallback States
+  const [anprFailed, setAnprFailed] = useState(false);
+  const [chassisNumber, setChassisNumber] = useState("");
+  const [showChassisModal, setShowChassisModal] = useState(false);
+  useEscapeKey(() => {
+    stopCamera();
+    setShowChassisModal(false);
+  }, showChassisModal);
+  const [chassisScanning, setChassisScanning] = useState(false);
+
   // Modals & UI States
   const [showAnprModal, setShowAnprModal] = useState(false);
-  useEscapeKey(() => setShowAnprModal(false), showAnprModal);
+  useEscapeKey(() => {
+    stopCamera();
+    setShowAnprModal(false);
+  }, showAnprModal);
   const [anprScanning, setAnprScanning] = useState(false);
   
   const [showOdoModal, setShowOdoModal] = useState(false);
-  useEscapeKey(() => setShowOdoModal(false), showOdoModal);
+  useEscapeKey(() => {
+    stopCamera();
+    setShowOdoModal(false);
+  }, showOdoModal);
   const [odoScanning, setOdoScanning] = useState(false);
   const [odoCapturedText, setOdoCapturedText] = useState<string | null>(null);
   
@@ -74,6 +95,26 @@ export default function GateEntryManager({
   const [fuelScanning, setFuelScanning] = useState(false);
   const [fuelCapturedText, setFuelCapturedText] = useState<string | null>(null);
 
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      setCameraStream(stream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error("Camera permission denied:", err);
+      setShowPermissionModal(true);
+    }
+  };
+
+  const stopCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track) => track.stop());
+      setCameraStream(null);
+    }
+  };
+
   // Escape key listener to close modals
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -81,11 +122,25 @@ export default function GateEntryManager({
         setShowAnprModal(false);
         setShowOdoModal(false);
         setShowFuelModal(false);
+        setShowChassisModal(false);
+        stopCamera();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [cameraStream]);
+
+  // Handle camera stream on modal transitions
+  useEffect(() => {
+    if (showAnprModal || showOdoModal || showChassisModal) {
+      startCamera();
+    } else {
+      stopCamera();
+    }
+    return () => {
+      stopCamera();
+    };
+  }, [showAnprModal, showOdoModal, showChassisModal]);
 
   // ANPR mock database entries
   const mockAnprQueue = [
@@ -112,12 +167,14 @@ export default function GateEntryManager({
   // Handler to register entries
   const handleRegisterEntry = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!vrn || !customerName || !customerMobile) return;
+    const activeIdentifier = anprFailed ? chassisNumber : vrn;
+    if (!activeIdentifier || !customerName || !customerMobile) return;
 
     const newJobNo = `JC-${Date.now().toString().slice(-5)}`;
     onCreateJob({
       job_card_no: newJobNo,
-      vrn: vrn.trim().toUpperCase(),
+      vrn: anprFailed ? `CH-${chassisNumber.trim().toUpperCase().slice(-6)}` : vrn.trim().toUpperCase(),
+      chassis_number: anprFailed ? chassisNumber.trim().toUpperCase() : undefined,
       customer_name: customerName.trim(),
       customer_mobile: customerMobile.trim(),
       vehicle_make: "TATA", // vehicle make is TATA only in all menus
@@ -125,12 +182,14 @@ export default function GateEntryManager({
       status: "Waiting",
       bay_id: null,
       created_at: new Date().toISOString(),
-      remarks: complaints ? `${complaints}. Fuel: ${fuelLevel}` : `Registered at Gate Security Gate In. Fuel: ${fuelLevel}`,
+      remarks: `Registered at Gate Security Gate In. Fuel: ${fuelLevel}${anprFailed ? ` | Chassis Scanned: ${chassisNumber}` : ''}`,
       km_reading: odometer ? parseInt(odometer) : 0
     });
 
-    setSuccess(`Vehicle ${vrn.toUpperCase()} registered successfully! Job card ${newJobNo} issued.`);
+    setSuccess(`Vehicle ${anprFailed ? chassisNumber.toUpperCase() : vrn.toUpperCase()} registered successfully! Job card ${newJobNo} issued.`);
     setVrn("");
+    setChassisNumber("");
+    setAnprFailed(false);
     setCustomerName("");
     setCustomerMobile("");
     setMake("TATA");
@@ -138,7 +197,6 @@ export default function GateEntryManager({
     setOdometer("");
     setFuelLevel("50%");
     setFuelPercentage(50);
-    setComplaints("");
 
     setTimeout(() => setSuccess(null), 5000);
   };
@@ -232,52 +290,89 @@ export default function GateEntryManager({
           <form onSubmit={handleRegisterEntry} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               
-              {/* VRN with CCTV ANPR trigger */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  Registration Number (VRN) *
-                </label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Car className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. MH-12-PQ-4567"
-                      value={vrn}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setVrn(val);
-                        const cleanVrn = val.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-                        if (cleanVrn.length >= 4) {
-                          const latestVisit = [...jobCards]
-                            .reverse()
-                            .filter(j => j.status !== "Cancelled")
-                            .find(j => j.vrn.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") === cleanVrn);
-                          if (latestVisit) {
-                            setCustomerName(latestVisit.customer_name);
-                            setCustomerMobile(latestVisit.customer_mobile);
-                            if (latestVisit.vehicle_model) setModel(latestVisit.vehicle_model);
-                            if (latestVisit.vehicle_make) setMake(latestVisit.vehicle_make);
-                            setSuccess(`✨ Found previous visit history for ${latestVisit.vrn}! Customer details and vehicle model (${latestVisit.vehicle_model}) auto-populated.`);
-                            setTimeout(() => setSuccess(null), 4000);
-                          }
-                        }
-                      }}
-                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none uppercase font-semibold text-slate-800"
-                    />
+              {/* VRN or Chassis Number input section */}
+              {anprFailed ? (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Chassis Number (Plate Scan) *
+                  </label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <FileText className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. MAT441234A567890"
+                        value={chassisNumber}
+                        onChange={(e) => setChassisNumber(e.target.value.toUpperCase())}
+                        className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none uppercase font-semibold text-slate-800 font-mono"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowChassisModal(true)}
+                      className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all border border-slate-700"
+                      title="Scan Chassis Plate"
+                    >
+                      <Camera className="h-4 w-4 text-orange-400" />
+                      <span>Scan Plate</span>
+                    </button>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setShowAnprModal(true)}
-                    className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all border border-slate-700"
-                    title="Fetch Plate from CCTV ANPR"
+                    onClick={() => setAnprFailed(false)}
+                    className="text-[9px] text-orange-500 font-bold hover:underline mt-1 block"
                   >
-                    <Camera className="h-4 w-4 text-emerald-400" />
-                    <span>ANPR</span>
+                    ← Back to VRN / ANPR Entry
                   </button>
                 </div>
-              </div>
+              ) : (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Registration Number (VRN) *
+                  </label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Car className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. MH-12-PQ-4567"
+                        value={vrn}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setVrn(val);
+                          const cleanVrn = val.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+                          if (cleanVrn.length >= 4) {
+                            const latestVisit = [...jobCards]
+                              .reverse()
+                              .filter(j => j.status !== "Cancelled")
+                              .find(j => j.vrn.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") === cleanVrn);
+                            if (latestVisit) {
+                              setCustomerName(latestVisit.customer_name);
+                              setCustomerMobile(latestVisit.customer_mobile);
+                              if (latestVisit.vehicle_model) setModel(latestVisit.vehicle_model);
+                              if (latestVisit.vehicle_make) setMake(latestVisit.vehicle_make);
+                              setSuccess(`✨ Found previous visit history for ${latestVisit.vrn}! Customer details and vehicle model (${latestVisit.vehicle_model}) auto-populated.`);
+                              setTimeout(() => setSuccess(null), 4000);
+                            }
+                          }
+                        }}
+                        className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none uppercase font-semibold text-slate-800"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAnprModal(true)}
+                      className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all border border-slate-700"
+                      title="Fetch Plate from CCTV ANPR"
+                    >
+                      <Camera className="h-4 w-4 text-emerald-400" />
+                      <span>ANPR</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Customer Mobile */}
               <div>
@@ -475,19 +570,7 @@ export default function GateEntryManager({
 
             </div>
 
-            {/* Complaints */}
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                Complaints / Service Demands
-              </label>
-              <textarea
-                placeholder="e.g. Brake noise, AC cooling issue, standard service"
-                rows={3}
-                value={complaints}
-                onChange={(e) => setComplaints(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none resize-none text-slate-800"
-              />
-            </div>
+
 
             <button
               type="submit"
@@ -794,14 +877,24 @@ export default function GateEntryManager({
                 1080P // TATA INTELLISENSE
               </div>
 
+              {/* HTML Video stream if permission granted, else placeholder */}
+              {cameraStream ? (
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+              ) : null}
+
               {/* Scanning visual sweep line */}
-              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-emerald-500/15 to-transparent h-1/2 w-full animate-bounce"></div>
+              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-emerald-500/15 to-transparent h-1/2 w-full animate-bounce pointer-events-none"></div>
 
               {anprScanning ? (
                 <div className="relative z-10 text-emerald-400">
                   <FunnyLoader message="Running Neural OCR Scan on Camera Feed..." />
                 </div>
-              ) : (
+              ) : !cameraStream ? (
                 <div className="text-center p-6 space-y-2 relative z-10">
                   <div className="w-16 h-16 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-emerald-400 animate-pulse">
                     <Camera className="h-8 w-8" />
@@ -809,13 +902,13 @@ export default function GateEntryManager({
                   <p className="text-xs font-black text-slate-200">READY TO RECOGNIZE VRN</p>
                   <p className="text-[10px] text-slate-400">Select a vehicle from the queue feed list below to pull data</p>
                 </div>
-              )}
+              ) : null}
 
               {/* Scope corners */}
-              <div className="absolute top-6 left-6 w-4 h-4 border-t-2 border-l-2 border-emerald-500"></div>
-              <div className="absolute top-6 right-6 w-4 h-4 border-t-2 border-r-2 border-emerald-500"></div>
-              <div className="absolute bottom-6 left-6 w-4 h-4 border-b-2 border-l-2 border-emerald-500"></div>
-              <div className="absolute bottom-6 right-6 w-4 h-4 border-b-2 border-r-2 border-emerald-500"></div>
+              <div className="absolute top-6 left-6 w-4 h-4 border-t-2 border-l-2 border-emerald-500 pointer-events-none"></div>
+              <div className="absolute top-6 right-6 w-4 h-4 border-t-2 border-r-2 border-emerald-500 pointer-events-none"></div>
+              <div className="absolute bottom-6 left-6 w-4 h-4 border-b-2 border-l-2 border-emerald-500 pointer-events-none"></div>
+              <div className="absolute bottom-6 right-6 w-4 h-4 border-b-2 border-r-2 border-emerald-500 pointer-events-none"></div>
             </div>
 
             {/* Feed ledger queue */}
@@ -849,14 +942,33 @@ export default function GateEntryManager({
               </div>
             </div>
 
-            <div className="p-4 bg-slate-950 border-t border-slate-800 text-center text-[10px] text-slate-500">
-              Clicking a queued vehicle simulates instant CCTV plate recognition & pre-fills the gate ledger form.
+            <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-between items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  stopCamera();
+                  setAnprFailed(true);
+                  setShowAnprModal(false);
+                }}
+                className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-450 border border-rose-500/30 rounded-xl text-xs font-bold cursor-pointer"
+              >
+                ⚠️ Plate Not Detected (ANPR Fail)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  stopCamera();
+                  setShowAnprModal(false);
+                }}
+                className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-350 rounded-xl text-xs font-bold cursor-pointer"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ======================================= */}
       {/* 2. ODOMETER CAM SCAN MODAL */}
       {/* ======================================= */}
       {showOdoModal && (
@@ -889,12 +1001,21 @@ export default function GateEntryManager({
 
               {/* Simulated Odometer Image Display */}
               <div className="aspect-video bg-slate-950 border border-slate-800 rounded-2xl relative flex flex-col items-center justify-center overflow-hidden">
-                <div className="absolute top-3 left-3 px-2 py-0.5 bg-slate-900/80 border border-slate-700/50 rounded text-[9px] text-orange-400 font-bold uppercase tracking-wider">
+                {cameraStream ? (
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                ) : null}
+
+                <div className="absolute top-3 left-3 px-2 py-0.5 bg-slate-900/80 border border-slate-700/50 rounded text-[9px] text-orange-400 font-bold uppercase tracking-wider z-10">
                   Reference Cam Viewfinder
                 </div>
 
                 {/* Dashboard graphic scan overlay */}
-                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900/10 via-slate-950/80 to-slate-950"></div>
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900/10 via-slate-950/80 to-slate-950 pointer-events-none"></div>
                 
                 {odoScanning ? (
                   <div className="relative z-10 text-orange-400">
@@ -1107,6 +1228,189 @@ export default function GateEntryManager({
                   Confirm & Sync Needle
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. CHASSIS PLATE SCAN MODAL */}
+      {showChassisModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl w-full max-w-md max-h-[90dvh] overflow-y-auto shadow-2xl flex flex-col">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-orange-500/10 text-orange-400 flex items-center justify-center">
+                  <FileText className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-widest text-white">Chassis Plate Cam Scan</h3>
+                  <p className="text-[9px] text-slate-400 font-medium">Extract chassis number from steel plate</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  stopCamera();
+                  setShowChassisModal(false);
+                }}
+                className="text-slate-400 hover:text-white text-xs font-bold font-mono p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Viewfinder / Capture Feed */}
+            <div className="p-5 space-y-4">
+              <p className="text-[10px] text-slate-400">
+                Align the metal chassis plate within the viewfinder frame to scan using browser camera OCR.
+              </p>
+
+              <div className="aspect-video bg-slate-950 border border-slate-800 rounded-2xl relative flex flex-col items-center justify-center overflow-hidden">
+                {/* HTML Video stream if permission granted, else placeholder */}
+                {cameraStream ? (
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="text-center p-4 space-y-2 z-10">
+                    <Camera className="h-8 w-8 text-slate-500 mx-auto" />
+                    <p className="text-[10px] text-slate-400">Webcam viewfinder stream inactive</p>
+                  </div>
+                )}
+                
+                {/* Overlay box for plate alignment */}
+                <div className="absolute inset-0 border-[24px] border-slate-950/70 pointer-events-none z-10">
+                  <div className="w-full h-full border border-dashed border-orange-500/80 rounded-md"></div>
+                </div>
+
+                {chassisScanning && (
+                  <div className="absolute left-0 right-0 h-0.5 bg-orange-500 shadow-[0_0_8px_#f97316] animate-bounce z-25"></div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setChassisScanning(true);
+                    setTimeout(() => {
+                      setChassisNumber("MAT441234A567890");
+                      setChassisScanning(false);
+                      stopCamera();
+                      setShowChassisModal(false);
+                    }, 1200);
+                  }}
+                  className="p-2.5 bg-slate-950 hover:bg-slate-855 border border-slate-800 rounded-xl text-left hover:border-orange-500 transition-all cursor-pointer"
+                >
+                  <span className="text-xs font-bold text-slate-200 block">Scan Sample 1</span>
+                  <span className="text-[9px] text-slate-500">Nexon Steel Plate</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setChassisScanning(true);
+                    setTimeout(() => {
+                      setChassisNumber("MAT441882Z123456");
+                      setChassisScanning(false);
+                      stopCamera();
+                      setShowChassisModal(false);
+                    }, 1200);
+                  }}
+                  className="p-2.5 bg-slate-950 hover:bg-slate-855 border border-slate-800 rounded-xl text-left hover:border-orange-500 transition-all cursor-pointer"
+                >
+                  <span className="text-xs font-bold text-slate-200 block">Scan Sample 2</span>
+                  <span className="text-[9px] text-slate-500">Safari Steel Plate</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  stopCamera();
+                  setShowChassisModal(false);
+                }}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-350 rounded-xl text-xs font-bold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setChassisScanning(true);
+                  setTimeout(() => {
+                    setChassisNumber("MAT441234A567890");
+                    setChassisScanning(false);
+                    stopCamera();
+                    setShowChassisModal(false);
+                  }, 1000);
+                }}
+                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold cursor-pointer flex items-center gap-1.5"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                <span>Simulate Frame Capture</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CAMERA & LOCATION PERMISSION INSTRUCTIONS MODAL */}
+      {showPermissionModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/85 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
+              <div className="p-2.5 bg-rose-500/10 text-rose-450 rounded-xl">
+                <AlertCircle className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-wider text-slate-100">Camera & Location Required</h3>
+                <p className="text-[10px] text-slate-400">Permissions are currently blocked or denied</p>
+              </div>
+            </div>
+            
+            <div className="space-y-3 text-xs text-slate-300 leading-relaxed">
+              <p className="font-semibold text-slate-100">Please follow these instructions to enable camera access:</p>
+              <ol className="list-decimal pl-5 space-y-2 text-slate-400">
+                <li>Click the <strong>lock icon</strong> (🔒) in your browser's address bar.</li>
+                <li>Ensure <strong>Camera</strong> and <strong>Location</strong> permissions are set to <strong>Allow</strong>.</li>
+                <li>If they are already allowed, toggle them off and back on again.</li>
+                <li>OS-level restriction: check that camera permissions are granted for your browser in system preferences/settings.</li>
+              </ol>
+            </div>
+
+            <div className="flex gap-3 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowPermissionModal(false)}
+                className="flex-1 py-2 bg-slate-900 hover:bg-slate-800 text-slate-350 border border-slate-800 rounded-xl text-xs font-bold transition-all cursor-pointer text-center"
+              >
+                Dismiss
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    setCameraStream(stream);
+                    if (videoRef.current) {
+                      videoRef.current.srcObject = stream;
+                    }
+                    setShowPermissionModal(false);
+                  } catch (e) {
+                    console.error("Camera connection retry failed:", e);
+                  }
+                }}
+                className="flex-1 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold transition-all cursor-pointer text-center"
+              >
+                Retry Connection
+              </button>
             </div>
           </div>
         </div>

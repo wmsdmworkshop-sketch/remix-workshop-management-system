@@ -312,7 +312,7 @@ export default function PartsWarrantyManager({
 
   const handleAddRequisition = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reqJobId || !reqPartName || !reqPartCode || !reqQty || !reqPrice) return;
+    if (!reqJobId || !reqPartName || !reqPartCode || !reqQty) return;
 
     const matchedJob = jobCards.find(j => j.job_id === parseInt(reqJobId));
     if (!matchedJob) return;
@@ -324,7 +324,7 @@ export default function PartsWarrantyManager({
       partName: reqPartName,
       partCode: reqPartCode.toUpperCase(),
       qty: parseInt(reqQty),
-      unitPrice: parseFloat(reqPrice),
+      unitPrice: reqPrice ? parseFloat(reqPrice) : 0,
       status: "Requested",
       requestedAt: new Date().toISOString()
     };
@@ -509,11 +509,10 @@ export default function PartsWarrantyManager({
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      Est Unit Price (₹) *
+                      Est Unit Price (₹) (Optional)
                     </label>
                     <input
                       type="number"
-                      required
                       placeholder="e.g. 3500"
                       value={reqPrice}
                       onChange={(e) => setReqPrice(e.target.value)}
