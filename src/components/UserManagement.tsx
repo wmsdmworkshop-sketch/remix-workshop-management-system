@@ -134,6 +134,8 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<User["role"]>("reception");
   const [employeeId, setEmployeeId] = useState<string>("");
+  const [mobileNo, setMobileNo] = useState("");
+  const [email, setEmail] = useState("");
   const [addLoading, setAddLoading] = useState(false);
 
   // Edit User State
@@ -142,6 +144,8 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
   const [editRole, setEditRole] = useState<User["role"]>("reception");
   const [editEmployeeId, setEditEmployeeId] = useState<string>("");
   const [editPassword, setEditPassword] = useState("");
+  const [editMobileNo, setEditMobileNo] = useState("");
+  const [editEmail, setEditEmail] = useState("");
   const [editLoading, setEditLoading] = useState(false);
 
   const fetchUsers = async () => {
@@ -196,7 +200,9 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
           username: username.trim().toLowerCase(),
           password,
           role,
-          employee_id: employeeId ? Number(employeeId) : null
+          employee_id: employeeId ? Number(employeeId) : null,
+          mobile_no: mobileNo.trim() || undefined,
+          email: email.trim() || undefined
         })
       });
 
@@ -214,6 +220,8 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
       setPassword("");
       setRole("reception");
       setEmployeeId("");
+      setMobileNo("");
+      setEmail("");
       
       // Refresh list
       await fetchUsers();
@@ -240,7 +248,9 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
           full_name: editFullName.trim(),
           role: editRole,
           employee_id: editEmployeeId ? Number(editEmployeeId) : null,
-          password: editPassword ? editPassword : undefined
+          password: editPassword ? editPassword : undefined,
+          mobile_no: editMobileNo.trim() || undefined,
+          email: editEmail.trim() || undefined
         })
       });
 
@@ -253,6 +263,8 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
       setSuccess("User updated successfully!");
       setEditingUserId(null);
       setEditPassword("");
+      setEditMobileNo("");
+      setEditEmail("");
       await fetchUsers();
     } catch (err: any) {
       setError(err.message || "Failed to update user.");
@@ -296,6 +308,8 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
     setEditRole(user.role);
     setEditEmployeeId(user.employee_id ? String(user.employee_id) : "");
     setEditPassword("");
+    setEditMobileNo(user.mobile_no || "");
+    setEditEmail(user.email || "");
   };
 
   const filteredUsers = users.filter(user => {
@@ -492,6 +506,32 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
               />
             </div>
 
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Authorised Mobile No (for OTP)
+              </label>
+              <input
+                type="text"
+                value={mobileNo}
+                onChange={(e) => setMobileNo(e.target.value)}
+                placeholder="e.g. 9876543210"
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Email (Optional)
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="e.g. operator@workshop.com"
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+              />
+            </div>
+
             <div className="flex items-end">
               <button
                 type="submit"
@@ -587,8 +627,22 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                                 type="text"
                                 value={editFullName}
                                 onChange={(e) => setEditFullName(e.target.value)}
-                                className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none"
+                                className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none block w-full"
                                 placeholder="Full Name"
+                              />
+                              <input
+                                type="text"
+                                value={editMobileNo}
+                                onChange={(e) => setEditMobileNo(e.target.value)}
+                                className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none block w-full"
+                                placeholder="Mobile No for OTP"
+                              />
+                              <input
+                                type="email"
+                                value={editEmail}
+                                onChange={(e) => setEditEmail(e.target.value)}
+                                className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none block w-full"
+                                placeholder="Email (Optional)"
                               />
                               <input
                                 type="password"
@@ -602,6 +656,12 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                             <div>
                               <p className="text-xs font-bold text-slate-800">{user.full_name}</p>
                               <p className="text-[10px] text-slate-400 font-mono mt-0.5">@{user.username}</p>
+                              {user.mobile_no && (
+                                <p className="text-[10px] text-slate-500 font-mono mt-0.5">📱 {user.mobile_no}</p>
+                              )}
+                              {user.email && (
+                                <p className="text-[10px] text-slate-500 font-mono mt-0.5">✉️ {user.email}</p>
+                              )}
                             </div>
                           )}
                         </td>

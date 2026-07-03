@@ -248,6 +248,8 @@ export interface User {
   employee_id?: number | null;
   created_at?: string;
   last_login?: string | null;
+  email?: string | null;
+  mobile_no?: string | null;
 }
 
 export interface JobRevenueSplit {

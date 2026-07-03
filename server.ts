@@ -985,7 +985,7 @@ async function startServer() {
   // USER MANAGEMENT API: Update user
   app.put("/api/users/:user_id", authenticateToken, requireRoles(["developer", "admin", "dealer_principal"]), async (req, res) => {
     const userId = Number(req.params.user_id);
-    const { full_name, role, employee_id, is_active, password } = req.body;
+    const { full_name, role, employee_id, is_active, password, mobile_no, email } = req.body;
 
     try {
       let existingUser: any = null;
@@ -1018,11 +1018,13 @@ async function startServer() {
       const finalRole = role !== undefined ? role : (existingUser.user_role || existingUser.role);
       const finalEmployeeId = employee_id !== undefined ? employee_id : existingUser.employee_id;
       const finalIsActive = is_active !== undefined ? (is_active ? 1 : 0) : existingUser.is_active;
+      const finalMobileNo = mobile_no !== undefined ? mobile_no : existingUser.mobile_no;
+      const finalEmail = email !== undefined ? email : existingUser.email;
 
       try {
         await dbPool.execute(
-          "UPDATE user_access_master SET full_name = ?, user_role = ?, access_level = ?, employee_id = ?, is_active = ?, password_hash = ? WHERE user_id = ?",
-          [finalFullName, finalRole, finalRole, finalEmployeeId, finalIsActive, password_hash, userId]
+          "UPDATE user_access_master SET full_name = ?, user_role = ?, access_level = ?, employee_id = ?, is_active = ?, password_hash = ?, mobile_no = ?, email = ? WHERE user_id = ?",
+          [finalFullName, finalRole, finalRole, finalEmployeeId, finalIsActive, password_hash, finalMobileNo || "", finalEmail || null, userId]
         );
       } catch (dbErr) {
         console.warn("MySQL user update failed, updating local cache only:", dbErr);
@@ -1035,7 +1037,9 @@ async function startServer() {
           role: finalRole,
           employee_id: finalEmployeeId,
           is_active: finalIsActive,
-          password_hash
+          password_hash,
+          mobile_no: finalMobileNo,
+          email: finalEmail
         };
         saveDB(cachedDB);
       }
@@ -1047,6 +1051,8 @@ async function startServer() {
         role: finalRole,
         employee_id: finalEmployeeId,
         is_active: finalIsActive,
+        mobile_no: finalMobileNo,
+        email: finalEmail
       });
     } catch (err: any) {
       console.error("Update user error:", err);
