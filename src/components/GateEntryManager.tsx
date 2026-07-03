@@ -26,6 +26,7 @@ import {
   Cpu,
   Image as ImageIcon
 } from "lucide-react";
+import FunnyLoader from "./FunnyLoader";
 import { JobCard, Bay } from "../types";
 
 interface GateEntryManagerProps {
@@ -494,58 +495,127 @@ export default function GateEntryManager({
           </form>
         </div>
 
-        {/* Live status indicators */}
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between space-y-4">
-          <div className="space-y-4">
-            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider pb-2 border-b border-slate-100">
+        {/* Live status indicators - Truck Vector Info Box */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between space-y-4">
+          <div>
+            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider pb-2 border-b border-slate-100 mb-3">
               Gate Overview
             </h3>
+            
+            {/* SVG B&W Vector Truck */}
+            <div className="w-full flex items-center justify-center">
+              <svg viewBox="0 0 740 280" className="w-full h-auto text-slate-800" fill="none" xmlns="http://www.w3.org/2000/svg">
+                {/* Chassis and components under the truck body */}
+                <path d="M 210 200 L 710 200 L 710 215 L 210 215 Z" fill="#0f172a" />
+                <rect x="360" y="200" width="80" height="25" rx="4" fill="#334155" />
 
-            <div className="space-y-3">
-              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center font-bold">
-                  <ArrowLeftRight className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase">Active WIP & Queue</p>
-                  <p className="text-lg font-black text-slate-800">{activeJobs.length} Vehicles</p>
-                </div>
-              </div>
+                {/* Axles / Wheels */}
+                {/* Wheel 1 (Front): */}
+                <g transform="translate(180, 220)">
+                  <circle cx="0" cy="0" r="26" fill="#0f172a" stroke="#ffffff" strokeWidth="2" />
+                  <circle cx="0" cy="0" r="15" fill="#475569" stroke="#94a3b8" strokeWidth="1.5" />
+                  <circle cx="0" cy="0" r="5" fill="#ffffff" />
+                </g>
+                {/* Wheel 2 (Rear 1): */}
+                <g transform="translate(320, 220)">
+                  <circle cx="0" cy="0" r="26" fill="#0f172a" stroke="#ffffff" strokeWidth="2" />
+                  <circle cx="0" cy="0" r="15" fill="#475569" stroke="#94a3b8" strokeWidth="1.5" />
+                  <circle cx="0" cy="0" r="5" fill="#ffffff" />
+                </g>
+                {/* Wheel 3 (Rear 2): */}
+                <g transform="translate(378, 220)">
+                  <circle cx="0" cy="0" r="26" fill="#0f172a" stroke="#ffffff" strokeWidth="2" />
+                  <circle cx="0" cy="0" r="15" fill="#475569" stroke="#94a3b8" strokeWidth="1.5" />
+                  <circle cx="0" cy="0" r="5" fill="#ffffff" />
+                </g>
+                {/* Wheel 4 (Rear 3): */}
+                <g transform="translate(520, 220)">
+                  <circle cx="0" cy="0" r="26" fill="#0f172a" stroke="#ffffff" strokeWidth="2" />
+                  <circle cx="0" cy="0" r="15" fill="#475569" stroke="#94a3b8" strokeWidth="1.5" />
+                  <circle cx="0" cy="0" r="5" fill="#ffffff" />
+                </g>
+                {/* Wheel 5 (Rear 4): */}
+                <g transform="translate(578, 220)">
+                  <circle cx="0" cy="0" r="26" fill="#0f172a" stroke="#ffffff" strokeWidth="2" />
+                  <circle cx="0" cy="0" r="15" fill="#475569" stroke="#94a3b8" strokeWidth="1.5" />
+                  <circle cx="0" cy="0" r="5" fill="#ffffff" />
+                </g>
 
-              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold">
-                  <CheckCircle className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase">Ready for Checkout</p>
-                  <p className="text-lg font-black text-slate-800">
-                    {jobCards.filter(j => j.status === "Completed" || j.status === "Invoiced").length} Vehicles
-                  </p>
-                </div>
-              </div>
+                {/* Cabin Body */}
+                <path d="M 235 195 
+                         L 235 85 
+                         C 235 80, 225 70, 210 70 
+                         L 105 70 
+                         C 95 70, 90 78, 88 85 
+                         L 80 155 
+                         C 78 170, 82 180, 82 195 
+                         L 82 205 
+                         L 145 205 
+                         C 145 185, 160 170, 180 170 
+                         C 200 170, 215 185, 215 205 
+                         L 235 205 Z" 
+                      fill="#0f172a" stroke="#1e293b" strokeWidth="2" />
+                      
+                {/* Windshield */}
+                <path d="M 98 85 L 155 85 L 150 130 L 92 130 Z" fill="#e2e8f0" stroke="#334155" strokeWidth="1.5" />
+                {/* Window */}
+                <path d="M 165 85 L 210 85 C 215 85, 217 88, 217 92 L 217 130 L 160 130 Z" fill="#e2e8f0" stroke="#334155" strokeWidth="1.5" />
+                
+                {/* Door line */}
+                <path d="M 158 85 L 158 200" stroke="#334155" strokeWidth="1.5" />
 
-              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
-                  <Clock className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase">Free Bays Available</p>
-                  <p className="text-lg font-black text-slate-800">
-                    {bays.filter(b => b.status === "Idle" || b.status === "Available").length} / {bays.length}
-                  </p>
-                </div>
-              </div>
+                {/* Grille */}
+                <path d="M 88 140 L 150 140 L 148 180 L 90 180 Z" fill="#1e293b" stroke="#334155" strokeWidth="1.5" />
+                <line x1="96" y1="150" x2="142" y2="150" stroke="#ef4444" strokeWidth="1.5" />
+                <line x1="96" y1="160" x2="142" y2="160" stroke="#f97316" strokeWidth="1.5" />
+                <line x1="96" y1="170" x2="142" y2="170" stroke="#ffffff" strokeWidth="1.5" />
+                
+                {/* Headlights */}
+                <rect x="80" y="185" width="12" height="8" rx="2" fill="#fef08a" stroke="#ca8a04" strokeWidth="1" />
+                <rect x="145" y="185" width="12" height="8" rx="2" fill="#fef08a" stroke="#ca8a04" strokeWidth="1" />
+
+                {/* TRUCK BODY (Cargo Container containing all the stats) */}
+                <rect x="245" y="20" width="480" height="175" rx="12" fill="#0f172a" stroke="#f97316" strokeWidth="2.5" />
+                
+                <foreignObject x="255" y="30" width="460" height="155">
+                  <div xmlns="http://www.w3.org/1999/xhtml" className="text-white p-2 h-full flex flex-col justify-between text-left font-sans select-none">
+                    <div className="flex justify-between items-center border-b border-slate-800 pb-1">
+                      <span className="text-[9px] font-black uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-ping"></span>
+                        TATA Signa 4830.T
+                      </span>
+                      <span className="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20 uppercase tracking-widest">
+                        Gate Registry Live
+                      </span>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-1.5 py-1">
+                      <div className="bg-slate-950/80 border border-slate-850 rounded-lg p-1.5 text-center">
+                        <div className="text-[7px] font-bold text-slate-500 uppercase tracking-wider">Active WIP</div>
+                        <div className="text-xs font-black text-orange-400 mt-0.5">{activeJobs.length} Veh</div>
+                      </div>
+                      <div className="bg-slate-950/80 border border-slate-850 rounded-lg p-1.5 text-center">
+                        <div className="text-[7px] font-bold text-slate-500 uppercase tracking-wider">Ready Out</div>
+                        <div className="text-xs font-black text-emerald-400 mt-0.5">
+                          {jobCards.filter(j => j.status === "Completed" || j.status === "Invoiced").length} Veh
+                        </div>
+                      </div>
+                      <div className="bg-slate-950/80 border border-slate-850 rounded-lg p-1.5 text-center">
+                        <div className="text-[7px] font-bold text-slate-500 uppercase tracking-wider">Free Bays</div>
+                        <div className="text-xs font-black text-blue-400 mt-0.5">
+                          {bays.filter(b => b.status === "Idle" || b.status === "Available").length}/{bays.length}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-slate-950/60 rounded-md p-1 text-[7px] border border-slate-850 text-slate-400 leading-tight">
+                      <strong className="text-orange-400 uppercase tracking-wider font-extrabold mr-1">Security SOP:</strong>
+                      TATA only • Always scan digital Odometer • Verify interactive fuel needles • Validate customer mobile.
+                    </div>
+                  </div>
+                </foreignObject>
+              </svg>
             </div>
-          </div>
-
-          <div className="p-3 bg-orange-50 border border-orange-100 rounded-xl text-[11px] text-orange-800">
-            <p className="font-bold mb-1">Standard Security SOP:</p>
-            <ul className="list-disc pl-4 space-y-1">
-              <li>Vehicle Make is strictly TATA ONLY in all workshop logs.</li>
-              <li>Always perform digital Odometer scan.</li>
-              <li>Ensure interactive fuel needle position is adjusted.</li>
-              <li>Verify customer mobile for SMS alerts.</li>
-            </ul>
           </div>
         </div>
       </div>
@@ -724,9 +794,8 @@ export default function GateEntryManager({
               <div className="absolute inset-0 bg-gradient-to-b from-transparent via-emerald-500/15 to-transparent h-1/2 w-full animate-bounce"></div>
 
               {anprScanning ? (
-                <div className="flex flex-col items-center gap-3 text-emerald-400 relative z-10">
-                  <Cpu className="h-8 w-8 animate-spin" />
-                  <p className="text-xs font-bold tracking-widest uppercase animate-pulse">Running Neural OCR Scan...</p>
+                <div className="relative z-10 text-emerald-400">
+                  <FunnyLoader message="Running Neural OCR Scan on Camera Feed..." />
                 </div>
               ) : (
                 <div className="text-center p-6 space-y-2 relative z-10">
@@ -824,9 +893,8 @@ export default function GateEntryManager({
                 <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900/10 via-slate-950/80 to-slate-950"></div>
                 
                 {odoScanning ? (
-                  <div className="flex flex-col items-center gap-3 relative z-10 text-orange-400">
-                    <RefreshCw className="h-8 w-8 animate-spin" />
-                    <span className="text-xs font-bold tracking-widest uppercase animate-pulse">Analyzing dashboard LCD...</span>
+                  <div className="relative z-10 text-orange-400">
+                    <FunnyLoader message="Analyzing dashboard LCD cluster..." />
                   </div>
                 ) : (
                   <div className="text-center space-y-2 relative z-10">
@@ -938,9 +1006,8 @@ export default function GateEntryManager({
               {/* Vector needle live monitor */}
               <div className="aspect-video bg-slate-950 border border-slate-800 rounded-2xl relative flex flex-col items-center justify-center p-4">
                 {fuelScanning ? (
-                  <div className="flex flex-col items-center gap-2 text-orange-400">
-                    <Sparkles className="h-7 w-7 animate-spin" />
-                    <span className="text-xs font-bold tracking-wider animate-pulse">Running Neural Dial Extraction...</span>
+                  <div className="relative z-10 text-orange-400">
+                    <FunnyLoader message="Running Neural Dial Extraction..." />
                   </div>
                 ) : (
                   <div className="text-center space-y-2">

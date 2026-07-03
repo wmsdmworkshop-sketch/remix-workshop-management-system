@@ -17,6 +17,7 @@ import {
   ToggleRight
 } from "lucide-react";
 import { User } from "../types";
+import FunnyLoader from "./FunnyLoader";
 
 interface UserManagementProps {
   currentUser: User | null;
@@ -592,10 +593,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
 
           {/* Directory List Table */}
           {loading ? (
-            <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center gap-3">
-              <Loader2 className="h-8 w-8 text-orange-500 animate-spin" />
-              <p className="text-xs font-bold uppercase tracking-wider">Loading system users...</p>
-            </div>
+            <FunnyLoader message="Loading system users..." />
           ) : filteredUsers.length === 0 ? (
             <div className="p-12 text-center text-slate-400">
               <p className="text-xs font-medium">No users found matching filters.</p>
@@ -792,10 +790,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
           </div>
 
           {permissionsLoading ? (
-            <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center gap-3">
-              <Loader2 className="h-8 w-8 text-orange-500 animate-spin" />
-              <p className="text-xs font-bold uppercase tracking-wider">Loading permissions matrix...</p>
-            </div>
+            <FunnyLoader message="Loading permissions matrix..." />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[800px]">

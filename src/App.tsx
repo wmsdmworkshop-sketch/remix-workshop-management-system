@@ -43,6 +43,7 @@ import {
 import GateEntryManager from "./components/GateEntryManager";
 import PartsWarrantyManager from "./components/PartsWarrantyManager";
 import CashierManager from "./components/CashierManager";
+import FunnyLoader from "./components/FunnyLoader";
 import { 
   Employee, 
   Bay, 
@@ -777,10 +778,7 @@ export default function App() {
   if (!user && !needsAuth) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center font-sans">
-        <div className="space-y-4 text-center animate-pulse">
-          <Loader2 className="h-10 w-10 text-orange-500 animate-spin mx-auto" />
-          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Verifying Operator Credentials...</p>
-        </div>
+        <FunnyLoader message="Verifying Operator Credentials..." />
       </div>
     );
   }
