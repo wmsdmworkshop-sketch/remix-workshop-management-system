@@ -58,6 +58,12 @@ export default function DmsImporter({
   const [backdatedFileName, setBackdatedFileName] = useState("");
   const [backdatedDragActive, setBackdatedDragActive] = useState(false);
 
+  // Searching, filtering, and sorting state for compiled master data table
+  const [rowSearch, setRowSearch] = useState("");
+  const [rowStatusFilter, setRowStatusFilter] = useState("All");
+  const [rowSortField, setRowSortField] = useState<string | null>(null);
+  const [rowSortDirection, setRowSortDirection] = useState<"asc" | "desc">("asc");
+
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -289,9 +295,75 @@ export default function DmsImporter({
     document.body.removeChild(link);
   };
 
-  // Filter rows for the selected batch
+  // Filter and Sort rows for the selected batch
   const currentBatch = batches.find(b => b.batch_id === selectedBatchId) || batches[batches.length - 1];
-  const filteredRows = currentBatch ? rows.filter(r => r.batch_id === currentBatch.batch_id) : [];
+
+  const processedRows = React.useMemo(() => {
+    if (!currentBatch) return [];
+    let result = rows.filter(r => r.batch_id === currentBatch.batch_id);
+
+    // Filter by search query (VRN, SR Type, or conflict details)
+    if (rowSearch.trim()) {
+      const q = rowSearch.toLowerCase();
+      result = result.filter(r => 
+        (r.vrn || "").toLowerCase().includes(q) || 
+        (r.sr_type || "").toLowerCase().includes(q) ||
+        (r.conflict_reason || "").toLowerCase().includes(q)
+      );
+    }
+
+    // Filter by match status
+    if (rowStatusFilter !== "All") {
+      result = result.filter(r => r.match_status === rowStatusFilter);
+    }
+
+    // Sort by field
+    if (rowSortField) {
+      result = [...result].sort((a, b) => {
+        let valA = a[rowSortField as keyof DMSImportRow];
+        let valB = b[rowSortField as keyof DMSImportRow];
+
+        if (typeof valA === "string") valA = valA.toLowerCase();
+        if (typeof valB === "string") valB = valB.toLowerCase();
+
+        if (valA === undefined || valA === null) return rowSortDirection === "asc" ? 1 : -1;
+        if (valB === undefined || valB === null) return rowSortDirection === "asc" ? -1 : 1;
+
+        if (valA < valB) return rowSortDirection === "asc" ? -1 : 1;
+        if (valA > valB) return rowSortDirection === "asc" ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return result;
+  }, [rows, currentBatch, rowSearch, rowStatusFilter, rowSortField, rowSortDirection]);
+
+  const downloadBatchCSV = () => {
+    if (!currentBatch || processedRows.length === 0) return;
+    
+    const headers = ["Row Number", "VRN", "Invoice Date", "SR Type", "Labour Amount", "Parts Amount", "Match Status", "Conflict Reason"];
+    const csvRows = processedRows.map(r => [
+      r.row_number,
+      `"${r.vrn}"`,
+      `"${r.job_date || ''}"`,
+      `"${r.sr_type}"`,
+      r.labour_amount,
+      r.parts_amount,
+      `"${r.match_status}"`,
+      `"${(r.conflict_reason || '').replace(/"/g, '""')}"`
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + [headers.join(","), ...csvRows.map(e => e.join(","))].join("\n");
+      
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `DMS_Compiled_Batch_${currentBatch.file_name || currentBatch.batch_id}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const handleResolveSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -987,28 +1059,111 @@ export default function DmsImporter({
 
           {/* Table of Rows inside Selected Batch */}
           <div className="xl:col-span-2 bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2 bg-slate-50/50 -mx-4 -mt-4 p-4">
-              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Log Rows inside <span className="font-mono text-orange-600">{currentBatch.file_name}</span>
-              </h3>
-              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Total matched: {currentBatch.matched_rows} / {currentBatch.total_rows}</p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 bg-slate-50/50 -mx-4 -mt-4 p-4 gap-2">
+              <div>
+                <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Log Rows inside <span className="font-mono text-orange-600">{currentBatch.file_name}</span>
+                </h3>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">Total matched: {currentBatch.matched_rows} / {currentBatch.total_rows}</p>
+              </div>
+              <button
+                type="button"
+                onClick={downloadBatchCSV}
+                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition flex items-center gap-1.5 cursor-pointer border border-slate-800 shadow-sm"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span>Export Batch CSV</span>
+              </button>
+            </div>
+
+            {/* Filter and Search Bar */}
+            <div className="flex flex-col sm:flex-row gap-3 py-1 border-b border-slate-100 pb-3">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  placeholder="Search VRN, SR Type, or Conflict Reason..."
+                  value={rowSearch}
+                  onChange={(e) => setRowSearch(e.target.value)}
+                  className="w-full pl-3 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none"
+                />
+              </div>
+              <div className="flex gap-2">
+                <select
+                  value={rowStatusFilter}
+                  onChange={(e) => setRowStatusFilter(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-700 font-bold focus:outline-none"
+                >
+                  <option value="All">All Statuses</option>
+                  <option value="Matched">Matched</option>
+                  <option value="Conflict">Conflict</option>
+                  <option value="Unmatched">Unmatched</option>
+                </select>
+              </div>
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-400 font-bold text-[9px] uppercase tracking-wider">
-                    <th className="py-2.5">Row</th>
-                    <th className="py-2.5">VRN</th>
-                    <th className="py-2.5">SR Type</th>
-                    <th className="py-2.5">Labour (₹)</th>
-                    <th className="py-2.5">Parts (₹)</th>
-                    <th className="py-2.5">Status</th>
+                    <th 
+                      className="py-2.5 cursor-pointer hover:text-slate-600 select-none"
+                      onClick={() => {
+                        setRowSortField("row_number");
+                        setRowSortDirection(prev => prev === "asc" ? "desc" : "asc");
+                      }}
+                    >
+                      Row {rowSortField === "row_number" ? (rowSortDirection === "asc" ? "▲" : "▼") : ""}
+                    </th>
+                    <th 
+                      className="py-2.5 cursor-pointer hover:text-slate-600 select-none"
+                      onClick={() => {
+                        setRowSortField("vrn");
+                        setRowSortDirection(prev => prev === "asc" ? "desc" : "asc");
+                      }}
+                    >
+                      VRN {rowSortField === "vrn" ? (rowSortDirection === "asc" ? "▲" : "▼") : ""}
+                    </th>
+                    <th 
+                      className="py-2.5 cursor-pointer hover:text-slate-600 select-none"
+                      onClick={() => {
+                        setRowSortField("sr_type");
+                        setRowSortDirection(prev => prev === "asc" ? "desc" : "asc");
+                      }}
+                    >
+                      SR Type {rowSortField === "sr_type" ? (rowSortDirection === "asc" ? "▲" : "▼") : ""}
+                    </th>
+                    <th 
+                      className="py-2.5 cursor-pointer hover:text-slate-600 select-none"
+                      onClick={() => {
+                        setRowSortField("labour_amount");
+                        setRowSortDirection(prev => prev === "asc" ? "desc" : "asc");
+                      }}
+                    >
+                      Labour (₹) {rowSortField === "labour_amount" ? (rowSortDirection === "asc" ? "▲" : "▼") : ""}
+                    </th>
+                    <th 
+                      className="py-2.5 cursor-pointer hover:text-slate-600 select-none"
+                      onClick={() => {
+                        setRowSortField("parts_amount");
+                        setRowSortDirection(prev => prev === "asc" ? "desc" : "asc");
+                      }}
+                    >
+                      Parts (₹) {rowSortField === "parts_amount" ? (rowSortDirection === "asc" ? "▲" : "▼") : ""}
+                    </th>
+                    <th 
+                      className="py-2.5 cursor-pointer hover:text-slate-600 select-none"
+                      onClick={() => {
+                        setRowSortField("match_status");
+                        setRowSortDirection(prev => prev === "asc" ? "desc" : "asc");
+                      }}
+                    >
+                      Status {rowSortField === "match_status" ? (rowSortDirection === "asc" ? "▲" : "▼") : ""}
+                    </th>
                     <th className="py-2.5 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-[11px]">
-                  {filteredRows.map((row) => {
+                  {processedRows.map((row) => {
                     let statusColor = "bg-slate-50 text-slate-700 border-slate-200";
                     if (row.match_status === "Matched") statusColor = "bg-green-50 text-green-700 border border-green-200/50";
                     else if (row.match_status === "Conflict") statusColor = "bg-red-50 text-red-700 border border-red-200/50";

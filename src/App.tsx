@@ -1099,7 +1099,13 @@ export default function App() {
         )}
 
         {activeTab === "dms-import" && (
-          <DmsImporterConsolidated />
+          <DmsImporter
+            batches={batches}
+            rows={importRows}
+            jobCards={jobCards}
+            onImportRows={handleImportRows}
+            onResolveRow={handleResolveRow}
+          />
         )}
 
         {activeTab === "fsb" && (
