@@ -1032,13 +1032,13 @@ export default function App() {
 
         {activeTab === "jobs" && (
           <JobCardManager 
-            jobCards={jobCards}
-            bays={bays}
-            srTypes={srTypes}
-            employees={employees}
-            allocations={allocations}
-            revenues={revenues}
-            splitDetails={splitDetails}
+            jobCards={jobCards || []}
+            bays={bays || []}
+            srTypes={srTypes || []}
+            employees={employees || []}
+            allocations={allocations || []}
+            revenues={revenues || []}
+            splitDetails={splitDetails || []}
             onCreateJob={handleCreateJob}
             onUpdateJob={handleUpdateJob}
             onUpdateJobStatus={handleUpdateJobStatus}

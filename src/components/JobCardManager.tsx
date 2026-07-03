@@ -88,7 +88,7 @@ export default function JobCardManager({
   const [jobDescription, setJobDescription] = useState("");
   const [etdHours, setEtdHours] = useState(2); // hours from now
   const [createdBy, setCreatedBy] = useState<number>(() => {
-    const defaultAdvisor = employees.find(e => e.is_active && ["manager", "supervisor", "advisor", "admin"].some(role => e.role.toLowerCase().includes(role)));
+    const defaultAdvisor = employees.find(e => e.is_active && e.role && ["manager", "supervisor", "advisor", "admin"].some(role => e.role.toLowerCase().includes(role)));
     return defaultAdvisor?.employee_id || employees[0]?.employee_id || 1;
   });
 
@@ -661,14 +661,14 @@ export default function JobCardManager({
     })();
 
     const advisors = employees.filter(e => 
-      e.is_active && (
+      e.is_active && e.role && (
         e.role.toLowerCase().includes("advisor") || 
         e.role.toLowerCase() === "service_advisor" ||
         e.role.toLowerCase().includes("service")
       )
     );
 
-    const defaultAdvisor = advisors[0] || employees.find(e => e.is_active && ["manager", "supervisor", "advisor", "admin"].some(role => e.role.toLowerCase().includes(role))) || employees[0];
+    const defaultAdvisor = advisors[0] || employees.find(e => e.is_active && e.role && ["manager", "supervisor", "advisor", "admin"].some(role => e.role.toLowerCase().includes(role))) || employees[0];
 
     if (userObj) {
       const matchedEmp = employees.find(e => 
