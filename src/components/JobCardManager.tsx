@@ -880,7 +880,7 @@ export default function JobCardManager({
   const filteredJobCards = useMemo(() => {
     return jobCards.filter(job => {
       const s = String(job.status || '').toLowerCase();
-      const isClosed = s === 'billed' || s === 'out of workshop' || s === 'invoiced' || !!job.gate_out_time;
+      const isClosed = s === 'billed' || s === 'out of workshop' || s === 'invoiced' || s === 'completed' || !!job.gate_out_time;
       if (!showBilledClosed && isClosed) return false;
 
       const matchesSearch = 

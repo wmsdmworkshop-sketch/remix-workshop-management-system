@@ -2135,8 +2135,18 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       console.error("Error querying generated revenue:", e);
     }
 
+    // Server-side filter: only send active workshop job cards by default
+    const includeClosed = req.query.include_closed === 'true';
+    const closedStatuses = ['billed', 'out of workshop', 'invoiced', 'completed'];
+    const filteredJobs = includeClosed ? db.jobCards : db.jobCards.filter((job: any) => {
+      const s = String(job.status || '').toLowerCase();
+      if (closedStatuses.includes(s)) return false;
+      if (job.gate_out_time) return false;
+      return true;
+    });
+
     res.json({
-      jobCards: db.jobCards,
+      jobCards: filteredJobs,
       technicianMaps: db.jobTechnicianMaps,
       projectedRevenue,
       generatedRevenue
