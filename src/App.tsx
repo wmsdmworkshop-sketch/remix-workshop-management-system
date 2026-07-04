@@ -19,6 +19,7 @@ import {
   History,
   Car,
   ClipboardCheck,
+  Shield,
   HelpCircle,
   Settings
 } from "lucide-react";
