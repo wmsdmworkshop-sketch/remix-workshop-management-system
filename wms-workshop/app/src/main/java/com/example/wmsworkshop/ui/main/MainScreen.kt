@@ -1,6 +1,8 @@
 package com.example.wmsworkshop.ui.main
 
+import android.content.Intent
 import android.net.Uri
+import android.provider.MediaStore
 import android.view.ViewGroup
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
@@ -19,23 +21,40 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.FileProvider
 import androidx.navigation3.runtime.NavKey
+import java.io.File
 
 @Composable
 fun MainScreen(
   onItemClick: (NavKey) -> Unit,
   modifier: Modifier = Modifier
 ) {
+  val context = LocalContext.current
   var webView: WebView? by remember { mutableStateOf(null) }
   var uploadMessage: ValueCallback<Array<Uri>>? by remember { mutableStateOf(null) }
+  var cameraImageUri: Uri? by remember { mutableStateOf(null) }
 
   // Launcher for file uploads (Camera capture or photo chooser)
   val fileChooserLauncher = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.StartActivityForResult()
   ) { result ->
     val data = result.data
-    val uris = WebChromeClient.FileChooserParams.parseResult(result.resultCode, data)
+    var uris = WebChromeClient.FileChooserParams.parseResult(result.resultCode, data)
+
+    // Fallback to camera image if parseResult returned null but capture was successful
+    if (uris == null && result.resultCode == android.app.Activity.RESULT_OK) {
+      val lastSegment = cameraImageUri?.lastPathSegment
+      if (lastSegment != null) {
+        val file = File(context.cacheDir, lastSegment)
+        if (file.exists() && file.length() > 0) {
+          uris = arrayOf(cameraImageUri!!)
+        }
+      }
+    }
+
     uploadMessage?.onReceiveValue(uris)
     uploadMessage = null
   }
@@ -62,8 +81,8 @@ fun MainScreen(
   }
 
   AndroidView(
-    factory = { context ->
-      WebView(context).apply {
+    factory = { ctx ->
+      WebView(ctx).apply {
         layoutParams = ViewGroup.LayoutParams(
           ViewGroup.LayoutParams.MATCH_PARENT,
           ViewGroup.LayoutParams.MATCH_PARENT
@@ -89,7 +108,7 @@ fun MainScreen(
             callback?.invoke(origin, true, false)
           }
 
-          // Handle input type="file" clicks
+          // Handle input type="file" clicks with both Camera and Gallery support
           override fun onShowFileChooser(
             webView: WebView?,
             filePathCallback: ValueCallback<Array<Uri>>?,
@@ -98,14 +117,35 @@ fun MainScreen(
             uploadMessage?.onReceiveValue(null)
             uploadMessage = filePathCallback
             
-            val intent = fileChooserParams?.createIntent()
-            if (intent != null) {
-              try {
-                fileChooserLauncher.launch(intent)
-              } catch (e: Exception) {
-                uploadMessage = null
-                return false
-              }
+            // Create target file in cache directory
+            val photoFile = File(context.cacheDir, "camera_photo_${System.currentTimeMillis()}.jpg")
+            val authority = "com.example.wmsworkshop.fileprovider"
+            val photoUri = FileProvider.getUriForFile(context, authority, photoFile)
+            cameraImageUri = photoUri
+
+            // Create Camera Capture Intent
+            val cameraIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+              putExtra(MediaStore.EXTRA_OUTPUT, photoUri)
+            }
+
+            // Create Content Selection Intent
+            val contentSelectionIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
+              addCategory(Intent.CATEGORY_OPENABLE)
+              type = "image/*"
+            }
+
+            // Create Chooser Intent
+            val chooserIntent = Intent(Intent.ACTION_CHOOSER).apply {
+              putExtra(Intent.EXTRA_INTENT, contentSelectionIntent)
+              putExtra(Intent.EXTRA_TITLE, "Upload or Capture Photo")
+              putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(cameraIntent))
+            }
+
+            try {
+              fileChooserLauncher.launch(chooserIntent)
+            } catch (e: Exception) {
+              uploadMessage = null
+              return false
             }
             return true
           }
@@ -116,6 +156,8 @@ fun MainScreen(
         settings.databaseEnabled = true
         settings.loadWithOverviewMode = true
         settings.useWideViewPort = true
+        settings.setGeolocationEnabled(true)
+        settings.setAllowFileAccess(true)
         
         loadUrl("https://wms-workshop-app-production.up.railway.app/")
         webView = this
