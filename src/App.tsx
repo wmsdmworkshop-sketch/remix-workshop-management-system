@@ -21,7 +21,8 @@ import {
   ClipboardCheck,
   Shield,
   HelpCircle,
-  Settings
+  Settings,
+  ArrowLeft
 } from "lucide-react";
 import UserManagement from "./components/UserManagement";
 import { 
@@ -1013,6 +1014,15 @@ export default function App() {
       {/* Header - Mobile */}
       <header className="md:hidden bg-[#1e293b] text-white p-4 flex items-center justify-between border-b border-slate-700/50">
         <div className="flex items-center gap-2">
+          {activeTab !== "dashboard" && (
+            <button 
+              onClick={() => setActiveTab("dashboard")}
+              className="p-1 mr-1 text-slate-300 hover:text-white transition-colors cursor-pointer"
+              title="Return to Dashboard"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+          )}
           <div className="w-6 h-6 bg-brand rounded flex items-center justify-center font-bold text-sm text-white">W</div>
           <h2 className="font-bold text-sm uppercase tracking-tight">WMS Workshop</h2>
         </div>
@@ -1023,6 +1033,13 @@ export default function App() {
             title="UX Theme Settings"
           >
             <Settings className="h-5 w-5" />
+          </button>
+          <button 
+            onClick={handleLogout} 
+            className="text-slate-300 hover:text-white transition-colors cursor-pointer"
+            title="Log Out"
+          >
+            <LogOut className="h-5 w-5" />
           </button>
           {!showBottomNav && (
             <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
