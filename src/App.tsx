@@ -19,8 +19,8 @@ import {
   History,
   Car,
   ClipboardCheck,
-  Shield,
-  HelpCircle
+  HelpCircle,
+  Settings
 } from "lucide-react";
 import UserManagement from "./components/UserManagement";
 import { 
@@ -78,10 +78,57 @@ import DmsImporterConsolidated from "./components/dms-import";
 import QuerySearch from "./components/query";
 import BillingExit from "./components/billing-exit";
 
+function darkenColor(hex: string, percent: number): string {
+  let num = parseInt(hex.replace("#", ""), 16),
+      amt = Math.round(2.55 * percent),
+      R = (num >> 16) - amt,
+      G = (num >> 8 & 0x00FF) - amt,
+      B = (num & 0x0000FF) - amt;
+  return "#" + (0x1000000 + (R < 255 ? R < 0 ? 0 : R : 255) * 0x10000 + (G < 255 ? G < 0 ? 0 : G : 255) * 0x100 + (B < 255 ? B < 0 ? 0 : B : 255)).toString(16).slice(1);
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [lookupQuery, setLookupQuery] = useState<string>("");
+
+  // UX Settings & Brand Customization states
+  const [primaryColor, setPrimaryColor] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("wms_primary_color") || "#ff5500";
+    }
+    return "#ff5500";
+  });
+  const [mobileFriendly, setMobileFriendly] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const val = localStorage.getItem("wms_mobile_friendly");
+      return val === null ? true : val === "true";
+    }
+    return true;
+  });
+  const [showBottomNav, setShowBottomNav] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const val = localStorage.getItem("wms_show_bottom_nav");
+      return val === null ? true : val === "true";
+    }
+    return true;
+  });
+  const [showSettingsDrawer, setShowSettingsDrawer] = useState<boolean>(false);
+  const [showMobileMoreTabs, setShowMobileMoreTabs] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("wms_primary_color", primaryColor);
+      localStorage.setItem("wms_mobile_friendly", String(mobileFriendly));
+      localStorage.setItem("wms_show_bottom_nav", String(showBottomNav));
+      
+      // Inject css variables
+      document.documentElement.style.setProperty("--brand-color", primaryColor);
+      // Darken 10% for hover
+      const hoverColor = darkenColor(primaryColor, 10);
+      document.documentElement.style.setProperty("--brand-color-hover", hoverColor);
+    }
+  }, [primaryColor, mobileFriendly, showBottomNav]);
 
   const handleLookupVehicle = (vrn: string) => {
     setLookupQuery(vrn);
@@ -347,8 +394,6 @@ export default function App() {
   const [carryForwardLogs, setCarryForwardLogs] = useState<CarryForwardLog[]>([]);
   const [reworkLogs, setReworkLogs] = useState<ReworkLog[]>([]);
   const [alertLogs, setAlertLogs] = useState<AlertLog[]>([]);
-  const [batches, setBatches] = useState<DMSImportBatch[]>([]);
-  const [importRows, setImportRows] = useState<DMSImportRow[]>([]);
   const [revenueSplits, setRevenueSplits] = useState<RevenueSplitMaster[]>([]);
 
   // Selected Job (navigated from dashboard)
@@ -422,7 +467,6 @@ export default function App() {
         cfRes,
         reworkRes,
         alertRes,
-        batchRes,
         splitRes
       ] = await Promise.all([
         fetch("/api/employees"),
@@ -433,7 +477,6 @@ export default function App() {
         fetch("/api/carry-forward"),
         fetch("/api/rework"),
         fetch("/api/alerts"),
-        fetch("/api/dms/batches"),
         fetch("/api/revenue-splits")
       ]);
 
@@ -455,10 +498,6 @@ export default function App() {
       setCarryForwardLogs(await cfRes.json());
       setReworkLogs(await reworkRes.json());
       setAlertLogs(await alertRes.json());
-
-      const batchesData = await batchRes.json();
-      setBatches(batchesData.batches || []);
-      setImportRows(batchesData.rows || []);
     } catch (error) {
       console.error("Error loading workshop data from server:", error);
     }
@@ -800,6 +839,12 @@ export default function App() {
     );
   }
 
+  const baseTabs = (user && ROLE_TABS[user.role]) || ROLE_TABS["reception"] || [];
+  const permittedTabs = [
+    ...baseTabs,
+    { id: "logout-deep-link", label: "Logout", icon: LogOut, isDeepLink: true, url: "https://www.appsheet.com/account/signout" }
+  ];
+
   return (
     <div className="min-h-screen bg-[#f1f5f9] flex flex-col font-sans text-slate-900">
       
@@ -807,7 +852,7 @@ export default function App() {
       <aside className="hidden md:flex flex-col h-screen fixed left-0 top-0 w-64 bg-[#1e293b] text-slate-400 p-5 shrink-0 justify-between z-40 shadow-xl">
         <div className="flex flex-col flex-1 min-h-0 space-y-4">
           <div className="flex items-center gap-3 border-b border-slate-700/50 pb-4 shrink-0">
-            <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center font-bold text-xl text-white">
+            <div className="w-8 h-8 bg-brand rounded-lg flex items-center justify-center font-bold text-xl text-white">
               W
             </div>
             <div>
@@ -817,13 +862,21 @@ export default function App() {
           </div>
 
           <nav className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar min-h-0">
-            {((user && ROLE_TABS[user.role]) || ROLE_TABS["reception"]).map((tab) => {
+            {permittedTabs.map((tab) => {
               const TabIcon = tab.icon;
               const activeJobCount = tab.id === "jobs" ? jobCards.filter(j => !j.gate_out_time && !['Closed', 'Cancelled'].includes(j.status)).length : 0;
               return (
                 <button 
                   key={tab.id}
-                  onClick={() => { setActiveTab(tab.id); setDashboardSelectedJob(null); }}
+                  onClick={() => {
+                    if (tab.isDeepLink) {
+                      handleLogout();
+                      window.location.href = tab.url;
+                    } else {
+                      setActiveTab(tab.id);
+                      setDashboardSelectedJob(null);
+                    }
+                  }}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-xs font-bold transition-all ${
                     activeTab === tab.id ? "bg-slate-800 text-white border border-slate-700/50 shadow-sm" : "hover:bg-slate-800 hover:text-white"
                   }`}
@@ -831,7 +884,7 @@ export default function App() {
                   <TabIcon className="h-4 w-4" />
                   <span className="flex-1 text-left">{tab.label}</span>
                   {tab.id === "jobs" && activeJobCount > 0 && (
-                    <span className="ml-auto bg-orange-500 text-white text-[9px] font-extrabold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 shadow-lg shadow-orange-500/30 animate-pulse">
+                    <span className="ml-auto bg-brand text-white text-[9px] font-extrabold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 shadow-lg shadow-brand/30 animate-pulse">
                       {activeJobCount}
                     </span>
                   )}
@@ -873,27 +926,36 @@ export default function App() {
 
         {/* User context footer */}
         <div className="border-t border-slate-700/50 pt-4 flex flex-col gap-3">
-          <div className="flex items-center space-x-3 px-2 py-2 mb-1 bg-orange-500/10 border border-orange-500/20 rounded-lg">
-            <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
-            <span className="text-[10px] text-orange-400 font-bold uppercase tracking-wider">System Live • 2.5.0</span>
+          <div className="flex items-center space-x-3 px-2 py-2 mb-1 bg-brand/10 border border-brand/20 rounded-lg">
+            <div className="w-2 h-2 bg-brand rounded-full animate-pulse"></div>
+            <span className="text-[10px] text-brand font-bold uppercase tracking-wider">System Live • 2.5.0</span>
           </div>
 
           {user ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between text-xs font-semibold">
                 <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-orange-500 uppercase border border-slate-700 shrink-0">
+                  <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-brand uppercase border border-slate-700 shrink-0">
                     {(user.username || "").slice(0, 2)}
                   </div>
                   <div className="truncate max-w-[120px]">
                     <p className="text-slate-200 truncate font-bold text-xs">{user.full_name || ""}</p>
-                    <p className="text-[9px] text-orange-400 font-bold uppercase tracking-wider leading-none mt-0.5">{(user.role || "").split("_").join(" ")}</p>
+                    <p className="text-[9px] text-brand font-bold uppercase tracking-wider leading-none mt-0.5">{(user.role || "").split("_").join(" ")}</p>
                     <p className="text-[9px] text-slate-500 truncate leading-none mt-0.5">@{user.username || ""}</p>
                   </div>
                 </div>
-                <button onClick={handleLogout} className="text-slate-400 hover:text-orange-500 transition-colors cursor-pointer">
-                  <LogOut className="h-4 w-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => setShowSettingsDrawer(true)} 
+                    className="text-slate-400 hover:text-brand transition-colors cursor-pointer"
+                    title="UX Theme Settings"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </button>
+                  <button onClick={handleLogout} className="text-slate-400 hover:text-brand transition-colors cursor-pointer">
+                    <LogOut className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
 
               {/* Dev Role Override Dropdown */}
@@ -949,21 +1011,41 @@ export default function App() {
       {/* Header - Mobile */}
       <header className="md:hidden bg-[#1e293b] text-white p-4 flex items-center justify-between border-b border-slate-700/50">
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-orange-500 rounded flex items-center justify-center font-bold text-sm text-white">W</div>
+          <div className="w-6 h-6 bg-brand rounded flex items-center justify-center font-bold text-sm text-white">W</div>
           <h2 className="font-bold text-sm uppercase tracking-tight">WMS Workshop</h2>
         </div>
-        <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-          {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-        </button>
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => setShowSettingsDrawer(true)} 
+            className="text-slate-300 hover:text-white transition-colors cursor-pointer"
+            title="UX Theme Settings"
+          >
+            <Settings className="h-5 w-5" />
+          </button>
+          {!showBottomNav && (
+            <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Mobile Menu Overlay */}
       {mobileMenuOpen && (
         <div className="md:hidden bg-[#1e293b] text-slate-400 absolute top-14 left-0 w-full z-40 border-b border-slate-700/50 shadow-xl flex flex-col p-4 space-y-2">
-          {((user && ROLE_TABS[user.role]) || ROLE_TABS["reception"]).map((tab) => (
+          {permittedTabs.map((tab) => (
             <button 
               key={tab.id}
-              onClick={() => { setActiveTab(tab.id); setMobileMenuOpen(false); setDashboardSelectedJob(null); }}
+              onClick={() => {
+                if (tab.isDeepLink) {
+                  handleLogout();
+                  window.location.href = tab.url;
+                } else {
+                  setActiveTab(tab.id);
+                  setMobileMenuOpen(false);
+                  setDashboardSelectedJob(null);
+                }
+              }}
               className={`flex items-center gap-3 px-3 py-2 rounded-md text-xs font-bold transition-all text-left ${
                 activeTab === tab.id ? "bg-slate-800 text-white" : "hover:bg-slate-800/50 text-slate-300"
               }`}
@@ -1005,7 +1087,7 @@ export default function App() {
       )}
 
       {/* Primary Main Stage */}
-      <main className="md:ml-64 flex-1 p-4 md:p-6 max-w-7xl mx-auto w-full min-h-screen overflow-y-auto">
+      <main className={`md:ml-64 flex-1 p-4 md:p-6 max-w-7xl mx-auto w-full min-h-screen overflow-y-auto ${showBottomNav ? "pb-24" : ""}`}>
         {activeTab === "dashboard" && (
           <Dashboard 
             jobCards={jobCards}
@@ -1103,8 +1185,6 @@ export default function App() {
 
         {activeTab === "dms-import" && (
           <DmsImporter
-            batches={batches}
-            rows={importRows}
             jobCards={jobCards}
             onImportRows={handleImportRows}
             onResolveRow={handleResolveRow}
@@ -1236,6 +1316,214 @@ export default function App() {
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-md text-xs font-bold shadow-lg shadow-rose-900/25 transition-all cursor-pointer animate-pulse"
               >
                 Yes, Destroy Data
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom Navigation Bar - Mobile */}
+      {showBottomNav && (
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#1e293b] border-t border-slate-700/50 flex items-center justify-around py-2 px-1 shadow-2xl">
+          {/* Render first 4 permitted tabs */}
+          {permittedTabs.slice(0, 4).map((tab) => {
+            const TabIcon = tab.icon;
+            const activeJobCount = tab.id === "jobs" ? jobCards.filter(j => !j.gate_out_time && !['Closed', 'Cancelled'].includes(j.status)).length : 0;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  if (tab.isDeepLink) {
+                    handleLogout();
+                    window.location.href = tab.url;
+                  } else {
+                    setActiveTab(tab.id);
+                    setDashboardSelectedJob(null);
+                  }
+                }}
+                className={`flex flex-col items-center justify-center flex-1 py-1 px-2.5 rounded-lg gap-0.5 text-center transition-all ${
+                  isActive ? "text-brand" : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <div className="relative">
+                  <TabIcon className="h-5 w-5" />
+                  {tab.id === "jobs" && activeJobCount > 0 && (
+                    <span className="absolute -top-1.5 -right-2 bg-rose-500 text-white text-[8px] font-extrabold rounded-full w-3.5 h-3.5 flex items-center justify-center shadow-md animate-pulse">
+                      {activeJobCount}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[9px] font-bold tracking-tight truncate max-w-[70px]">{tab.label}</span>
+              </button>
+            );
+          })}
+          
+          {/* If there are more than 4 tabs, render a "More" button */}
+          {permittedTabs.length > 4 && (
+            <button
+              onClick={() => setShowMobileMoreTabs(!showMobileMoreTabs)}
+              className={`flex flex-col items-center justify-center flex-1 py-1 px-2.5 rounded-lg gap-0.5 text-center transition-all ${
+                showMobileMoreTabs || !permittedTabs.slice(0, 4).some(t => t.id === activeTab) ? "text-brand" : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Menu className="h-5 w-5" />
+              <span className="text-[9px] font-bold tracking-tight">More</span>
+            </button>
+          )}
+        </nav>
+      )}
+
+      {/* Mobile More Tabs Overlay Bottom Sheet */}
+      {showBottomNav && showMobileMoreTabs && (
+        <div className="md:hidden fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-xs flex items-end justify-end">
+          <div className="bg-slate-900 border-t border-slate-800 w-full max-h-[70vh] rounded-t-2xl shadow-2xl p-5 space-y-4 overflow-y-auto animate-in slide-in-from-bottom duration-200 pb-20">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">All Modules</h3>
+              <button 
+                onClick={() => setShowMobileMoreTabs(false)}
+                className="text-slate-400 hover:text-slate-200 text-xs font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {permittedTabs.map((tab) => {
+                const TabIcon = tab.icon;
+                const isActive = activeTab === tab.id;
+                const activeJobCount = tab.id === "jobs" ? jobCards.filter(j => !j.gate_out_time && !['Closed', 'Cancelled'].includes(j.status)).length : 0;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      if (tab.isDeepLink) {
+                        handleLogout();
+                        window.location.href = tab.url;
+                      } else {
+                        setActiveTab(tab.id);
+                        setShowMobileMoreTabs(false);
+                        setDashboardSelectedJob(null);
+                      }
+                    }}
+                    className={`flex flex-col items-center justify-center p-3 rounded-xl border gap-1.5 transition-all text-center ${
+                      isActive 
+                        ? "bg-brand/10 border-brand/35 text-brand" 
+                        : "bg-slate-800/40 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-300"
+                    }`}
+                  >
+                    <div className="relative">
+                      <TabIcon className="h-5 w-5" />
+                      {tab.id === "jobs" && activeJobCount > 0 && (
+                        <span className="absolute -top-1.5 -right-2 bg-rose-500 text-white text-[8px] font-extrabold rounded-full w-3.5 h-3.5 flex items-center justify-center shadow-md animate-pulse">
+                          {activeJobCount}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[9px] font-bold tracking-tight truncate max-w-[80px]">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* UX Settings Drawer Modal */}
+      {showSettingsDrawer && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/60 backdrop-blur-xs">
+          <div className="bg-slate-900 border-l border-slate-800 w-full max-w-sm h-full shadow-2xl flex flex-col justify-between animate-in slide-in-from-right duration-200">
+            <div className="p-6 space-y-6 overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-brand/10 text-brand rounded-lg border border-brand/20">
+                    <Settings className="h-5 w-5 animate-spin" style={{ animationDuration: '3s' }} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wider text-slate-100">UX & Brand Customization</h3>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Tata WMS Workshop Settings</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowSettingsDrawer(false)}
+                  className="text-slate-400 hover:text-slate-200 font-bold text-sm cursor-pointer p-1"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Brand Settings */}
+              <div className="space-y-4">
+                <h4 className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest border-b border-slate-850 pb-1">Brand Settings</h4>
+                
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wide">Primary Brand Color</label>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="color" 
+                      value={primaryColor} 
+                      onChange={(e) => setPrimaryColor(e.target.value)} 
+                      className="w-8 h-8 rounded border-0 bg-transparent cursor-pointer"
+                    />
+                    <input 
+                      type="text" 
+                      value={primaryColor} 
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val.startsWith("#") && val.length <= 7) {
+                          setPrimaryColor(val);
+                        }
+                      }} 
+                      placeholder="#ff5500"
+                      className="flex-1 bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand font-mono font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between py-2 border-b border-slate-800/40">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wide">Mobile-friendly Layout</label>
+                    <p className="text-[9px] text-slate-500 font-medium">Auto-responsive touch optimized grids</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={mobileFriendly} 
+                      onChange={(e) => setMobileFriendly(e.target.checked)} 
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand"></div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Layout Options */}
+              <div className="space-y-4">
+                <h4 className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest border-b border-slate-850 pb-1">Layout Options</h4>
+
+                <div className="flex items-center justify-between py-2 border-b border-slate-800/40">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wide">Bottom Navigation Bar</label>
+                    <p className="text-[9px] text-slate-500 font-medium">Replaces side drawer on mobile</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={showBottomNav} 
+                      onChange={(e) => setShowBottomNav(e.target.checked)} 
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand"></div>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-slate-800 bg-slate-950/30 flex justify-end">
+              <button 
+                onClick={() => setShowSettingsDrawer(false)}
+                className="w-full bg-brand hover:bg-brand-hover text-white text-xs font-bold py-2.5 rounded-lg transition-colors cursor-pointer text-center uppercase tracking-wider"
+              >
+                Apply Customizations
               </button>
             </div>
           </div>

@@ -1,5 +1,5 @@
 import FunnySpinner from "./FunnySpinner";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   Users, 
   UserPlus, 
@@ -129,6 +129,45 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
 
+  // Roles list from DB
+  const [dbRoles, setDbRoles] = useState<{ role_id: number; role_name: string; permission_level: string }[]>([]);
+  
+  // Add Role Form State
+  const [showAddRoleModal, setShowAddRoleModal] = useState(false);
+  const [newRoleName, setNewRoleName] = useState("");
+  const [newPermissionLevel, setNewPermissionLevel] = useState("limited");
+  const [roleAddLoading, setRoleAddLoading] = useState(false);
+
+  const fetchRoles = async () => {
+    try {
+      const res = await fetch("/api/roles");
+      if (res.ok) {
+        const data = await res.json();
+        setDbRoles(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch roles:", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchRoles();
+  }, []);
+
+  const allRoles = useMemo(() => {
+    const list = [...ROLES];
+    dbRoles.forEach(r => {
+      const key = r.role_name;
+      if (!list.some(item => item.key === key)) {
+        list.push({
+          key,
+          label: r.role_name.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
+        });
+      }
+    });
+    return list;
+  }, [dbRoles]);
+
   // Add User Form State
   const [showAddForm, setShowAddForm] = useState(false);
   const [fullName, setFullName] = useState("");
@@ -231,6 +270,37 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
       setError(err.message || "Failed to create user.");
     } finally {
       setAddLoading(false);
+    }
+  };
+
+  const handleAddRoleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRoleName.trim()) return;
+    setRoleAddLoading(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch("/api/roles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          role_name: newRoleName.trim(),
+          permission_level: newPermissionLevel
+        })
+      });
+      if (res.ok) {
+        setSuccess(`Role "${newRoleName}" added successfully!`);
+        setNewRoleName("");
+        setShowAddRoleModal(false);
+        fetchRoles();
+      } else {
+        const data = await res.json();
+        setError(data.error || "Failed to save new role.");
+      }
+    } catch (err: any) {
+      setError(err.message || "Network error. Please try again.");
+    } finally {
+      setRoleAddLoading(false);
     }
   };
 
@@ -372,13 +442,24 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
             </div>
           </div>
           
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-orange-500/15 transition-all cursor-pointer"
-          >
-            <UserPlus className="h-4 w-4" />
-            <span>{showAddForm ? "Cancel Form" : "Create Operator Account"}</span>
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {(currentUser?.role === 'admin' || currentUser?.role === 'developer') && (
+              <button
+                onClick={() => setShowAddRoleModal(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/15 transition-all cursor-pointer"
+              >
+                <Shield className="h-4 w-4" />
+                <span>Add New Role</span>
+              </button>
+            )}
+            <button
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-orange-500/15 transition-all cursor-pointer"
+            >
+              <UserPlus className="h-4 w-4" />
+              <span>{showAddForm ? "Cancel Form" : "Create Operator Account"}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -481,17 +562,11 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value as any)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-semibold text-slate-700"
               >
-                <option value="developer">Developer</option>
-                <option value="admin">Admin</option>
-                <option value="service_manager">Service Manager</option>
-                <option value="supervisor">Supervisor</option>
-                <option value="accounts">Accounts</option>
-                <option value="service_advisor">Service Advisor</option>
-                <option value="reception">Reception</option>
-                <option value="gate_personnel">Gate Personnel</option>
-                <option value="technician">Technician</option>
+                {allRoles.map((r) => (
+                  <option key={r.key} value={r.key}>{r.label}</option>
+                ))}
               </select>
             </div>
 
@@ -576,18 +651,12 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
               <select
                 value={roleFilter}
                 onChange={(e) => setRoleFilter(e.target.value)}
-                className="w-full md:w-44 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                className="w-full md:w-44 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-semibold text-slate-700"
               >
                 <option value="All">All Roles</option>
-                <option value="developer">Developer</option>
-                <option value="admin">Admin</option>
-                <option value="service_manager">Service Manager</option>
-                <option value="supervisor">Supervisor</option>
-                <option value="accounts">Accounts</option>
-                <option value="service_advisor">Service Advisor</option>
-                <option value="reception">Reception</option>
-                <option value="gate_personnel">Gate Personnel</option>
-                <option value="technician">Technician</option>
+                {allRoles.map((r) => (
+                  <option key={r.key} value={r.key}>{r.label}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -601,8 +670,8 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
+              <table className="w-full text-left border-collapse block md:table">
+                <thead className="hidden md:table-header-group">
                   <tr className="border-b border-slate-100 bg-slate-50/50">
                     <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">User Details</th>
                     <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">System Authorization</th>
@@ -612,51 +681,54 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                     <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 block md:table-row-group">
                   {filteredUsers.map((user) => {
                     const isEditing = editingUserId === user.user_id;
 
                     return (
-                      <tr key={user.user_id} className="hover:bg-slate-50/50 transition-colors">
+                      <tr key={user.user_id} className="block md:table-row hover:bg-slate-50/50 transition-colors p-4 md:p-0 border-b border-slate-100 md:border-0 space-y-3 md:space-y-0">
                         {/* Name Details */}
-                        <td className="p-4">
+                        <td className="block md:table-cell p-0 md:p-4">
+                          <span className="block md:hidden text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">User Details</span>
                           {isEditing ? (
                             <div className="space-y-2">
                               <input
                                 type="text"
                                 value={editFullName}
                                 onChange={(e) => setEditFullName(e.target.value)}
-                                className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none block w-full"
+                                className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none block w-full font-semibold text-slate-700"
                                 placeholder="Full Name"
                               />
                               <input
                                 type="text"
                                 value={editMobileNo}
                                 onChange={(e) => setEditMobileNo(e.target.value)}
-                                className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none block w-full"
-                                placeholder="Mobile No for OTP"
+                                className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none block w-full font-semibold text-slate-700"
+                                placeholder="Mobile"
                               />
                               <input
                                 type="email"
                                 value={editEmail}
                                 onChange={(e) => setEditEmail(e.target.value)}
-                                className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none block w-full"
-                                placeholder="Email (Optional)"
+                                className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none block w-full font-semibold text-slate-700"
+                                placeholder="Email"
                               />
                               <input
                                 type="password"
                                 value={editPassword}
                                 onChange={(e) => setEditPassword(e.target.value)}
-                                className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none block w-full"
-                                placeholder="Change Password"
+                                className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none block w-full font-semibold text-slate-700"
+                                placeholder="New Password (blank to keep)"
                               />
                             </div>
                           ) : (
                             <div>
-                              <p className="text-xs font-bold text-slate-800">{user.full_name}</p>
-                              <p className="text-[10px] text-slate-400 font-mono mt-0.5">@{user.username}</p>
+                              <h3 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                                {user.full_name}
+                              </h3>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">👤 {user.username}</p>
                               {user.mobile_no && (
-                                <p className="text-[10px] text-slate-500 font-mono mt-0.5">📱 {user.mobile_no}</p>
+                                <p className="text-[10px] text-slate-500 font-mono mt-0.5">📞 {user.mobile_no}</p>
                               )}
                               {user.email && (
                                 <p className="text-[10px] text-slate-500 font-mono mt-0.5">✉️ {user.email}</p>
@@ -666,22 +738,17 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                         </td>
 
                         {/* Role Badge */}
-                        <td className="p-4">
+                        <td className="block md:table-cell p-0 md:p-4">
+                          <span className="block md:hidden text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">System Authorization</span>
                           {isEditing ? (
                             <select
                               value={editRole}
                               onChange={(e) => setEditRole(e.target.value as any)}
-                              className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none"
+                              className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none font-semibold text-slate-700"
                             >
-                              <option value="developer">Developer</option>
-                              <option value="admin">Admin</option>
-                              <option value="service_manager">Service Manager</option>
-                              <option value="supervisor">Supervisor</option>
-                              <option value="accounts">Accounts</option>
-                              <option value="service_advisor">Service Advisor</option>
-                              <option value="reception">Reception</option>
-                              <option value="gate_personnel">Gate Personnel</option>
-                              <option value="technician">Technician</option>
+                              {allRoles.map((r) => (
+                                <option key={r.key} value={r.key}>{r.label}</option>
+                              ))}
                             </select>
                           ) : (
                             <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wider ${getRoleBadgeColor(user.role)}`}>
@@ -691,13 +758,14 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                         </td>
 
                         {/* Linked Employee */}
-                        <td className="p-4">
+                        <td className="block md:table-cell p-0 md:p-4">
+                          <span className="block md:hidden text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Linked Employee</span>
                           {isEditing ? (
                             <input
                               type="number"
                               value={editEmployeeId}
                               onChange={(e) => setEditEmployeeId(e.target.value)}
-                              className="w-16 px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none"
+                              className="w-16 px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none font-semibold text-slate-700"
                               placeholder="Emp ID"
                             />
                           ) : (
@@ -708,7 +776,8 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                         </td>
 
                         {/* Last Activity */}
-                        <td className="p-4 text-xs text-slate-500 font-mono">
+                        <td className="block md:table-cell p-0 md:p-4 text-xs text-slate-500 font-mono">
+                          <span className="block md:hidden text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Last Activity</span>
                           {user.last_login 
                             ? new Date(user.last_login).toLocaleString()
                             : "Never logged in"
@@ -716,7 +785,8 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                         </td>
 
                         {/* Toggle state */}
-                        <td className="p-4">
+                        <td className="block md:table-cell p-0 md:p-4">
+                          <span className="block md:hidden text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Status</span>
                           <button
                             onClick={() => handleToggleActive(user)}
                             disabled={currentUser?.user_id === user.user_id}
@@ -738,19 +808,20 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                         </td>
 
                         {/* Actions */}
-                        <td className="p-4 text-right">
+                        <td className="block md:table-cell p-0 md:p-4 text-left md:text-right">
+                          <span className="block md:hidden text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Actions</span>
                           {isEditing ? (
-                            <div className="flex justify-end gap-2">
+                            <div className="flex justify-start md:justify-end gap-2">
                               <button
                                 onClick={() => handleUpdateUser(user.user_id)}
                                 disabled={editLoading}
-                                className="px-2 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded font-bold text-[10px] uppercase shadow"
+                                className="px-2 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded font-bold text-[10px] uppercase shadow cursor-pointer"
                               >
                                 Save
                               </button>
                               <button
                                 onClick={() => setEditingUserId(null)}
-                                className="px-2 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-bold text-[10px] uppercase"
+                                className="px-2 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-bold text-[10px] uppercase cursor-pointer"
                               >
                                 Cancel
                               </button>
@@ -758,7 +829,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                           ) : (
                             <button
                               onClick={() => startEdit(user)}
-                              className="px-2.5 py-1.5 border border-slate-200 hover:border-slate-300 rounded font-bold text-[10px] text-slate-600 uppercase tracking-wider transition-all"
+                              className="px-2.5 py-1.5 border border-slate-200 hover:border-slate-300 rounded font-bold text-[10px] text-slate-600 uppercase tracking-wider transition-all cursor-pointer"
                             >
                               Edit Profile
                             </button>
@@ -856,6 +927,75 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Add Role Modal */}
+      {showAddRoleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md shadow-2xl flex flex-col p-5 space-y-4 animate-fade-in">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                  <Shield className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-widest text-slate-800">Add New Operator Role</h3>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Register a custom access tier</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowAddRoleModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold text-xs p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleAddRoleSubmit} className="space-y-4 text-xs font-semibold text-slate-700">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Role Key Name *</label>
+                <input 
+                  type="text"
+                  required
+                  value={newRoleName}
+                  onChange={(e) => setNewRoleName(e.target.value)}
+                  placeholder="e.g. Workshop Supervisor"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Default Permission Level *</label>
+                <select
+                  value={newPermissionLevel}
+                  onChange={(e) => setNewPermissionLevel(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                >
+                  <option value="full">Full Access (All Modules Edit)</option>
+                  <option value="limited">Limited Access (View and select edits)</option>
+                  <option value="read">Read Only (Dashboard/Logs view only)</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddRoleModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={roleAddLoading}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer flex items-center gap-1.5"
+                >
+                  {roleAddLoading ? "Saving..." : "Save Role"}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

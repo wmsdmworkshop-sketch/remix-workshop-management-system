@@ -595,6 +595,38 @@ export async function ensureTablesExist(): Promise<void> {
     // Ignore error if column already exists
   }
 
+  // 23. roles table
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS \`roles\` (
+      \`role_id\` INT NOT NULL AUTO_INCREMENT,
+      \`role_name\` VARCHAR(255) NOT NULL UNIQUE,
+      \`permission_level\` VARCHAR(50) NOT NULL,
+      PRIMARY KEY (\`role_id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  `);
+
+  try {
+    const [rows] = await db.execute("SELECT COUNT(*) as count FROM `roles`") as any[];
+    if (rows && rows[0].count === 0) {
+      const defaultRoles = [
+        { name: "admin", level: "full" },
+        { name: "service_manager", level: "full" },
+        { name: "supervisor", level: "limited" },
+        { name: "reception", level: "read" },
+        { name: "service_advisor", level: "limited" },
+        { name: "developer", level: "full" },
+        { name: "gate_personnel", level: "limited" },
+        { name: "technician", level: "limited" },
+        { name: "accounts", level: "read" }
+      ];
+      for (const r of defaultRoles) {
+        await db.execute("INSERT INTO `roles` (`role_name`, `permission_level`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `permission_level`=?", [r.name, r.level, r.level]);
+      }
+    }
+  } catch (err) {
+    console.error("Failed to seed roles table:", err);
+  }
+
   console.log("Database table verification completed.");
 }
 

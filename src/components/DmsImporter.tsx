@@ -8,36 +8,13 @@ import { Database } from "lucide-react";
 interface DmsImporterProps {
   isAdmin?: boolean;
   userRole?: string;
-  batches: DMSImportBatch[];
-  rows: DMSImportRow[];
   jobCards: JobCard[];
   onImportRows: (fileName: string, rows: any[]) => void;
   onResolveRow: (rowId: number, status: DMSImportRow["match_status"], matchedJobId: number) => void;
 }
 
-const SAMPLE_LOGS = [
-  {
-    name: "DMS_Daily_Log_June26.csv",
-    rows: [
-      { vrn: "MH-12-AB-1234", job_date: "2026-06-26", sr_type: "GR", labour_amount: 4000, parts_amount: 1500 },
-      { vrn: "DL-03-XY-9876", job_date: "2026-06-26", sr_type: "PM", labour_amount: 2500, parts_amount: 800 },
-      { vrn: "KA-51-MM-4321", job_date: "2026-06-26", sr_type: "EL", labour_amount: 3200, parts_amount: 500 }
-    ]
-  },
-  {
-    name: "DMS_Conflict_And_Unmatched_Log.csv",
-    rows: [
-      // Conflict: VRN matches JC001 (MH-12-AB-1234), but SR Type is PM (Periodic Maintenance) instead of GR (General Repair)
-      { vrn: "MH-12-AB-1234", job_date: "2026-06-26", sr_type: "PM", labour_amount: 4200, parts_amount: 1800 },
-      // Unmatched: VRN does not exist in our system
-      { vrn: "HR-26-CC-8888", job_date: "2026-06-26", sr_type: "QS", labour_amount: 1500, parts_amount: 100 }
-    ]
-  }
-];
 
 export default function DmsImporter({
-  batches,
-  rows,
   jobCards,
   onImportRows,
   onResolveRow,
@@ -50,7 +27,7 @@ export default function DmsImporter({
   const [targetJobId, setTargetJobId] = useState<number | "">("");
   const [pastedData, setPastedData] = useState("");
   const [showPasteArea, setShowPasteArea] = useState(false);
-  const [activeMode, setActiveMode] = useState<"reconcile" | "backdated" | "master-data" | "other-imports">("reconcile");
+  const [activeMode, setActiveMode] = useState<"reconcile" | "backdated" | "master-data" | "other-imports">("backdated");
   const [backdatedText, setBackdatedText] = useState("");
   const [isUploadingBackdated, setIsUploadingBackdated] = useState(false);
   const [backdatedResult, setBackdatedResult] = useState<{
@@ -74,6 +51,43 @@ export default function DmsImporter({
   // Master Data state
   const [masterVehicles, setMasterVehicles] = useState<any[]>([]);
   const [loadingMasterVehicles, setLoadingMasterVehicles] = useState(false);
+  const [masterSearch, setMasterSearch] = useState("");
+  const [masterSortField, setMasterSortField] = useState<string | null>(null);
+  const [masterSortDirection, setMasterSortDirection] = useState<"asc" | "desc">("asc");
+
+  const processedMasterVehicles = useMemo(() => {
+    let result = [...masterVehicles];
+
+    // Filter by search
+    if (masterSearch.trim()) {
+      const q = masterSearch.toLowerCase().trim();
+      result = result.filter(v => 
+        (v.vrn || "").toLowerCase().includes(q) ||
+        (v.customer_name || "").toLowerCase().includes(q) ||
+        (v.customer_mobile || "").toLowerCase().includes(q) ||
+        (v.job_card_no || "").toLowerCase().includes(q) ||
+        (v.status || "").toLowerCase().includes(q) ||
+        (v.job_date || "").toLowerCase().includes(q)
+      );
+    }
+
+    // Sort by field
+    if (masterSortField) {
+      result.sort((a, b) => {
+        let valA = a[masterSortField] || "";
+        let valB = b[masterSortField] || "";
+        
+        if (typeof valA === "string") valA = valA.toLowerCase();
+        if (typeof valB === "string") valB = valB.toLowerCase();
+
+        if (valA < valB) return masterSortDirection === "asc" ? -1 : 1;
+        if (valA > valB) return masterSortDirection === "asc" ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return result;
+  }, [masterVehicles, masterSearch, masterSortField, masterSortDirection]);
 
   React.useEffect(() => {
     if (activeMode === "master-data") {
@@ -297,8 +311,8 @@ export default function DmsImporter({
       '"Paid Service"',
       '"CSP_100B210"',
       '"IDEVAN2627001836"',
-      '"JC-DevAus-AA1-2627-001179"',
-      '"SR-DevAus/AA1-2627-001201"',
+      '"JC-DWIP-AA1-2627-001179"',
+      '"SR-DWIP/AA1-2627-001201"',
       '"25/06/2026"',
       '"KA13AA1596"',
       '""',
@@ -324,85 +338,6 @@ export default function DmsImporter({
   };
 
   // Filter and Sort rows for the selected batch
-  const currentBatch = batches.find(b => b.batch_id === selectedBatchId) || batches[batches.length - 1];
-
-  const processedRows = React.useMemo(() => {
-    if (!currentBatch) return [];
-    let result = rows.filter(r => r.batch_id === currentBatch.batch_id);
-
-    // Filter by search query (VRN, SR Type, or conflict details)
-    if (rowSearch.trim()) {
-      const q = rowSearch.toLowerCase();
-      result = result.filter(r => 
-        (r.vrn || "").toLowerCase().includes(q) || 
-        (r.sr_type || "").toLowerCase().includes(q) ||
-        (r.conflict_reason || "").toLowerCase().includes(q)
-      );
-    }
-
-    // Filter by match status
-    if (rowStatusFilter !== "All") {
-      result = result.filter(r => r.match_status === rowStatusFilter);
-    }
-
-    // Sort by field
-    if (rowSortField) {
-      result = [...result].sort((a, b) => {
-        let valA = a[rowSortField as keyof DMSImportRow];
-        let valB = b[rowSortField as keyof DMSImportRow];
-
-        if (typeof valA === "string") valA = valA.toLowerCase();
-        if (typeof valB === "string") valB = valB.toLowerCase();
-
-        if (valA === undefined || valA === null) return rowSortDirection === "asc" ? 1 : -1;
-        if (valB === undefined || valB === null) return rowSortDirection === "asc" ? -1 : 1;
-
-        if (valA < valB) return rowSortDirection === "asc" ? -1 : 1;
-        if (valA > valB) return rowSortDirection === "asc" ? 1 : -1;
-        return 0;
-      });
-    }
-
-    return result;
-  }, [rows, currentBatch, rowSearch, rowStatusFilter, rowSortField, rowSortDirection]);
-
-  const downloadBatchCSV = () => {
-    if (!currentBatch || processedRows.length === 0) return;
-    
-    const headers = ["Row Number", "VRN", "Invoice Date", "SR Type", "Labour Amount", "Parts Amount", "Match Status", "Conflict Reason"];
-    const csvRows = processedRows.map(r => [
-      r.row_number,
-      `"${r.vrn}"`,
-      `"${r.job_date || ''}"`,
-      `"${r.sr_type}"`,
-      r.labour_amount,
-      r.parts_amount,
-      `"${r.match_status}"`,
-      `"${(r.conflict_reason || '').replace(/"/g, '""')}"`
-    ]);
-
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + [headers.join(","), ...csvRows.map(e => e.join(","))].join("\n");
-      
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `DMS_Compiled_Batch_${currentBatch.file_name || currentBatch.batch_id}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleResolveSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!resolvingRow || !targetJobId) return;
-
-    onResolveRow(resolvingRow.row_id, "Matched", Number(targetJobId));
-    setResolvingRow(null);
-    setTargetJobId("");
-    alert("Conflict resolved. Revenue has been synced and allocated to the job card.");
-  };
-
   const handleUploadBackdated = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!backdatedText.trim()) {
@@ -957,37 +892,97 @@ export default function DmsImporter({
             Compiling Master Data...
           </div>
         ) : (
-          <div className="overflow-x-auto border border-slate-200 rounded-xl">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase text-slate-500">
-                <tr>
-                  <th className="py-2.5 px-3">Vehicle (VRN)</th>
-                  <th className="py-2.5 px-3">Customer</th>
-                  <th className="py-2.5 px-3">Mobile</th>
-                  <th className="py-2.5 px-3">Latest Service Date</th>
-                  <th className="py-2.5 px-3">Job Card</th>
-                  <th className="py-2.5 px-3">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                {(!Array.isArray(masterVehicles) || masterVehicles.length === 0) ? (
+          <div className="space-y-4">
+            <div className="relative">
+              <input
+                type="text"
+                value={masterSearch}
+                onChange={(e) => setMasterSearch(e.target.value)}
+                placeholder="Search master data (VRN, Customer, Mobile, Job Card, Date)..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-3 pr-3 py-2 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none font-semibold text-slate-700"
+              />
+            </div>
+
+            <div className="overflow-x-auto border border-slate-200 rounded-xl">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase text-slate-500">
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-400 italic">No historical master data available.</td>
+                    <th 
+                      onClick={() => {
+                        setMasterSortField("vrn");
+                        setMasterSortDirection(prev => prev === "asc" ? "desc" : "asc");
+                      }}
+                      className="py-2.5 px-3 cursor-pointer hover:text-slate-700 select-none"
+                    >
+                      Vehicle (VRN) {masterSortField === "vrn" ? (masterSortDirection === "asc" ? "▲" : "▼") : ""}
+                    </th>
+                    <th 
+                      onClick={() => {
+                        setMasterSortField("customer_name");
+                        setMasterSortDirection(prev => prev === "asc" ? "desc" : "asc");
+                      }}
+                      className="py-2.5 px-3 cursor-pointer hover:text-slate-700 select-none"
+                    >
+                      Customer {masterSortField === "customer_name" ? (masterSortDirection === "asc" ? "▲" : "▼") : ""}
+                    </th>
+                    <th 
+                      onClick={() => {
+                        setMasterSortField("customer_mobile");
+                        setMasterSortDirection(prev => prev === "asc" ? "desc" : "asc");
+                      }}
+                      className="py-2.5 px-3 cursor-pointer hover:text-slate-700 select-none"
+                    >
+                      Mobile {masterSortField === "customer_mobile" ? (masterSortDirection === "asc" ? "▲" : "▼") : ""}
+                    </th>
+                    <th 
+                      onClick={() => {
+                        setMasterSortField("job_date");
+                        setMasterSortDirection(prev => prev === "asc" ? "desc" : "asc");
+                      }}
+                      className="py-2.5 px-3 cursor-pointer hover:text-slate-700 select-none"
+                    >
+                      Latest Service Date {masterSortField === "job_date" ? (masterSortDirection === "asc" ? "▲" : "▼") : ""}
+                    </th>
+                    <th 
+                      onClick={() => {
+                        setMasterSortField("job_card_no");
+                        setMasterSortDirection(prev => prev === "asc" ? "desc" : "asc");
+                      }}
+                      className="py-2.5 px-3 cursor-pointer hover:text-slate-700 select-none"
+                    >
+                      Job Card {masterSortField === "job_card_no" ? (masterSortDirection === "asc" ? "▲" : "▼") : ""}
+                    </th>
+                    <th 
+                      onClick={() => {
+                        setMasterSortField("status");
+                        setMasterSortDirection(prev => prev === "asc" ? "desc" : "asc");
+                      }}
+                      className="py-2.5 px-3 cursor-pointer hover:text-slate-700 select-none"
+                    >
+                      Status {masterSortField === "status" ? (masterSortDirection === "asc" ? "▲" : "▼") : ""}
+                    </th>
                   </tr>
-                ) : (
-                  masterVehicles.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/50">
-                      <td className="p-3 font-bold text-slate-900">{row.vrn}</td>
-                      <td className="p-3">{row.customer_name || 'N/A'}</td>
-                      <td className="p-3">{row.customer_mobile || 'N/A'}</td>
-                      <td className="p-3 font-mono text-indigo-600">{row.job_date || 'N/A'}</td>
-                      <td className="p-3 font-mono text-slate-400 font-bold">{row.job_card_no}</td>
-                      <td className="p-3 text-emerald-600">{row.status}</td>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                  {(!Array.isArray(processedMasterVehicles) || processedMasterVehicles.length === 0) ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400 italic">No master data found.</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    processedMasterVehicles.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/50">
+                        <td className="p-3 font-bold text-slate-900">{row.vrn}</td>
+                        <td className="p-3">{row.customer_name || 'N/A'}</td>
+                        <td className="p-3">{row.customer_mobile || 'N/A'}</td>
+                        <td className="p-3 font-mono text-indigo-600">{row.job_date || 'N/A'}</td>
+                        <td className="p-3 font-mono text-slate-400 font-bold">{row.job_card_no}</td>
+                        <td className="p-3 text-emerald-600">{row.status}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
@@ -1013,38 +1008,11 @@ export default function DmsImporter({
             <Download className="h-4 w-4" />
             Download CRM Template
           </button>
-          <button
-            onClick={() => setShowPasteArea(!showPasteArea)}
-            className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 font-bold text-[11px] px-3.5 py-2 rounded-lg transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-          >
-            <ClipboardList className="h-4 w-4" />
-            {showPasteArea ? "Hide Paste Area" : "Paste DMS Raw Text"}
-          </button>
-          {SAMPLE_LOGS.map((log, idx) => (
-            <button 
-              key={idx}
-              onClick={() => triggerSampleImport(log)}
-              className="bg-orange-500/10 text-orange-600 border border-orange-500/20 hover:bg-orange-500/20 font-bold text-[11px] px-3.5 py-2 rounded-lg transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-            >
-              <ClipboardList className="h-4 w-4" />
-              Load {log.name.split("_")[1]}
-            </button>
-          ))}
         </div>
       </div>
 
       {/* Mode Segmented Tab Selector */}
       <div className="flex border-b border-slate-200">
-        <button
-          onClick={() => setActiveMode("reconcile")}
-          className={`px-5 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
-            activeMode === "reconcile"
-              ? "border-orange-500 text-orange-600 font-extrabold"
-              : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50"
-          }`}
-        >
-          ⏱️ DMS Billings Reconciler
-        </button>
         <button
           onClick={() => setActiveMode("backdated")}
           className={`px-5 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
@@ -1083,314 +1051,9 @@ export default function DmsImporter({
         renderBackdatedUploader()
       ) : activeMode === "master-data" ? (
         renderMasterData()
-      ) : activeMode === "other-imports" ? (
-        <DmsImporterConsolidated />
       ) : (
-        <>
-          {/* Optional Raw Paste Area */}
-          {showPasteArea && (
-            <form onSubmit={handlePasteSubmit} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 animate-fade-in">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Paste DMS Tab/Comma Separated Report</h3>
-                <span className="text-[10px] text-slate-400 font-semibold">Will automatically clean null characters</span>
-              </div>
-              <textarea
-                value={pastedData}
-                onChange={(e) => setPastedData(e.target.value)}
-                rows={6}
-                placeholder="Paste your report here, including header columns (e.g. SR Type, VRN, Invoice Date, Final Labour Invoice Amount, Final Spares Invoice Amount)..."
-                className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500"
-              ></textarea>
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-lg transition-colors shadow-sm cursor-pointer"
-                >
-                  Process and Reconcile Pasted Report
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* 2. Drag-and-drop simulated landing */}
-          {batches.length === 0 && (
-            <div 
-              onDragEnter={handleDrag}
-              onDragOver={handleDrag}
-              onDragLeave={handleDrag}
-              onDrop={handleDrop}
-              className={`border border-dashed rounded-xl p-12 text-center transition-all flex flex-col items-center justify-center space-y-4 cursor-pointer bg-slate-50/50 relative overflow-hidden ${
-                dragActive ? "border-orange-500 bg-orange-500/5" : "border-slate-300 hover:border-slate-400"
-              }`}
-            >
-              <input
-                type="file"
-                accept=".csv,.tsv,.txt"
-                onChange={handleFileChange}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-              />
-              <div className="h-10 w-10 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-600 flex items-center justify-center">
-                <UploadCloud className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider">Drag & Drop DMS Billing Log or Click to Browse</h3>
-                <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto font-medium">
-                  Upload daily workshop invoice logs in CSV, TSV or TXT format to reconcile with active job cards. Support auto headers mapping.
-                </p>
-              </div>
-            </div>
-          )}
-        </>
+        <DmsImporterConsolidated />
       )}
-
-      {/* 3. Batch Reconciliation View */}
-      {batches.length > 0 && currentBatch && (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-          
-          {/* Batches History List & Metrics */}
-          <div className="xl:col-span-1 bg-white border border-slate-200 rounded-xl p-4 space-y-4 shadow-sm">
-            <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider border-b border-slate-100 pb-2">Reconciliation Batches</h2>
-            <div className="space-y-3">
-              {batches.map((b) => {
-                const isActive = b.batch_id === currentBatch.batch_id;
-                return (
-                  <div 
-                    key={b.batch_id}
-                    onClick={() => setSelectedBatchId(b.batch_id)}
-                    className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                      isActive ? "border-orange-500 bg-orange-500/5" : "border-slate-100 hover:border-slate-200"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <p className="text-[11px] font-bold text-slate-800 truncate max-w-[150px]">{b.file_name}</p>
-                      <span className="text-[9px] font-bold text-orange-600 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded uppercase tracking-wider">
-                        {b.status}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 text-center text-[9px] mt-3 border-t border-slate-100 pt-2 font-bold uppercase tracking-wider">
-                      <div className="text-slate-500">
-                        <p className="text-xs font-bold text-slate-800">{b.total_rows}</p>
-                        <p className="text-[8px] mt-0.5 text-slate-400">Total</p>
-                      </div>
-                      <div className="text-green-600">
-                        <p className="text-xs font-bold">{b.matched_rows}</p>
-                        <p className="text-[8px] mt-0.5 text-green-500/70">Matched</p>
-                      </div>
-                      <div className="text-red-600">
-                        <p className="text-xs font-bold">{b.unmatched_rows}</p>
-                        <p className="text-[8px] mt-0.5 text-red-500/70">Issues</p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Table of Rows inside Selected Batch */}
-          <div className="xl:col-span-2 bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 bg-slate-50/50 -mx-4 -mt-4 p-4 gap-2">
-              <div>
-                <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  Log Rows inside <span className="font-mono text-orange-600">{currentBatch.file_name}</span>
-                </h3>
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">Total matched: {currentBatch.matched_rows} / {currentBatch.total_rows}</p>
-              </div>
-              <button
-                type="button"
-                onClick={downloadBatchCSV}
-                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition flex items-center gap-1.5 cursor-pointer border border-slate-800 shadow-sm"
-              >
-                <Download className="h-3.5 w-3.5" />
-                <span>Export Batch CSV</span>
-              </button>
-            </div>
-
-            {/* Filter and Search Bar */}
-            <div className="flex flex-col sm:flex-row gap-3 py-1 border-b border-slate-100 pb-3">
-              <div className="relative flex-1">
-                <input
-                  type="text"
-                  placeholder="Search VRN, SR Type, or Conflict Reason..."
-                  value={rowSearch}
-                  onChange={(e) => setRowSearch(e.target.value)}
-                  className="w-full pl-3 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none"
-                />
-              </div>
-              <div className="flex gap-2">
-                <select
-                  value={rowStatusFilter}
-                  onChange={(e) => setRowStatusFilter(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-700 font-bold focus:outline-none"
-                >
-                  <option value="All">All Statuses</option>
-                  <option value="Matched">Matched</option>
-                  <option value="Conflict">Conflict</option>
-                  <option value="Unmatched">Unmatched</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-200 text-slate-400 font-bold text-[9px] uppercase tracking-wider">
-                    <th 
-                      className="py-2.5 cursor-pointer hover:text-slate-600 select-none"
-                      onClick={() => {
-                        setRowSortField("row_number");
-                        setRowSortDirection(prev => prev === "asc" ? "desc" : "asc");
-                      }}
-                    >
-                      Row {rowSortField === "row_number" ? (rowSortDirection === "asc" ? "▲" : "▼") : ""}
-                    </th>
-                    <th 
-                      className="py-2.5 cursor-pointer hover:text-slate-600 select-none"
-                      onClick={() => {
-                        setRowSortField("vrn");
-                        setRowSortDirection(prev => prev === "asc" ? "desc" : "asc");
-                      }}
-                    >
-                      VRN {rowSortField === "vrn" ? (rowSortDirection === "asc" ? "▲" : "▼") : ""}
-                    </th>
-                    <th 
-                      className="py-2.5 cursor-pointer hover:text-slate-600 select-none"
-                      onClick={() => {
-                        setRowSortField("sr_type");
-                        setRowSortDirection(prev => prev === "asc" ? "desc" : "asc");
-                      }}
-                    >
-                      SR Type {rowSortField === "sr_type" ? (rowSortDirection === "asc" ? "▲" : "▼") : ""}
-                    </th>
-                    <th 
-                      className="py-2.5 cursor-pointer hover:text-slate-600 select-none"
-                      onClick={() => {
-                        setRowSortField("labour_amount");
-                        setRowSortDirection(prev => prev === "asc" ? "desc" : "asc");
-                      }}
-                    >
-                      Labour (₹) {rowSortField === "labour_amount" ? (rowSortDirection === "asc" ? "▲" : "▼") : ""}
-                    </th>
-                    <th 
-                      className="py-2.5 cursor-pointer hover:text-slate-600 select-none"
-                      onClick={() => {
-                        setRowSortField("parts_amount");
-                        setRowSortDirection(prev => prev === "asc" ? "desc" : "asc");
-                      }}
-                    >
-                      Parts (₹) {rowSortField === "parts_amount" ? (rowSortDirection === "asc" ? "▲" : "▼") : ""}
-                    </th>
-                    <th 
-                      className="py-2.5 cursor-pointer hover:text-slate-600 select-none"
-                      onClick={() => {
-                        setRowSortField("match_status");
-                        setRowSortDirection(prev => prev === "asc" ? "desc" : "asc");
-                      }}
-                    >
-                      Status {rowSortField === "match_status" ? (rowSortDirection === "asc" ? "▲" : "▼") : ""}
-                    </th>
-                    <th className="py-2.5 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-[11px]">
-                  {processedRows.map((row) => {
-                    let statusColor = "bg-slate-50 text-slate-700 border-slate-200";
-                    if (row.match_status === "Matched") statusColor = "bg-green-50 text-green-700 border border-green-200/50";
-                    else if (row.match_status === "Conflict") statusColor = "bg-red-50 text-red-700 border border-red-200/50";
-                    else if (row.match_status === "Unmatched") statusColor = "bg-amber-50 text-amber-700 border border-amber-200/50";
-
-                    return (
-                      <tr key={row.row_id} className="hover:bg-slate-50/50">
-                        <td className="py-3 font-mono text-slate-400 font-bold">#{row.row_number}</td>
-                        <td className="py-3 font-bold text-slate-900">{row.vrn}</td>
-                        <td className="py-3 font-bold text-slate-600 uppercase tracking-wider">{row.sr_type}</td>
-                        <td className="py-3 font-semibold text-slate-800">₹{row.labour_amount.toLocaleString()}</td>
-                        <td className="py-3 font-semibold text-slate-800">₹{row.parts_amount.toLocaleString()}</td>
-                        <td className="py-3">
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${statusColor}`}>
-                            {row.match_status}
-                          </span>
-                        </td>
-                        <td className="py-3 text-right">
-                          {["Conflict", "Unmatched"].includes(row.match_status) ? (
-                            <button 
-                              onClick={() => setResolvingRow(row)}
-                              className="bg-orange-500/10 text-orange-600 hover:bg-orange-500/20 border border-orange-500/20 text-[9px] font-bold px-2.5 py-1 rounded uppercase tracking-wider transition-colors cursor-pointer"
-                            >
-                              Resolve
-                            </button>
-                          ) : (
-                            <span className="text-green-600 font-bold text-[10px] uppercase tracking-wider">✓ Synced</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-        </div>
-      )}
-
-      {/* RECONCILIATION CONFLICT RESOLVER MODAL */}
-      {resolvingRow && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-md max-w-md w-full p-4 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                <AlertTriangle className="h-4.5 w-4.5 text-orange-500" />
-                Resolve DMS Sync Conflict
-              </h2>
-              <button onClick={() => setResolvingRow(null)} className="text-slate-400 hover:text-slate-600 font-bold text-sm">×</button>
-            </div>
-
-            <div className="bg-slate-50 p-3 rounded-lg space-y-2 text-xs border border-slate-200">
-              <p className="text-slate-500 font-bold uppercase tracking-wider text-[9px]">DMS Record Row #{resolvingRow.row_number}</p>
-              <div className="grid grid-cols-2 gap-2 font-semibold text-slate-800">
-                <p>VRN: <strong className="text-slate-900 font-bold">{resolvingRow.vrn}</strong></p>
-                <p>SR Code: <strong className="text-slate-900 font-bold">{resolvingRow.sr_type}</strong></p>
-                <p>Labour: <strong className="text-slate-900 font-bold">₹{resolvingRow.labour_amount}</strong></p>
-                <p>Parts: <strong className="text-slate-900 font-bold">₹{resolvingRow.parts_amount}</strong></p>
-              </div>
-              {resolvingRow.conflict_reason && (
-                <p className="text-red-700 font-bold text-[10px] uppercase tracking-wider mt-2 bg-red-50 p-2 rounded border border-red-200/50">
-                  ⚠️ Conflict: {resolvingRow.conflict_reason}
-                </p>
-              )}
-            </div>
-
-            <form onSubmit={handleResolveSubmit} className="space-y-3 pt-2">
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Map to Registered Job Card*</label>
-                <select 
-                  required
-                  value={targetJobId}
-                  onChange={(e) => setTargetJobId(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
-                >
-                  <option value="">Select target Job Card...</option>
-                  {jobCards.filter(j => j.status !== "Invoiced").map(j => (
-                    <option key={j.job_id} value={j.job_id}>
-                      {j.job_card_no} • {j.vrn} ({j.customer_name}) • Status: {j.status}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <button 
-                type="submit"
-                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2.5 rounded text-xs uppercase tracking-wider shadow-sm transition-colors cursor-pointer"
-              >
-                Link and Force Reconcile
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }

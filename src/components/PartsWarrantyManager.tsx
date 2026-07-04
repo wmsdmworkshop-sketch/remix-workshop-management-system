@@ -78,7 +78,7 @@ export default function PartsWarrantyManager({
 
   // --- WARRANTY AI VALIDATION STATE ---
   const [valJobCardId, setValJobCardId] = useState("");
-  const [valDateOfSale, setValDateOfSale] = useState(new Date(Date.now() - 365 * 2 * 24 * 3600 * 1000).toISOString().split("T")[0]); // Default to 2 years ago
+  const [valDateOfSale, setValDateOfSale] = useState("");
   const [valModelNoPpl, setValModelNoPpl] = useState("Prima");
   const [valFsbStatus, setValFsbStatus] = useState("Not Applicable");
   const [valQuery, setValQuery] = useState("");
@@ -960,6 +960,7 @@ export default function PartsWarrantyManager({
                   type="date"
                   value={valDateOfSale}
                   onChange={(e) => setValDateOfSale(e.target.value)}
+                  placeholder="Select Date of Sale"
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
                 />
               </div>

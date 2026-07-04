@@ -2873,6 +2873,35 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
+  // --- ROLES ENDPOINTS ---
+  app.get("/api/roles", async (req, res) => {
+    try {
+      const [rows] = await dbPool.query("SELECT * FROM roles ORDER BY role_name ASC") as any[];
+      res.json(rows);
+    } catch (err: any) {
+      console.error("GET /api/roles failed:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/roles", async (req, res) => {
+    try {
+      const { role_name, permission_level } = req.body;
+      if (!role_name || !permission_level) {
+        return res.status(400).json({ error: "Missing role_name or permission_level" });
+      }
+      const formattedKey = role_name.toLowerCase().trim().replace(/\s+/g, "_");
+      await dbPool.query(
+        "INSERT INTO roles (role_name, permission_level) VALUES (?, ?) ON DUPLICATE KEY UPDATE permission_level=?",
+        [formattedKey, permission_level, permission_level]
+      );
+      res.json({ success: true, key: formattedKey });
+    } catch (err: any) {
+      console.error("POST /api/roles failed:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // --- DMS IMPORT ENDPOINTS ---
   app.get("/api/dms/batches", (req, res) => {
     const db = getDB();
