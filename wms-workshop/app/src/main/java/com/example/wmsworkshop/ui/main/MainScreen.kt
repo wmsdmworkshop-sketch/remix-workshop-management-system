@@ -81,6 +81,14 @@ fun MainScreen(
             request?.grant(request.resources)
           }
 
+          // Grant Geolocation permissions request from WebView
+          override fun onGeolocationPermissionsShowPrompt(
+            origin: String?,
+            callback: android.webkit.GeolocationPermissions.Callback?
+          ) {
+            callback?.invoke(origin, true, false)
+          }
+
           // Handle input type="file" clicks
           override fun onShowFileChooser(
             webView: WebView?,
