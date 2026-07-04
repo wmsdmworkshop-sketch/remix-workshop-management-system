@@ -1,0 +1,16 @@
+{
+  "short_name": "Workforce v1",
+  "name": "Devanand Workforce v1",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0f172a",
+  "theme_color": "#1e293b",
+  "display": "standalone",
+  "orientation": "portrait"
+}
