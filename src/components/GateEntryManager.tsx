@@ -58,6 +58,7 @@ export default function GateEntryManager({
   const [success, setSuccess] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [mobileActiveView, setMobileActiveView] = useState<"form" | "ledger">("form");
 
   // Camera & Location States
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
@@ -198,6 +199,7 @@ export default function GateEntryManager({
     setFuelLevel("50%");
     setFuelPercentage(50);
 
+    setMobileActiveView("ledger");
     setTimeout(() => setSuccess(null), 5000);
   };
 
@@ -247,6 +249,105 @@ export default function GateEntryManager({
     }, 1500);
   };
 
+  // Memoized Truck SVG to avoid lag/slowness on text input changes
+  const memoizedTruckSvg = useMemo(() => {
+    const readyOutCount = jobCards.filter(j => j.status === "Completed" || j.status === "Invoiced").length;
+    const freeBaysCount = bays.filter(b => b.status === "Idle" || b.status === "Available").length;
+
+    return (
+      <svg viewBox="0 0 740 280" className="w-full h-auto text-slate-800" fill="none" xmlns="http://www.w3.org/2000/svg">
+        {/* Chassis and components under the truck body */}
+        <path d="M 210 200 L 710 200 L 710 215 L 210 215 Z" fill="#0f172a" />
+        <rect x="360" y="200" width="80" height="25" rx="4" fill="#334155" />
+
+        {/* Axles / Wheels */}
+        <g transform="translate(180, 220)">
+          <circle cx="0" cy="0" r="26" fill="#0f172a" stroke="#ffffff" strokeWidth="2" />
+          <circle cx="0" cy="0" r="15" fill="#475569" stroke="#94a3b8" strokeWidth="1.5" />
+          <circle cx="0" cy="0" r="5" fill="#ffffff" />
+        </g>
+        <g transform="translate(320, 220)">
+          <circle cx="0" cy="0" r="26" fill="#0f172a" stroke="#ffffff" strokeWidth="2" />
+          <circle cx="0" cy="0" r="15" fill="#475569" stroke="#94a3b8" strokeWidth="1.5" />
+          <circle cx="0" cy="0" r="5" fill="#ffffff" />
+        </g>
+        <g transform="translate(378, 220)">
+          <circle cx="0" cy="0" r="26" fill="#0f172a" stroke="#ffffff" strokeWidth="2" />
+          <circle cx="0" cy="0" r="15" fill="#475569" stroke="#94a3b8" strokeWidth="1.5" />
+          <circle cx="0" cy="0" r="5" fill="#ffffff" />
+        </g>
+        <g transform="translate(520, 220)">
+          <circle cx="0" cy="0" r="26" fill="#0f172a" stroke="#ffffff" strokeWidth="2" />
+          <circle cx="0" cy="0" r="15" fill="#475569" stroke="#94a3b8" strokeWidth="1.5" />
+          <circle cx="0" cy="0" r="5" fill="#ffffff" />
+        </g>
+        <g transform="translate(578, 220)">
+          <circle cx="0" cy="0" r="26" fill="#0f172a" stroke="#ffffff" strokeWidth="2" />
+          <circle cx="0" cy="0" r="15" fill="#475569" stroke="#94a3b8" strokeWidth="1.5" />
+          <circle cx="0" cy="0" r="5" fill="#ffffff" />
+        </g>
+
+        {/* Cabin Body */}
+        <path d="M 235 195 L 235 85 C 235 80, 225 70, 210 70 L 105 70 C 95 70, 90 78, 88 85 L 80 155 C 78 170, 82 180, 82 195 L 82 205 L 145 205 C 145 185, 160 170, 180 170 C 200 170, 215 185, 215 205 L 235 205 Z" fill="#0f172a" stroke="#1e293b" strokeWidth="2" />
+              
+        {/* Windshield */}
+        <path d="M 98 85 L 155 85 L 150 130 L 92 130 Z" fill="#e2e8f0" stroke="#334155" strokeWidth="1.5" />
+        {/* Window */}
+        <path d="M 165 85 L 210 85 C 215 85, 217 88, 217 92 L 217 130 L 160 130 Z" fill="#e2e8f0" stroke="#334155" strokeWidth="1.5" />
+        
+        {/* Door line */}
+        <path d="M 158 85 L 158 200" stroke="#334155" strokeWidth="1.5" />
+
+        {/* Grille */}
+        <path d="M 88 140 L 150 140 L 148 180 L 90 180 Z" fill="#1e293b" stroke="#334155" strokeWidth="1.5" />
+        <line x1="96" y1="150" x2="142" y2="150" stroke="#ef4444" strokeWidth="1.5" />
+        <line x1="96" y1="160" x2="142" y2="160" stroke="#f97316" strokeWidth="1.5" />
+        <line x1="96" y1="170" x2="142" y2="170" stroke="#ffffff" strokeWidth="1.5" />
+        
+        {/* Headlights */}
+        <rect x="80" y="185" width="12" height="8" rx="2" fill="#fef08a" stroke="#ca8a04" strokeWidth="1" />
+        <rect x="145" y="185" width="12" height="8" rx="2" fill="#fef08a" stroke="#ca8a04" strokeWidth="1" />
+
+        {/* TRUCK BODY */}
+        <rect x="245" y="20" width="480" height="175" rx="12" fill="#0f172a" stroke="#f97316" strokeWidth="2.5" />
+        
+        <foreignObject x="255" y="30" width="460" height="155">
+          <div xmlns="http://www.w3.org/1999/xhtml" className="text-white p-2 h-full flex flex-col justify-between text-left font-sans select-none">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-1">
+              <span className="text-[9px] font-black uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-ping"></span>
+                TATA Signa 4830.T
+              </span>
+              <span className="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20 uppercase tracking-widest">
+                Gate Registry Live
+              </span>
+            </div>
+            
+            <div className="grid grid-cols-3 gap-1.5 py-1">
+              <div className="bg-slate-950/80 border border-slate-850 rounded-lg p-1.5 text-center">
+                <div className="text-[7px] font-bold text-slate-500 uppercase tracking-wider">Active WIP</div>
+                <div className="text-xs font-black text-orange-400 mt-0.5">{activeJobs.length} Veh</div>
+              </div>
+              <div className="bg-slate-950/80 border border-slate-850 rounded-lg p-1.5 text-center">
+                <div className="text-[7px] font-bold text-slate-500 uppercase tracking-wider">Ready Out</div>
+                <div className="text-xs font-black text-emerald-400 mt-0.5">{readyOutCount} Veh</div>
+              </div>
+              <div className="bg-slate-950/80 border border-slate-850 rounded-lg p-1.5 text-center">
+                <div className="text-[7px] font-bold text-slate-500 uppercase tracking-wider">Free Bays</div>
+                <div className="text-xs font-black text-blue-400 mt-0.5">{freeBaysCount}/{bays.length}</div>
+              </div>
+            </div>
+            
+            <div className="bg-slate-950/60 rounded-md p-1 text-[7px] border border-slate-850 text-slate-400 leading-tight">
+              <strong className="text-orange-400 uppercase tracking-wider font-extrabold mr-1">Security SOP:</strong>
+              TATA only • Always scan digital Odometer • Verify interactive fuel needles • Validate customer mobile.
+            </div>
+          </div>
+        </foreignObject>
+      </svg>
+    );
+  }, [activeJobs.length, jobCards, bays]);
+
   // Fuel Vector Arc dynamic needle rotation (-90 to +90 degrees)
   const needleAngle = -90 + (fuelPercentage * 1.8);
 
@@ -260,11 +361,39 @@ export default function GateEntryManager({
         </div>
       )}
 
+      {/* Mobile Toggle Switch */}
+      <div className="lg:hidden flex bg-slate-200/60 p-1 rounded-xl shadow-inner border border-slate-300/40">
+        <button
+          type="button"
+          onClick={() => setMobileActiveView("form")}
+          className={`flex-1 py-1.5 text-center text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
+            mobileActiveView === "form"
+              ? "bg-orange-500 text-white shadow-md"
+              : "text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          Register Gate In
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobileActiveView("ledger")}
+          className={`flex-1 py-1.5 text-center text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
+            mobileActiveView === "ledger"
+              ? "bg-slate-900 text-white shadow-md"
+              : "text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          Clearance Ledger ({gatePasses.length})
+        </button>
+      </div>
+
       {/* Grid: Stats and Action form */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Form panel */}
-        <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+        <div className={`lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4 ${
+          mobileActiveView === "form" ? "block" : "hidden lg:block"
+        }`}>
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2">
               <div className="p-2 bg-orange-100 text-orange-600 rounded-lg">
@@ -583,7 +712,9 @@ export default function GateEntryManager({
         </div>
 
         {/* Live status indicators - Truck Vector Info Box */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between space-y-4">
+        <div className={`bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between space-y-4 ${
+          mobileActiveView === "form" ? "block" : "hidden lg:block"
+        }`}>
           <div>
             <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider pb-2 border-b border-slate-100 mb-3">
               Gate Overview
@@ -591,124 +722,16 @@ export default function GateEntryManager({
             
             {/* SVG B&W Vector Truck */}
             <div className="w-full flex items-center justify-center">
-              <svg viewBox="0 0 740 280" className="w-full h-auto text-slate-800" fill="none" xmlns="http://www.w3.org/2000/svg">
-                {/* Chassis and components under the truck body */}
-                <path d="M 210 200 L 710 200 L 710 215 L 210 215 Z" fill="#0f172a" />
-                <rect x="360" y="200" width="80" height="25" rx="4" fill="#334155" />
-
-                {/* Axles / Wheels */}
-                {/* Wheel 1 (Front): */}
-                <g transform="translate(180, 220)">
-                  <circle cx="0" cy="0" r="26" fill="#0f172a" stroke="#ffffff" strokeWidth="2" />
-                  <circle cx="0" cy="0" r="15" fill="#475569" stroke="#94a3b8" strokeWidth="1.5" />
-                  <circle cx="0" cy="0" r="5" fill="#ffffff" />
-                </g>
-                {/* Wheel 2 (Rear 1): */}
-                <g transform="translate(320, 220)">
-                  <circle cx="0" cy="0" r="26" fill="#0f172a" stroke="#ffffff" strokeWidth="2" />
-                  <circle cx="0" cy="0" r="15" fill="#475569" stroke="#94a3b8" strokeWidth="1.5" />
-                  <circle cx="0" cy="0" r="5" fill="#ffffff" />
-                </g>
-                {/* Wheel 3 (Rear 2): */}
-                <g transform="translate(378, 220)">
-                  <circle cx="0" cy="0" r="26" fill="#0f172a" stroke="#ffffff" strokeWidth="2" />
-                  <circle cx="0" cy="0" r="15" fill="#475569" stroke="#94a3b8" strokeWidth="1.5" />
-                  <circle cx="0" cy="0" r="5" fill="#ffffff" />
-                </g>
-                {/* Wheel 4 (Rear 3): */}
-                <g transform="translate(520, 220)">
-                  <circle cx="0" cy="0" r="26" fill="#0f172a" stroke="#ffffff" strokeWidth="2" />
-                  <circle cx="0" cy="0" r="15" fill="#475569" stroke="#94a3b8" strokeWidth="1.5" />
-                  <circle cx="0" cy="0" r="5" fill="#ffffff" />
-                </g>
-                {/* Wheel 5 (Rear 4): */}
-                <g transform="translate(578, 220)">
-                  <circle cx="0" cy="0" r="26" fill="#0f172a" stroke="#ffffff" strokeWidth="2" />
-                  <circle cx="0" cy="0" r="15" fill="#475569" stroke="#94a3b8" strokeWidth="1.5" />
-                  <circle cx="0" cy="0" r="5" fill="#ffffff" />
-                </g>
-
-                {/* Cabin Body */}
-                <path d="M 235 195 
-                         L 235 85 
-                         C 235 80, 225 70, 210 70 
-                         L 105 70 
-                         C 95 70, 90 78, 88 85 
-                         L 80 155 
-                         C 78 170, 82 180, 82 195 
-                         L 82 205 
-                         L 145 205 
-                         C 145 185, 160 170, 180 170 
-                         C 200 170, 215 185, 215 205 
-                         L 235 205 Z" 
-                      fill="#0f172a" stroke="#1e293b" strokeWidth="2" />
-                      
-                {/* Windshield */}
-                <path d="M 98 85 L 155 85 L 150 130 L 92 130 Z" fill="#e2e8f0" stroke="#334155" strokeWidth="1.5" />
-                {/* Window */}
-                <path d="M 165 85 L 210 85 C 215 85, 217 88, 217 92 L 217 130 L 160 130 Z" fill="#e2e8f0" stroke="#334155" strokeWidth="1.5" />
-                
-                {/* Door line */}
-                <path d="M 158 85 L 158 200" stroke="#334155" strokeWidth="1.5" />
-
-                {/* Grille */}
-                <path d="M 88 140 L 150 140 L 148 180 L 90 180 Z" fill="#1e293b" stroke="#334155" strokeWidth="1.5" />
-                <line x1="96" y1="150" x2="142" y2="150" stroke="#ef4444" strokeWidth="1.5" />
-                <line x1="96" y1="160" x2="142" y2="160" stroke="#f97316" strokeWidth="1.5" />
-                <line x1="96" y1="170" x2="142" y2="170" stroke="#ffffff" strokeWidth="1.5" />
-                
-                {/* Headlights */}
-                <rect x="80" y="185" width="12" height="8" rx="2" fill="#fef08a" stroke="#ca8a04" strokeWidth="1" />
-                <rect x="145" y="185" width="12" height="8" rx="2" fill="#fef08a" stroke="#ca8a04" strokeWidth="1" />
-
-                {/* TRUCK BODY (Cargo Container containing all the stats) */}
-                <rect x="245" y="20" width="480" height="175" rx="12" fill="#0f172a" stroke="#f97316" strokeWidth="2.5" />
-                
-                <foreignObject x="255" y="30" width="460" height="155">
-                  <div xmlns="http://www.w3.org/1999/xhtml" className="text-white p-2 h-full flex flex-col justify-between text-left font-sans select-none">
-                    <div className="flex justify-between items-center border-b border-slate-800 pb-1">
-                      <span className="text-[9px] font-black uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-ping"></span>
-                        TATA Signa 4830.T
-                      </span>
-                      <span className="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20 uppercase tracking-widest">
-                        Gate Registry Live
-                      </span>
-                    </div>
-                    
-                    <div className="grid grid-cols-3 gap-1.5 py-1">
-                      <div className="bg-slate-950/80 border border-slate-850 rounded-lg p-1.5 text-center">
-                        <div className="text-[7px] font-bold text-slate-500 uppercase tracking-wider">Active WIP</div>
-                        <div className="text-xs font-black text-orange-400 mt-0.5">{activeJobs.length} Veh</div>
-                      </div>
-                      <div className="bg-slate-950/80 border border-slate-850 rounded-lg p-1.5 text-center">
-                        <div className="text-[7px] font-bold text-slate-500 uppercase tracking-wider">Ready Out</div>
-                        <div className="text-xs font-black text-emerald-400 mt-0.5">
-                          {jobCards.filter(j => j.status === "Completed" || j.status === "Invoiced").length} Veh
-                        </div>
-                      </div>
-                      <div className="bg-slate-950/80 border border-slate-850 rounded-lg p-1.5 text-center">
-                        <div className="text-[7px] font-bold text-slate-500 uppercase tracking-wider">Free Bays</div>
-                        <div className="text-xs font-black text-blue-400 mt-0.5">
-                          {bays.filter(b => b.status === "Idle" || b.status === "Available").length}/{bays.length}
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="bg-slate-950/60 rounded-md p-1 text-[7px] border border-slate-850 text-slate-400 leading-tight">
-                      <strong className="text-orange-400 uppercase tracking-wider font-extrabold mr-1">Security SOP:</strong>
-                      TATA only • Always scan digital Odometer • Verify interactive fuel needles • Validate customer mobile.
-                    </div>
-                  </div>
-                </foreignObject>
-              </svg>
+              {memoizedTruckSvg}
             </div>
           </div>
         </div>
       </div>
 
       {/* Grid: List of Gate Log and Out Passes */}
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+      <div className={`bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm ${
+        mobileActiveView === "ledger" ? "block" : "hidden lg:block"
+      }`}>
         <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-slate-50">
           <div>
             <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Gate Clearance Ledger</h2>
@@ -942,7 +965,7 @@ export default function GateEntryManager({
               </div>
             </div>
 
-            <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-between items-center gap-2">
+            <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-end items-center gap-3">
               <button
                 type="button"
                 onClick={() => {
@@ -950,9 +973,9 @@ export default function GateEntryManager({
                   setAnprFailed(true);
                   setShowAnprModal(false);
                 }}
-                className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-450 border border-rose-500/30 rounded-xl text-xs font-bold cursor-pointer"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-350 border border-slate-700 rounded-xl text-xs font-bold cursor-pointer transition-colors"
               >
-                ⚠️ Plate Not Detected (ANPR Fail)
+                Bypass & Enter Manually
               </button>
               <button
                 type="button"
@@ -960,7 +983,7 @@ export default function GateEntryManager({
                   stopCamera();
                   setShowAnprModal(false);
                 }}
-                className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-350 rounded-xl text-xs font-bold cursor-pointer"
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-850 text-slate-300 border border-slate-800 rounded-xl text-xs font-bold cursor-pointer transition-colors"
               >
                 Close
               </button>
