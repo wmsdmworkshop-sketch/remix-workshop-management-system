@@ -843,7 +843,7 @@ export default function App() {
   const baseTabs = (user && ROLE_TABS[user.role]) || ROLE_TABS["reception"] || [];
   const permittedTabs = [
     ...baseTabs,
-    { id: "logout-deep-link", label: "Logout", icon: LogOut, isDeepLink: true, url: "https://www.appsheet.com/account/signout" }
+    { id: "logout-deep-link", label: "Logout", icon: LogOut }
   ];
 
   return (
@@ -870,9 +870,8 @@ export default function App() {
                 <button 
                   key={tab.id}
                   onClick={() => {
-                    if (tab.isDeepLink) {
+                    if (tab.id === "logout-deep-link") {
                       handleLogout();
-                      window.location.href = tab.url;
                     } else {
                       setActiveTab(tab.id);
                       setDashboardSelectedJob(null);
@@ -1038,9 +1037,8 @@ export default function App() {
             <button 
               key={tab.id}
               onClick={() => {
-                if (tab.isDeepLink) {
+                if (tab.id === "logout-deep-link") {
                   handleLogout();
-                  window.location.href = tab.url;
                 } else {
                   setActiveTab(tab.id);
                   setMobileMenuOpen(false);
@@ -1335,9 +1333,8 @@ export default function App() {
               <button
                 key={tab.id}
                 onClick={() => {
-                  if (tab.isDeepLink) {
+                  if (tab.id === "logout-deep-link") {
                     handleLogout();
-                    window.location.href = tab.url;
                   } else {
                     setActiveTab(tab.id);
                     setDashboardSelectedJob(null);
@@ -1397,9 +1394,8 @@ export default function App() {
                   <button
                     key={tab.id}
                     onClick={() => {
-                      if (tab.isDeepLink) {
+                      if (tab.id === "logout-deep-link") {
                         handleLogout();
-                        window.location.href = tab.url;
                       } else {
                         setActiveTab(tab.id);
                         setShowMobileMoreTabs(false);
