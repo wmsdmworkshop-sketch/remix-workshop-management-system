@@ -312,6 +312,7 @@ export default function App() {
       { id: "tech-jobs", label: "My Jobs", icon: Wrench },
       { id: "tech-kpi", label: "My KPI", icon: TrendingUp },
       { id: "tech-profile", label: "My Profile", icon: UserIcon },
+      { id: "attendance", label: "Attendance", icon: ClipboardCheck },
     ],
     dealer_principal: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -365,6 +366,7 @@ export default function App() {
       { id: "tech-jobs", label: "My Jobs", icon: Wrench },
       { id: "tech-kpi", label: "My KPI", icon: TrendingUp },
       { id: "tech-profile", label: "My Profile", icon: UserIcon },
+      { id: "attendance", label: "Attendance", icon: ClipboardCheck },
     ],
   };
 
