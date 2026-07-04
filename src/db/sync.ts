@@ -128,7 +128,8 @@ async function saveJobCardsToMaster(jobCards: any[]) {
       estimated_amount: Number(row.labor_price || 0) + Number(row.parts_price || 0),
       last_service_date: row.last_service_date || row.completed_at || row.created_at || null,
       odometer_reading: row.odometer_reading || row.km_reading || null,
-      chassis_no: row.chassis_number || row.vin || null
+      chassis_no: row.chassis_number || row.vin || null,
+      gate_out_time: row.gate_out_time || null
     };
 
     const keys = Object.keys(masterRow);
@@ -552,6 +553,11 @@ export async function ensureTablesExist(): Promise<void> {
   } catch (err) {
     // Ignore error if column already exists
   }
+  try {
+    await db.execute("ALTER TABLE `job_card_master` ADD COLUMN `gate_out_time` VARCHAR(100) DEFAULT NULL");
+  } catch (err) {
+    // Ignore error if column already exists
+  }
 
   // 21. models table
   await db.execute(`
@@ -591,6 +597,13 @@ export async function ensureTablesExist(): Promise<void> {
   }
   try {
     await db.execute("ALTER TABLE `job_card_master` ADD COLUMN `invoice_ocr_data` TEXT DEFAULT NULL");
+  } catch (err) {
+    // Ignore error if column already exists
+  }
+
+  // Ensure column `gate_out_time` exists on job_cards
+  try {
+    await db.execute("ALTER TABLE `job_cards` ADD COLUMN `gate_out_time` VARCHAR(100) DEFAULT NULL");
   } catch (err) {
     // Ignore error if column already exists
   }

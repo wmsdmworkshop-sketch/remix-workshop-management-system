@@ -2439,6 +2439,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         started_at: rawDateIn ? safeISODate(rawDateIn, rawTimeIn) : null,
         completed_at: rawDateCompleted ? safeISODate(rawDateCompleted, rawTimeOut) : null,
         invoiced_at: mappedStatus === "Invoiced" ? safeISODate(rawDateCompleted, rawTimeOut) : null,
+        gate_out_time: (mappedStatus === "Invoiced" || mappedStatus === "Completed") ? safeISODate(rawDateCompleted, rawTimeOut) : null,
         created_by: 1,
         created_at: rawDateIn ? safeISODate(rawDateIn, rawTimeIn) : new Date().toISOString(),
         date_in: rawDateIn,
