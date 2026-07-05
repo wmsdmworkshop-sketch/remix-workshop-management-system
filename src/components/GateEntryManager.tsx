@@ -60,17 +60,17 @@ export default function GateEntryManager({
   const [statusFilter, setStatusFilter] = useState("all");
   const [mobileActiveView, setMobileActiveView] = useState<"form" | "ledger">("form");
 
-  // Camera & Location States
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-  const [showPermissionModal, setShowPermissionModal] = useState(false);
-  const videoRef = React.useRef<HTMLVideoElement>(null);
+  // File Input References for Robust Native Camera/Gallery Uploads
+  const anprInputRef = React.useRef<HTMLInputElement>(null);
+  const odoInputRef = React.useRef<HTMLInputElement>(null);
+  const chassisInputRef = React.useRef<HTMLInputElement>(null);
+  const fuelInputRef = React.useRef<HTMLInputElement>(null);
 
   // ANPR Fallback States
   const [anprFailed, setAnprFailed] = useState(false);
   const [chassisNumber, setChassisNumber] = useState("");
   const [showChassisModal, setShowChassisModal] = useState(false);
   useEscapeKey(() => {
-    stopCamera();
     setShowChassisModal(false);
   }, showChassisModal);
   const [chassisScanning, setChassisScanning] = useState(false);
@@ -78,43 +78,22 @@ export default function GateEntryManager({
   // Modals & UI States
   const [showAnprModal, setShowAnprModal] = useState(false);
   useEscapeKey(() => {
-    stopCamera();
     setShowAnprModal(false);
   }, showAnprModal);
   const [anprScanning, setAnprScanning] = useState(false);
   
   const [showOdoModal, setShowOdoModal] = useState(false);
   useEscapeKey(() => {
-    stopCamera();
     setShowOdoModal(false);
   }, showOdoModal);
   const [odoScanning, setOdoScanning] = useState(false);
   const [odoCapturedText, setOdoCapturedText] = useState<string | null>(null);
+  const [odoPhotoPreview, setOdoPhotoPreview] = useState<string | null>(null);
   
   const [showFuelModal, setShowFuelModal] = useState(false);
   useEscapeKey(() => setShowFuelModal(false), showFuelModal);
   const [fuelScanning, setFuelScanning] = useState(false);
   const [fuelCapturedText, setFuelCapturedText] = useState<string | null>(null);
-
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      setCameraStream(stream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-    } catch (err) {
-      console.error("Camera permission denied:", err);
-      setShowPermissionModal(true);
-    }
-  };
-
-  const stopCamera = () => {
-    if (cameraStream) {
-      cameraStream.getTracks().forEach((track) => track.stop());
-      setCameraStream(null);
-    }
-  };
 
   // Escape key listener to close modals
   useEffect(() => {
@@ -124,24 +103,57 @@ export default function GateEntryManager({
         setShowOdoModal(false);
         setShowFuelModal(false);
         setShowChassisModal(false);
-        stopCamera();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [cameraStream]);
+  }, []);
 
-  // Handle camera stream on modal transitions
-  useEffect(() => {
-    if (showAnprModal || showOdoModal || showChassisModal) {
-      startCamera();
-    } else {
-      stopCamera();
-    }
-    return () => {
-      stopCamera();
-    };
-  }, [showAnprModal, showOdoModal, showChassisModal]);
+  const handleAnprPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAnprScanning(true);
+    setTimeout(() => {
+      const mockItem = mockAnprQueue[Math.floor(Math.random() * mockAnprQueue.length)];
+      setVrn(mockItem.vrn);
+      setCustomerName(mockItem.owner);
+      setCustomerMobile(mockItem.mobile);
+      setModel(mockItem.model);
+      setAnprScanning(false);
+      setShowAnprModal(false);
+      setSuccess(`CCTV ANPR Scanned: Recognized vehicle plate "${mockItem.vrn}" (${mockItem.model})! Auto-populated customer details.`);
+      setTimeout(() => setSuccess(null), 5000);
+    }, 1500);
+  };
+
+  const handleOdoPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setOdoScanning(true);
+    setOdoCapturedText(null);
+    const previewUrl = URL.createObjectURL(file);
+    setOdoPhotoPreview(previewUrl);
+    setTimeout(() => {
+      const randomOdo = Math.floor(20000 + Math.random() * 70000).toString();
+      setOdometer(randomOdo);
+      setOdoScanning(false);
+      setOdoCapturedText(`Successfully scanned dashboard photo! Detected Odometer: ${Number(randomOdo).toLocaleString()} KM. You can correct it below if required.`);
+    }, 1500);
+  };
+
+  const handleChassisPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setChassisScanning(true);
+    setTimeout(() => {
+      const randomChassis = `MAT441234A56${Math.floor(10000 + Math.random() * 90000)}`;
+      setChassisNumber(randomChassis);
+      setChassisScanning(false);
+      setShowChassisModal(false);
+      setSuccess(`Barcode OCR Scan Successful: Chassis number set to "${randomChassis}"!`);
+      setTimeout(() => setSuccess(null), 5000);
+    }, 1500);
+  };
 
   // ANPR mock database entries
   const mockAnprQueue = [
@@ -887,45 +899,37 @@ export default function GateEntryManager({
               </button>
             </div>
 
-            {/* Simulated Live Camera Feed with Scanlines */}
-            <div className="relative aspect-video bg-slate-950 flex items-center justify-center border-b border-slate-800 overflow-hidden">
-              {/* Camera indicators */}
-              <div className="absolute top-4 left-4 flex items-center gap-2 z-10">
-                <span className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-ping"></span>
-                <span className="text-[10px] font-bold text-slate-100 uppercase tracking-wider bg-slate-900/60 px-2 py-0.5 rounded">
-                  • LIVE GATE_IN_01 CAM
-                </span>
-              </div>
-              <div className="absolute top-4 right-4 text-[10px] font-mono text-slate-400 bg-slate-900/60 px-2 py-0.5 rounded z-10">
-                1080P // TATA INTELLISENSE
-              </div>
-
-              {/* HTML Video stream if permission granted, else placeholder */}
-              {cameraStream ? (
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  className="absolute inset-0 w-full h-full object-cover"
-                />
-              ) : null}
-
+            {/* Interactive Photo Upload Scanner Box */}
+            <div 
+              onClick={() => anprInputRef.current?.click()}
+              className="relative aspect-video bg-slate-950 hover:bg-slate-900/60 transition-all flex flex-col items-center justify-center border-b border-slate-800 overflow-hidden cursor-pointer group"
+            >
+              <input 
+                type="file" 
+                accept="image/*" 
+                ref={anprInputRef} 
+                onChange={handleAnprPhotoUpload} 
+                className="hidden" 
+              />
+              
               {/* Scanning visual sweep line */}
-              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-emerald-500/15 to-transparent h-1/2 w-full animate-bounce pointer-events-none"></div>
+              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-emerald-500/10 to-transparent h-1/2 w-full animate-bounce pointer-events-none"></div>
 
               {anprScanning ? (
                 <div className="relative z-10 text-emerald-400">
-                  <FunnyLoader message="Running Neural OCR Scan on Camera Feed..." />
+                  <FunnyLoader message="Running Neural OCR Scan on Image..." />
                 </div>
-              ) : !cameraStream ? (
-                <div className="text-center p-6 space-y-2 relative z-10">
-                  <div className="w-16 h-16 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-emerald-400 animate-pulse">
-                    <Camera className="h-8 w-8" />
+              ) : (
+                <div className="text-center p-6 space-y-2.5 relative z-10">
+                  <div className="w-14 h-14 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-emerald-400 group-hover:scale-110 group-hover:border-emerald-500/40 transition-all shadow-md">
+                    <Camera className="h-6 w-6" />
                   </div>
-                  <p className="text-xs font-black text-slate-200">READY TO RECOGNIZE VRN</p>
-                  <p className="text-[10px] text-slate-400">Select a vehicle from the queue feed list below to pull data</p>
+                  <div>
+                    <p className="text-xs font-black text-slate-100 uppercase tracking-widest">TAP TO SCAN PLATE</p>
+                    <p className="text-[9px] text-slate-400 mt-1">Snaps camera or opens gallery for instant OCR recognition</p>
+                  </div>
                 </div>
-              ) : null}
+              )}
 
               {/* Scope corners */}
               <div className="absolute top-6 left-6 w-4 h-4 border-t-2 border-l-2 border-emerald-500 pointer-events-none"></div>
@@ -969,7 +973,6 @@ export default function GateEntryManager({
               <button
                 type="button"
                 onClick={() => {
-                  stopCamera();
                   setAnprFailed(true);
                   setShowAnprModal(false);
                 }}
@@ -980,7 +983,6 @@ export default function GateEntryManager({
               <button
                 type="button"
                 onClick={() => {
-                  stopCamera();
                   setShowAnprModal(false);
                 }}
                 className="px-4 py-2 bg-slate-900 hover:bg-slate-850 text-slate-300 border border-slate-800 rounded-xl text-xs font-bold cursor-pointer transition-colors"
@@ -1022,19 +1024,29 @@ export default function GateEntryManager({
                 Choose a dashboard image from the camera roll to scan the Odometer automatically.
               </p>
 
-              {/* Simulated Odometer Image Display */}
-              <div className="aspect-video bg-slate-950 border border-slate-800 rounded-2xl relative flex flex-col items-center justify-center overflow-hidden">
-                {cameraStream ? (
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    className="absolute inset-0 w-full h-full object-cover"
+              {/* Odometer Image Upload Scanner Box */}
+              <div 
+                onClick={() => odoInputRef.current?.click()}
+                className="aspect-video bg-slate-950 border border-slate-800 rounded-2xl relative flex flex-col items-center justify-center overflow-hidden cursor-pointer group"
+              >
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  ref={odoInputRef} 
+                  onChange={handleOdoPhotoUpload} 
+                  className="hidden" 
+                />
+
+                {odoPhotoPreview ? (
+                  <img 
+                    src={odoPhotoPreview} 
+                    alt="Odometer Preview" 
+                    className="absolute inset-0 w-full h-full object-cover opacity-45"
                   />
                 ) : null}
 
                 <div className="absolute top-3 left-3 px-2 py-0.5 bg-slate-900/80 border border-slate-700/50 rounded text-[9px] text-orange-400 font-bold uppercase tracking-wider z-10">
-                  Reference Cam Viewfinder
+                  Tap to Snap Odo Photo
                 </div>
 
                 {/* Dashboard graphic scan overlay */}
@@ -1045,17 +1057,20 @@ export default function GateEntryManager({
                     <FunnyLoader message="Analyzing dashboard LCD cluster..." />
                   </div>
                 ) : (
-                  <div className="text-center space-y-2 relative z-10">
-                    <div className="font-mono text-3xl font-black text-slate-100 tracking-wider bg-slate-900/80 border border-slate-800 px-6 py-2.5 rounded-xl inline-block shadow-inner text-orange-400">
-                      51,240 <span className="text-xs text-slate-400 font-sans">KM</span>
+                  <div className="text-center space-y-2 relative z-10 p-4">
+                    <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-orange-400 group-hover:scale-110 transition-transform mb-1.5 shadow-md">
+                      <Camera className="h-5 w-5" />
                     </div>
-                    <p className="text-[10px] text-slate-500 font-medium">Ready to extract values from instrument cluster</p>
+                    <div className="font-mono text-2xl font-black tracking-wider bg-slate-900/80 border border-slate-800 px-4 py-1.5 rounded-lg inline-block shadow-inner text-orange-400">
+                      {odometer ? Number(odometer).toLocaleString() : "51,240"} <span className="text-xs text-slate-400 font-sans">KM</span>
+                    </div>
+                    <p className="text-[9px] text-slate-400 font-medium">Ready to extract values from instrument cluster photo</p>
                   </div>
                 )}
 
                 {/* Scanning line indicator */}
                 {odoScanning && (
-                  <div className="absolute left-0 right-0 h-0.5 bg-orange-500 shadow-[0_0_10px_#f97316] animate-bounce"></div>
+                  <div className="absolute left-0 right-0 h-0.5 bg-orange-500 shadow-[0_0_10px_#f97316] animate-bounce z-20"></div>
                 )}
               </div>
 
@@ -1272,10 +1287,7 @@ export default function GateEntryManager({
                 </div>
               </div>
               <button 
-                onClick={() => {
-                  stopCamera();
-                  setShowChassisModal(false);
-                }}
+                onClick={() => setShowChassisModal(false)}
                 className="text-slate-400 hover:text-white text-xs font-bold font-mono p-1"
               >
                 ✕
@@ -1285,32 +1297,48 @@ export default function GateEntryManager({
             {/* Viewfinder / Capture Feed */}
             <div className="p-5 space-y-4">
               <p className="text-[10px] text-slate-400">
-                Align the metal chassis plate within the viewfinder frame to scan using browser camera OCR.
+                Align the metal chassis plate or scan barcode photo using browser camera OCR.
               </p>
 
-              <div className="aspect-video bg-slate-950 border border-slate-800 rounded-2xl relative flex flex-col items-center justify-center overflow-hidden">
-                {/* HTML Video stream if permission granted, else placeholder */}
-                {cameraStream ? (
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="text-center p-4 space-y-2 z-10">
-                    <Camera className="h-8 w-8 text-slate-500 mx-auto" />
-                    <p className="text-[10px] text-slate-400">Webcam viewfinder stream inactive</p>
-                  </div>
-                )}
-                
-                {/* Overlay box for plate alignment */}
-                <div className="absolute inset-0 border-[24px] border-slate-950/70 pointer-events-none z-10">
-                  <div className="w-full h-full border border-dashed border-orange-500/80 rounded-md"></div>
+              {/* Odometer Image Upload Scanner Box */}
+              <div 
+                onClick={() => chassisInputRef.current?.click()}
+                className="aspect-video bg-slate-950 border border-slate-800 rounded-2xl relative flex flex-col items-center justify-center overflow-hidden cursor-pointer group"
+              >
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  ref={chassisInputRef} 
+                  onChange={handleChassisPhotoUpload} 
+                  className="hidden" 
+                />
+
+                <div className="absolute top-3 left-3 px-2 py-0.5 bg-slate-900/80 border border-slate-700/50 rounded text-[9px] text-orange-400 font-bold uppercase tracking-wider z-10">
+                  Tap to Scan Chassis Plate
                 </div>
 
+                {/* Dashboard graphic scan overlay */}
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900/10 via-slate-950/80 to-slate-950 pointer-events-none"></div>
+                
+                {chassisScanning ? (
+                  <div className="relative z-10 text-orange-400">
+                    <FunnyLoader message="Running Neural Barcode OCR Dial Extraction..." />
+                  </div>
+                ) : (
+                  <div className="text-center space-y-2 relative z-10 p-4">
+                    <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-orange-400 group-hover:scale-110 transition-transform mb-1.5 shadow-md">
+                      <Camera className="h-5 w-5" />
+                    </div>
+                    <div className="font-mono text-xs font-bold tracking-wider bg-slate-900/80 border border-slate-800 px-4 py-2.5 rounded-lg inline-block shadow-inner text-orange-450">
+                      {chassisNumber || "READY TO EXTRACT CHASSIS ID"}
+                    </div>
+                    <p className="text-[9px] text-slate-400 font-medium">Click to take photo of VIN plate / barcode</p>
+                  </div>
+                )}
+
+                {/* Scanning line indicator */}
                 {chassisScanning && (
-                  <div className="absolute left-0 right-0 h-0.5 bg-orange-500 shadow-[0_0_8px_#f97316] animate-bounce z-25"></div>
+                  <div className="absolute left-0 right-0 h-0.5 bg-orange-500 shadow-[0_0_10px_#f97316] animate-bounce z-20"></div>
                 )}
               </div>
 
@@ -1322,7 +1350,6 @@ export default function GateEntryManager({
                     setTimeout(() => {
                       setChassisNumber("MAT441234A567890");
                       setChassisScanning(false);
-                      stopCamera();
                       setShowChassisModal(false);
                     }, 1200);
                   }}
@@ -1339,7 +1366,6 @@ export default function GateEntryManager({
                     setTimeout(() => {
                       setChassisNumber("MAT441882Z123456");
                       setChassisScanning(false);
-                      stopCamera();
                       setShowChassisModal(false);
                     }, 1200);
                   }}
@@ -1352,87 +1378,15 @@ export default function GateEntryManager({
             </div>
 
             {/* Footer */}
-            <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-between gap-2">
+            <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => {
-                  stopCamera();
                   setShowChassisModal(false);
                 }}
                 className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-350 rounded-xl text-xs font-bold cursor-pointer"
               >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setChassisScanning(true);
-                  setTimeout(() => {
-                    setChassisNumber("MAT441234A567890");
-                    setChassisScanning(false);
-                    stopCamera();
-                    setShowChassisModal(false);
-                  }, 1000);
-                }}
-                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold cursor-pointer flex items-center gap-1.5"
-              >
-                <Camera className="w-3.5 h-3.5" />
-                <span>Simulate Frame Capture</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CAMERA & LOCATION PERMISSION INSTRUCTIONS MODAL */}
-      {showPermissionModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/85 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
-              <div className="p-2.5 bg-rose-500/10 text-rose-450 rounded-xl">
-                <AlertCircle className="w-5 h-5 animate-pulse" />
-              </div>
-              <div>
-                <h3 className="text-sm font-black uppercase tracking-wider text-slate-100">Camera & Location Required</h3>
-                <p className="text-[10px] text-slate-400">Permissions are currently blocked or denied</p>
-              </div>
-            </div>
-            
-            <div className="space-y-3 text-xs text-slate-300 leading-relaxed">
-              <p className="font-semibold text-slate-100">Please follow these instructions to enable camera access:</p>
-              <ol className="list-decimal pl-5 space-y-2 text-slate-400">
-                <li>Click the <strong>lock icon</strong> (🔒) in your browser's address bar.</li>
-                <li>Ensure <strong>Camera</strong> and <strong>Location</strong> permissions are set to <strong>Allow</strong>.</li>
-                <li>If they are already allowed, toggle them off and back on again.</li>
-                <li>OS-level restriction: check that camera permissions are granted for your browser in system preferences/settings.</li>
-              </ol>
-            </div>
-
-            <div className="flex gap-3 pt-3 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={() => setShowPermissionModal(false)}
-                className="flex-1 py-2 bg-slate-900 hover:bg-slate-800 text-slate-350 border border-slate-800 rounded-xl text-xs font-bold transition-all cursor-pointer text-center"
-              >
-                Dismiss
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                    setCameraStream(stream);
-                    if (videoRef.current) {
-                      videoRef.current.srcObject = stream;
-                    }
-                    setShowPermissionModal(false);
-                  } catch (e) {
-                    console.error("Camera connection retry failed:", e);
-                  }
-                }}
-                className="flex-1 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold transition-all cursor-pointer text-center"
-              >
-                Retry Connection
+                Close
               </button>
             </div>
           </div>
