@@ -43,6 +43,26 @@ export async function verifyOtp(mobile: string, otp: string): Promise<{
   return data;
 }
 
+export async function signupCustomer(name: string, mobile: string, authProvider = "mobile"): Promise<{
+  success: boolean;
+  token?: string;
+  customer?: { mobile: string; name: string };
+  error?: string;
+}> {
+  const res = await fetch(`${API_BASE}/auth/signup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, mobile, authProvider }),
+  });
+  const data = await res.json();
+  if (data.token) {
+    localStorage.setItem("customer_token", data.token);
+    localStorage.setItem("customer_name", data.customer?.name || "");
+    localStorage.setItem("customer_mobile", data.customer?.mobile || "");
+  }
+  return data;
+}
+
 export async function fetchVehicles() {
   const res = await fetch(`${API_BASE}/vehicles`, { headers: getAuthHeaders() });
   if (res.status === 401) { logout(); throw new Error("Session expired"); }

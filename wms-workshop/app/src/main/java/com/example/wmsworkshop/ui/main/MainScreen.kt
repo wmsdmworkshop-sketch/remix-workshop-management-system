@@ -159,7 +159,7 @@ fun MainScreen(
         settings.setGeolocationEnabled(true)
         settings.setAllowFileAccess(true)
         
-        loadUrl("https://wms-workshop-app-production.up.railway.app/")
+        loadUrl("https://wms-workshop-app-production.up.railway.app/portal")
         webView = this
       }
     },

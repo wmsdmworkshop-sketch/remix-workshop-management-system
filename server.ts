@@ -4545,6 +4545,75 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     });
   });
 
+  // ---- Customer Auth: Signup / Register ----
+  app.post("/api/customer/auth/signup", async (req: any, res: any) => {
+    const { name, mobile, authProvider } = req.body;
+    if (!name || typeof name !== "string" || name.trim().length < 2) {
+      return res.status(400).json({ error: "Please provide a valid name (at least 2 characters)." });
+    }
+    if (!mobile || typeof mobile !== "string" || mobile.length < 10) {
+      return res.status(400).json({ error: "Please provide a valid mobile number." });
+    }
+
+    const normalizedMobile = mobile.replace(/\s+/g, "");
+
+    const db = getDB();
+    // Check if this mobile number already exists in job_cards
+    const existingJob = (db.jobCards || []).find((j: any) => {
+      const jobMobile = (j.customer_mobile || "").replace(/\s+/g, "");
+      return (
+        jobMobile === normalizedMobile ||
+        jobMobile.endsWith(normalizedMobile.slice(-10)) ||
+        normalizedMobile.endsWith(jobMobile.slice(-10))
+      );
+    });
+
+    let customerName = name.trim();
+    if (existingJob) {
+      // Customer already exists, use their registered details and log them in
+      customerName = existingJob.customer_name || customerName;
+    } else {
+      // Create a placeholder job card to register the customer
+      const nextId = (db.jobCards || []).reduce((max: number, j: any) => Math.max(max, j.job_id), 0) + 1;
+      const newJobNo = `JC${String(nextId).padStart(3, "0")}`;
+      
+      const newJob = {
+        job_id: nextId,
+        job_card_no: newJobNo,
+        vrn: "NEW-USER",
+        customer_name: customerName,
+        customer_mobile: normalizedMobile,
+        vehicle_make: "TATA",
+        vehicle_model: "Nexon",
+        vehicle_year: 2026,
+        km_reading: 0,
+        sr_type_id: 1,
+        job_description: `Customer signup via ${authProvider || "Mobile"}`,
+        priority: "Normal",
+        status: "Waiting",
+        progress_pct: 0,
+        created_by: 1,
+        created_at: new Date().toISOString(),
+        remarks: `Registered on Portal via ${authProvider || "Mobile"}. Profile setup pending.`
+      };
+
+      db.jobCards.push(newJob);
+      setDB(db);
+    }
+
+    // Issue customer JWT token
+    const token = issueCustomerToken(normalizedMobile, customerName);
+
+    res.json({
+      success: true,
+      token,
+      customer: {
+        mobile: normalizedMobile,
+        name: customerName,
+      },
+    });
+  });
+
   // ---- Customer: List Vehicles ----
   app.get("/api/customer/vehicles", authenticateCustomerToken, async (req: any, res: any) => {
     try {
