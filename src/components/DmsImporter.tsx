@@ -14,6 +14,8 @@ interface DmsImporterProps {
 }
 
 
+const SAMPLE_LOGS: any[] = [];
+
 export default function DmsImporter({
   jobCards,
   onImportRows,

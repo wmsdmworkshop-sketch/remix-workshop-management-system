@@ -170,8 +170,11 @@ export default function GateEntryManager({
 
   const gatePasses = useMemo(() => {
     return jobCards.filter(j => {
-      const matchSearch = j.vrn.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          j.customer_name.toLowerCase().includes(searchQuery.toLowerCase());
+      if (!j) return false;
+      const vrnStr = j.vrn || "";
+      const nameStr = j.customer_name || "";
+      const matchSearch = vrnStr.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          nameStr.toLowerCase().includes(searchQuery.toLowerCase());
       const matchStatus = statusFilter === "all" || j.status === statusFilter;
       return matchSearch && matchStatus;
     });
@@ -487,8 +490,8 @@ export default function GateEntryManager({
                           if (cleanVrn.length >= 4) {
                             const latestVisit = [...jobCards]
                               .reverse()
-                              .filter(j => j.status !== "Cancelled")
-                              .find(j => j.vrn.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") === cleanVrn);
+                              .filter(j => j && j.status !== "Cancelled")
+                              .find(j => (j.vrn || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "") === cleanVrn);
                             if (latestVisit) {
                               setCustomerName(latestVisit.customer_name);
                               setCustomerMobile(latestVisit.customer_mobile);

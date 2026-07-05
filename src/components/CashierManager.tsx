@@ -44,6 +44,10 @@ export default function CashierManager({
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrParsedText, setOcrParsedText] = useState<string | null>(null);
 
+  const selectedJob = useMemo(() => {
+    return jobCards.find(j => j.job_id === selectedJobId) || null;
+  }, [jobCards, selectedJobId]);
+
   React.useEffect(() => {
     if (selectedJob) {
       setOcrParsedText((selectedJob as any).invoice_ocr_data || null);
@@ -93,10 +97,6 @@ export default function CashierManager({
       return isBillableStatus && matchSearch;
     });
   }, [jobCards, searchQuery]);
-
-  const selectedJob = useMemo(() => {
-    return jobCards.find(j => j.job_id === selectedJobId) || null;
-  }, [jobCards, selectedJobId]);
 
   // Billing breakdown calculations
   const billingBreakdown = useMemo(() => {

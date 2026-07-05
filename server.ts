@@ -14,9 +14,43 @@ import { pool as dbPool } from "./src/db/index.ts";
 import { DEFAULT_CIRCULARS } from "./src/lib/circularsData.ts";
 import { getReworkHistoryForTechnician } from "./src/engines/rework-tracking-service.ts";
 
+// ---- Customer Portal Imports ----
+import {
+  authenticateCustomerToken,
+  issueCustomerToken,
+  generateOtp,
+  verifyOtp as verifyCustomerOtp,
+  rateLimiter,
+  initRedis,
+  CUSTOMER_JWT_SECRET,
+} from "./src/customer-portal/api/middleware.ts";
+import { sanitizeJobCard, buildVehicleView, verifyJobOwnership } from "./src/customer-portal/api/sanitizer.ts";
+import { initCacheRedis, swrFetch } from "./src/customer-portal/api/cache.ts";
+import { processCustomerChat } from "./src/customer-portal/api/agent.ts";
+import type { WebSocket } from "ws";
+
 const JWT_SECRET = process.env.JWT_SECRET || "wms_super_secret_jwt_key_2026";
 
+// Live Customer WebSocket Connections Map
+const customerConnections = new Map<string, WebSocket[]>();
 
+const broadcastCustomerStatusUpdate = (customerMobile: string, data: any) => {
+  const normalizedMobile = customerMobile.replace(/\s+/g, "");
+  // Try exact match, and ends-with match for country codes
+  for (const [mobile, list] of customerConnections.entries()) {
+    if (
+      mobile === normalizedMobile ||
+      mobile.endsWith(normalizedMobile.slice(-10)) ||
+      normalizedMobile.endsWith(mobile.slice(-10))
+    ) {
+      list.forEach((ws) => {
+        if (ws.readyState === 1) { // OPEN
+          ws.send(JSON.stringify(data));
+        }
+      });
+    }
+  }
+};
 let cachedDB: any = null;
 
 import {
@@ -477,10 +511,39 @@ async function startServer() {
           }
         }
       }
+      
+      // Database View Layer: Create Database View that restricts fields exposed to customer portal
+      console.log("Initializing Database View Layer...");
+      await dbPool.execute(`
+        CREATE OR REPLACE VIEW customer_job_cards_view AS
+        SELECT 
+          job_card_no, 
+          vrn, 
+          customer_name, 
+          customer_mobile, 
+          vehicle_make, 
+          vehicle_model, 
+          vehicle_year, 
+          km_reading, 
+          sr_type_id, 
+          job_description, 
+          priority, 
+          status, 
+          etd, 
+          date_in, 
+          expected_date_out, 
+          completed_at, 
+          invoice_no, 
+          gate_out_time, 
+          warranty_status, 
+          progress_pct
+        FROM job_cards;
+      `);
+      console.log("Database View Layer verified and successfully created.");
 
       console.log("Users table verification and seeding completed successfully.");
     } catch (error) {
-      console.error("Failed to verify or seed users table:", error);
+      console.error("Failed to verify or seed users/view tables:", error);
     }
 
   // Recalculate employee productivity metrics (Allocated Revenue, Paid %, TML Claim %) based strictly on user specifications (current month live data only)
@@ -584,6 +647,25 @@ async function startServer() {
   // Helper middleware to get the DB
   const getDB = () => cachedDB;
   const setDB = (db: any) => {
+    // Detect status changes and progress changes for WebSockets before saving
+    if (cachedDB && cachedDB.jobCards && db && db.jobCards) {
+      db.jobCards.forEach((newJ: any) => {
+        const oldJ = cachedDB.jobCards.find((o: any) => o.job_id === newJ.job_id);
+        if (oldJ && (oldJ.status !== newJ.status || oldJ.progress_pct !== newJ.progress_pct)) {
+          console.log(`[CustomerPortal] Broadcasting status update for vehicle: ${newJ.vrn} (${newJ.status}, ${newJ.progress_pct}%)`);
+          broadcastCustomerStatusUpdate(newJ.customer_mobile, {
+            type: "status_update",
+            vrn: newJ.vrn,
+            job_card_no: newJ.job_card_no,
+            status: newJ.status,
+            progress_pct: newJ.progress_pct,
+            service_type: newJ.service_type || "Service",
+            etd: newJ.etd
+          });
+        }
+      });
+    }
+
     // Recalculate employee productivity metrics on any state changes
     recalculateEmployeeProductivity(db);
 
@@ -4381,6 +4463,348 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
+  // ============================================================
+  // CUSTOMER PORTAL API ROUTES
+  // All routes under /api/customer/* use separate auth/rate limiting.
+  // Data isolation: every query filters by authenticated mobile number.
+  // ============================================================
+
+  // Initialize Redis for rate limiting and caching
+  try {
+    const redisInstance = initRedis();
+    initCacheRedis(redisInstance);
+    console.log("[CustomerPortal] Redis initialized for rate limiting & cache.");
+  } catch (err) {
+    console.warn("[CustomerPortal] Redis init failed, using in-memory fallback.");
+    initCacheRedis(null);
+  }
+
+  // ---- Customer Auth: Request OTP ----
+  app.post("/api/customer/auth/request-otp", async (req: any, res: any) => {
+    const { mobile } = req.body;
+    if (!mobile || typeof mobile !== "string" || mobile.length < 10) {
+      return res.status(400).json({ error: "Please provide a valid mobile number." });
+    }
+
+    const normalizedMobile = mobile.replace(/\s+/g, "");
+
+    // Verify this mobile number exists in job_cards
+    const db = getDB();
+    const hasJobs = (db.jobCards || []).some((j: any) => {
+      const jobMobile = (j.customer_mobile || "").replace(/\s+/g, "");
+      return (
+        jobMobile === normalizedMobile ||
+        jobMobile.endsWith(normalizedMobile.slice(-10)) ||
+        normalizedMobile.endsWith(jobMobile.slice(-10))
+      );
+    });
+
+    if (!hasJobs) {
+      // Anti-enumeration: return success even if no match, but don't issue OTP
+      return res.json({ success: true, message: "If this number is registered, you will receive an OTP." });
+    }
+
+    const otp = generateOtp(normalizedMobile);
+    // In production: send SMS via Twilio/Firebase. For dev: logged to console.
+    console.log(`[CustomerPortal] OTP for ${normalizedMobile}: ${otp}`);
+
+    res.json({ success: true, message: "OTP sent to your mobile number.", expiresInMinutes: 15 });
+  });
+
+  // ---- Customer Auth: Verify OTP ----
+  app.post("/api/customer/auth/verify-otp", async (req: any, res: any) => {
+    const { mobile, otp } = req.body;
+    if (!mobile || !otp) {
+      return res.status(400).json({ error: "Please provide mobile number and OTP." });
+    }
+
+    const normalizedMobile = mobile.replace(/\s+/g, "");
+    const result = verifyCustomerOtp(normalizedMobile, otp);
+
+    if (!result.valid) {
+      return res.status(401).json({ error: result.error });
+    }
+
+    // Find customer name from their most recent job card
+    const db = getDB();
+    const customerJob = (db.jobCards || [])
+      .filter((j: any) => verifyJobOwnership(j, normalizedMobile))
+      .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
+    const customerName = customerJob?.customer_name || "Customer";
+
+    const token = issueCustomerToken(normalizedMobile, customerName);
+
+    res.json({
+      success: true,
+      token,
+      customer: {
+        mobile: normalizedMobile,
+        name: customerName,
+      },
+    });
+  });
+
+  // ---- Customer: List Vehicles ----
+  app.get("/api/customer/vehicles", authenticateCustomerToken, async (req: any, res: any) => {
+    try {
+      const mobile = req.customer.mobile;
+      const cacheKey = `vehicles:${mobile}`;
+
+      const vehicles = await swrFetch(cacheKey, async () => {
+        let allJobs: any[] = [];
+        
+        // Primary: Query from Database View Layer
+        try {
+          const [rows] = await dbPool.query(
+            "SELECT * FROM customer_job_cards_view WHERE customer_mobile = ? OR customer_mobile LIKE ?",
+            [mobile, `%${mobile.slice(-10)}`]
+          ) as any[];
+          if (rows && rows.length > 0) {
+            allJobs = rows;
+          }
+        } catch (dbErr) {
+          console.warn("[CustomerPortal] View query failed for vehicles, using memory:", dbErr);
+        }
+
+        // Secondary: Fallback to local memory DB
+        if (allJobs.length === 0) {
+          const db = getDB();
+          allJobs = (db.jobCards || []).filter((j: any) => verifyJobOwnership(j, mobile));
+        }
+
+        // Group by VRN
+        const vrnMap = new Map<string, any[]>();
+        allJobs.forEach((j: any) => {
+          const vrn = j.vrn || "UNKNOWN";
+          if (!vrnMap.has(vrn)) vrnMap.set(vrn, []);
+          vrnMap.get(vrn)!.push(j);
+        });
+
+        return Array.from(vrnMap.entries()).map(([vrn, jobs]) =>
+          buildVehicleView(vrn, jobs.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()))
+        );
+      });
+
+      res.json({ vehicles });
+    } catch (err: any) {
+      console.error("[CustomerPortal] Vehicles error:", err);
+      res.status(500).json({ error: "Failed to retrieve vehicles." });
+    }
+  });
+
+  // ---- Customer: List Job Cards (Sanitized + View-Scoped) ----
+  app.get("/api/customer/jobs", authenticateCustomerToken, async (req: any, res: any) => {
+    try {
+      const mobile = req.customer.mobile;
+      const cacheKey = `jobs:${mobile}`;
+
+      const jobs = await swrFetch(cacheKey, async () => {
+        let allJobs: any[] = [];
+
+        // Primary: Query from Database View Layer
+        try {
+          const [rows] = await dbPool.query(
+            "SELECT * FROM customer_job_cards_view WHERE customer_mobile = ? OR customer_mobile LIKE ? ORDER BY completed_at DESC, date_in DESC",
+            [mobile, `%${mobile.slice(-10)}`]
+          ) as any[];
+          if (rows && rows.length > 0) {
+            allJobs = rows;
+          }
+        } catch (dbErr) {
+          console.warn("[CustomerPortal] View query failed for jobs, using memory:", dbErr);
+        }
+
+        // Secondary: Fallback to local memory DB
+        if (allJobs.length === 0) {
+          const db = getDB();
+          allJobs = (db.jobCards || [])
+            .filter((j: any) => verifyJobOwnership(j, mobile))
+            .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        }
+
+        const db = getDB();
+        return allJobs.map((j: any) => sanitizeJobCard(j, db.srTypes));
+      });
+
+      res.json({ jobs });
+    } catch (err: any) {
+      console.error("[CustomerPortal] Jobs error:", err);
+      res.status(500).json({ error: "Failed to retrieve job cards." });
+    }
+  });
+
+  // ---- Customer: Single Job Detail (Sanitized + Anti-Enumeration + View-Scoped) ----
+  app.get("/api/customer/jobs/:job_card_no", authenticateCustomerToken, async (req: any, res: any) => {
+    try {
+      const mobile = req.customer.mobile;
+      const jobCardNo = req.params.job_card_no;
+      let rawJob: any = null;
+
+      // Primary: Query from Database View Layer
+      try {
+        const [rows] = await dbPool.query(
+          "SELECT * FROM customer_job_cards_view WHERE job_card_no = ? AND (customer_mobile = ? OR customer_mobile LIKE ?)",
+          [jobCardNo, mobile, `%${mobile.slice(-10)}`]
+        ) as any[];
+        if (rows && rows.length > 0) {
+          rawJob = rows[0];
+        }
+      } catch (dbErr) {
+        console.warn("[CustomerPortal] View query failed for single job, using memory:", dbErr);
+      }
+
+      // Secondary: Fallback to local memory DB
+      if (!rawJob) {
+        const db = getDB();
+        const found = (db.jobCards || []).find(
+          (j: any) => j.job_card_no === jobCardNo
+        );
+
+        // SECURITY: Return 404 (not 403) to prevent ID enumeration
+        if (!found || !verifyJobOwnership(found, mobile)) {
+          return res.status(404).json({ error: "Job card not found." });
+        }
+        rawJob = found;
+      }
+
+      const db = getDB();
+      const job = sanitizeJobCard(rawJob, db.srTypes);
+      res.json({ job });
+    } catch (err: any) {
+      console.error("[CustomerPortal] Job detail error:", err);
+      res.status(500).json({ error: "Failed to retrieve job details." });
+    }
+  });
+
+  // ---- Document Vault: Secure S3 Link Generator ----
+  app.get("/api/customer/vault/link/:invoice_no", authenticateCustomerToken, async (req: any, res: any) => {
+    try {
+      const mobile = req.customer.mobile;
+      const invoiceNo = req.params.invoice_no;
+
+      const db = getDB();
+      const hasAccess = (db.jobCards || []).some(
+        (j: any) => j.invoice_no === invoiceNo && verifyJobOwnership(j, mobile)
+      );
+
+      if (!hasAccess) {
+        return res.status(404).json({ error: "Document not found." });
+      }
+
+      // Generate a secure, HMAC/JWT signed download link valid for 15 minutes
+      const downloadToken = jwt.sign(
+        { customer_id: mobile, invoice_no: invoiceNo },
+        CUSTOMER_JWT_SECRET,
+        { expiresIn: "15m" }
+      );
+
+      const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+      const host = req.get("host");
+      const secureUrl = `${protocol}://${host}/api/customer/vault/download?token=${downloadToken}`;
+
+      res.json({ url: secureUrl, expires_in: "15 minutes" });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to generate download link." });
+    }
+  });
+
+  // ---- Document Vault: Secure S3 Download Handler ----
+  app.get("/api/customer/vault/download", async (req: any, res: any) => {
+    const { token } = req.query;
+    if (!token || typeof token !== "string") {
+      return res.status(400).send("Access Denied: Missing secure token.");
+    }
+
+    try {
+      const decoded = jwt.verify(token, CUSTOMER_JWT_SECRET) as any;
+      if (!decoded.customer_id || !decoded.invoice_no) {
+        return res.status(401).send("Access Denied: Invalid secure token.");
+      }
+
+      // Simulate sending secure binary invoice PDF content
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="Invoice-${decoded.invoice_no}.pdf"`);
+      
+      // Minimal PDF structure
+      const pdfBuffer = Buffer.from(
+        `%PDF-1.4\n%     \n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << >> >>\nendobj\n4 0 obj\n<< /Length 75 >>\nstream\nBT\n/F1 12 Tf\n72 712 Td\n(Devanand Motors Secure Invoice Document: ${decoded.invoice_no}) Tj\nET\nendstream\nendobj\nxref\n0 5\n0000000000 65535 f\n0000000015 00000 n\n0000000062 00000 n\n0000000119 00000 n\n0000000219 00000 n\ntrailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n343\n%%EOF`
+      );
+      
+      res.send(pdfBuffer);
+    } catch (err) {
+      res.status(403).send("Access Denied: Link has expired or is invalid.");
+    }
+  });
+
+  // ---- Customer Alerts & Push Notifications Endpoint ----
+  app.get("/api/customer/alerts", authenticateCustomerToken, async (req: any, res: any) => {
+    try {
+      const mobile = req.customer.mobile;
+      const db = getDB();
+      const myJobs = (db.jobCards || []).filter((j: any) => verifyJobOwnership(j, mobile));
+      
+      const alerts: any[] = [];
+      myJobs.forEach((j: any) => {
+        if (j.status === "Completed") {
+          alerts.push({
+            id: `pickup:${j.job_card_no}`,
+            type: "action_needed",
+            title: "Ready for Pickup",
+            message: `Your vehicle ${j.vrn} (${j.vehicle_model}) is completed and ready for pickup!`,
+            job_card_no: j.job_card_no,
+            severity: "success",
+          });
+        }
+        if (j.status === "Waiting") {
+          alerts.push({
+            id: `approve:${j.job_card_no}`,
+            type: "approval_needed",
+            title: "Approval Needed",
+            message: `A service estimate for vehicle ${j.vrn} requires your approval to begin repairs.`,
+            job_card_no: j.job_card_no,
+            severity: "warning",
+          });
+        }
+      });
+
+      res.json({ alerts });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to load alerts." });
+    }
+  });
+
+  // ---- Customer: AI Chat (Rate Limited) ----
+  app.post("/api/customer/chat", authenticateCustomerToken, rateLimiter, async (req: any, res: any) => {
+    try {
+      const { message } = req.body;
+      if (!message || typeof message !== "string" || message.trim().length === 0) {
+        return res.status(400).json({ error: "Please provide a message." });
+      }
+
+      if (message.length > 500) {
+        return res.status(400).json({ error: "Message too long. Please keep it under 500 characters." });
+      }
+
+      const response = await processCustomerChat(
+        message.trim(),
+        req.customer.mobile,
+        req.customer.name,
+        getDB
+      );
+
+      res.json({
+        response,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      console.error("[CustomerPortal] Chat error:", err);
+      res.status(500).json({ error: "Assistant is temporarily unavailable. Please try again." });
+    }
+  });
+
+  console.log("[CustomerPortal] Customer Portal API routes mounted on /api/customer/*");
+
   // --- VITE MIDDLEWARE SETUP ---
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -4400,9 +4824,64 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     console.log(`Workshop Server running on http://localhost:${PORT}`);
   });
 
-  // WebSocket Server for Live voice chat
-  const wss = new WebSocketServer({ server, path: "/api/live" });
+  // WebSocket Server for Live voice chat (manual upgrades)
+  const wss = new WebSocketServer({ noServer: true });
+  
+  // WebSocket Server for Customer live status progress
+  const wssCustomer = new WebSocketServer({ noServer: true });
 
+  server.on("upgrade", (request, socket, head) => {
+    const pathname = new URL(request.url || "", `http://${request.headers.host}`).pathname;
+    
+    if (pathname === "/api/live") {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit("connection", ws, request);
+      });
+    } else if (pathname === "/api/customer/live-progress") {
+      wssCustomer.handleUpgrade(request, socket, head, (ws) => {
+        wssCustomer.emit("connection", ws, request);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
+
+  // Handle Customer Progress WebSocket Connection
+  wssCustomer.on("connection", (ws, req) => {
+    try {
+      const parsedUrl = new URL(req.url || "", `http://${req.headers.host}`);
+      const token = parsedUrl.searchParams.get("token");
+      if (!token) {
+        ws.close(4001, "Missing auth token");
+        return;
+      }
+
+      const decoded = jwt.verify(token, CUSTOMER_JWT_SECRET) as any;
+      const customerMobile = decoded.customer_id;
+      if (!customerMobile) {
+        ws.close(4002, "Invalid token payload");
+        return;
+      }
+
+      const normalizedMobile = customerMobile.replace(/\s+/g, "");
+      console.log(`[CustomerPortal] Live Progress WebSocket connected for: ${normalizedMobile}`);
+
+      if (!customerConnections.has(normalizedMobile)) {
+        customerConnections.set(normalizedMobile, []);
+      }
+      customerConnections.get(normalizedMobile)!.push(ws);
+
+      ws.on("close", () => {
+        const list = customerConnections.get(normalizedMobile) || [];
+        customerConnections.set(normalizedMobile, list.filter((w) => w !== ws));
+        console.log(`[CustomerPortal] Live Progress WebSocket disconnected for: ${normalizedMobile}`);
+      });
+    } catch (err) {
+      ws.close(4003, "Authentication failed");
+    }
+  });
+
+  // Handle Workshop Staff Voice Assistant WebSocket Connection
   wss.on("connection", async (clientWs) => {
     console.log("WebSocket connection established for Live Voice...");
     if (!process.env.GEMINI_API_KEY) {
@@ -4563,6 +5042,8 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       res.status(500).json({ error: error.message });
     }
   });
+
+
 }
 
 startServer();
