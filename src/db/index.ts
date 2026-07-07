@@ -5,16 +5,17 @@ import mysql from "mysql2/promise";
 
 // Function to create a new MySQL connection pool.
 export const createPool = () => {
-  // Direct Railway MySQL credentials
   const host = process.env.DB_HOST || "thomas.proxy.rlwy.net";
-  const port = process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 50733;
+  const port = process.env.DB_PORT ? Number(process.env.DB_PORT) : 50733;
   const user = process.env.DB_USER || "root";
   const password = process.env.DB_PASSWORD || "mjzwCcYkEYSYRAADKjnyAiEZGGrtwAri";
   const database = process.env.DB_DATABASE || "railway";
+  const socketPath = process.env.DB_SOCKET_PATH || undefined;
 
   const config: mysql.PoolOptions = {
-    host,
-    port,
+    host: socketPath ? undefined : host,
+    port: socketPath ? undefined : port,
+    socketPath,
     user,
     password,
     database,
