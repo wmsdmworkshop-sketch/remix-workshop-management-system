@@ -25,6 +25,7 @@
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "express": "^4.21.2",
+    "fast-csv": "^5.0.7",
     "firebase": "^12.15.0",
     "firebase-admin": "^14.1.0",
     "ioredis": "^5.11.1",

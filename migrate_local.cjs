@@ -12,10 +12,7 @@ const dbConfig = {
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD,
     database: process.env.DB_DATABASE,
-    port: parseInt(process.env.DB_PORT || '3306'),
-    authPlugins: {
-        sha256_password: mysql.authPlugins.sha256_password
-    }
+    port: parseInt(process.env.DB_PORT || '3306')
 };
 
 function sanitizeDate(dateStr) {
