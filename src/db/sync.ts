@@ -129,7 +129,7 @@ async function saveJobCardsToMaster(jobCards: any[]) {
       last_service_date: row.last_service_date || row.completed_at || row.created_at || null,
       odometer_reading: row.odometer_reading || row.km_reading || null,
       chassis_no: row.chassis_number || row.vin || null,
-      gate_out_time: row.gate_out_time || null
+      gate_out_time: safeMysqlDatetime(row.gate_out_time, null)
     };
 
     const keys = Object.keys(masterRow);
