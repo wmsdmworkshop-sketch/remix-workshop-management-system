@@ -12,6 +12,8 @@ export const createPool = () => {
   const database = process.env.DB_DATABASE || "railway";
   const socketPath = process.env.DB_SOCKET_PATH || undefined;
 
+  const ssl = process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : undefined;
+
   const config: mysql.PoolOptions = {
     host: socketPath ? undefined : host,
     port: socketPath ? undefined : port,
@@ -19,6 +21,7 @@ export const createPool = () => {
     user,
     password,
     database,
+    ssl,
     connectionLimit: 10,
     waitForConnections: true,
     queueLimit: 0,
