@@ -10,8 +10,9 @@
 import jwt from "jsonwebtoken";
 import Redis from "ioredis";
 import type { CustomerTokenPayload, RateLimitInfo } from "../types";
+import { envConfig } from "../../config/env.ts";
 
-const CUSTOMER_JWT_SECRET = process.env.CUSTOMER_JWT_SECRET || "dwip_customer_portal_secret_2026";
+const CUSTOMER_JWT_SECRET = envConfig.CUSTOMER_JWT_SECRET;
 const OTP_EXPIRY_MINUTES = 15;
 const RATE_LIMIT_HOURLY = 20;
 const RATE_WINDOW_HOURLY_SECONDS = 3600; // 1 hour
@@ -22,7 +23,7 @@ let redis: Redis | null = null;
 export function initRedis(): Redis {
   if (redis) return redis;
 
-  const redisUrl = process.env.REDIS_URL || process.env.REDIS_PRIVATE_URL;
+  const redisUrl = envConfig.REDIS_URL;
 
   if (redisUrl) {
     redis = new Redis(redisUrl, {

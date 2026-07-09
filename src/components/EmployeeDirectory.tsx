@@ -120,6 +120,12 @@ export default function EmployeeDirectory({
   const [basicSalary, setBasicSalary] = useState(25000);
   const [mobile, setMobile] = useState("");
   const [employeeCode, setEmployeeCode] = useState("");
+  
+  // Add Form Certification States
+  const [certificationLevel, setCertificationLevel] = useState("Not Certified");
+  const [certificationDate, setCertificationDate] = useState("");
+  const [certificationExpiryDate, setCertificationExpiryDate] = useState("");
+  const [certificationRemarks, setCertificationRemarks] = useState("");
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState("");
@@ -135,6 +141,12 @@ export default function EmployeeDirectory({
   const [editSalary, setEditSalary] = useState(25000);
   const [editMobile, setEditMobile] = useState("");
   const [editCode, setEditCode] = useState("");
+
+  // Edit Form Certification States
+  const [editCertificationLevel, setEditCertificationLevel] = useState("Not Certified");
+  const [editCertificationDate, setEditCertificationDate] = useState("");
+  const [editCertificationExpiryDate, setEditCertificationExpiryDate] = useState("");
+  const [editCertificationRemarks, setEditCertificationRemarks] = useState("");
 
   // Bulk CSV import states
   const [showBulkPanel, setShowBulkPanel] = useState(false);
@@ -314,7 +326,11 @@ export default function EmployeeDirectory({
       role: finalRole,
       employee_grade: grade,
       basic_salary: Number(basicSalary),
-      mobile
+      mobile,
+      certification_level: certificationLevel,
+      certification_date: certificationDate || null,
+      certification_expiry_date: certificationExpiryDate || null,
+      certification_remarks: certificationRemarks || null
     });
 
     // Reset Form
@@ -324,6 +340,10 @@ export default function EmployeeDirectory({
     setBasicSalary(25000);
     setSelectedRole("Technician");
     setCustomRoleText("");
+    setCertificationLevel("Not Certified");
+    setCertificationDate("");
+    setCertificationExpiryDate("");
+    setCertificationRemarks("");
     setShowAddForm(false);
   };
 
@@ -343,6 +363,11 @@ export default function EmployeeDirectory({
     setEditSalary(emp.basic_salary);
     setEditMobile(emp.mobile);
     setEditCode(emp.employee_code);
+
+    setEditCertificationLevel(emp.certification_level || "Not Certified");
+    setEditCertificationDate(emp.certification_date || "");
+    setEditCertificationExpiryDate(emp.certification_expiry_date || "");
+    setEditCertificationRemarks(emp.certification_remarks || "");
   };
 
   const handleSaveEdit = (id: number) => {
@@ -356,7 +381,11 @@ export default function EmployeeDirectory({
       role: finalEditRole,
       employee_grade: editGrade,
       basic_salary: Number(editSalary),
-      mobile: editMobile
+      mobile: editMobile,
+      certification_level: editCertificationLevel,
+      certification_date: editCertificationDate || null,
+      certification_expiry_date: editCertificationExpiryDate || null,
+      certification_remarks: editCertificationRemarks || null
     });
     setEditingId(null);
   };
@@ -759,6 +788,53 @@ export default function EmployeeDirectory({
                 placeholder="+91..."
                 className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
               />
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100 pt-3">
+            <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block mb-2">CPSC Certification Management</span>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Certification Level</label>
+                <select 
+                  value={certificationLevel}
+                  onChange={(e) => setCertificationLevel(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                >
+                  <option value="Not Certified">Not Certified</option>
+                  <option value="Bronze">Bronze Level</option>
+                  <option value="Silver">Silver Level</option>
+                  <option value="Gold">Gold Level</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Certification Date</label>
+                <input 
+                  type="date" 
+                  value={certificationDate}
+                  onChange={(e) => setCertificationDate(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Expiry Date</label>
+                <input 
+                  type="date" 
+                  value={certificationExpiryDate}
+                  onChange={(e) => setCertificationExpiryDate(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Remarks</label>
+                <input 
+                  type="text" 
+                  value={certificationRemarks}
+                  onChange={(e) => setCertificationRemarks(e.target.value)}
+                  placeholder="Certification Remarks"
+                  className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                />
+              </div>
             </div>
           </div>
 
@@ -1224,6 +1300,55 @@ export default function EmployeeDirectory({
                           className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
                         />
                       </div>
+
+                      <div className="border-t border-slate-100 pt-2 space-y-2">
+                        <span className="text-[9px] font-bold text-indigo-600 uppercase tracking-wider block">CPSC Certification</span>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Level</label>
+                            <select 
+                              value={editCertificationLevel}
+                              onChange={(e) => setEditCertificationLevel(e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 font-semibold focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                            >
+                              <option value="Not Certified">Not Certified</option>
+                              <option value="Bronze">Bronze</option>
+                              <option value="Silver">Silver</option>
+                              <option value="Gold">Gold</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Remarks</label>
+                            <input 
+                              type="text" 
+                              value={editCertificationRemarks}
+                              onChange={(e) => setEditCertificationRemarks(e.target.value)}
+                              placeholder="Remarks"
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 font-semibold focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Date</label>
+                            <input 
+                              type="date" 
+                              value={editCertificationDate ? editCertificationDate.split("T")[0] : ""}
+                              onChange={(e) => setEditCertificationDate(e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 font-semibold focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Expiry Date</label>
+                            <input 
+                              type="date" 
+                              value={editCertificationExpiryDate ? editCertificationExpiryDate.split("T")[0] : ""}
+                              onChange={(e) => setEditCertificationExpiryDate(e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 font-semibold focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                            />
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="flex justify-end gap-1.5 pt-2 border-t border-slate-100">
@@ -1289,6 +1414,33 @@ export default function EmployeeDirectory({
                             <Lock className="h-3 w-3 text-slate-400" /> ₹•••••• <span className="text-[9px] font-bold text-slate-300 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">Admin Only</span>
                           </span>
                         )}
+                      </div>
+
+                      {/* CPSC Certification Status */}
+                      <div className="flex items-center justify-between text-xs pt-2 mt-2 border-t border-slate-100/50">
+                        <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px] flex items-center gap-1">
+                          <Award className="h-3.5 w-3.5 text-indigo-500 shrink-0" /> Certification:
+                        </span>
+                        <div className="flex flex-col items-end">
+                          <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
+                            emp.certification_level === "Gold" ? "bg-amber-500/10 text-amber-600 border-amber-500/20" :
+                            emp.certification_level === "Silver" ? "bg-slate-400/10 text-slate-600 border-slate-400/20" :
+                            emp.certification_level === "Bronze" ? "bg-amber-600/10 text-amber-800 border-amber-600/20" :
+                            "bg-slate-200 text-slate-500 border-slate-200"
+                          }`}>
+                            {emp.certification_level || "Not Certified"}
+                          </span>
+                          {emp.certification_date && (
+                            <span className="text-[8px] font-mono text-slate-400 mt-0.5">
+                              Exp: {new Date(emp.certification_expiry_date || "").toLocaleDateString()}
+                            </span>
+                          )}
+                          {emp.certification_remarks && (
+                            <span className="text-[9px] italic text-slate-500 mt-0.5 truncate max-w-[150px]" title={emp.certification_remarks}>
+                              "{emp.certification_remarks}"
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 

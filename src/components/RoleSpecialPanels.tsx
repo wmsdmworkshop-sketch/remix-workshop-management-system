@@ -901,75 +901,285 @@ interface TechnicianProfileProps {
   employeeId: number | null;
 }
 
-export function TechnicianProfilePanel({ employees, employeeId }: TechnicianProfileProps) {
-  const currentEmp = useMemo(() => {
-    return employees.find(e => e.employee_id === employeeId) || employees[0];
-  }, [employees, employeeId]);
+export function TechnicianProfilePanel({ employees, employeeId: propsEmployeeId }: TechnicianProfileProps) {
+  const [employee, setEmployee] = useState<any>(null);
+  const [pendingRequest, setPendingRequest] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Form edit states
+  const [mobile, setMobile] = useState("");
+  const [altMobile, setAltMobile] = useState("");
+  const [email, setEmail] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const fetchProfile = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/my-profile", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setEmployee(data.employee);
+        setPendingRequest(data.pendingRequest);
+        setMobile(data.employee.mobile || "");
+        setAltMobile(data.employee.alt_mobile || "");
+        setEmail(data.employee.email || "");
+      } else {
+        setError(data.error || "Failed to load profile.");
+      }
+    } catch (err) {
+      setError("Network error: failed to fetch profile details.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProfile();
+  }, []);
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setToast(null);
+
+    // Format Validations
+    const mobileRegex = /^\+?[0-9]{10,15}$/;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!mobileRegex.test(mobile.replace(/\s+/g, ""))) {
+      setToast({ message: "Invalid mobile number format. Must contain 10-15 digits.", type: "error" });
+      setSaving(false);
+      return;
+    }
+    if (altMobile && !mobileRegex.test(altMobile.replace(/\s+/g, ""))) {
+      setToast({ message: "Invalid alternate mobile format.", type: "error" });
+      setSaving(false);
+      return;
+    }
+    if (!emailRegex.test(email)) {
+      setToast({ message: "Invalid email address format.", type: "error" });
+      setSaving(false);
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/my-profile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ mobile, alt_mobile: altMobile || null, email })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setToast({ message: data.message, type: "success" });
+        fetchProfile();
+      } else {
+        setToast({ message: data.error || "Failed to submit updates.", type: "error" });
+      }
+    } catch (err) {
+      setToast({ message: "Network error: failed to save changes.", type: "error" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Fallback if loading
+  const currentEmp = employee || employees.find(e => e.employee_id === propsEmployeeId) || employees[0];
+
+  if (loading && !currentEmp) {
+    return (
+      <div className="flex justify-center items-center h-48">
+        <RefreshCw className="h-6 w-6 animate-spin text-orange-500" />
+      </div>
+    );
+  }
 
   if (!currentEmp) {
     return (
       <div className="bg-white rounded-2xl p-12 text-center text-slate-400 border border-slate-200 shadow-sm text-xs font-medium">
-        Technician profile detail record not mapped. Please contact workshop administrator.
+        Profile details not mapped. Please contact administrator.
       </div>
     );
   }
 
   return (
-    <div className="max-w-xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      {/* Banner Cover */}
-      <div className="bg-slate-900 h-28 relative">
-        <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-orange-500/20 to-indigo-500/20" />
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Pending Approval Alert Box */}
+      {pendingRequest && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex gap-3 items-start shadow-sm">
+          <Clock className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+          <div className="space-y-1">
+            <h4 className="text-xs font-black text-amber-800 uppercase tracking-wider">Pending HR/Admin Approval</h4>
+            <p className="text-xs text-amber-700">
+              An update request for your contact details is currently awaiting review. The changes will not become active until approved.
+            </p>
+            <div className="pt-1.5 grid grid-cols-3 gap-4 text-[10px] font-mono text-amber-800">
+              <div><span className="font-bold">Requested Phone:</span> {pendingRequest.mobile}</div>
+              <div><span className="font-bold">Alt Phone:</span> {pendingRequest.alt_mobile || "None"}</div>
+              <div><span className="font-bold">Requested Email:</span> {pendingRequest.email}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Profile Info Card */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden grid grid-cols-1 md:grid-cols-5">
+        
+        {/* Left Column Profile Banner Summary */}
+        <div className="md:col-span-2 bg-slate-900 text-white p-6 flex flex-col justify-between relative min-h-[300px]">
+          <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-orange-600/30 to-indigo-600/30 pointer-events-none" />
+          
+          <div className="relative space-y-4">
+            <div className="w-20 h-20 bg-orange-500 rounded-2xl flex items-center justify-center border-4 border-slate-800 shadow-md text-white font-black text-3xl uppercase">
+              {currentEmp.full_name.charAt(0)}
+            </div>
+            <div>
+              <h1 className="text-lg font-black tracking-tight uppercase">{currentEmp.full_name}</h1>
+              <p className="text-xs text-slate-400 font-mono">ID: {currentEmp.employee_code || `EMP0${currentEmp.employee_id}`}</p>
+            </div>
+          </div>
+
+          <div className="relative space-y-2 pt-6 border-t border-slate-800/80">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Role & Permissions</div>
+            <p className="text-xs font-bold uppercase tracking-wide text-orange-400">
+              {currentEmp.role ? currentEmp.role.split("_").join(" ") : "Staff Member"}
+            </p>
+            <div className="flex gap-2 pt-2">
+              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border bg-emerald-950/80 text-emerald-400 border-emerald-800/50 uppercase tracking-wider">
+                Active Duty
+              </span>
+              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border bg-slate-800 text-slate-300 border-slate-700/50 uppercase tracking-wider font-mono">
+                {currentEmp.employee_grade || "Senior"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Columns Grid Details */}
+        <div className="md:col-span-3 p-6 space-y-6">
+          <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">Profile Overview</h2>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Department</span>
+              <p className="text-xs font-black text-slate-800 uppercase">{currentEmp.department || "Workshop Operations"}</p>
+            </div>
+            <div className="space-y-1">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Designation</span>
+              <p className="text-xs font-black text-slate-800 uppercase">{currentEmp.designation || currentEmp.role.split("_").join(" ")}</p>
+            </div>
+            <div className="space-y-1">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Workshop Terminal</span>
+              <p className="text-xs font-black text-slate-800 uppercase">{currentEmp.workshop || "Devalapura Terminal 1"}</p>
+            </div>
+            <div className="space-y-1">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Reporting Manager</span>
+              <p className="text-xs font-black text-slate-800 uppercase">{currentEmp.reporting_manager || "Workshop Manager (Admin)"}</p>
+            </div>
+            <div className="space-y-1">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Date of Joining</span>
+              <p className="text-xs font-mono font-bold text-slate-800">{currentEmp.date_of_joining || "2026-06-01"}</p>
+            </div>
+            <div className="space-y-1">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Aadhaar (Last 4 digits)</span>
+              <p className="text-xs font-mono font-bold text-slate-800">
+                {currentEmp.aadhaar ? `********${currentEmp.aadhaar.slice(-4)}` : "********9088"}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">PAN Number (Masked)</span>
+              <p className="text-xs font-mono font-bold text-slate-800">{currentEmp.pan ? `${currentEmp.pan.slice(0, 5)}*****` : "ABCDE*****F"}</p>
+            </div>
+            <div className="space-y-1">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Basic Salary Details</span>
+              <p className="text-xs font-mono font-bold text-slate-800">₹{Number(currentEmp.basic_salary || 0).toLocaleString()}/month</p>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-slate-100 space-y-2">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+              <ShieldCheck className="h-3.5 w-3.5 text-slate-400" /> Bank Account Details (Salary)
+            </span>
+            <p className="text-xs font-bold text-slate-800">
+              {currentEmp.bank_details || "HDFC Bank Ltd, A/C: *******4521, IFSC: HDFC0002145"}
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Profile Detail Body */}
-      <div className="px-6 pb-6 relative">
-        <div className="flex justify-between items-end -translate-y-10">
-          <div className="w-20 h-20 bg-orange-500 rounded-2xl flex items-center justify-center border-4 border-white shadow-md text-white font-black text-3xl uppercase">
-            {currentEmp.full_name.charAt(0)}
+      {/* Profile Contact Edit Panel */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+        <div className="border-b pb-3 flex justify-between items-center">
+          <div>
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">Update Personal Contacts</h3>
+            <p className="text-[10px] text-slate-400 mt-0.5">Edit only your personal contact details. Updates may require HR approval.</p>
           </div>
-          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full border bg-emerald-100 text-emerald-800 border-emerald-200 uppercase tracking-wider font-sans">
-            Duty: Active
+          <span className="text-[9px] font-black uppercase text-orange-600 bg-orange-50 border border-orange-100 px-2 py-0.5 rounded-full">
+            Editable Fields Only
           </span>
         </div>
 
-        <div className="-mt-6 space-y-4">
-          <div>
-            <h1 className="text-lg font-black text-slate-800 tracking-tight uppercase">{currentEmp.full_name}</h1>
-            <p className="text-xs text-slate-400 font-mono">Employee Code: {currentEmp.employee_code}</p>
+        <form onSubmit={handleUpdate} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Mobile Number</label>
+              <input
+                type="text"
+                value={mobile}
+                onChange={(e) => setMobile(e.target.value)}
+                placeholder="Enter personal mobile number"
+                className="w-full text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-slate-400 focus:bg-white"
+                required
+              />
+            </div>
+            
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Alternate Mobile Number</label>
+              <input
+                type="text"
+                value={altMobile}
+                onChange={(e) => setAltMobile(e.target.value)}
+                placeholder="Alternate phone (optional)"
+                className="w-full text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-slate-400 focus:bg-white"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Personal Email ID</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter personal email ID"
+                className="w-full text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-slate-400 focus:bg-white"
+                required
+              />
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 pt-2">
-            <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                <Briefcase className="h-3 w-3" /> Designated Role
-              </span>
-              <p className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                {currentEmp.role.split("_").join(" ")}
-              </p>
+          {toast && (
+            <div className={`p-3 rounded-xl border text-xs font-bold ${toast.type === "success" ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-red-50 text-red-800 border-red-200"}`}>
+              {toast.message}
             </div>
+          )}
 
-            <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                <Award className="h-3 w-3" /> Grade Level
-              </span>
-              <p className="text-xs font-bold text-slate-800 uppercase tracking-wide">{currentEmp.employee_grade}</p>
-            </div>
-
-            <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                <Phone className="h-3 w-3" /> Contact Phone
-              </span>
-              <p className="text-xs font-mono font-bold text-slate-800">{currentEmp.mobile}</p>
-            </div>
-
-            <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                <ShieldCheck className="h-3 w-3" /> Authorization
-              </span>
-              <p className="text-xs font-bold text-slate-800 uppercase tracking-wide">Workshop Terminal</p>
-            </div>
+          <div className="flex justify-end pt-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="bg-slate-900 text-white hover:bg-slate-800 disabled:bg-slate-300 text-xs font-black uppercase tracking-wider px-6 py-2.5 rounded-xl shadow-sm transition-all duration-150"
+            >
+              {saving ? "Saving Changes..." : "Request Profile Update"}
+            </button>
           </div>
-        </div>
+        </form>
       </div>
     </div>
   );

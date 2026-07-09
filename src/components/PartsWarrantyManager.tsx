@@ -61,6 +61,14 @@ export default function PartsWarrantyManager({
   onRefresh 
 }: PartsWarrantyManagerProps) {
   const [success, setSuccess] = useState<string | null>(null);
+
+  const getAuthHeaders = (extraHeaders: Record<string, string> = {}) => {
+    const token = localStorage.getItem("wms_token");
+    return {
+      ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+      ...extraHeaders
+    };
+  };
   const [activeTab, setActiveTab] = useState<"inventory" | "warranty" | "circulars">("inventory");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -86,6 +94,53 @@ export default function PartsWarrantyManager({
   const [valResult, setValResult] = useState<any | null>(null);
   const [valError, setValError] = useState<string | null>(null);
 
+  // New Search States for Master DB lookup
+  const [valSearchInput, setValSearchInput] = useState("");
+  const [valVehicleInfo, setValVehicleInfo] = useState<any | null>(null);
+  const [valVehicleSearchLoading, setValVehicleSearchLoading] = useState(false);
+  const [valVehicleSearchError, setValVehicleSearchError] = useState<string | null>(null);
+
+  const handleSearchVehicleWarranty = async (queryStr: string) => {
+    if (!queryStr.trim()) return;
+    setValVehicleSearchLoading(true);
+    setValVehicleSearchError(null);
+    setValVehicleInfo(null);
+    try {
+      const res = await fetch(`/api/warranty/vehicle?query=${encodeURIComponent(queryStr)}`, {
+        headers: getAuthHeaders()
+      });
+      const data = await res.json();
+      if (res.ok && data.found) {
+        setValVehicleInfo(data);
+        
+        // Auto-populate Date of Sale
+        if (data.vehicle.original_sale_date) {
+          const d = new Date(data.vehicle.original_sale_date);
+          if (!isNaN(d.getTime())) {
+            setValDateOfSale(d.toISOString().split("T")[0]);
+          }
+        }
+        
+        // Auto-populate Model/PPL
+        const productLine = data.vehicle.product_line || "Prima";
+        const matchedModel = ['Prima', 'Signa', 'Ultra', 'Intra', 'Ace', 'Winger', 'LPT 407', 'LPT 709', 'LPT 1109', 'LPT 1412', 'LPT 2518', 'LPT 3118', 'Starbus', 'Cityride', 'Divo'].find(
+          m => productLine.toLowerCase().includes(m.toLowerCase())
+        );
+        setValModelNoPpl(matchedModel || "Prima");
+
+        // FSB status
+        setValFsbStatus(data.fsbStatus || "Not Applicable");
+      } else {
+        setValVehicleSearchError(data.error || "Vehicle or warranty details not found in master database.");
+      }
+    } catch (e) {
+      console.error(e);
+      setValVehicleSearchError("Failed to fetch vehicle warranty details.");
+    } finally {
+      setValVehicleSearchLoading(false);
+    }
+  };
+
   // --- VEHICLE SELECTOR & FSB AUDIT STATE ---
   const [vehicleSearchQuery, setVehicleSearchQuery] = useState("");
   const [onlyInWorkshop, setOnlyInWorkshop] = useState(true);
@@ -97,7 +152,9 @@ export default function PartsWarrantyManager({
   const fetchCirculars = async () => {
     setCirLoading(true);
     try {
-      const res = await fetch("/api/warranty/circulars");
+      const res = await fetch("/api/warranty/circulars", {
+        headers: getAuthHeaders()
+      });
       if (res.ok) {
         const data = await res.json();
         setCirculars(data);
@@ -111,7 +168,9 @@ export default function PartsWarrantyManager({
 
   const fetchFsbRecords = async () => {
     try {
-      const res = await fetch("/api/fsb");
+      const res = await fetch("/api/fsb", {
+        headers: getAuthHeaders()
+      });
       if (res.ok) {
         const data = await res.json();
         setFsbRecords(data);
@@ -126,7 +185,7 @@ export default function PartsWarrantyManager({
     try {
       const res = await fetch("/api/fsb", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           job_card_id: jobCardId,
           fsb_status: status
@@ -159,7 +218,7 @@ export default function PartsWarrantyManager({
     try {
       const res = await fetch("/api/warranty/circulars", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           id: newCirId || undefined,
           title: newCirTitle,
@@ -199,7 +258,7 @@ export default function PartsWarrantyManager({
     try {
       const res = await fetch("/api/warranty/validate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           jobCardId: valJobCardId || undefined,
           dateOfSale: valDateOfSale || undefined,
@@ -933,15 +992,80 @@ export default function PartsWarrantyManager({
               </div>
             </div>
 
+            {/* Unified Vehicle Search Bar (VRN or Chassis Number) */}
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80 space-y-3">
+              <label className="block text-[10px] font-bold text-indigo-400 uppercase tracking-wider">
+                🔍 Query Vehicle Master & Warranty Status (GCP Cloud SQL)
+              </label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  placeholder="Enter Vehicle Registration Number (VRN) or Chassis Number..."
+                  value={valSearchInput}
+                  onChange={(e) => setValSearchInput(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 placeholder:text-slate-600 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSearchVehicleWarranty(valSearchInput);
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={valVehicleSearchLoading}
+                  onClick={() => handleSearchVehicleWarranty(valSearchInput)}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-md"
+                >
+                  {valVehicleSearchLoading ? "Searching..." : "Search Warranty"}
+                </button>
+              </div>
+
+              {valVehicleSearchError && (
+                <p className="text-xs text-rose-400 font-semibold">{valVehicleSearchError}</p>
+              )}
+
+              {valVehicleInfo && (
+                <div className="space-y-3 pt-1">
+                  <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] text-slate-300">
+                    <div>
+                      <span className="text-slate-500 block text-[9px] uppercase font-bold">Chassis Number</span>
+                      <span className="font-mono text-slate-200 font-bold">{valVehicleInfo.vehicle.chassis_no}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[9px] uppercase font-bold">Registration No</span>
+                      <span className="font-mono text-slate-200 font-bold">{valVehicleInfo.vehicle.registration_no || "N/A"}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[9px] uppercase font-bold">Warranty Status</span>
+                      <span className={`font-black uppercase tracking-wider ${valVehicleInfo.warrantyStatus.includes('Expired') ? 'text-rose-400' : 'text-emerald-400'}`}>
+                        {valVehicleInfo.warrantyStatus} ({valVehicleInfo.warrantyType})
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[9px] uppercase font-bold">FSB Status</span>
+                      <span className="font-bold text-indigo-400">{valVehicleInfo.fsbStatus}</span>
+                    </div>
+                  </div>
+
+                  {/* Tata Motors CRM Claims History Integration / Explanation Card */}
+                  <div className="bg-amber-950/20 border border-amber-900/40 p-3 rounded-lg text-[11px] text-amber-300/90 leading-relaxed">
+                    <strong>⚠️ OEM Claims History Status:</strong> {valVehicleInfo.message}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <form onSubmit={handleValidateWarranty} className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                  1. Select Active Vehicle Job (Optional)
+                  1. Active Workshop Job (Optional)
                 </label>
                 <select
                   value={valJobCardId}
+                  disabled={!!valVehicleInfo}
                   onChange={(e) => handleSelectJobCardForVal(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
                 >
                   <option value="">Select job card...</option>
                   {jobCards.map(j => (
@@ -959,9 +1083,10 @@ export default function PartsWarrantyManager({
                 <input
                   type="date"
                   value={valDateOfSale}
+                  disabled={!!valVehicleInfo}
                   onChange={(e) => setValDateOfSale(e.target.value)}
                   placeholder="Select Date of Sale"
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-none disabled:opacity-60 disabled:bg-slate-950"
                 />
               </div>
 
@@ -969,15 +1094,14 @@ export default function PartsWarrantyManager({
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                   3. Vehicle Model / PPL Segment
                 </label>
-                <select
+                <input
+                  type="text"
                   value={valModelNoPpl}
+                  disabled={!!valVehicleInfo}
                   onChange={(e) => setValModelNoPpl(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-                >
-                  {['Prima', 'Signa', 'Ultra', 'Intra', 'Ace', 'Winger', 'LPT 407', 'LPT 709', 'LPT 1109', 'LPT 1412', 'LPT 2518', 'LPT 3118', 'Starbus', 'Cityride', 'Divo'].map((model) => (
-                    <option key={model} value={model}>{model}</option>
-                  ))}
-                </select>
+                  placeholder="e.g. Signa"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-none disabled:opacity-60 disabled:bg-slate-950"
+                />
               </div>
 
               <div>
@@ -986,8 +1110,9 @@ export default function PartsWarrantyManager({
                 </label>
                 <select
                   value={valFsbStatus}
+                  disabled={!!valVehicleInfo}
                   onChange={(e) => setValFsbStatus(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
                 >
                   <option value="Not Applicable">Not Applicable</option>
                   <option value="Applicable and Done">Applicable and Done</option>

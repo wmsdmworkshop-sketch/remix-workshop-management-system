@@ -25,6 +25,8 @@ import {
 } from "lucide-react";
 import { Employee, User } from "../types";
 import SelfServiceAttendance from "./SelfServiceAttendance";
+import OvertimeEmployeeDashboard from "./OvertimeEmployeeDashboard";
+import OvertimeApprovalPortal from "./OvertimeApprovalPortal";
 
 interface AttendanceRecord {
   attendance_id: number;
@@ -62,9 +64,11 @@ interface TodaySummary {
 interface AttendanceShiftLogProps {
   employees: Employee[];
   currentUser?: User;
+  token?: string | null;
+  jobCards?: any[];
 }
 
-export default function AttendanceShiftLog({ employees, currentUser }: AttendanceShiftLogProps) {
+export default function AttendanceShiftLog({ employees, currentUser, token, jobCards }: AttendanceShiftLogProps) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [todaySummary, setTodaySummary] = useState<TodaySummary | null>(null);
@@ -72,6 +76,7 @@ export default function AttendanceShiftLog({ employees, currentUser }: Attendanc
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+  const [activeSubTab, setActiveSubTab] = useState<"attendance" | "overtime" | "overtime-approvals">("attendance");
 
   // Form state
   const [formEmployeeId, setFormEmployeeId] = useState<number>(0);
@@ -98,8 +103,10 @@ export default function AttendanceShiftLog({ employees, currentUser }: Attendanc
       ]);
       const attendanceData = await attendanceRes.json();
       const todayData = await todayRes.json();
-      setRecords(attendanceData);
-      setTodaySummary(todayData);
+      console.log("/api/workforce/attendance", attendanceData);
+      setRecords(Array.isArray(attendanceData) ? attendanceData : []);
+      console.log("/api/workforce/attendance/today", todayData);
+      setTodaySummary(todayData && typeof todayData === "object" ? todayData : {});
     } catch (err) {
       console.error("Failed to fetch attendance:", err);
     } finally {
@@ -192,16 +199,65 @@ export default function AttendanceShiftLog({ employees, currentUser }: Attendanc
     Night: Moon,
   };
 
-  if (isSelfService) {
-    return (
-      <div className="py-4">
-        <SelfServiceAttendance employeeId={empId} onSuccess={() => {}} />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
+      {/* Sub-navigation tabs */}
+      <div className="flex border-b border-slate-800 space-x-6 mb-6">
+        <button
+          type="button"
+          onClick={() => setActiveSubTab("attendance")}
+          className={`pb-3 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 cursor-pointer ${
+            activeSubTab === "attendance" 
+              ? "border-[#06B6D4] text-[#06B6D4]" 
+              : "border-transparent text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          <Calendar className="h-4 w-4" />
+          <span>Attendance</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSubTab("overtime")}
+          className={`pb-3 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 cursor-pointer ${
+            activeSubTab === "overtime" 
+              ? "border-[#06B6D4] text-[#06B6D4]" 
+              : "border-transparent text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          <Clock className="h-4 w-4" />
+          <span>Overtime</span>
+        </button>
+        {canApprove && (
+          <button
+            type="button"
+            onClick={() => setActiveSubTab("overtime-approvals")}
+            className={`pb-3 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 cursor-pointer ${
+              activeSubTab === "overtime-approvals" 
+                ? "border-[#06B6D4] text-[#06B6D4]" 
+                : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <ShieldCheck className="h-4 w-4" />
+            <span>Overtime Approvals</span>
+          </button>
+        )}
+      </div>
+
+      {activeSubTab === "overtime" && (
+        <OvertimeEmployeeDashboard currentUser={currentUser} token={token} employees={employees} jobCards={jobCards} />
+      )}
+
+      {activeSubTab === "overtime-approvals" && canApprove && (
+        <OvertimeApprovalPortal currentUser={currentUser} token={token} employees={employees} jobCards={jobCards} />
+      )}
+
+      {activeSubTab === "attendance" && (
+        isSelfService ? (
+          <div className="py-4">
+            <SelfServiceAttendance employeeId={empId} onSuccess={() => {}} />
+          </div>
+        ) : (
+          <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
@@ -604,6 +660,10 @@ export default function AttendanceShiftLog({ employees, currentUser }: Attendanc
             </tbody>
           </table>
         </div>
+      )}
+
+          </div>
+        )
       )}
 
       {/* Profile/Captured Photo Modal Overlay */}

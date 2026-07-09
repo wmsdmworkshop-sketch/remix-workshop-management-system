@@ -704,6 +704,8 @@ export default function JobCardManager({
   const [editNoOfLaborers, setEditNoOfLaborers] = useState("");
   const [editActualTimeTaken, setEditActualTimeTaken] = useState("");
 
+  const isEditAdvisorUnassigned = !editServiceAdvisor || !editServiceAdvisor.trim() || editServiceAdvisor === "Unassigned" || editServiceAdvisor === "Unassigned Advisor";
+
   React.useEffect(() => {
     const userObj = currentUser || (() => {
       try {
@@ -3203,7 +3205,7 @@ export default function JobCardManager({
                 <div>
                   <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Allocated Bay</label>
                   <select 
-                    disabled={currentUserRole === "Service Advisor"}
+                    disabled={currentUserRole === "Service Advisor" || isEditAdvisorUnassigned}
                     value={editBayId || ""}
                     onChange={(e) => setEditBayId(e.target.value ? Number(e.target.value) : null)}
                     className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden disabled:opacity-60 disabled:bg-slate-100"
@@ -3224,7 +3226,7 @@ export default function JobCardManager({
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Bay No</label>
                     <input 
                       type="text"
-                      disabled={currentUserRole === "Service Advisor"}
+                      disabled={currentUserRole === "Service Advisor" || isEditAdvisorUnassigned}
                       list="bays-datalist"
                       value={editBayNo}
                       onChange={(e) => setEditBayNo(e.target.value)}
@@ -3256,12 +3258,15 @@ export default function JobCardManager({
                       placeholder="Advisor Name"
                       className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
                     />
+                    {isEditAdvisorUnassigned && (
+                      <span className="text-[10px] text-amber-600 font-bold block mt-1">⚠️ Assign Advisor to allocate Bay/Tech.</span>
+                    )}
                   </div>
                   <div>
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Technician Name</label>
                     <input 
                       type="text"
-                      disabled={currentUserRole === "Service Advisor"}
+                      disabled={currentUserRole === "Service Advisor" || isEditAdvisorUnassigned}
                       list="technicians-datalist"
                       value={editTechnicianName}
                       onChange={(e) => setEditTechnicianName(e.target.value)}

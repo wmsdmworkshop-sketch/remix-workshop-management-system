@@ -1,18 +1,16 @@
-import * as dotenv from "dotenv";
-dotenv.config({ override: true });
-
 import mysql from "mysql2/promise";
+import { envConfig } from "../config/env.ts";
 
 // Function to create a new MySQL connection pool.
 export const createPool = () => {
-  const host = process.env.DB_HOST || "thomas.proxy.rlwy.net";
-  const port = process.env.DB_PORT ? Number(process.env.DB_PORT) : 50733;
-  const user = process.env.DB_USER || "root";
-  const password = process.env.DB_PASSWORD || "mjzwCcYkEYSYRAADKjnyAiEZGGrtwAri";
-  const database = process.env.DB_DATABASE || "railway";
-  const socketPath = process.env.DB_SOCKET_PATH || undefined;
-
-  const ssl = process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : undefined;
+  const host = envConfig.DB_HOST;
+  const port = envConfig.DB_PORT;
+  const user = envConfig.DB_USER;
+  const password = envConfig.DB_PASSWORD;
+  const database = envConfig.DB_DATABASE;
+  const socketPath = envConfig.DB_SOCKET_PATH;
+  
+  const ssl = envConfig.DB_SSL ? { rejectUnauthorized: false } : undefined;
 
   const config: mysql.PoolOptions = {
     host: socketPath ? undefined : host,
@@ -26,7 +24,7 @@ export const createPool = () => {
     waitForConnections: true,
     queueLimit: 0,
     dateStrings: true, // Return dates as strings to avoid automatic timezone conversions
-    connectTimeout: 5000, // 5s — fall back to local memory if Railway is unreachable
+    connectTimeout: 10000,
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000,
   };

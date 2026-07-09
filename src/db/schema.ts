@@ -43,6 +43,12 @@ export const employees = pgTable("employees", {
   target_revenue: integer("target_revenue"),
   paid_pct: text("paid_pct"),
   tml_claim_pct: text("tml_claim_pct"),
+  department: text("department"),
+  workshop_id: integer("workshop_id"),
+  shift_id: integer("shift_id"),
+  joining_date: text("joining_date"),
+  profile_photo_url: text("profile_photo_url"),
+  face_embedding_reference: text("face_embedding_reference"),
 });
 
 // Bays
@@ -379,5 +385,135 @@ export const reworkTracking = pgTable("rework_tracking", {
   rework_completed: boolean("rework_completed").notNull(),
   rework_revenue: decimal("rework_revenue", { precision: 10, scale: 2 }).notNull(),
   created_at: timestamp("created_at").defaultNow(),
+});
+
+// Workshops table
+export const workshops = pgTable("workshops", {
+  workshop_id: integer("workshop_id").primaryKey(),
+  workshop_name: text("workshop_name").notNull(),
+  latitude: decimal("latitude", { precision: 9, scale: 6 }).notNull(),
+  longitude: decimal("longitude", { precision: 9, scale: 6 }).notNull(),
+  allowed_gps_radius: integer("allowed_gps_radius").notNull(),
+  is_active: boolean("is_active").notNull(),
+});
+
+// Shifts table
+export const shifts = pgTable("shifts", {
+  shift_id: integer("shift_id").primaryKey(),
+  shift_type: text("shift_type").notNull(),
+  start_time: text("start_time").notNull(),
+  end_time: text("end_time").notNull(),
+  is_active: boolean("is_active").notNull(),
+});
+
+// Approval matrices table
+export const approvalMatrices = pgTable("approval_matrices", {
+  matrix_id: integer("matrix_id").primaryKey(),
+  module_name: text("module_name").notNull(),
+  ot_category: text("ot_category").notNull(),
+  workshop_id: integer("workshop_id").notNull(),
+  role_name: text("role_name").notNull(),
+  approval_level: integer("approval_level").notNull(),
+  is_active: boolean("is_active").notNull(),
+});
+
+// Overtime requests table
+export const overtimeRequests = pgTable("overtime_requests", {
+  ot_id: integer("ot_id").primaryKey(),
+  employee_id: integer("employee_id").notNull(),
+  ot_category: text("ot_category").notNull(),
+  date: text("date").notNull(),
+  shift_id: integer("shift_id").notNull(),
+  ot_start_time: text("ot_start_time").notNull(),
+  ot_end_time: text("ot_end_time").notNull(),
+  total_hours: decimal("total_hours", { precision: 5, scale: 2 }).notNull(),
+  benefit_type: text("benefit_type").notNull(),
+  ot_reason_category: text("ot_reason_category").notNull(),
+  job_card_id: integer("job_card_id"),
+  workshop_id: integer("workshop_id"),
+  department: text("department"),
+  work_description: text("work_description"),
+  comp_attendance_credit_earned: decimal("comp_attendance_credit_earned", { precision: 3, scale: 2 }),
+  snapshot_basic_salary: decimal("snapshot_basic_salary", { precision: 12, scale: 2 }),
+  snapshot_days_in_month: integer("snapshot_days_in_month"),
+  hourly_salary_rate: decimal("hourly_salary_rate", { precision: 10, scale: 2 }),
+  calculated_amount: decimal("calculated_amount", { precision: 12, scale: 2 }),
+  max_allowed_cap: decimal("max_allowed_cap", { precision: 12, scale: 2 }),
+  final_payable_amount: decimal("final_payable_amount", { precision: 12, scale: 2 }),
+  capping_reason: text("capping_reason"),
+  device_name: text("device_name").notNull(),
+  operating_system: text("operating_system").notNull(),
+  app_version: text("app_version").notNull(),
+  ip_address: text("ip_address").notNull(),
+  device_time: timestamp("device_time").notNull(),
+  server_time: timestamp("server_time").defaultNow(),
+  time_difference_seconds: integer("time_difference_seconds").notNull(),
+  face_verification_provider: text("face_verification_provider"),
+  face_match_result: text("face_match_result"),
+  face_match_score: decimal("face_match_score", { precision: 4, scale: 3 }),
+  face_verification_time: timestamp("face_verification_time"),
+  ocr_provider: text("ocr_provider"),
+  ocr_confidence: decimal("ocr_confidence", { precision: 4, scale: 3 }),
+  ocr_verification_time: timestamp("ocr_verification_time"),
+  gps_lat: decimal("gps_lat", { precision: 9, scale: 6 }).notNull(),
+  gps_lng: decimal("gps_lng", { precision: 9, scale: 6 }).notNull(),
+  gps_matched: boolean("gps_matched").notNull(),
+  ai_recommendation_status: text("ai_recommendation_status"),
+  ai_flags: text("ai_flags"),
+  current_level: integer("current_level").notNull(),
+  current_status: text("current_status").notNull(),
+  payroll_period: text("payroll_period"),
+  paid_at: timestamp("paid_at"),
+  payment_reference: text("payment_reference"),
+  created_by: integer("created_by").notNull(),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+});
+
+// Overtime attachments table
+export const overtimeAttachments = pgTable("overtime_attachments", {
+  attachment_id: integer("attachment_id").primaryKey(),
+  ot_id: integer("ot_id").notNull(),
+  attachment_type: text("attachment_type").notNull(),
+  file_path: text("file_path").notNull(),
+  uploaded_at: timestamp("uploaded_at").defaultNow(),
+});
+
+// Overtime workflow history table
+export const overtimeWorkflowHistory = pgTable("overtime_workflow_history", {
+  history_id: integer("history_id").primaryKey(),
+  ot_id: integer("ot_id").notNull(),
+  level: integer("level").notNull(),
+  approver_id: integer("approver_id").notNull(),
+  approver_role: text("approver_role").notNull(),
+  action_date: text("action_date").notNull(),
+  action_time: text("action_time").notNull(),
+  decision: text("decision").notNull(),
+  remarks: text("remarks"),
+});
+
+// Overtime API logs table
+export const overtimeApiLogs = pgTable("overtime_api_logs", {
+  log_id: integer("log_id").primaryKey(),
+  request_id: text("request_id").notNull(),
+  user_id: integer("user_id"),
+  api_endpoint: text("api_endpoint").notNull(),
+  ip_address: text("ip_address").notNull(),
+  device_info: text("device_info").notNull(),
+  execution_duration_ms: integer("execution_duration_ms").notNull(),
+  response_status: integer("response_status").notNull(),
+  timestamp: timestamp("timestamp").defaultNow(),
+});
+
+// Overtime audit logs table
+export const overtimeAuditLogs = pgTable("overtime_audit_logs", {
+  log_id: integer("log_id").primaryKey(),
+  ot_id: integer("ot_id").notNull(),
+  action: text("action").notNull(),
+  actor_id: integer("actor_id").notNull(),
+  actor_role: text("actor_role").notNull(),
+  timestamp: timestamp("timestamp").defaultNow(),
+  ip_address: text("ip_address").notNull(),
+  payload_diff: text("payload_diff").notNull(),
 });
 

@@ -22,7 +22,19 @@ import {
   Shield,
   HelpCircle,
   Settings,
-  ArrowLeft
+  ArrowLeft,
+  ShieldAlert,
+  DollarSign,
+  Truck,
+  Award,
+  User as UserIcon,
+  Briefcase,
+  Package,
+  ShieldCheck,
+  AlertTriangle,
+  AlertOctagon,
+  CheckCircle,
+  AlertCircle
 } from "lucide-react";
 import UserManagement from "./components/UserManagement";
 import { 
@@ -32,16 +44,7 @@ import {
   TechnicianKpiPanel, 
   TechnicianProfilePanel 
 } from "./components/RoleSpecialPanels";
-import { 
-  ShieldAlert, 
-  DollarSign, 
-  Truck, 
-  Award, 
-  User as UserIcon,
-  Briefcase,
-  Package,
-  ShieldCheck
-} from "lucide-react";
+
 import GateEntryManager from "./components/GateEntryManager";
 import PartsWarrantyManager from "./components/PartsWarrantyManager";
 import CashierManager from "./components/CashierManager";
@@ -76,9 +79,13 @@ import AuthScreen from "./components/AuthScreen";
 import VehicleLookup from "./components/VehicleLookup";
 import CpscCertificationPanel from "./components/CpscCertificationPanel";
 import AttendanceShiftLog from "./components/AttendanceShiftLog";
-import DmsImporterConsolidated from "./components/dms-import";
+import OvertimeEmployeeDashboard from "./components/OvertimeEmployeeDashboard";
+import OvertimeApprovalPortal from "./components/OvertimeApprovalPortal";
+import DmsImporterConsolidated from "./components/dms-import"; // dead import kept for type reference only — not rendered
 import QuerySearch from "./components/query";
 import BillingExit from "./components/billing-exit";
+import BreakdownManagement from "./components/BreakdownManagement";
+import ExceptionReport from "./components/ExceptionReport";
 
 function darkenColor(hex: string, percent: number): string {
   let num = parseInt(hex.replace("#", ""), 16),
@@ -93,6 +100,15 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [lookupQuery, setLookupQuery] = useState<string>("");
+
+  // --- Toast notification system ---
+  const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: "success" | "error" | "info" }>>([]);
+  let toastCounter = 0;
+  const showToast = (message: string, type: "success" | "error" | "info" = "info") => {
+    const id = ++toastCounter;
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+  };
 
   // UX Settings & Brand Customization states
   const [primaryColor, setPrimaryColor] = useState<string>(() => {
@@ -187,6 +203,8 @@ export default function App() {
     developer: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
+      { id: "breakdown", label: "Breakdowns", icon: AlertTriangle },
+      { id: "exception-report", label: "Exceptions", icon: AlertOctagon },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
@@ -205,6 +223,8 @@ export default function App() {
     admin: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
+      { id: "breakdown", label: "Breakdowns", icon: AlertTriangle },
+      { id: "exception-report", label: "Exceptions", icon: AlertOctagon },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
@@ -371,6 +391,21 @@ export default function App() {
     ],
   };
 
+  // Dynamically ensure every role has the "My Profile" tab
+  Object.keys(ROLE_TABS).forEach(role => {
+    const tabs = ROLE_TABS[role];
+    const attendanceIdx = tabs.findIndex(t => t.id === "attendance");
+    const breakdownRoles = ["service_manager", "workshop_manager", "supervisor", "floor_supervisor", "floor_incharge", "admin", "developer"];
+    if (breakdownRoles.includes(role) && !tabs.some(t => t.id === "breakdown")) {
+      const dbIdx = tabs.findIndex(t => t.id === "dashboard");
+      const insertIdx = dbIdx !== -1 ? dbIdx + 1 : 0;
+      tabs.splice(insertIdx, 0, { id: "breakdown", label: "Breakdowns", icon: AlertTriangle });
+    }
+    if (!tabs.some(t => t.id === "tech-profile")) {
+      tabs.push({ id: "tech-profile", label: "My Profile", icon: UserIcon });
+    }
+  });
+
   const isTabPermitted = (tabId: string) => {
     if (!user) return false;
     const permittedTabs = ROLE_TABS[user.role] || [];
@@ -460,8 +495,18 @@ export default function App() {
   };
 
   // Fetch all database state from server
-  const fetchAllData = async () => {
+  const fetchAllData = async (authToken?: string) => {
+    const activeToken = authToken || token;
+    if (!activeToken) {
+      console.warn("Skipping fetchAllData: No active token available.");
+      return;
+    }
+
     try {
+      const headers = {
+        "Authorization": `Bearer ${activeToken}`
+      };
+
       const [
         empRes,
         bayRes,
@@ -473,35 +518,62 @@ export default function App() {
         alertRes,
         splitRes
       ] = await Promise.all([
-        fetch("/api/employees"),
-        fetch("/api/bays"),
-        fetch("/api/sr-types"),
-        fetch("/api/job-cards"),
-        fetch("/api/job-revenues"),
-        fetch("/api/carry-forward"),
-        fetch("/api/rework"),
-        fetch("/api/alerts"),
-        fetch("/api/revenue-splits")
+        fetch("/api/employees", { headers }),
+        fetch("/api/bays", { headers }),
+        fetch("/api/sr-types", { headers }),
+        fetch("/api/job-cards", { headers }),
+        fetch("/api/job-revenues", { headers }),
+        fetch("/api/carry-forward", { headers }),
+        fetch("/api/rework", { headers }),
+        fetch("/api/alerts", { headers }),
+        fetch("/api/revenue-splits", { headers })
       ]);
 
-      setEmployees(await empRes.json());
-      setBays(await bayRes.json());
-      setSrTypes(await srRes.json());
-      setRevenueSplits(await splitRes.json());
+      if (empRes.status === 401 || jobRes.status === 401) {
+        console.warn("Session expired or invalid token. Logging out...");
+        handleLogout();
+        return;
+      }
+
+      const empJson = await empRes.json();
+      console.log("/api/employees", empJson);
+      setEmployees(Array.isArray(empJson) ? empJson : []);
+
+      const bayJson = await bayRes.json();
+      console.log("/api/bays", bayJson);
+      setBays(Array.isArray(bayJson) ? bayJson : []);
+
+      const srJson = await srRes.json();
+      console.log("/api/sr-types", srJson);
+      setSrTypes(Array.isArray(srJson) ? srJson : []);
+
+      const splitJson = await splitRes.json();
+      console.log("/api/revenue-splits", splitJson);
+      setRevenueSplits(Array.isArray(splitJson) ? splitJson : []);
 
       const jobsData = await jobRes.json();
-      setJobCards(jobsData.jobCards || []);
-      setAllocations(jobsData.technicianMaps || []);
-      setProjectedRevenue(jobsData.projectedRevenue || 0);
-      setGeneratedRevenue(jobsData.generatedRevenue || 0);
+      console.log("/api/job-cards", jobsData);
+      setJobCards(jobsData && Array.isArray(jobsData.jobCards) ? jobsData.jobCards : []);
+      setAllocations(jobsData && Array.isArray(jobsData.technicianMaps) ? jobsData.technicianMaps : []);
+      setProjectedRevenue(jobsData ? jobsData.projectedRevenue || 0 : 0);
+      setGeneratedRevenue(jobsData ? jobsData.generatedRevenue || 0 : 0);
 
       const revsData = await revRes.json();
-      setRevenues(revsData.revenues || []);
-      setSplitDetails(revsData.details || []);
+      console.log("/api/job-revenues", revsData);
+      setRevenues(revsData && Array.isArray(revsData.revenues) ? revsData.revenues : []);
+      setSplitDetails(revsData && Array.isArray(revsData.details) ? revsData.details : []);
 
-      setCarryForwardLogs(await cfRes.json());
-      setReworkLogs(await reworkRes.json());
-      setAlertLogs(await alertRes.json());
+      const cfJson = await cfRes.json();
+      console.log("/api/carry-forward", cfJson);
+      setCarryForwardLogs(Array.isArray(cfJson) ? cfJson : []);
+
+      const reworkJson = await reworkRes.json();
+      console.log("/api/rework", reworkJson);
+      setReworkLogs(Array.isArray(reworkJson) ? reworkJson : []);
+
+      const alertJson = await alertRes.json();
+      console.log("/api/alerts", alertJson);
+      setAlertLogs(Array.isArray(alertJson) ? alertJson : []);
     } catch (error) {
       console.error("Error loading workshop data from server:", error);
     }
@@ -509,9 +581,10 @@ export default function App() {
 
   // Auth initiation on load
   useEffect(() => {
-    const saved = localStorage.getItem("wms_user");
-    if (saved) {
-      fetchAllData();
+    const savedUser = localStorage.getItem("wms_user");
+    const savedToken = localStorage.getItem("wms_token");
+    if (savedUser && savedToken) {
+      fetchAllData(savedToken);
     }
   }, []);
 
@@ -529,16 +602,29 @@ export default function App() {
 
   // --- ACTIONS CONTROLLERS ---
 
+  // Helper to build auth headers for API calls
+  const authHeaders = () => ({
+    "Content-Type": "application/json",
+    ...(token ? { "Authorization": `Bearer ${token}` } : {})
+  });
+
   const handleCreateJob = async (jobData: Partial<JobCard>) => {
     try {
       const res = await fetch("/api/job-cards", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify(jobData)
       });
-      if (res.ok) fetchAllData();
-    } catch (e) {
+      if (res.ok) {
+        fetchAllData();
+        showToast("Job card created successfully.", "success");
+      } else {
+        const err = await res.json().catch(() => ({ error: "Unknown error" }));
+        showToast(`Failed to create job card: ${err.error || res.statusText}`, "error");
+      }
+    } catch (e: any) {
       console.error(e);
+      showToast("Network error creating job card. Please try again.", "error");
     }
   };
 
@@ -546,12 +632,18 @@ export default function App() {
     try {
       const res = await fetch(`/api/job-cards/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ status })
       });
-      if (res.ok) fetchAllData();
-    } catch (e) {
+      if (res.ok) {
+        fetchAllData();
+      } else {
+        const err = await res.json().catch(() => ({ error: "Unknown error" }));
+        showToast(`Failed to update job status: ${err.error || res.statusText}`, "error");
+      }
+    } catch (e: any) {
       console.error(e);
+      showToast("Network error updating job status.", "error");
     }
   };
 
@@ -559,12 +651,18 @@ export default function App() {
     try {
       const res = await fetch(`/api/job-cards/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify(updatedFields)
       });
-      if (res.ok) fetchAllData();
-    } catch (e) {
+      if (res.ok) {
+        fetchAllData();
+      } else {
+        const err = await res.json().catch(() => ({ error: "Unknown error" }));
+        showToast(`Failed to update job card: ${err.error || res.statusText}`, "error");
+      }
+    } catch (e: any) {
       console.error(e);
+      showToast("Network error updating job card.", "error");
     }
   };
 
@@ -572,12 +670,19 @@ export default function App() {
     try {
       const res = await fetch(`/api/job-cards/${id}/assign`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ allocations: allocs })
       });
-      if (res.ok) fetchAllData();
-    } catch (e) {
+      if (res.ok) {
+        fetchAllData();
+        showToast("Technicians assigned successfully.", "success");
+      } else {
+        const err = await res.json().catch(() => ({ error: "Unknown error" }));
+        showToast(`Failed to assign technicians: ${err.error || res.statusText}`, "error");
+      }
+    } catch (e: any) {
       console.error(e);
+      showToast("Network error assigning technicians.", "error");
     }
   };
 
@@ -585,12 +690,19 @@ export default function App() {
     try {
       const res = await fetch(`/api/job-cards/${id}/revenue`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ labour_amount: labour, parts_amount: parts })
       });
-      if (res.ok) fetchAllData();
-    } catch (e) {
+      if (res.ok) {
+        fetchAllData();
+        showToast("Revenue calculated and saved.", "success");
+      } else {
+        const err = await res.json().catch(() => ({ error: "Unknown error" }));
+        showToast(`Revenue calculation failed: ${err.error || res.statusText}`, "error");
+      }
+    } catch (e: any) {
       console.error(e);
+      showToast("Network error calculating revenue.", "error");
     }
   };
 
@@ -837,7 +949,8 @@ export default function App() {
           setUser(currentUser);
           setToken(currentToken);
           setNeedsAuth(false);
-          fetchAllData();
+          // Pass token directly — React state is async so `token` is still null here
+          fetchAllData(currentToken || undefined);
         }} 
       />
     );
@@ -850,18 +963,18 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#f1f5f9] flex flex-col font-sans text-slate-900">
+    <div className="min-h-screen bg-[#0B1220] flex flex-col font-sans text-slate-100">
       
       {/* Sidebar Navigation - Desktop */}
-      <aside className="hidden md:flex flex-col h-screen fixed left-0 top-0 w-64 bg-[#1e293b] text-slate-400 p-5 shrink-0 justify-between z-40 shadow-xl">
+      <aside className="hidden md:flex flex-col h-screen fixed left-0 top-0 w-64 bg-[#111827]/90 text-slate-400 p-5 shrink-0 justify-between z-40 shadow-2xl border-r border-slate-800/80 backdrop-blur-md">
         <div className="flex flex-col flex-1 min-h-0 space-y-4">
-          <div className="flex items-center gap-3 border-b border-slate-700/50 pb-4 shrink-0">
-            <div className="w-8 h-8 bg-brand rounded-lg flex items-center justify-center font-bold text-xl text-white">
+          <div className="flex items-center gap-3 border-b border-slate-800/80 pb-4 shrink-0">
+            <div className="w-8 h-8 bg-gradient-to-br from-[#2563EB] to-[#06B6D4] rounded-lg flex items-center justify-center font-black text-xl text-white shadow-lg shadow-[#2563EB]/20">
               W
             </div>
             <div>
-              <h2 className="font-bold text-slate-100 text-sm tracking-tight uppercase">WMS Workshop</h2>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Sync Engine</p>
+              <h2 className="font-extrabold text-white text-sm tracking-wide uppercase">WORKFORCE 1.1</h2>
+              <p className="text-[9px] text-[#06B6D4] font-bold uppercase tracking-widest leading-none mt-0.5">Sync Engine</p>
             </div>
           </div>
 
@@ -880,14 +993,16 @@ export default function App() {
                       setDashboardSelectedJob(null);
                     }
                   }}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-xs font-bold transition-all ${
-                    activeTab === tab.id ? "bg-slate-800 text-white border border-slate-700/50 shadow-sm" : "hover:bg-slate-800 hover:text-white"
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all border ${
+                    activeTab === tab.id 
+                      ? "bg-gradient-to-r from-[#2563EB]/20 to-[#06B6D4]/5 text-white border-[#2563EB]/35 shadow-lg shadow-[#2563EB]/5" 
+                      : "bg-transparent border-transparent hover:bg-slate-800/50 hover:text-white"
                   }`}
                 >
-                  <TabIcon className="h-4 w-4" />
+                  <TabIcon className={`h-4.5 w-4.5 ${activeTab === tab.id ? "text-[#06B6D4]" : ""}`} />
                   <span className="flex-1 text-left">{tab.label}</span>
                   {tab.id === "jobs" && activeJobCount > 0 && (
-                    <span className="ml-auto bg-brand text-white text-[9px] font-extrabold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 shadow-lg shadow-brand/30 animate-pulse">
+                    <span className="ml-auto bg-gradient-to-r from-[#2563EB] to-[#06B6D4] text-white text-[9px] font-extrabold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 shadow-lg shadow-[#2563EB]/30 animate-pulse">
                       {activeJobCount}
                     </span>
                   )}
@@ -897,14 +1012,14 @@ export default function App() {
           </nav>
           
           {(isAdmin || isDeveloper) && (
-            <div className="pt-3 border-t border-slate-700/50 space-y-2 shrink-0">
+            <div className="pt-3 border-t border-slate-800/80 space-y-2 shrink-0">
               <button
                 onClick={handleReloadDatabase}
                 disabled={isReloading}
-                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-bold transition-all border ${
+                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
                   reloadSuccess
                     ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                    : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white"
+                    : "bg-slate-900 text-slate-300 border-slate-800 hover:bg-slate-800/80 hover:text-white"
                 } disabled:opacity-50 cursor-pointer`}
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${isReloading ? "animate-spin" : ""}`} />
@@ -914,7 +1029,7 @@ export default function App() {
               <button
                 onClick={handleClearJobCards}
                 disabled={isClearing}
-                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-bold transition-all border ${
+                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
                   clearSuccess
                     ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
                     : "bg-rose-950/25 hover:bg-rose-900/30 text-rose-300 border-rose-500/25 hover:border-rose-500/40"
@@ -928,34 +1043,34 @@ export default function App() {
         </div>
 
         {/* User context footer */}
-        <div className="border-t border-slate-700/50 pt-4 flex flex-col gap-3">
-          <div className="flex items-center space-x-3 px-2 py-2 mb-1 bg-brand/10 border border-brand/20 rounded-lg">
-            <div className="w-2 h-2 bg-brand rounded-full animate-pulse"></div>
-            <span className="text-[10px] text-brand font-bold uppercase tracking-wider">System Live • 2.5.0</span>
+        <div className="border-t border-slate-800/80 pt-4 flex flex-col gap-3">
+          <div className="flex items-center space-x-3 px-3 py-2 mb-1 bg-slate-950/60 border border-slate-800/80 rounded-xl">
+            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+            <span className="text-[9px] text-[#06B6D4] font-bold uppercase tracking-widest">SYSTEM ONLINE • v1.1</span>
           </div>
 
           {user ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between text-xs font-semibold">
                 <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-brand uppercase border border-slate-700 shrink-0">
+                  <div className="h-8 w-8 rounded-full bg-slate-900 flex items-center justify-center font-bold text-[#06B6D4] uppercase border border-slate-800 shrink-0">
                     {(user.username || "").slice(0, 2)}
                   </div>
                   <div className="truncate max-w-[120px]">
                     <p className="text-slate-200 truncate font-bold text-xs">{user.full_name || ""}</p>
-                    <p className="text-[9px] text-brand font-bold uppercase tracking-wider leading-none mt-0.5">{(user.role || "").split("_").join(" ")}</p>
+                    <p className="text-[9px] text-[#06B6D4] font-bold uppercase tracking-wider leading-none mt-0.5">{(user.role || "").split("_").join(" ")}</p>
                     <p className="text-[9px] text-slate-500 truncate leading-none mt-0.5">@{user.username || ""}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button 
                     onClick={() => setShowSettingsDrawer(true)} 
-                    className="text-slate-400 hover:text-brand transition-colors cursor-pointer"
+                    className="text-slate-400 hover:text-white transition-colors cursor-pointer"
                     title="UX Theme Settings"
                   >
                     <Settings className="h-4 w-4" />
                   </button>
-                  <button onClick={handleLogout} className="text-slate-400 hover:text-brand transition-colors cursor-pointer">
+                  <button onClick={handleLogout} className="text-slate-400 hover:text-white transition-colors cursor-pointer">
                     <LogOut className="h-4 w-4" />
                   </button>
                 </div>
@@ -1105,195 +1220,210 @@ export default function App() {
       )}
 
       {/* Primary Main Stage */}
-      <main className={`md:ml-64 flex-1 p-4 md:p-6 max-w-7xl mx-auto w-full min-h-screen overflow-y-auto ${showBottomNav ? "pb-24" : ""}`}>
-        {activeTab === "dashboard" && (
-          <Dashboard 
-            jobCards={jobCards}
-            bays={bays}
-            alerts={alertLogs}
-            employees={employees}
-            onAcknowledgeAlert={handleAcknowledgeAlert}
-            onSelectJob={(job) => {
-              setDashboardSelectedJob(job);
-              setActiveTab("jobs");
-            }}
-            onTabChange={(tab) => setActiveTab(tab as any)}
-            projectedRevenue={projectedRevenue}
-            generatedRevenue={generatedRevenue}
-          />
-        )}
+      <main className={`md:ml-64 flex-1 p-4 md:p-6 w-full min-h-screen overflow-y-auto ${showBottomNav ? "pb-24" : ""}`}>
+        <div className="max-w-7xl mx-auto w-full">
+          {activeTab === "dashboard" && (
+            <Dashboard 
+              jobCards={jobCards}
+              bays={bays}
+              alerts={alertLogs}
+              employees={employees}
+              onAcknowledgeAlert={handleAcknowledgeAlert}
+              onSelectJob={(job) => {
+                setDashboardSelectedJob(job);
+                setActiveTab("jobs");
+              }}
+              onTabChange={(tab) => setActiveTab(tab as any)}
+              projectedRevenue={projectedRevenue}
+              generatedRevenue={generatedRevenue}
+            />
+          )}
 
-        {activeTab === "vehicle-lookup" && (
-          <VehicleLookup
-            jobCards={jobCards}
-            employees={employees}
-            initialQuery={lookupQuery}
-            onClearQuery={() => setLookupQuery("")}
-          />
-        )}
+          {activeTab === "vehicle-lookup" && (
+            <VehicleLookup
+              jobCards={jobCards}
+              employees={employees}
+              initialQuery={lookupQuery}
+              onClearQuery={() => setLookupQuery("")}
+            />
+          )}
 
-        {activeTab === "jobs" && (
-          <JobCardManager 
-            jobCards={jobCards || []}
-            bays={bays || []}
-            srTypes={srTypes || []}
-            employees={employees || []}
-            allocations={allocations || []}
-            revenues={revenues || []}
-            splitDetails={splitDetails || []}
-            onCreateJob={handleCreateJob}
-            onUpdateJob={handleUpdateJob}
-            onUpdateJobStatus={handleUpdateJobStatus}
-            onAssignTechnicians={handleAssignTechnicians}
-            onCalculateRevenue={handleCalculateRevenue}
-            onRaiseCarryForward={handleRaiseCarryForward}
-            onRaiseRework={handleRaiseRework}
-            selectedJobExternal={dashboardSelectedJob}
-            currentUserRole={userRole}
-            currentUser={user}
-            onLookupVehicle={handleLookupVehicle}
-          />
-        )}
+          {activeTab === "breakdown" && (
+            <BreakdownManagement />
+          )}
 
-        {activeTab === "employees" && (
-          <EmployeeDirectory 
-            employees={employees}
-            onAddEmployee={handleAddEmployee}
-            onUpdateEmployee={handleUpdateEmployee}
-            onDeleteEmployee={handleDeleteEmployee}
-            onBulkImportEmployees={handleBulkImportEmployees}
-            bays={bays}
-            onAddBay={handleAddBay}
-            onUpdateBay={handleUpdateBay}
-            onDeleteBay={handleDeleteBay}
-            srTypes={srTypes}
-            onAddSRType={handleAddSRType}
-            onUpdateSRType={handleUpdateSRType}
-            onDeleteSRType={handleDeleteSRType}
-            revenueSplits={revenueSplits}
-            onAddSplit={handleAddSplit}
-            onUpdateSplit={handleUpdateSplit}
-            onDeleteSplit={handleDeleteSplit}
-            isAdmin={isAdmin}
-            setIsAdmin={() => {}}
-            onRefresh={fetchAllData}
-          />
-        )}
+          {activeTab === "exception-report" && (
+            <ExceptionReport />
+          )}
 
-        {activeTab === "productivity" && (
-          <ProductivityDashboard 
-            employees={employees}
-            jobCards={jobCards}
-            onRefresh={fetchAllData}
-            isAdmin={isAdmin}
-            isManager={isManager}
-            setIsAdmin={() => {}}
-          />
-        )}
+          {activeTab === "jobs" && (
+            <JobCardManager 
+              jobCards={jobCards || []}
+              bays={bays || []}
+              srTypes={srTypes || []}
+              employees={employees || []}
+              allocations={allocations || []}
+              revenues={revenues || []}
+              splitDetails={splitDetails || []}
+              onCreateJob={handleCreateJob}
+              onUpdateJob={handleUpdateJob}
+              onUpdateJobStatus={handleUpdateJobStatus}
+              onAssignTechnicians={handleAssignTechnicians}
+              onCalculateRevenue={handleCalculateRevenue}
+              onRaiseCarryForward={handleRaiseCarryForward}
+              onRaiseRework={handleRaiseRework}
+              selectedJobExternal={dashboardSelectedJob}
+              currentUserRole={userRole}
+              currentUser={user}
+              onLookupVehicle={handleLookupVehicle}
+            />
+          )}
 
-        {activeTab === "bay-tat" && (
-          <ActiveBayTatMonitor 
-            jobCards={jobCards}
-            bays={bays}
-            employees={employees}
-            onUpdateJob={handleUpdateJob}
-            onRefresh={fetchAllData}
-          />
-        )}
+          {activeTab === "employees" && (
+            <EmployeeDirectory 
+              employees={employees}
+              onAddEmployee={handleAddEmployee}
+              onUpdateEmployee={handleUpdateEmployee}
+              onDeleteEmployee={handleDeleteEmployee}
+              onBulkImportEmployees={handleBulkImportEmployees}
+              bays={bays}
+              onAddBay={handleAddBay}
+              onUpdateBay={handleUpdateBay}
+              onDeleteBay={handleDeleteBay}
+              srTypes={srTypes}
+              onAddSRType={handleAddSRType}
+              onUpdateSRType={handleUpdateSRType}
+              onDeleteSRType={handleDeleteSRType}
+              revenueSplits={revenueSplits}
+              onAddSplit={handleAddSplit}
+              onUpdateSplit={handleUpdateSplit}
+              onDeleteSplit={handleDeleteSplit}
+              isAdmin={isAdmin}
+              setIsAdmin={() => {}}
+              onRefresh={fetchAllData}
+            />
+          )}
 
-        {activeTab === "dms-import" && (
-          <DmsImporter
-            jobCards={jobCards}
-            onImportRows={handleImportRows}
-            onResolveRow={handleResolveRow}
-            isAdmin={isAdmin}
-            userRole={userRole}
-          />
-        )}
+          {activeTab === "productivity" && (
+            <ProductivityDashboard 
+              employees={employees}
+              jobCards={jobCards}
+              onRefresh={fetchAllData}
+              isAdmin={isAdmin}
+              isManager={isManager}
+              setIsAdmin={() => {}}
+            />
+          )}
+
+          {activeTab === "bay-tat" && (
+            <ActiveBayTatMonitor 
+              jobCards={jobCards}
+              bays={bays}
+              employees={employees}
+              onUpdateJob={handleUpdateJob}
+              onRefresh={fetchAllData}
+            />
+          )}
+
+          {activeTab === "dms-import" && (
+            <DmsImporter
+              jobCards={jobCards}
+              onImportRows={handleImportRows}
+              onResolveRow={handleResolveRow}
+              isAdmin={isAdmin}
+              userRole={userRole}
+            />
+          )}
 
 
-        {activeTab === "query" && (
-          <QuerySearch />
-        )}
+          {activeTab === "query" && (
+            <QuerySearch />
+          )}
 
-        {activeTab === "billing-exit" && (
-          <BillingExit />
-        )}
+          {activeTab === "billing-exit" && (
+            <BillingExit />
+          )}
 
-        {activeTab === "google" && (
-          <GoogleIntegration 
-            user={user}
-            token={token}
-            needsAuth={needsAuth}
-            isLoggingIn={isLoggingIn}
-            onLogin={handleLogin}
-            onLogout={handleLogout}
-            jobCards={jobCards}
-          />
-        )}
+          {activeTab === "google" && (
+            <GoogleIntegration 
+              user={user}
+              token={token}
+              needsAuth={needsAuth}
+              isLoggingIn={isLoggingIn}
+              onLogin={handleLogin}
+              onLogout={handleLogout}
+              jobCards={jobCards}
+            />
+          )}
 
-        {activeTab === "assistant" && (
-          <GeminiAssistant 
-            employees={employees}
-            bays={bays}
-            jobCards={jobCards}
-            alerts={alertLogs}
-          />
-        )}
+          {activeTab === "assistant" && (
+            <GeminiAssistant 
+              employees={employees}
+              bays={bays}
+              jobCards={jobCards}
+              alerts={alertLogs}
+            />
+          )}
 
-        {activeTab === "users" && (
-          <UserManagement currentUser={user} token={token} />
-        )}
+          {activeTab === "users" && (
+            <UserManagement currentUser={user} token={token} />
+          )}
 
-        {activeTab === "certification" && (
-          <CpscCertificationPanel />
-        )}
+          {activeTab === "certification" && (
+            <CpscCertificationPanel />
+          )}
 
-        {activeTab === "attendance" && (
-          <AttendanceShiftLog employees={employees} currentUser={user} />
-        )}
+          {activeTab === "attendance" && (
+            <AttendanceShiftLog 
+              employees={employees} 
+              currentUser={user} 
+              token={token} 
+              jobCards={jobCards} 
+            />
+          )}
 
-        {activeTab === "revenue" && (
-          <RevenueDashboard employees={employees} jobCards={jobCards} revenues={revenues} splitDetails={splitDetails} onRefresh={fetchAllData} />
-        )}
+          {activeTab === "revenue" && (
+            <RevenueDashboard employees={employees} jobCards={jobCards} revenues={revenues} splitDetails={splitDetails} onRefresh={fetchAllData} />
+          )}
 
-        {activeTab === "gate-entry" && (
-          <GateEntryManager 
-            bays={bays} 
-            jobCards={jobCards} 
-            onCreateJob={handleCreateJob} 
-            onUpdateJob={handleUpdateJob}
-            onRefresh={fetchAllData} 
-          />
-        )}
+          {activeTab === "gate-entry" && (
+            <GateEntryManager 
+              bays={bays} 
+              jobCards={jobCards} 
+              onCreateJob={handleCreateJob} 
+              onUpdateJob={handleUpdateJob}
+              onRefresh={fetchAllData} 
+            />
+          )}
 
-        {activeTab === "parts-warranty" && (
-          <PartsWarrantyManager 
-            jobCards={jobCards} 
-            onUpdateJob={handleUpdateJob}
-            onRefresh={fetchAllData} 
-          />
-        )}
+          {activeTab === "parts-warranty" && (
+            <PartsWarrantyManager 
+              jobCards={jobCards} 
+              onUpdateJob={handleUpdateJob}
+              onRefresh={fetchAllData} 
+            />
+          )}
 
-        {activeTab === "cashier-exit" && (
-          <CashierManager 
-            jobCards={jobCards} 
-            onUpdateJob={handleUpdateJob}
-            onRefresh={fetchAllData} 
-          />
-        )}
+          {activeTab === "cashier-exit" && (
+            <CashierManager 
+              jobCards={jobCards} 
+              onUpdateJob={handleUpdateJob}
+              onRefresh={fetchAllData} 
+            />
+          )}
 
-        {activeTab === "tech-jobs" && (
-          <TechnicianJobsPanel jobCards={jobCards} employeeId={employeeId} onUpdateJobStatus={handleUpdateJobStatus} onRefresh={fetchAllData} />
-        )}
+          {activeTab === "tech-jobs" && (
+            <TechnicianJobsPanel jobCards={jobCards} employeeId={employeeId} onUpdateJobStatus={handleUpdateJobStatus} onRefresh={fetchAllData} />
+          )}
 
-        {activeTab === "tech-kpi" && (
-          <TechnicianKpiPanel employees={employees} employeeId={employeeId} />
-        )}
+          {activeTab === "tech-kpi" && (
+            <TechnicianKpiPanel employees={employees} employeeId={employeeId} />
+          )}
 
-        {activeTab === "tech-profile" && (
-          <TechnicianProfilePanel employees={employees} employeeId={employeeId} />
-        )}
+          {activeTab === "tech-profile" && (
+            <TechnicianProfilePanel employees={employees} employeeId={employeeId} />
+          )}
+        </div>
       </main>
 
       {showClearConfirmModal && (
@@ -1543,6 +1673,32 @@ export default function App() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {/* Toast Notifications */}
+      {toasts.length > 0 && (
+        <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`flex items-start gap-3 px-4 py-3 rounded-xl shadow-2xl border text-sm font-medium pointer-events-auto transition-all duration-300 ${
+                toast.type === "success"
+                  ? "bg-emerald-900/90 border-emerald-500/40 text-emerald-100"
+                  : toast.type === "error"
+                  ? "bg-rose-900/90 border-rose-500/40 text-rose-100"
+                  : "bg-slate-800/95 border-slate-600/50 text-slate-100"
+              } backdrop-blur-md`}
+            >
+              {toast.type === "success" ? (
+                <CheckCircle className="h-4 w-4 shrink-0 mt-0.5 text-emerald-400" />
+              ) : toast.type === "error" ? (
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-rose-400" />
+              ) : (
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-blue-400" />
+              )}
+              <span className="flex-1 text-xs leading-relaxed">{toast.message}</span>
+            </div>
+          ))}
         </div>
       )}
 

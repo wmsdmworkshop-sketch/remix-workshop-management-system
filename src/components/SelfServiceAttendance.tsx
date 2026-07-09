@@ -24,6 +24,10 @@ interface AttendanceState {
   is_approved: boolean | null;
   check_in_lat: number | null;
   check_in_lng: number | null;
+  break_start: string | null;
+  break_end: string | null;
+  late_reason: string | null;
+  overtime_hours: number | null;
 }
 
 export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfServiceAttendanceProps) {
@@ -38,6 +42,11 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [punching, setPunching] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
+
+  // New States
+  const [lateReason, setLateReason] = useState("");
+  const [overtimeHours, setOvertimeHours] = useState("");
+  const [monthlyHistory, setMonthlyHistory] = useState<any[]>([]);
 
   // Workshop coordinates (Pune)
   const [workshopCoords, setWorkshopCoords] = useState({ lat: 18.5204, lng: 73.8567 });
@@ -59,6 +68,18 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
     return R * c;
   };
 
+  const fetchMonthlyHistory = async () => {
+    try {
+      const res = await fetch(`/api/workforce/attendance/history?employee_id=${employeeId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMonthlyHistory(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch monthly history:", e);
+    }
+  };
+
   const fetchAttendanceStatus = async () => {
     try {
       const today = new Date().toISOString().split("T")[0];
@@ -71,6 +92,10 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
           is_approved: data[0].is_approved,
           check_in_lat: data[0].check_in_lat,
           check_in_lng: data[0].check_in_lng,
+          break_start: data[0].break_start,
+          break_end: data[0].break_end,
+          late_reason: data[0].late_reason,
+          overtime_hours: data[0].overtime_hours,
         });
       } else {
         setAttendance({
@@ -79,6 +104,10 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
           is_approved: null,
           check_in_lat: null,
           check_in_lng: null,
+          break_start: null,
+          break_end: null,
+          late_reason: null,
+          overtime_hours: null,
         });
       }
     } catch (err) {
@@ -152,6 +181,7 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
 
   useEffect(() => {
     fetchAttendanceStatus();
+    fetchMonthlyHistory();
     getGPSLocation();
     startCamera();
     return () => stopCamera();
@@ -187,7 +217,7 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
     }
   };
 
-  const handlePunch = async () => {
+  const handlePunch = async (action: "check_in" | "check_out" | "break_start" | "break_end") => {
     if (!coords) {
       setErrorMsg("Cannot punch: waiting for high-accuracy GPS coordinates.");
       return;
@@ -221,7 +251,9 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    const isCheckOut = attendance?.check_in !== null && attendance?.check_out === null;
+    const isCheckOut = action === "check_out";
+    const isBreakStart = action === "break_start";
+    const isBreakEnd = action === "break_end";
 
     try {
       const response = await fetch("/api/workforce/attendance", {
@@ -234,6 +266,10 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
           longitude: coords.lng,
           face_photo: finalPhoto,
           is_check_out: isCheckOut,
+          is_break_start: isBreakStart,
+          is_break_end: isBreakEnd,
+          late_reason: action === "check_in" ? (lateReason || undefined) : undefined,
+          overtime_hours: action === "check_out" ? (Number(overtimeHours) || undefined) : undefined,
           shift_type: "Morning",
           status: "Present"
         })
@@ -241,15 +277,20 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
 
       const resData = await response.json();
       if (response.ok && resData.success) {
-        setSuccessMsg(
-          isCheckOut
-            ? `Successfully checked out at ${resData.record.check_out}!`
-            : `Successfully checked in at ${resData.record.check_in}!`
-        );
+        let msg = `Successfully punched!`;
+        if (action === "check_in") msg = `Successfully checked in at ${resData.record.check_in}!`;
+        else if (action === "check_out") msg = `Successfully checked out at ${resData.record.check_out}!`;
+        else if (action === "break_start") msg = `Successfully started break at ${resData.record.break_start}!`;
+        else if (action === "break_end") msg = `Successfully ended break at ${resData.record.break_end}!`;
+
+        setSuccessMsg(msg);
         if (resData.matchReason) {
           setSuccessMsg(prev => `${prev} (${resData.matchReason})`);
         }
         await fetchAttendanceStatus();
+        await fetchMonthlyHistory();
+        setLateReason("");
+        setOvertimeHours("");
         if (onSuccess) onSuccess();
       } else {
         setErrorMsg(resData.error || "Failed to log attendance. Please retry.");
@@ -371,7 +412,7 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
         </div>
       )}
 
-      {/* Attendance Status & Punch Button */}
+      {/* Attendance Status & Punch Buttons */}
       <div className="space-y-4">
         {attendance && (
           <div className="grid grid-cols-2 gap-3 p-3 bg-slate-950/40 border border-slate-900 rounded-xl text-xs">
@@ -383,6 +424,21 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
               <div className="text-slate-500 text-[10px] uppercase font-bold">Check-Out Time</div>
               <div className="font-black text-slate-200 mt-1">{attendance.check_out || "—"}</div>
             </div>
+            
+            {/* Break logs strip */}
+            {(attendance.break_start || attendance.break_end) && (
+              <div className="col-span-2 bg-slate-900/30 p-2.5 rounded-lg border border-slate-800 text-[10px] text-slate-400 space-y-0.5">
+                <div className="flex justify-between">
+                  <span>Break Started:</span>
+                  <span className="font-mono text-slate-300 font-bold">{attendance.break_start || "—"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Break Ended:</span>
+                  <span className="font-mono text-slate-300 font-bold">{attendance.break_end || "Active"}</span>
+                </div>
+              </div>
+            )}
+
             {attendance.is_approved !== null && (
               <div className="col-span-2 text-center pt-2 border-t border-slate-900 flex items-center justify-center gap-1.5 text-[10px] font-black uppercase">
                 {attendance.is_approved ? (
@@ -401,30 +457,149 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
           </div>
         )}
 
-        <button
-          onClick={handlePunch}
-          disabled={punching || !coords || (attendance?.check_in && attendance?.check_out)}
-          className={`w-full py-4.5 rounded-xl font-black text-sm uppercase tracking-wider text-white transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer ${
-            attendance?.check_in && attendance?.check_out
-              ? "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50"
-              : attendance?.check_in
-              ? "bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 shadow-orange-950/20"
-              : "bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 shadow-blue-950/20"
-          } disabled:opacity-50`}
-        >
-          {punching ? (
-            <>
-              <FunnySpinner className="h-4 w-4" />
-              Verifying Biometrics...
-            </>
-          ) : attendance?.check_in && attendance?.check_out ? (
-            "Shift Completed"
-          ) : attendance?.check_in ? (
-            "Punch Check-Out"
-          ) : (
-            "Punch Check-In"
+        {/* Dynamic Punch Form Details */}
+        {!attendance?.check_in && (
+          <div className="space-y-1.5 bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              Reason for Late Arrival (If Past 9:15 AM Shift Start)
+            </label>
+            <select
+              value={lateReason}
+              onChange={(e) => setLateReason(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+            >
+              <option value="">Select reason or leave blank...</option>
+              <option value="Traffic Congestion">Traffic Congestion</option>
+              <option value="Vehicle Breakdown">Vehicle Breakdown</option>
+              <option value="Personal / Family Emergency">Personal / Family Emergency</option>
+              <option value="Medical Appointment">Medical Appointment</option>
+              <option value="Public Transit Delay">Public Transit Delay</option>
+              <option value="Official Outside Duty">Official Outside Duty</option>
+            </select>
+          </div>
+        )}
+
+        {attendance?.check_in && !attendance?.check_out && (
+          <div className="space-y-1.5 bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              Overtime Hours Worked (Claim Code Approval Required)
+            </label>
+            <input
+              type="number"
+              min="0"
+              max="8"
+              step="0.5"
+              placeholder="e.g. 1.5 (leave blank if none)"
+              value={overtimeHours}
+              onChange={(e) => setOvertimeHours(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 focus:ring-1 focus:ring-indigo-500 focus:outline-none font-semibold"
+            />
+          </div>
+        )}
+
+        {/* Action Punch Buttons */}
+        <div className="space-y-2.5">
+          {/* BREAK ACTIONS */}
+          {attendance?.check_in && !attendance?.check_out && (
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => handlePunch("break_start")}
+                disabled={punching || !coords || !!attendance.break_start}
+                className="py-3 px-4 rounded-xl font-extrabold text-xs uppercase tracking-wider text-white transition-all bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:bg-slate-850 flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+              >
+                <Clock className="h-3.5 w-3.5" />
+                {attendance.break_start ? "Break Started" : "Start Break"}
+              </button>
+              <button
+                onClick={() => handlePunch("break_end")}
+                disabled={punching || !coords || !attendance.break_start || !!attendance.break_end}
+                className="py-3 px-4 rounded-xl font-extrabold text-xs uppercase tracking-wider text-white transition-all bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:bg-slate-850 flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                {attendance.break_end ? "Break Ended" : "End Break"}
+              </button>
+            </div>
           )}
-        </button>
+
+          {/* MAIN CHECK-IN / CHECK-OUT */}
+          <button
+            onClick={() => handlePunch(attendance?.check_in ? "check_out" : "check_in")}
+            disabled={punching || !coords || (attendance?.check_in && attendance?.check_out)}
+            className={`w-full py-4.5 rounded-xl font-black text-sm uppercase tracking-wider text-white transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer ${
+              attendance?.check_in && attendance?.check_out
+                ? "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50"
+                : attendance?.check_in
+                ? "bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 shadow-orange-950/20"
+                : "bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 shadow-blue-950/20"
+            } disabled:opacity-50`}
+          >
+            {punching ? (
+              <>
+                <div className="h-4.5 w-4.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Verifying Biometrics...</span>
+              </>
+            ) : attendance?.check_in && attendance?.check_out ? (
+              "Shift Completed"
+            ) : attendance?.check_in ? (
+              "Punch Check-Out"
+            ) : (
+              "Punch Check-In"
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Monthly Attendance Logs Panel */}
+      <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-4 space-y-3">
+        <h4 className="text-xs font-black text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+          <Clock className="h-4 w-4 text-indigo-400" />
+          Monthly Attendance Logs
+        </h4>
+        <div className="max-h-[220px] overflow-y-auto pr-1 space-y-2 text-xs">
+          {monthlyHistory.length === 0 ? (
+            <p className="text-slate-500 text-center py-4 italic">No attendance records logged for this month.</p>
+          ) : (
+            monthlyHistory.map((item, idx) => (
+              <div key={idx} className="bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/60 flex flex-col gap-1.5">
+                <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 border-b border-slate-800 pb-1">
+                  <span>{new Date(item.shift_date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                  <span className={`px-2 py-0.2 rounded-full border text-[8px] uppercase tracking-wider ${
+                    item.is_approved ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/20' : 'bg-amber-950/40 text-amber-400 border-amber-500/20'
+                  }`}>
+                    {item.is_approved ? "Approved" : "Pending Approval"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-300">
+                  <div>
+                    <span className="text-slate-500 font-bold block uppercase">Check In</span>
+                    <span className="font-semibold text-slate-200">{item.check_in || "—"}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 font-bold block uppercase">Check Out</span>
+                    <span className="font-semibold text-slate-200">{item.check_out || "—"}</span>
+                  </div>
+                  {item.break_start && (
+                    <div className="col-span-2 flex justify-between bg-slate-950/40 p-1.5 px-2 rounded text-slate-400 text-[9px] border border-slate-800/50">
+                      <span>Break Started: <strong>{item.break_start}</strong></span>
+                      <span>Break Ended: <strong>{item.break_end || "Active"}</strong></span>
+                    </div>
+                  )}
+                  {item.late_reason && (
+                    <div className="col-span-2 text-rose-400 bg-rose-950/15 border border-rose-950/20 p-1.5 rounded text-[9px]">
+                      <strong>Late Arrival Reason:</strong> {item.late_reason}
+                    </div>
+                  )}
+                  {item.overtime_hours > 0 && (
+                    <div className="col-span-2 text-indigo-300 bg-indigo-950/15 border border-indigo-950/20 p-1.5 rounded text-[9px] flex justify-between font-medium">
+                      <span>Overtime Work:</span>
+                      <span>{item.overtime_hours} Hours</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );

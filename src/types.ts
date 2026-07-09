@@ -12,9 +12,28 @@ export interface Employee {
   target_revenue?: number;
   paid_pct?: string;
   tml_claim_pct?: string;
-  certification_level?: 'Bronze' | 'Silver' | 'Gold';
+  certification_level?: 'Not Certified' | 'Bronze' | 'Silver' | 'Gold' | string;
   certification_date?: string;
+  certification_expiry_date?: string;
+  certification_remarks?: string;
   profile_photo?: string; // base64 reference photo for face matching
+
+  // New profile fields
+  alt_mobile?: string | null;
+  email?: string | null;
+  department?: string | null;
+  designation?: string | null;
+  workshop?: string | null;
+  reporting_manager?: string | null;
+  date_of_joining?: string | null;
+  bank_details?: string | null;
+  pan?: string | null;
+  aadhaar?: string | null;
+  workshop_id?: number | null;
+  shift_id?: number | null;
+  joining_date?: string | null;
+  profile_photo_url?: string | null;
+  face_embedding_reference?: string | null;
 }
 
 export interface WorkforceAttendance {
@@ -36,6 +55,12 @@ export interface WorkforceAttendance {
   face_match_score_in?: number | null; // similarity score 0 to 1
   face_match_score_out?: number | null; // similarity score 0 to 1
   is_approved?: boolean;
+  break_start?: string | null;
+  break_end?: string | null;
+  is_late?: boolean;
+  late_reason?: string;
+  is_overtime?: boolean;
+  overtime_hours?: number;
 }
 
 export interface Bay {
@@ -116,6 +141,7 @@ export interface JobCard {
   invoice_no?: string | null;
   gate_out_time?: string | null;
   billing_status?: string | null;
+  workshop_id?: number | null;
 }
 
 export interface JobTechnicianMap {
@@ -330,3 +356,126 @@ export interface FsbMaster {
   job_card_id: number;
   fsb_status: 'Settled' | 'Rejected' | 'Deviation';
 }
+
+export interface Workshop {
+  workshop_id: number;
+  workshop_name: string;
+  latitude: number;
+  longitude: number;
+  allowed_gps_radius: number;
+  is_active: boolean;
+}
+
+export interface Shift {
+  shift_id: number;
+  shift_type: 'General' | 'Morning' | 'Evening' | 'Night' | 'Holiday' | 'Emergency' | string;
+  start_time: string;
+  end_time: string;
+  is_active: boolean;
+}
+
+export interface ApprovalMatrix {
+  matrix_id: number;
+  module_name: string;
+  ot_category: 'WORKSHOP' | 'ADMINISTRATIVE' | string;
+  workshop_id: number;
+  role_name: string;
+  approval_level: number;
+  is_active: boolean;
+}
+
+export interface OvertimeRequest {
+  ot_id: number;
+  employee_id: number;
+  ot_category: 'WORKSHOP' | 'ADMINISTRATIVE' | string;
+  date: string;
+  shift_id: number;
+  ot_start_time: string;
+  ot_end_time: string;
+  total_hours: number;
+  benefit_type: 'MONETARY' | 'COMPENSATORY_ATTENDANCE_CREDIT' | string;
+  ot_reason_category: string;
+  job_card_id?: number | null;
+  workshop_id?: number | null;
+  department?: string | null;
+  work_description?: string | null;
+  comp_attendance_credit_earned?: number;
+  snapshot_basic_salary?: number;
+  snapshot_days_in_month?: number;
+  hourly_salary_rate?: number;
+  calculated_amount?: number;
+  max_allowed_cap?: number;
+  final_payable_amount?: number;
+  capping_reason?: string | null;
+  device_name: string;
+  operating_system: string;
+  app_version: string;
+  ip_address: string;
+  device_time: string;
+  server_time?: string;
+  time_difference_seconds: number;
+  face_verification_provider?: string | null;
+  face_match_result?: string | null;
+  face_match_score?: number | null;
+  face_verification_time?: string | null;
+  ocr_provider?: string | null;
+  ocr_confidence?: number | null;
+  ocr_verification_time?: string | null;
+  gps_lat: number;
+  gps_lng: number;
+  gps_matched: boolean;
+  ai_recommendation_status?: 'APPROVE' | 'REJECT' | 'MANAGER_REVIEW_REQUIRED' | 'PENDING' | string;
+  ai_flags?: string | null;
+  current_level: number;
+  current_status: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'ON_HOLD' | 'PAID' | string;
+  payroll_period?: string | null;
+  paid_at?: string | null;
+  payment_reference?: string | null;
+  created_by: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface OvertimeAttachment {
+  attachment_id: number;
+  ot_id: number;
+  attachment_type: 'SELFIE' | 'JOB_CARD_PHOTO' | string;
+  file_path: string;
+  uploaded_at?: string;
+}
+
+export interface OvertimeWorkflowHistory {
+  history_id: number;
+  ot_id: number;
+  level: number;
+  approver_id: number;
+  approver_role: string;
+  action_date: string;
+  action_time: string;
+  decision: 'APPROVED' | 'REJECTED' | 'HOLD' | string;
+  remarks?: string | null;
+}
+
+export interface OvertimeApiLog {
+  log_id: number;
+  request_id: string;
+  user_id?: number | null;
+  api_endpoint: string;
+  ip_address: string;
+  device_info: string;
+  execution_duration_ms: number;
+  response_status: number;
+  timestamp?: string;
+}
+
+export interface OvertimeAuditLog {
+  log_id: number;
+  ot_id: number;
+  action: 'CREATE' | 'UPDATE' | 'APPROVE' | 'REJECT' | 'HOLD' | 'PAY' | string;
+  actor_id: number;
+  actor_role: string;
+  timestamp?: string;
+  ip_address: string;
+  payload_diff: string;
+}
+

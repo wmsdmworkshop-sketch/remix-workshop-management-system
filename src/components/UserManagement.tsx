@@ -15,7 +15,9 @@ import {
   Lock,
   User as UserIcon,
   ToggleLeft,
-  ToggleRight
+  ToggleRight,
+  RefreshCw,
+  Clock
 } from "lucide-react";
 import { User } from "../types";
 import FunnyLoader from "./FunnyLoader";
@@ -32,10 +34,100 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
   const [success, setSuccess] = useState<string | null>(null);
   
   // Tabs and Permissions Matrix State
-  const [activeTab, setActiveTab] = useState<'directory' | 'permissions'>('directory');
+  const [activeTab, setActiveTab] = useState<'directory' | 'permissions' | 'profile-approvals'>('directory');
   const [permissionsList, setPermissionsList] = useState<any[]>([]);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
+
+  // Profile update approvals state
+  const [approvalRequests, setApprovalRequests] = useState<any[]>([]);
+  const [approvalLoading, setApprovalLoading] = useState(false);
+  const [approvalSetting, setApprovalSetting] = useState<"auto_approve" | "require_approval">("auto_approve");
+  const [settingSaveLoading, setSettingSaveLoading] = useState(false);
+
+  const fetchApprovalRequests = async () => {
+    setApprovalLoading(true);
+    try {
+      const res = await fetch("/api/my-profile/pending-requests", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setApprovalRequests(data.requests);
+      }
+    } catch (err) {
+      console.error("Error loading approvals:", err);
+    } finally {
+      setApprovalLoading(false);
+    }
+  };
+
+  const fetchApprovalSetting = async () => {
+    try {
+      const res = await fetch("/api/my-profile/settings", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setApprovalSetting(data.setting_value);
+      }
+    } catch (err) {
+      console.error("Error loading settings:", err);
+    }
+  };
+
+  const handleUpdateApprovalSetting = async (val: "auto_approve" | "require_approval") => {
+    setSettingSaveLoading(true);
+    try {
+      const res = await fetch("/api/my-profile/settings", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ setting_value: val })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setApprovalSetting(val);
+        setSuccess("Approval setting updated successfully.");
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        setError(data.error || "Failed to save approval setting.");
+        setTimeout(() => setError(null), 3000);
+      }
+    } catch (err) {
+      setError("Network error: failed to update setting.");
+      setTimeout(() => setError(null), 3000);
+    } finally {
+      setSettingSaveLoading(false);
+    }
+  };
+
+  const handleResolveRequest = async (requestId: number, action: "Approve" | "Reject") => {
+    try {
+      const res = await fetch(`/api/my-profile/requests/${requestId}/resolve`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ action })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSuccess(data.message);
+        fetchApprovalRequests();
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        setError(data.error || "Failed to resolve request.");
+        setTimeout(() => setError(null), 3000);
+      }
+    } catch (err) {
+      setError("Network error: failed to resolve request.");
+      setTimeout(() => setError(null), 3000);
+    }
+  };
 
   const MODULES = [
     'Dashboard', 
@@ -65,7 +157,8 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
     try {
       const res = await fetch("/api/permissions");
       const data = await res.json();
-      setPermissionsList(data);
+      console.log("/api/permissions", data);
+      setPermissionsList(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error("Failed to fetch permissions:", e);
     } finally {
@@ -76,6 +169,9 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
   useEffect(() => {
     if (activeTab === 'permissions') {
       fetchPermissions();
+    } else if (activeTab === 'profile-approvals') {
+      fetchApprovalRequests();
+      fetchApprovalSetting();
     }
   }, [activeTab]);
 
@@ -486,6 +582,16 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
           >
             Permission Matrix
           </button>
+          <button
+            onClick={() => setActiveTab('profile-approvals')}
+            className={`pb-3 font-bold text-xs uppercase tracking-wider border-b-2 transition ${
+              activeTab === 'profile-approvals'
+                ? 'border-orange-500 text-slate-900'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            Profile Approvals
+          </button>
         </div>
       )}
 
@@ -523,7 +629,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="e.g. John Doe"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
               />
             </div>
 
@@ -537,7 +643,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                 value={username}
                 onChange={(e) => setUsername(e.target.value.toLowerCase())}
                 placeholder="e.g. johndoe"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-mono"
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-mono"
               />
             </div>
 
@@ -551,7 +657,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
               />
             </div>
 
@@ -562,7 +668,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value as any)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-semibold text-slate-700"
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-semibold text-slate-800"
               >
                 {allRoles.map((r) => (
                   <option key={r.key} value={r.key}>{r.label}</option>
@@ -579,7 +685,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                 value={employeeId}
                 onChange={(e) => setEmployeeId(e.target.value)}
                 placeholder="e.g. 1"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
               />
             </div>
 
@@ -592,7 +698,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                 value={mobileNo}
                 onChange={(e) => setMobileNo(e.target.value)}
                 placeholder="e.g. 9876543210"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
               />
             </div>
 
@@ -605,7 +711,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="e.g. operator@workshop.com"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
               />
             </div>
 
@@ -923,6 +1029,104 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                       })}
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'profile-approvals' && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+          <div className="border-b pb-4 flex justify-between items-center flex-wrap gap-4">
+            <div>
+              <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Profile Update Approval Queue</h2>
+              <p className="text-xs text-slate-400 mt-1">Configure approval policy and resolve pending employee profile change requests.</p>
+            </div>
+            
+            {/* Setting controller */}
+            <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-2">
+              <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Approval Policy:</span>
+              <select
+                value={approvalSetting}
+                onChange={(e) => handleUpdateApprovalSetting(e.target.value as any)}
+                disabled={settingSaveLoading}
+                className="bg-white border border-slate-200 rounded-lg text-xs font-bold px-2 py-1 text-slate-800 focus:outline-none"
+              >
+                <option value="auto_approve">Auto-Approve Updates</option>
+                <option value="require_approval">Require HR/Admin Approval</option>
+              </select>
+            </div>
+          </div>
+
+          {approvalLoading ? (
+            <div className="flex justify-center py-12">
+              <RefreshCw className="h-6 w-6 animate-spin text-orange-500" />
+            </div>
+          ) : approvalRequests.length === 0 ? (
+            <div className="text-center py-12 bg-slate-50 border border-dashed border-slate-200 rounded-2xl text-slate-400 text-xs font-medium">
+              No pending profile update requests in approval queue.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    <th className="pb-3 pr-4">Employee</th>
+                    <th className="pb-3 pr-4">Current Value</th>
+                    <th className="pb-3 pr-4">Requested Update</th>
+                    <th className="pb-3 pr-4">Request Log</th>
+                    <th className="pb-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50 text-xs">
+                  {approvalRequests.map((req: any) => {
+                    const changes = [];
+                    if (req.mobile !== req.current_mobile) changes.push({ name: "Phone", old: req.current_mobile || "None", new: req.mobile });
+                    if (req.alt_mobile !== req.current_alt_mobile) changes.push({ name: "Alt Phone", old: req.current_alt_mobile || "None", new: req.alt_mobile });
+                    if (req.email !== req.current_email) changes.push({ name: "Email", old: req.current_email || "None", new: req.email });
+
+                    return (
+                      <tr key={req.request_id} className="hover:bg-slate-50/50">
+                        <td className="py-4 pr-4">
+                          <div className="font-bold text-slate-800 uppercase">{req.full_name}</div>
+                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">{req.employee_code || `EMP0${req.employee_id}`}</div>
+                        </td>
+                        <td className="py-4 pr-4">
+                          <div className="space-y-1 font-mono text-[10px] text-slate-400">
+                            {changes.map((c, i) => (
+                              <div key={i}><span className="font-bold">{c.name}:</span> {c.old}</div>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="py-4 pr-4">
+                          <div className="space-y-1 font-mono text-[10px] text-orange-600 font-bold">
+                            {changes.map((c, i) => (
+                              <div key={i}><span className="text-slate-400 font-normal">{c.name}:</span> {c.new}</div>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="py-4 pr-4 text-[10px] text-slate-400 space-y-0.5">
+                          <div>📅 {new Date(req.created_at).toLocaleString()}</div>
+                          <div className="font-mono text-[9px]">💻 {req.ip_address}</div>
+                        </td>
+                        <td className="py-4 text-right flex justify-end gap-2 items-center">
+                          <button
+                            onClick={() => handleResolveRequest(req.request_id, "Approve")}
+                            className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => handleResolveRequest(req.request_id, "Reject")}
+                            className="bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer"
+                          >
+                            Reject
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

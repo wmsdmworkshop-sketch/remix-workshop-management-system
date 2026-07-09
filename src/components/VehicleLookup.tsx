@@ -54,7 +54,12 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/vehicle/history?query=${encodeURIComponent(queryText.trim())}`);
+      const token = localStorage.getItem("wms_token");
+      const response = await fetch(`/api/vehicle/history?query=${encodeURIComponent(queryText.trim())}`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {})
+        }
+      });
       if (!response.ok) {
         throw new Error("Failed to retrieve vehicle service history");
       }
@@ -429,7 +434,7 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
                           </div>
 
                           {/* Quick details strip */}
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-900/35 border border-slate-800/50 rounded-lg p-3 text-xs">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-900/35 border border-slate-800/50 rounded-lg p-3 text-xs">
                             <div>
                               <div className="text-slate-500">SERVICE CLASSIFICATION</div>
                               <div className="font-semibold text-slate-300 mt-0.5">
@@ -443,15 +448,9 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
                               </div>
                             </div>
                             <div>
-                              <div className="text-slate-500">LEAD TECHNICIAN</div>
+                              <div className="text-slate-500">SERVICE ADVISOR ID</div>
                               <div className="font-semibold text-indigo-300 mt-0.5 truncate">
-                                {job.technician_name || "Assigned Crew"}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-slate-500">BAY STATION</div>
-                              <div className="font-semibold text-slate-300 mt-0.5">
-                                {job.bay_no ? `Bay ${job.bay_no}` : "Direct Dispatch"}
+                                {job.service_advisor || "Unassigned"}
                               </div>
                             </div>
                           </div>

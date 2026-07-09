@@ -339,517 +339,478 @@ export default function DmsImporter({
     document.body.removeChild(link);
   };
 
-  // Filter and Sort rows for the selected batch
-  const handleUploadBackdated = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!backdatedText.trim()) {
-      alert("Please paste backdated job cards first.");
-      return;
-    }
-    parseBackdatedCSVContent(backdatedText, "Pasted Text Data");
-  };
+  // --- TEMPLATE IMPORT WIZARD STATES ---
+  const [selectedTemplate, setSelectedTemplate] = useState<"vehicle_master" | "service_history" | "invoices">("vehicle_master");
+  const [importerStep, setImporterStep] = useState(1);
+  const [parsedHeaders, setParsedHeaders] = useState<string[]>([]);
+  const [aiHeaderMapping, setAiHeaderMapping] = useState<any>({});
+  const [csvRows, setCsvRows] = useState<any[]>([]);
+  const [previewRows, setPreviewRows] = useState<any[]>([]);
+  const [importReport, setImportReport] = useState<any | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [matchingHeadersLoading, setMatchingHeadersLoading] = useState(false);
+  const [detectedFileName, setDetectedFileName] = useState("");
 
-  const handleBackdatedDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setBackdatedDragActive(true);
-    } else if (e.type === "dragleave") {
-      setBackdatedDragActive(false);
-    }
-  };
-
-  const handleBackdatedDrop = (e: React.DragEvent) => {
+  const handleTemplateDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setBackdatedDragActive(false);
+  };
 
+  const handleTemplateDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const file = e.dataTransfer.files[0];
-      readAndParseBackdatedFile(file);
+      handleFileUploaded(e.dataTransfer.files[0]);
     }
   };
 
-  const handleBackdatedFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTemplateFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      readAndParseBackdatedFile(e.target.files[0]);
+      handleFileUploaded(e.target.files[0]);
     }
   };
 
-  const readAndParseBackdatedFile = (file: File) => {
+  const handleFileUploaded = async (file: File) => {
+    setDetectedFileName(file.name);
+    setMatchingHeadersLoading(true);
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const text = event.target?.result as string;
-      parseBackdatedCSVContent(text, file.name);
+      const parsed = parseCSVContent(text);
+      if (!parsed) {
+        alert("The uploaded file is empty or invalid.");
+        setMatchingHeadersLoading(false);
+        return;
+      }
+      
+      setParsedHeaders(parsed.headers);
+      setCsvRows(parsed.rows);
+      setPreviewRows(parsed.rows.slice(0, 5));
+
+      // Call AI mapping
+      try {
+        const res = await fetch("/api/import/ai-match", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            headers: parsed.headers,
+            templateType: selectedTemplate
+          })
+        });
+        const matchData = await res.json();
+        if (res.ok) {
+          setAiHeaderMapping(matchData.mapping || {});
+          setImporterStep(3);
+        } else {
+          alert(matchData.error || "Failed to fetch header mapping from AI matching service.");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Network error occurred during AI header matching.");
+      } finally {
+        setMatchingHeadersLoading(false);
+      }
     };
     reader.readAsText(file);
   };
 
-  const parseBackdatedCSVContent = (text: string, fileName: string) => {
-    try {
-      const cleanText = text.replace(/\0/g, "").trim();
-      if (!cleanText) {
-        alert("The CSV file is empty.");
-        return;
-      }
+  const parseCSVContent = (text: string) => {
+    const cleanText = text.replace(/\0/g, "").trim();
+    if (!cleanText) return null;
+    const rawLines = cleanText.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    if (rawLines.length === 0) return null;
 
-      const rawLines = cleanText.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-      if (rawLines.length === 0) {
-        alert("No lines found in the CSV.");
-        return;
-      }
+    const firstLine = rawLines[0];
+    const isTab = firstLine.includes("\t");
 
-      const firstLine = rawLines[0];
-      const isTab = firstLine.includes("\t");
-
-      const parseCSVLine = (line: string) => {
-        if (isTab) {
-          return line.split("\t").map(cell => {
-            let val = cell.trim();
-            if (val.startsWith('"') && val.endsWith('"')) {
-              val = val.substring(1, val.length - 1).trim();
-            }
-            return val;
-          });
-        } else {
-          const result: string[] = [];
-          let current = "";
-          let insideQuotes = false;
-          for (let i = 0; i < line.length; i++) {
-            const char = line[i];
-            if (char === '"') {
-              insideQuotes = !insideQuotes;
-            } else if (char === ',' && !insideQuotes) {
-              result.push(current.trim());
-              current = "";
-            } else {
-              current += char;
-            }
+    const parseCSVLine = (line: string) => {
+      if (isTab) {
+        return line.split("\t").map(cell => {
+          let val = cell.trim();
+          if (val.startsWith('"') && val.endsWith('"')) {
+            val = val.substring(1, val.length - 1).trim();
           }
-          result.push(current.trim());
-          return result.map(val => {
-            if (val.startsWith('"') && val.endsWith('"')) {
-              val = val.substring(1, val.length - 1).trim();
-            }
-            return val;
-          });
-        }
-      };
-
-      const rawHeaders = parseCSVLine(firstLine);
-      const headersLower = rawHeaders.map(h => h.toLowerCase().trim());
-
-      const findColIndex = (keywords: string[]) => {
-        return headersLower.findIndex(h => keywords.some(kw => h.includes(kw) || kw.includes(h)));
-      };
-
-      // Map precise and truncated header names as shared in your screenshot:
-      const idxSrType = findColIndex(["sr type", "service type", "sr_type", "type"]);
-      const idxSrAssignee = findColIndex(["sr assigned to", "sr_assigned_to", "assigned to", "assigned_to", "sr assignee", "sr assigne", "assignee", "technician", "tech", "employee"]);
-      const idxInvoiceNo = findColIndex(["invoice #", "invoice no", "invoice_no", "invoice_number", "job card no", "job_card_no", "jobcardno"]);
-      const idxOrderNo = findColIndex(["order #", "order no", "order_no"]);
-      const idxSrNo = findColIndex(["sr #", "sr no", "sr_no"]);
-      const idxInvoiceDate = findColIndex(["invoice date", "invoice da", "date in", "job_date", "date"]);
-      const idxVrn = findColIndex(["vrn", "vehicle", "registration"]);
-      const idxAccount = findColIndex(["account", "bill to first", "customer", "owner"]);
-      const idxBillToFirst = findColIndex(["bill to first", "account", "customer", "owner"]);
-      const idxFinalLabor = findColIndex(["final labor", "final labour", "labour amount", "labor amount", "labour_amount"]);
-      const idxFinalSpares = findColIndex(["final spares", "final spare", "parts amount", "spares amount", "parts_amount"]);
-      const idxConsolidatedAmount = findColIndex(["consolidated invoice amount", "consolidated_invoice_amount", "consolidated invoice", "invoice amount", "total amount", "net amount", "total", "amount"]);
-      const idxOdometer = findColIndex(["odometer", "km reading", "km_reading", "mileage", "odometer_reading", "odometer reading"]);
-      const idxInvoiceStatus = findColIndex(["invoice status", "status"]);
-
-      const rows: any[] = [];
-
-      for (let i = 1; i < rawLines.length; i++) {
-        const cells = parseCSVLine(rawLines[i]);
-        if (cells.length < 2) continue;
-
-        const getVal = (idx: number, fallback = "") => {
-          if (idx !== -1 && idx < cells.length) return cells[idx];
-          return fallback;
-        };
-
-        // Resolve job card number
-        let jobCardNo = getVal(idxInvoiceNo);
-        if (!jobCardNo) jobCardNo = getVal(idxSrNo);
-        if (!jobCardNo) jobCardNo = getVal(idxOrderNo);
-        if (!jobCardNo) {
-          jobCardNo = `JC-${Date.now().toString().slice(-4)}-${Math.floor(Math.random() * 1000)}`;
-        }
-
-        // Resolve customer
-        let customerName = getVal(idxBillToFirst);
-        if (!customerName) customerName = getVal(idxAccount);
-        if (!customerName) customerName = "";
-
-        // Parse Amounts (cleaning currency codes)
-        const parseAmount = (valStr: string) => {
-          let clean = valStr.replace(/[^\d.]/g, "");
-          return Math.round(parseFloat(clean) || 0);
-        };
-
-        let labourAmount = parseAmount(getVal(idxFinalLabor, "0"));
-        let partsAmount = parseAmount(getVal(idxFinalSpares, "0"));
-        const consolidatedAmount = parseAmount(getVal(idxConsolidatedAmount, "0"));
-
-        if (consolidatedAmount > 0 && labourAmount === 0 && partsAmount === 0) {
-          labourAmount = Math.round(consolidatedAmount * 0.6);
-          partsAmount = Math.round(consolidatedAmount * 0.4);
-        }
-
-        // Status mapping
-        const invoiceStatus = getVal(idxInvoiceStatus, "Completed");
-        const rawRemarks = getVal(idxSrType, "General Repair");
-
-        // Ignore Cancelled and Credit Notes
-        const statusLower = invoiceStatus.toLowerCase();
-        const remarksLower = rawRemarks.toLowerCase();
-        const jcNoLower = jobCardNo.toLowerCase();
-
-        if (
-          statusLower.includes("cancel") || 
-          statusLower.includes("credit") || 
-          remarksLower.includes("cancel") || 
-          remarksLower.includes("credit") ||
-          jcNoLower.includes("cancel") ||
-          jcNoLower.includes("credit")
-        ) {
-          continue; // Ignore cancelled and credit notes
-        }
-
-        // Convert DD/MM/YYYY to YYYY-MM-DD
-        const rawDate = getVal(idxInvoiceDate);
-        let formattedDate = rawDate;
-        if (rawDate.includes("/")) {
-          const parts = rawDate.split("/");
-          if (parts.length === 3) {
-            const day = parts[0].padStart(2, "0");
-            const month = parts[1].padStart(2, "0");
-            const year = parts[2];
-            formattedDate = `${year}-${month}-${day}`;
+          return val;
+        });
+      } else {
+        const result = [];
+        let current = "";
+        let insideQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          if (char === '"') {
+            insideQuotes = !insideQuotes;
+          } else if (char === ',' && !insideQuotes) {
+            result.push(current.trim());
+            current = "";
+          } else {
+            current += char;
           }
         }
-
-        let rawTechName = getVal(idxSrAssignee, "");
-        const resolvedDate = formattedDate || new Date().toISOString().split("T")[0];
-
-        // Map breakdown or e-breakdown types irrespective of CRM ID or name
-        const cleanRemarksLower = rawRemarks.toLowerCase();
-        const isBreakdown = cleanRemarksLower.includes("breakdown") || cleanRemarksLower.includes("e-breakdown");
-
-        if (isBreakdown) {
-          rawTechName = "Abdul Gani Shek";
-        } else if (rawTechName) {
-          // Map CSP_100B210 CRM ID to Shashikumar Patil
-          if (typeof rawTechName === "string" && (rawTechName.toUpperCase().includes("CSP_100B210") || rawTechName.toUpperCase().includes("CSP100B210"))) {
-            rawTechName = "Shashikumar Patil";
+        result.push(current.trim());
+        return result.map(val => {
+          if (val.startsWith('"') && val.endsWith('"')) {
+            val = val.substring(1, val.length - 1).trim();
           }
-
-          // Parse date to do date-based mapping for RS1_100B210 and CAS_100b210
-          let isAfterDec2025 = false;
-          let isAfterFeb2026 = false;
-
-          if (resolvedDate) {
-            try {
-              let parsedDate = new Date(resolvedDate);
-              if (isNaN(parsedDate.getTime()) && resolvedDate.includes("/")) {
-                const parts = resolvedDate.split("/");
-                if (parts.length === 3) {
-                  const day = parseInt(parts[0]);
-                  const month = parseInt(parts[1]) - 1;
-                  const year = parseInt(parts[2]);
-                  parsedDate = new Date(year, month, day);
-                }
-              }
-              if (!isNaN(parsedDate.getTime())) {
-                const limitDec2025 = new Date(2025, 11, 31);
-                const limitFeb2026 = new Date(2026, 1, 28);
-                if (parsedDate > limitDec2025) isAfterDec2025 = true;
-                if (parsedDate > limitFeb2026) isAfterFeb2026 = true;
-              }
-            } catch (e) {
-              console.error(e);
-            }
-          }
-
-          // Apply RS1_100B210 mapping rule
-          if (typeof rawTechName === "string" && (rawTechName.toUpperCase().includes("RS1_100B210") || rawTechName.toUpperCase().includes("RS1100B210"))) {
-            rawTechName = isAfterDec2025 ? "Mustafa" : "Raghavendra Kulkarni";
-          }
-
-          // Apply CAS_100B210 mapping rule
-          if (typeof rawTechName === "string" && (rawTechName.toUpperCase().includes("CAS_100B210") || rawTechName.toUpperCase().includes("CAS100B210"))) {
-            rawTechName = isAfterFeb2026 ? "" : "Ali Shair";
-          }
-        }
-
-        const rawOdometer = getVal(idxOdometer, "");
-        const kmReading = rawOdometer ? Math.round(parseFloat(rawOdometer.replace(/[^\d.]/g, ""))) : null;
-
-        rows.push({
-          job_card_no: jobCardNo,
-          vrn: getVal(idxVrn, "").toUpperCase(),
-          customer_name: customerName,
-          customer_mobile: "", // Do not populate placeholder data if not available
-          date_in: resolvedDate,
-          status: invoiceStatus,
-          technician_name: rawTechName || "",
-          remarks: rawRemarks,
-          labour_amount: labourAmount,
-          parts_amount: partsAmount,
-          consolidated_invoice_amount: consolidatedAmount || (labourAmount + partsAmount),
-          km_reading: kmReading !== null && !isNaN(kmReading) ? kmReading : null,
-          vehicle_model: "" // Do not populate placeholder model if not available
+          return val;
         });
       }
+    };
 
-      if (rows.length > 0) {
-        setBackdatedParsedRows(rows);
-        setBackdatedFileName(fileName);
-        alert(`Successfully parsed ${rows.length} records from ${fileName}! Preview loaded.`);
-      } else {
-        alert("Could not parse any records from the CSV file. Please make sure headers are matching.");
+    const headers = parseCSVLine(firstLine).map(h => h.trim());
+    const rows = [];
+    for (let i = 1; i < rawLines.length; i++) {
+      const cells = parseCSVLine(rawLines[i]);
+      if (cells.length > 0) {
+        const rowObj = {};
+        headers.forEach((h, idx) => {
+          rowObj[h] = cells[idx] || "";
+        });
+        rows.push(rowObj);
       }
-    } catch (err: any) {
-      console.error(err);
-      alert("Error parsing backdated CSV: " + err.message);
+    }
+    return { headers, rows };
+  };
+
+  const runImportProcess = async () => {
+    setImportLoading(true);
+    setImportReport(null);
+
+    // Transform rows based on the mapping
+    const transformedRows = csvRows.map(row => {
+      const transformed = {};
+      Object.keys(row).forEach(csvHeader => {
+        const dbCol = aiHeaderMapping[csvHeader];
+        if (dbCol) {
+          let val = row[csvHeader];
+          // Handle amount formatting (remove currency prefix like Rs. and clean non-numeric)
+          if (
+            dbCol === "final_labour_amount" ||
+            dbCol === "final_spares_amount" ||
+            dbCol === "final_consolidated_amt"
+          ) {
+            if (val && typeof val === "string") {
+              const clean = val.replace(/[^0-9.]/g, "");
+              val = parseFloat(clean) || 0;
+            }
+          }
+          // Handle odometer reading numeric sanitization
+          if (dbCol === "odometer_reading") {
+            if (val && typeof val === "string") {
+              const clean = val.replace(/[^0-9]/g, "");
+              val = parseInt(clean, 10) || 0;
+            }
+          }
+          transformed[dbCol] = val;
+        }
+      });
+      return transformed;
+    });
+
+    // Determine target endpoint
+    let endpoint = "/api/import/vehicle-master";
+    if (selectedTemplate === "service_history") endpoint = "/api/import/service-history";
+    else if (selectedTemplate === "invoices") endpoint = "/api/import/invoices";
+
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: transformedRows })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setImportReport(data);
+        setImporterStep(4);
+      } else {
+        alert(data.error || "Import failed. Please verify headers mapping & date formats.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Network error: failed to complete import transaction.");
+    } finally {
+      setImportLoading(false);
     }
   };
 
-  const triggerSubmitImportBackdatedRows = async () => {
-    if (backdatedParsedRows.length === 0) return;
-    setIsUploadingBackdated(true);
-    setBackdatedResult(null);
-
-    try {
-      const res = await fetch("/api/job-cards/bulk-import-backdated", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: backdatedParsedRows })
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        setBackdatedResult(data);
-        setBackdatedParsedRows([]);
-        setBackdatedFileName("");
-        alert(`Successfully imported ${data.importedCount} historical vehicle records into the database!`);
-      } else {
-        alert("Error during import: " + (data.error || "Unknown error"));
-      }
-    } catch (err: any) {
-      console.error(err);
-      alert("Error: " + err.message);
-    } finally {
-      setIsUploadingBackdated(false);
-    }
+  const resetWizard = () => {
+    setImporterStep(1);
+    setCsvRows([]);
+    setPreviewRows([]);
+    setParsedHeaders([]);
+    setAiHeaderMapping({});
+    setImportReport(null);
+    setDetectedFileName("");
   };
 
   const renderBackdatedUploader = () => {
     return (
       <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6 shadow-sm animate-fade-in">
-        <div className="space-y-1">
-          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
-            ⚙️ DMS Historical Vehicle Visits & Job Card Uploader (April 1, 2025 - June 29, 2026)
-          </h2>
-          <p className="text-xs text-slate-500 font-medium">
-            Upload DMS records spanning <strong>1st April 2025 to 29th June 2026</strong>. These records instantly seed our vehicle history database to power **Automatic Fetching of Customer & Vehicle Details** at Gate Entry.
-          </p>
+        
+        {/* Step Indicator Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+          <div>
+            <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
+              📋 DMS Step-by-Step Data Importer (Templates & AI Matcher)
+            </h2>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Upload historical CSV files to populate Vehicle Master, Service History, or Invoice tables in GCP Cloud SQL.
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg">
+            <span>STEP {importerStep} OF 4</span>
+          </div>
         </div>
 
-        {backdatedResult && (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-start gap-3 animate-fade-in">
-            <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
-            <div className="space-y-1 text-xs text-emerald-800">
-              <h4 className="font-extrabold uppercase">DMS Historical Records Synced Successfully!</h4>
-              <p className="font-medium">
-                Successfully parsed and inserted historical records into the database.
-              </p>
-              <ul className="list-disc pl-4 mt-1.5 space-y-1 font-bold">
-                <li>Job Cards Added to History: {backdatedResult.importedCount}</li>
-                <li>Revenue Records Tracked: {backdatedResult.revenueCreated}</li>
-                <li>Technicians Fuzzy-Matched & Allocated: {backdatedResult.splitsCreated}</li>
-              </ul>
-              <button 
-                onClick={() => {
-                  setBackdatedResult(null);
-                  window.location.reload();
-                }}
-                className="mt-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-md uppercase tracking-wider text-[10px] cursor-pointer"
+        {/* STEP 1: SELECT TEMPLATE TYPE */}
+        {importerStep === 1 && (
+          <div className="space-y-4 animate-in fade-in duration-200">
+            <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+              1. Choose Import Template Target
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div 
+                onClick={() => setSelectedTemplate("vehicle_master")}
+                className={`p-5 rounded-xl border-2 cursor-pointer transition-all space-y-2.5 ${
+                  selectedTemplate === "vehicle_master" 
+                    ? "border-orange-500 bg-orange-500/5 shadow-sm" 
+                    : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/50"
+                }`}
               >
-                Refresh App History Data
+                <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center font-bold text-xs uppercase">VM</div>
+                <h4 className="font-extrabold text-xs text-slate-800 uppercase">Vehicle Master</h4>
+                <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+                  Import core vehicle details (Chassis #, Registration #, Engine #, Product VC#, Owner Account, Sale Date, Selling Dealer).
+                </p>
+              </div>
+
+              <div 
+                onClick={() => setSelectedTemplate("service_history")}
+                className={`p-5 rounded-xl border-2 cursor-pointer transition-all space-y-2.5 ${
+                  selectedTemplate === "service_history" 
+                    ? "border-orange-500 bg-orange-500/5 shadow-sm" 
+                    : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/50"
+                }`}
+              >
+                <div className="h-9 w-9 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs uppercase">SH</div>
+                <h4 className="font-extrabold text-xs text-slate-800 uppercase">Service History</h4>
+                <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+                  Import historical service record entries (SH #, Chassis #, Odometer, SR Type, Summary, Open Date, Revisit Logs).
+                </p>
+              </div>
+
+              <div 
+                onClick={() => setSelectedTemplate("invoices")}
+                className={`p-5 rounded-xl border-2 cursor-pointer transition-all space-y-2.5 ${
+                  selectedTemplate === "invoices" 
+                    ? "border-orange-500 bg-orange-500/5 shadow-sm" 
+                    : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/50"
+                }`}
+              >
+                <div className="h-9 w-9 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs uppercase">IN</div>
+                <h4 className="font-extrabold text-xs text-slate-800 uppercase">Invoices Ledger</h4>
+                <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+                  Import spares and labor invoices (Invoice #, Order #, Spares Amount, Labor Amount, Advisor ID, Invoice Status).
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex justify-end pt-3">
+              <button
+                onClick={() => setImporterStep(2)}
+                className="bg-orange-500 hover:bg-orange-600 text-white font-extrabold text-xs py-2.5 px-6 rounded-lg shadow-sm uppercase tracking-wider transition-colors cursor-pointer"
+              >
+                Next: Upload CSV File
               </button>
             </div>
           </div>
         )}
 
-        {/* DRAG AND DROP FILE ZONE */}
-        <div 
-          onDragEnter={handleBackdatedDrag}
-          onDragOver={handleBackdatedDrag}
-          onDragLeave={handleBackdatedDrag}
-          onDrop={handleBackdatedDrop}
-          className={`border border-dashed rounded-xl p-8 text-center transition-all flex flex-col items-center justify-center space-y-3 cursor-pointer bg-slate-50/50 relative overflow-hidden ${
-            backdatedDragActive ? "border-orange-500 bg-orange-500/5" : "border-slate-300 hover:border-slate-400"
-          }`}
-        >
-          <input
-            type="file"
-            accept=".csv"
-            onChange={handleBackdatedFileChange}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-          />
-          <div className="h-9 w-9 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-600 flex items-center justify-center">
-            <UploadCloud className="h-5 w-5" />
-          </div>
-          <div>
-            <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider">Drag & Drop DMS CSV File or Click to Browse</h3>
-            <p className="text-[10px] text-slate-400 mt-1 max-w-lg mx-auto font-medium">
-              Supports standard column layouts and truncated columns: <code className="font-mono bg-slate-100 px-1 text-[9px]">SR Type, SR Assignee, Invoice #, VRN, Final Labor, Invoice Status, Account</code>.
-            </p>
-          </div>
-        </div>
+        {/* STEP 2: UPLOAD CSV FILE */}
+        {importerStep === 2 && (
+          <div className="space-y-4 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+                2. Upload File for <span className="text-orange-600 font-extrabold">{selectedTemplate === 'vehicle_master' ? 'Vehicle Master' : selectedTemplate === 'service_history' ? 'Service History' : 'Invoices'}</span>
+              </h3>
+              <button onClick={() => setImporterStep(1)} className="text-xs font-bold text-slate-400 hover:text-slate-600 underline">
+                Change Target Template
+              </button>
+            </div>
 
-        {/* PARSED ROWS PREVIEW & ACTIONS */}
-        {backdatedParsedRows.length > 0 && (
-          <div className="space-y-4 border border-indigo-100 bg-indigo-50/10 p-4 rounded-xl animate-fade-in">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
-                  <span className="text-indigo-600 font-extrabold">📄 Mapped:</span> {backdatedFileName}
-                </p>
-                <p className="text-[11px] text-slate-500 font-medium">
-                  Detected <span className="font-bold text-indigo-600">{backdatedParsedRows.length} vehicle visits</span> ready for historical import.
-                </p>
+            <div 
+              onDragEnter={handleTemplateDrag}
+              onDragOver={handleTemplateDrag}
+              onDragLeave={handleTemplateDrag}
+              onDrop={handleTemplateDrop}
+              className="border border-dashed rounded-xl p-10 text-center transition-all flex flex-col items-center justify-center space-y-4 bg-slate-50/50 hover:bg-slate-50 relative overflow-hidden cursor-pointer"
+            >
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleTemplateFileChange}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+              />
+              <div className="h-10 w-10 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center shadow-3xs">
+                <UploadCloud className="h-5 w-5" />
               </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBackdatedParsedRows([]);
-                    setBackdatedFileName("");
-                  }}
-                  className="px-3 py-2 border border-slate-200 text-slate-600 hover:bg-slate-100 font-bold text-[10px] uppercase rounded-lg cursor-pointer"
-                >
-                  Discard
-                </button>
-                <button
-                  type="button"
-                  onClick={triggerSubmitImportBackdatedRows}
-                  disabled={isUploadingBackdated}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-lg flex items-center gap-1.5 cursor-pointer shadow-md transition-all"
-                >
-                  {isUploadingBackdated ? (
-                    <>
-                      <FunnySpinner className="h-3 w-3" />
-                      Syncing database...
-                    </>
-                  ) : (
-                    `⚡ Import ${backdatedParsedRows.length} Visits to DB`
-                  )}
-                </button>
+              <div>
+                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">Drag & Drop CSV File or Click to Browse</h4>
+                <p className="text-[10px] text-slate-400 mt-1 max-w-md mx-auto leading-relaxed">
+                  The system will automatically parse headers, call Gemini AI to match matching columns, and run database sanity checks.
+                </p>
               </div>
             </div>
 
-            {/* Preview Grid */}
-            <div className="overflow-x-auto border border-slate-200 rounded-lg bg-white">
-              <table className="w-full text-left text-[10px] border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-500 font-extrabold border-b border-slate-200 uppercase tracking-wider text-[9px]">
-                    <th className="p-2">Invoice #</th>
-                    <th className="p-2">VRN</th>
-                    <th className="p-2">Customer Name</th>
-                    <th className="p-2">Date In</th>
-                    <th className="p-2">Labour Amount</th>
-                    <th className="p-2">Parts Amount</th>
-                    <th className="p-2">Assignee</th>
-                    <th className="p-2">Type</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                  {backdatedParsedRows.slice(0, 5).map((row, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/50">
-                      <td className="p-2 font-mono font-bold text-indigo-600">{row.job_card_no}</td>
-                      <td className="p-2 font-bold text-slate-900">{row.vrn}</td>
-                      <td className="p-2 truncate max-w-[120px]">{row.customer_name}</td>
-                      <td className="p-2 font-mono">{row.date_in}</td>
-                      <td className="p-2">₹{row.labour_amount.toLocaleString()}</td>
-                      <td className="p-2">₹{row.parts_amount.toLocaleString()}</td>
-                      <td className="p-2 truncate max-w-[100px]">{row.technician_name}</td>
-                      <td className="p-2 text-slate-500 uppercase">{row.remarks}</td>
+            {matchingHeadersLoading && (
+              <div className="p-4 bg-indigo-50 border border-indigo-150 rounded-xl flex items-center justify-center gap-2 text-indigo-700 text-xs font-bold animate-pulse">
+                <FunnySpinner className="h-4 w-4" />
+                <span>Consulting Gemini AI to auto-match CSV headers and clean values...</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* STEP 3: MAPPED COLUMNS PREVIEW */}
+        {importerStep === 3 && (
+          <div className="space-y-5 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <div className="space-y-0.5">
+                <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
+                  3. Verify Header Mapping & Data Preview
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Verify the AI-matched columns from <span className="font-bold text-slate-600">{detectedFileName}</span>.
+                </p>
+              </div>
+              <button onClick={resetWizard} className="text-xs font-bold text-slate-400 hover:text-slate-600 underline">
+                Reset Uploader
+              </button>
+            </div>
+
+            {/* AI Columns Mapped Grid */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+              <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">
+                🧠 Gemini AI Header Match Matrix
+              </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                {Object.keys(aiHeaderMapping).map((csvHeader) => (
+                  <div key={csvHeader} className="flex justify-between items-center bg-white p-2.5 rounded-lg border border-slate-150 shadow-3xs">
+                    <span className="font-mono text-slate-500 font-bold">{csvHeader}</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">MAPPED TO:</span>
+                      <span className={`px-2 py-0.5 rounded font-black font-mono text-[10px] uppercase border ${
+                        aiHeaderMapping[csvHeader] 
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                          : 'bg-rose-50 text-rose-700 border-rose-200'
+                      }`}>
+                        {aiHeaderMapping[csvHeader] || "IGNORE / SKIP"}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Preview table (5 rows) */}
+            <div className="space-y-2">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                Preview Mapped Records (Top 5 Rows)
+              </span>
+              <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-3xs">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                      {parsedHeaders.map(h => (
+                        <th key={h} className="p-2.5 font-bold uppercase tracking-wider border-r border-slate-200">{h}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-              {backdatedParsedRows.length > 5 && (
-                <div className="p-2 text-center text-[10px] font-bold text-slate-400 bg-slate-50 border-t border-slate-100">
-                  + {backdatedParsedRows.length - 5} more rows parsed...
-                </div>
-              )}
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                    {previewRows.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/50">
+                        {parsedHeaders.map(h => (
+                          <td key={h} className="p-2.5 border-r border-slate-100 truncate max-w-[150px] font-mono text-[10px]">{row[h] || "—"}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center pt-3 border-t border-slate-100">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                Total Rows Loaded: {csvRows.length}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setImporterStep(2)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs py-2 px-4 rounded shadow-3xs uppercase tracking-wider transition-colors cursor-pointer"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={runImportProcess}
+                  disabled={importLoading}
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-800 text-white font-extrabold text-xs py-2.5 px-6 rounded shadow-sm uppercase tracking-wider transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  {importLoading ? (
+                    <>
+                      <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Writing Transaction to MySQL...</span>
+                    </>
+                  ) : (
+                    "Confirm & Import Data"
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* PASTING COLLAPSIBLE SECTION */}
-        <details className="group border border-slate-200 rounded-xl">
-          <summary className="list-none p-4 flex justify-between items-center cursor-pointer font-bold text-xs uppercase text-slate-700 hover:bg-slate-50 select-none">
-            <span className="flex items-center gap-1.5">
-              <ClipboardList className="h-4 w-4 text-slate-500" />
-              Toggle Paste Grid Area (Excel / Sheets Copy-Paste fallback)
-            </span>
-            <span className="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
-          </summary>
-          <div className="p-4 pt-0 border-t border-slate-100 space-y-4">
-            <form onSubmit={handleUploadBackdated} className="space-y-4">
-              <div className="space-y-2">
-                <div className="text-[10px] text-slate-400 bg-slate-50 border border-slate-200 p-3 rounded-lg font-mono leading-relaxed space-y-1">
-                  <span className="font-extrabold text-slate-500 uppercase block mb-1">Expected columns format (include header row):</span>
-                  <code>Job Card No, VRN, Customer Name, Date In, Vehicle Model, Status, Bay No, Service Advisor, Technician Name, Remarks, Labour Amount, Spares Amount</code>
-                </div>
-                <textarea
-                  value={backdatedText}
-                  onChange={(e) => setBackdatedText(e.target.value)}
-                  rows={6}
-                  placeholder="Paste your copied rows here... Include the header line!"
-                  className="w-full bg-slate-50/50 border border-slate-200 rounded-xl p-4 text-xs font-mono text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 focus:bg-white transition-all"
-                ></textarea>
-              </div>
+        {/* STEP 4: IMPORT REPORT CARD */}
+        {importerStep === 4 && importReport && (
+          <div className="space-y-4 text-center p-6 animate-in fade-in duration-300">
+            <div className="h-12 w-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-xs">
+              <CheckCircle className="h-6 w-6" />
+            </div>
+            
+            <div className="space-y-1">
+              <h3 className="font-extrabold text-slate-855 uppercase text-sm tracking-wider">
+                Database Bulk Import Transaction Successful!
+              </h3>
+              <p className="text-xs text-slate-400 leading-relaxed max-w-sm mx-auto font-medium">
+                The parsed dataset has been committed successfully to the Google Cloud SQL instance tables.
+              </p>
+            </div>
 
-              <div className="flex justify-between items-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBackdatedText(
-                      "Job Card No\tVRN\tCustomer Name\tDate In\tVehicle Model\tStatus\tBay No\tService Advisor\tTechnician Name\tRemarks\tLabour Amount\tSpares Amount\n" +
-                      "JC-B101\tMH-12-PQ-9999\tJohn Doe\t2026-06-15\tTata Prima 2825\tInvoiced\t2\tAdvisor Smith\tASHFAQ\tGeneral Repair with Oil Service\t1850\t2200\n" +
-                      "JC-B102\tDL-03-ZZ-1111\tJane Miller\t2026-06-20\tTata Signa 4825\tCompleted\t4\tAdvisor Smith\tALTAF HUSSAIN\tPeriodic Maintenance AMC\t1200\t800"
-                    );
-                  }}
-                  className="text-indigo-600 hover:text-indigo-700 font-bold text-xs uppercase cursor-pointer"
-                >
-                  📋 Load Sample Rows
-                </button>
-                <button
-                  type="submit"
-                  disabled={isUploadingBackdated}
-                  className={`bg-orange-500 hover:bg-orange-600 text-white font-black text-xs uppercase tracking-wider px-6 py-3 rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer ${
-                    isUploadingBackdated ? "opacity-50 cursor-not-allowed" : ""
-                  }`}
-                >
-                  {isUploadingBackdated ? (
-                    <>
-                      <FunnySpinner className="h-4 w-4" />
-                      Fuzzy Matching...
-                    </>
-                  ) : (
-                    "Upload Paste Rows"
-                  )}
-                </button>
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 max-w-md mx-auto grid grid-cols-3 gap-2.5 text-center text-xs">
+              <div>
+                <span className="text-slate-400 font-bold block uppercase text-[10px]">Records Added</span>
+                <span className="font-black text-slate-800 text-base font-mono mt-1 block">{importReport.created}</span>
               </div>
-            </form>
+              <div className="border-l border-r border-slate-200">
+                <span className="text-slate-400 font-bold block uppercase text-[10px]">Updated / Merged</span>
+                <span className="font-black text-slate-800 text-base font-mono mt-1 block">{importReport.updated}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-bold block uppercase text-[10px]">Total Processed</span>
+                <span className="font-black text-indigo-600 text-base font-mono mt-1 block">{importReport.total}</span>
+              </div>
+            </div>
+
+            <div className="pt-4 flex justify-center gap-2">
+              <button
+                onClick={resetWizard}
+                className="bg-orange-500 hover:bg-orange-600 text-white font-extrabold text-xs py-2.5 px-6 rounded-lg shadow-sm uppercase tracking-wider transition-colors cursor-pointer"
+              >
+                Import Another File
+              </button>
+            </div>
           </div>
-        </details>
+        )}
+
       </div>
     );
   };

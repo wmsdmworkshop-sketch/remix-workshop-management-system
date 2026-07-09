@@ -4,6 +4,9 @@ import * as path from "path";
 
 const DATA_FILE = path.join(process.cwd(), "workshop_db.json");
 
+// In-memory cache to prevent redundant MySQL writes of unchanged rows
+const dbRowCache = new Map<string, string>();
+
 // Helper to stringify JSON safely
 function safeStringify(val: any): string | null {
   if (val === undefined || val === null) return null;
@@ -45,9 +48,21 @@ function safeMysqlDatetime(dateVal: any, defaultVal: string | null = null): stri
 async function upsertRows(tableName: string, rows: any[], primaryKey: string) {
   if (!rows || rows.length === 0) return;
   for (const row of rows) {
+    const pkVal = row[primaryKey];
+    if (pkVal !== undefined && pkVal !== null) {
+      const cacheKey = `${tableName}:${pkVal}`;
+      const stringified = JSON.stringify(row);
+      if (dbRowCache.get(cacheKey) === stringified) {
+        continue;
+      }
+    }
+
     // Clone and sanitize row properties (convert booleans to 1/0 or let mysql2 handle it)
     const sanitizedRow: any = {};
     for (const key of Object.keys(row)) {
+      if (tableName === "alert_logs" && key === "target_roles") {
+        continue;
+      }
       let val = row[key];
       // Convert boolean values explicitly to 1 or 0 for safety with some MySQL configurations
       if (typeof val === "boolean") {
@@ -71,6 +86,11 @@ async function upsertRows(tableName: string, rows: any[], primaryKey: string) {
 
     const values = keys.map((k) => sanitizedRow[k]);
     await db.execute(sql, values);
+
+    if (pkVal !== undefined && pkVal !== null) {
+      const cacheKey = `${tableName}:${pkVal}`;
+      dbRowCache.set(cacheKey, JSON.stringify(row));
+    }
   }
 }
 
@@ -128,9 +148,15 @@ async function saveJobCardsToMaster(jobCards: any[]) {
       estimated_amount: Number(row.labor_price || 0) + Number(row.parts_price || 0),
       last_service_date: row.last_service_date || row.completed_at || row.created_at || null,
       odometer_reading: row.odometer_reading || row.km_reading || null,
-      chassis_no: row.chassis_number || row.vin || null,
+      chassis_no: row.vin || null,
       gate_out_time: safeMysqlDatetime(row.gate_out_time, null)
     };
+
+    const cacheKey = `job_card_master:${masterRow.job_card_id}`;
+    const stringified = JSON.stringify(masterRow);
+    if (dbRowCache.get(cacheKey) === stringified) {
+      continue;
+    }
 
     const keys = Object.keys(masterRow);
     const placeholders = keys.map(() => "?").join(", ");
@@ -147,6 +173,7 @@ async function saveJobCardsToMaster(jobCards: any[]) {
 
     const values = keys.map((k) => masterRow[k]);
     await db.execute(sql, values);
+    dbRowCache.set(cacheKey, stringified);
   }
 }
 
@@ -175,6 +202,10 @@ export async function ensureTablesExist(): Promise<void> {
       \`target_revenue\` INT DEFAULT NULL,
       \`paid_pct\` VARCHAR(50) DEFAULT NULL,
       \`tml_claim_pct\` VARCHAR(50) DEFAULT NULL,
+      \`certification_level\` VARCHAR(50) DEFAULT NULL,
+      \`certification_date\` VARCHAR(100) DEFAULT NULL,
+      \`certification_expiry_date\` VARCHAR(100) DEFAULT NULL,
+      \`certification_remarks\` TEXT DEFAULT NULL,
       PRIMARY KEY (\`employee_id\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
   `);
@@ -517,6 +548,97 @@ export async function ensureTablesExist(): Promise<void> {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
   `);
 
+  // 19b. breakdowns
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS \`breakdowns\` (
+      \`breakdown_id\` INT NOT NULL AUTO_INCREMENT,
+      \`sr_number\` VARCHAR(100) DEFAULT NULL,
+      \`complaint_date\` DATETIME DEFAULT NULL,
+      \`tata_complaint_number\` VARCHAR(100) DEFAULT NULL,
+      \`internal_breakdown_number\` VARCHAR(100) NOT NULL UNIQUE,
+      \`vehicle_number\` VARCHAR(100) NOT NULL,
+      \`priority\` VARCHAR(50) DEFAULT NULL, -- 'P1 - Vehicle Off Road (VOR)', 'P2 - Customer Waiting', 'P3 - Can Drive to Workshop', 'P4 - Planned Visit'
+      \`assigned_qrt\` INT DEFAULT NULL,
+      \`assigned_advisor_id\` INT DEFAULT NULL,
+      \`preferred_workshop_id\` INT DEFAULT NULL,
+      \`auto_suggested_workshop_id\` INT DEFAULT NULL,
+      \`assigned_workshop_id\` INT DEFAULT NULL,
+      \`expected_eta\` DATETIME DEFAULT NULL,
+      \`actual_arrival_time\` DATETIME DEFAULT NULL,
+      \`delay_minutes\` INT DEFAULT 0,
+      \`delay_reason\` TEXT DEFAULT NULL,
+      \`assignment_time\` DATETIME DEFAULT NULL,
+      \`attendance_time\` DATETIME DEFAULT NULL,
+      \`complaint\` TEXT,
+      \`technician\` VARCHAR(200) DEFAULT NULL,
+      \`assistant_technician\` VARCHAR(200) DEFAULT NULL,
+      \`mechanical_helper\` VARCHAR(200) DEFAULT NULL,
+      \`electrician\` VARCHAR(200) DEFAULT NULL,
+      \`job_close_time\` DATETIME DEFAULT NULL,
+      \`csc_conversion_number\` VARCHAR(100) DEFAULT NULL,
+      \`driver_name\` VARCHAR(200) DEFAULT NULL,
+      \`job_card_close_date\` DATETIME DEFAULT NULL,
+      \`location\` VARCHAR(500) DEFAULT NULL,
+      \`gps_latitude\` DECIMAL(9,6) DEFAULT NULL,
+      \`gps_longitude\` DECIMAL(9,6) DEFAULT NULL,
+      \`gps_address\` TEXT DEFAULT NULL,
+      \`gps_maps_link\` TEXT DEFAULT NULL,
+      \`job_card_number\` VARCHAR(100) DEFAULT NULL,
+      \`odometer\` INT DEFAULT NULL,
+      \`claim_type\` VARCHAR(100) DEFAULT NULL,
+      \`parts_amount\` DECIMAL(12,2) DEFAULT 0.00,
+      \`labour_amount\` DECIMAL(12,2) DEFAULT 0.00,
+      \`description_remarks\` TEXT,
+      \`current_status\` VARCHAR(100) NOT NULL DEFAULT 'Complaint Received',
+      \`status_history\` TEXT,
+      PRIMARY KEY (\`breakdown_id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  `);
+
+  // 19c. qrt_teams
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS \`qrt_teams\` (
+      \`qrt_id\` INT NOT NULL AUTO_INCREMENT,
+      \`team_name\` VARCHAR(200) NOT NULL UNIQUE,
+      \`technician_id\` INT DEFAULT NULL,
+      \`assistant_id\` INT DEFAULT NULL,
+      \`helper_id\` INT DEFAULT NULL,
+      \`electrician_id\` INT DEFAULT NULL,
+      \`vehicle_no\` VARCHAR(100) DEFAULT NULL,
+      \`phone_numbers\` VARCHAR(200) DEFAULT NULL,
+      \`availability\` TINYINT(1) DEFAULT 1,
+      \`current_assignment\` INT DEFAULT NULL,
+      PRIMARY KEY (\`qrt_id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  `);
+
+  // 19d. breakdown_attachments
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS \`breakdown_attachments\` (
+      \`attachment_id\` INT NOT NULL AUTO_INCREMENT,
+      \`breakdown_id\` INT NOT NULL,
+      \`attachment_type\` VARCHAR(50) NOT NULL, -- 'SELFIE', 'SCENE', 'JOB_CARD'
+      \`file_path\` TEXT NOT NULL,
+      \`driver_name\` VARCHAR(200) DEFAULT NULL,
+      \`uploaded_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`attachment_id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  `);
+
+  // 19e. breakdown_communications
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS \`breakdown_communications\` (
+      \`communication_id\` INT NOT NULL AUTO_INCREMENT,
+      \`breakdown_id\` INT NOT NULL,
+      \`communication_type\` VARCHAR(50) NOT NULL,
+      \`sender_id\` INT NOT NULL,
+      \`recipient_role\` VARCHAR(100) NOT NULL,
+      \`message\` TEXT NOT NULL,
+      \`logged_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`communication_id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  `);
+
   // 20. Ensure column `vin` exists on `job_cards` and `job_card_master`
   try {
     await db.execute("ALTER TABLE `job_cards` ADD COLUMN `vin` VARCHAR(50) DEFAULT NULL");
@@ -554,10 +676,149 @@ export async function ensureTablesExist(): Promise<void> {
     // Ignore error if column already exists
   }
   try {
-    await db.execute("ALTER TABLE `job_card_master` ADD COLUMN `gate_out_time` VARCHAR(100) DEFAULT NULL");
-  } catch (err) {
-    // Ignore error if column already exists
-  }
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `tata_complaint_number` VARCHAR(100) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `driver_mobile` VARCHAR(50) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `alternate_mobile` VARCHAR(50) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `fleet_owner` VARCHAR(200) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `fleet_manager` VARCHAR(200) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `fleet_manager_mobile` VARCHAR(50) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `preferred_workshop_id` INT DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `auto_suggested_workshop_id` INT DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `assigned_workshop_id` INT DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `vehicle_movable` TINYINT(1) DEFAULT 1");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `towing_required` TINYINT(1) DEFAULT 0");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `parts_required` TINYINT(1) DEFAULT 0");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `resolved_at_site` TINYINT(1) DEFAULT 0");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `gps_latitude` DECIMAL(9,6) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `gps_longitude` DECIMAL(9,6) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `gps_address` TEXT DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `gps_maps_link` TEXT DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `job_card_number` VARCHAR(100) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `odometer` INT DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `claim_type` VARCHAR(100) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `parts_amount` DECIMAL(12,2) DEFAULT 0.00");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `labour_amount` DECIMAL(12,2) DEFAULT 0.00");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `description_remarks` TEXT");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `priority` VARCHAR(50) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `sla_limit_hours` INT DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `current_status` VARCHAR(100) NOT NULL DEFAULT 'Complaint Received'");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `assigned_qrt` INT DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `assigned_advisor_id` INT DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `internal_breakdown_number` VARCHAR(100) NOT NULL UNIQUE");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `sr_number` VARCHAR(100) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `complaint_date` DATETIME DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `expected_eta` DATETIME DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `actual_arrival_time` DATETIME DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `delay_minutes` INT DEFAULT 0");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `delay_reason` TEXT DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `assignment_time` DATETIME DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `attendance_time` DATETIME DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `complaint` TEXT");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `technician` VARCHAR(200) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `assistant_technician` VARCHAR(200) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `mechanical_helper` VARCHAR(200) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `electrician` VARCHAR(200) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `job_close_time` DATETIME DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `csc_conversion_number` VARCHAR(100) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `driver_name` VARCHAR(200) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `job_card_close_date` DATETIME DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `location` VARCHAR(500) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `status_history` TEXT");
+  } catch (err) {}
 
   // 21. models table
   await db.execute(`
@@ -608,6 +869,20 @@ export async function ensureTablesExist(): Promise<void> {
     // Ignore error if column already exists
   }
 
+  // Ensure employee certification columns exist
+  try {
+    await db.execute("ALTER TABLE `employees` ADD COLUMN `certification_level` VARCHAR(50) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `employees` ADD COLUMN `certification_date` VARCHAR(100) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `employees` ADD COLUMN `certification_expiry_date` VARCHAR(100) DEFAULT NULL");
+  } catch (err) {}
+  try {
+    await db.execute("ALTER TABLE `employees` ADD COLUMN `certification_remarks` TEXT DEFAULT NULL");
+  } catch (err) {}
+
   // 23. roles table
   await db.execute(`
     CREATE TABLE IF NOT EXISTS \`roles\` (
@@ -640,10 +915,226 @@ export async function ensureTablesExist(): Promise<void> {
     console.error("Failed to seed roles table:", err);
   }
 
+  // Alter employees table for Overtime columns
+  const empCols = [
+    { name: "department", type: "VARCHAR(100) DEFAULT NULL" },
+    { name: "workshop_id", type: "INT DEFAULT NULL" },
+    { name: "shift_id", type: "INT DEFAULT NULL" },
+    { name: "joining_date", type: "VARCHAR(100) DEFAULT NULL" },
+    { name: "profile_photo_url", type: "TEXT DEFAULT NULL" },
+    { name: "face_embedding_reference", type: "TEXT DEFAULT NULL" }
+  ];
+  for (const col of empCols) {
+    try {
+      await db.execute(`ALTER TABLE \`employees\` ADD COLUMN \`${col.name}\` ${col.type}`);
+    } catch (e) {
+      // Ignore if column already exists
+    }
+  }
+
+  // Create Workshops Table (empty by default)
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS \`workshops\` (
+      \`workshop_id\` INT NOT NULL AUTO_INCREMENT,
+      \`workshop_name\` VARCHAR(100) NOT NULL UNIQUE,
+      \`latitude\` DECIMAL(9,6) NOT NULL,
+      \`longitude\` DECIMAL(9,6) NOT NULL,
+      \`allowed_gps_radius\` INT NOT NULL DEFAULT 200,
+      \`is_active\` TINYINT(1) DEFAULT 1,
+      PRIMARY KEY (\`workshop_id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  // Create Shifts Table
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS \`shifts\` (
+      \`shift_id\` INT NOT NULL AUTO_INCREMENT,
+      \`shift_type\` VARCHAR(50) NOT NULL,
+      \`start_time\` TIME NOT NULL,
+      \`end_time\` TIME NOT NULL,
+      \`is_active\` TINYINT(1) DEFAULT 1,
+      PRIMARY KEY (\`shift_id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  // Seed default shifts if empty
+  try {
+    const [shiftCountRows] = await db.execute("SELECT COUNT(*) as count FROM `shifts`") as any[];
+    if (shiftCountRows && shiftCountRows[0].count === 0) {
+      await db.execute(`
+        INSERT INTO \`shifts\` (\`shift_type\`, \`start_time\`, \`end_time\`, \`is_active\`) VALUES
+        ('General', '09:00:00', '17:00:00', 1),
+        ('Morning', '06:00:00', '14:00:00', 1),
+        ('Evening', '14:00:00', '22:00:00', 1),
+        ('Night', '22:00:00', '06:00:00', 1),
+        ('Holiday', '09:00:00', '17:00:00', 1),
+        ('Emergency', '00:00:00', '23:59:59', 1)
+      `);
+    }
+  } catch (err) {
+    console.error("Failed to seed shifts table:", err);
+  }
+
+  // Create Approval Matrices Table
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS \`approval_matrices\` (
+      \`matrix_id\` INT NOT NULL AUTO_INCREMENT,
+      \`module_name\` VARCHAR(100) NOT NULL DEFAULT 'OVERTIME',
+      \`ot_category\` VARCHAR(50) NOT NULL,
+      \`workshop_id\` INT NOT NULL,
+      \`role_name\` VARCHAR(100) NOT NULL,
+      \`approval_level\` INT NOT NULL,
+      \`is_active\` TINYINT(1) DEFAULT 1,
+      PRIMARY KEY (\`matrix_id\`),
+      FOREIGN KEY (\`workshop_id\`) REFERENCES \`workshops\` (\`workshop_id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  // Create Overtime Requests Table
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS \`overtime_requests\` (
+      \`ot_id\` INT NOT NULL AUTO_INCREMENT,
+      \`employee_id\` INT NOT NULL,
+      \`ot_category\` VARCHAR(50) NOT NULL,
+      \`date\` DATE NOT NULL,
+      \`shift_id\` INT NOT NULL,
+      \`ot_start_time\` TIME NOT NULL,
+      \`ot_end_time\` TIME NOT NULL,
+      \`total_hours\` DECIMAL(5,2) NOT NULL,
+      \`benefit_type\` VARCHAR(100) NOT NULL,
+      \`ot_reason_category\` VARCHAR(100) NOT NULL,
+      \`job_card_id\` INT DEFAULT NULL,
+      \`workshop_id\` INT DEFAULT NULL,
+      \`department\` VARCHAR(100) DEFAULT NULL,
+      \`work_description\` TEXT DEFAULT NULL,
+      \`comp_attendance_credit_earned\` DECIMAL(3,2) DEFAULT 0.00,
+      \`snapshot_basic_salary\` DECIMAL(12,2) DEFAULT NULL,
+      \`snapshot_days_in_month\` INT DEFAULT NULL,
+      \`hourly_salary_rate\` DECIMAL(10,2) DEFAULT NULL,
+      \`calculated_amount\` DECIMAL(12,2) DEFAULT NULL,
+      \`max_allowed_cap\` DECIMAL(12,2) DEFAULT NULL,
+      \`final_payable_amount\` DECIMAL(12,2) DEFAULT NULL,
+      \`capping_reason\` VARCHAR(255) DEFAULT NULL,
+      \`device_name\` VARCHAR(100) NOT NULL,
+      \`operating_system\` VARCHAR(100) NOT NULL,
+      \`app_version\` VARCHAR(50) NOT NULL,
+      \`ip_address\` VARCHAR(45) NOT NULL,
+      \`device_time\` TIMESTAMP NOT NULL,
+      \`server_time\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`time_difference_seconds\` INT NOT NULL,
+      \`face_verification_provider\` VARCHAR(50) DEFAULT NULL,
+      \`face_match_result\` VARCHAR(50) DEFAULT NULL,
+      \`face_match_score\` DECIMAL(4,3) DEFAULT NULL,
+      \`face_verification_time\` TIMESTAMP NULL DEFAULT NULL,
+      \`ocr_provider\` VARCHAR(50) DEFAULT NULL,
+      \`ocr_confidence\` DECIMAL(4,3) DEFAULT NULL,
+      \`ocr_verification_time\` TIMESTAMP NULL DEFAULT NULL,
+      \`gps_lat\` DECIMAL(9,6) NOT NULL,
+      \`gps_lng\` DECIMAL(9,6) NOT NULL,
+      \`gps_matched\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`ai_recommendation_status\` VARCHAR(50) DEFAULT 'PENDING',
+      \`ai_flags\` VARCHAR(255) DEFAULT NULL,
+      \`current_level\` INT NOT NULL DEFAULT 1,
+      \`current_status\` VARCHAR(50) NOT NULL DEFAULT 'PENDING_APPROVAL',
+      \`payroll_period\` VARCHAR(20) DEFAULT NULL,
+      \`paid_at\` TIMESTAMP NULL DEFAULT NULL,
+      \`payment_reference\` VARCHAR(100) DEFAULT NULL,
+      \`created_by\` INT NOT NULL,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`ot_id\`),
+      FOREIGN KEY (\`employee_id\`) REFERENCES \`employees\` (\`employee_id\`),
+      FOREIGN KEY (\`shift_id\`) REFERENCES \`shifts\` (\`shift_id\`),
+      FOREIGN KEY (\`workshop_id\`) REFERENCES \`workshops\` (\`workshop_id\`),
+      FOREIGN KEY (\`job_card_id\`) REFERENCES \`job_cards\` (\`job_id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  // Create Overtime Attachments Table
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS \`overtime_attachments\` (
+      \`attachment_id\` INT NOT NULL AUTO_INCREMENT,
+      \`ot_id\` INT NOT NULL,
+      \`attachment_type\` VARCHAR(50) NOT NULL,
+      \`file_path\` TEXT NOT NULL,
+      \`uploaded_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`attachment_id\`),
+      FOREIGN KEY (\`ot_id\`) REFERENCES \`overtime_requests\` (\`ot_id\`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  // Create Overtime Workflow History Table
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS \`overtime_workflow_history\` (
+      \`history_id\` INT NOT NULL AUTO_INCREMENT,
+      \`ot_id\` INT NOT NULL,
+      \`level\` INT NOT NULL,
+      \`approver_id\` INT NOT NULL,
+      \`approver_role\` VARCHAR(100) NOT NULL,
+      \`action_date\` DATE NOT NULL,
+      \`action_time\` TIME NOT NULL,
+      \`decision\` VARCHAR(50) NOT NULL,
+      \`remarks\` TEXT,
+      PRIMARY KEY (\`history_id\`),
+      FOREIGN KEY (\`ot_id\`) REFERENCES \`overtime_requests\` (\`ot_id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  // Create Overtime API Logs Table
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS \`overtime_api_logs\` (
+      \`log_id\` INT NOT NULL AUTO_INCREMENT,
+      \`request_id\` VARCHAR(100) NOT NULL UNIQUE,
+      \`user_id\` INT DEFAULT NULL,
+      \`api_endpoint\` VARCHAR(255) NOT NULL,
+      \`ip_address\` VARCHAR(45) NOT NULL,
+      \`device_info\` VARCHAR(255) NOT NULL,
+      \`execution_duration_ms\` INT NOT NULL,
+      \`response_status\` INT NOT NULL,
+      \`timestamp\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`log_id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  // Create Overtime Audit Logs Table
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS \`overtime_audit_logs\` (
+      \`log_id\` INT NOT NULL AUTO_INCREMENT,
+      \`ot_id\` INT NOT NULL,
+      \`action\` VARCHAR(50) NOT NULL,
+      \`actor_id\` INT NOT NULL,
+      \`actor_role\` VARCHAR(100) NOT NULL,
+      \`timestamp\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`ip_address\` VARCHAR(45) NOT NULL,
+      \`payload_diff\` TEXT NOT NULL,
+      PRIMARY KEY (\`log_id\`),
+      FOREIGN KEY (\`ot_id\`) REFERENCES \`overtime_requests\` (\`ot_id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
   console.log("Database table verification completed.");
 }
 
 export async function syncLoad(): Promise<any> {
+  // Retry database connection on startup to handle cases where Cloud SQL proxy is not fully ready (e.g. on Cloud Run boot)
+  let retries = 5;
+  const delayMs = 2000;
+  while (retries > 0) {
+    try {
+      await db.query("SELECT 1");
+      console.log("Database connection verified successfully.");
+      break;
+    } catch (err: any) {
+      retries--;
+      console.warn(`Database connection not ready yet. Retrying in ${delayMs}ms... (${retries} retries left). Error: ${err.message}`);
+      if (retries === 0) {
+        console.error("Max database connection retries reached. Proceeding with fallback/error path.");
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
   try {
     console.log("=== STARTING CLOUD SQL/MYSQL DB LOAD / SEED ===");
 
@@ -737,7 +1228,7 @@ export async function syncLoad(): Promise<any> {
     // Fetch job_cards to link fields like km_reading
     let jobCardsRows: any[] = [];
     try {
-      const [jcRows] = await db.query("SELECT job_id, km_reading, vehicle_make, vehicle_model, vehicle_year, chassis_number, last_service_date, odometer_reading FROM job_cards") as any[];
+      const [jcRows] = await db.query("SELECT job_id, km_reading, vehicle_make, vehicle_model, vehicle_year, vin, last_service_date, odometer_reading FROM job_cards") as any[];
       jobCardsRows = jcRows;
     } catch (e) {
       console.error("Could not load job_cards rows for mapping:", e);
@@ -775,6 +1266,26 @@ export async function syncLoad(): Promise<any> {
     const [alertLogs] = await db.query("SELECT * FROM alert_logs") as any[];
     const [dmsImportBatches] = await db.query("SELECT * FROM dms_import_batches") as any[];
     const [dmsImportRows] = await db.query("SELECT * FROM dms_import_rows") as any[];
+
+    // Overtime module tables
+    const [workshops] = await db.query("SELECT * FROM workshops") as any[];
+    const [shifts] = await db.query("SELECT * FROM shifts") as any[];
+    const [approvalMatrices] = await db.query("SELECT * FROM approval_matrices") as any[];
+    const [overtimeRequests] = await db.query("SELECT * FROM overtime_requests") as any[];
+    const [overtimeAttachments] = await db.query("SELECT * FROM overtime_attachments") as any[];
+    const [overtimeWorkflowHistory] = await db.query("SELECT * FROM overtime_workflow_history") as any[];
+    const [overtimeApiLogs] = await db.query("SELECT * FROM overtime_api_logs") as any[];
+    const [overtimeAuditLogs] = await db.query("SELECT * FROM overtime_audit_logs") as any[];
+
+    // Breakdown module tables
+    let breakdowns: any[] = [];
+    try { [breakdowns] = await db.query("SELECT * FROM breakdowns") as any[]; } catch (e) {}
+    let qrtTeams: any[] = [];
+    try { [qrtTeams] = await db.query("SELECT * FROM qrt_teams") as any[]; } catch (e) {}
+    let breakdownAttachments: any[] = [];
+    try { [breakdownAttachments] = await db.query("SELECT * FROM breakdown_attachments") as any[]; } catch (e) {}
+    let breakdownCommunications: any[] = [];
+    try { [breakdownCommunications] = await db.query("SELECT * FROM breakdown_communications") as any[]; } catch (e) {}
 
     // Convert MySQL TINYINT (which comes back as 0 or 1) to actual boolean true/false for JS.
     const mapBooleans = (rows: any[], booleanKeys: string[]) => {
@@ -842,7 +1353,7 @@ export async function syncLoad(): Promise<any> {
         job_card_no: row.job_card_no,
         vrn: row.vehicle_reg || '',
         vin: row.vin || undefined,
-        chassis_number: row.chassis_no || (jcMatch ? jcMatch.chassis_number : undefined) || row.vin || undefined,
+        chassis_number: row.chassis_no || (jcMatch ? jcMatch.vin : undefined) || row.vin || undefined,
         customer_name: row.customer_name || 'Walk-in Customer',
         customer_mobile: row.mobile || row.driver_mobile || '0000000000',
         vehicle_make: jcMatch ? jcMatch.vehicle_make : 'Tata',
@@ -908,6 +1419,83 @@ export async function syncLoad(): Promise<any> {
       };
     });
 
+    // Populate cache to avoid redundant sync writes
+    dbRowCache.clear();
+    const cacheRows = (tableName: string, rows: any[], pk: string) => {
+      if (!rows) return;
+      for (const r of rows) {
+        dbRowCache.set(`${tableName}:${r[pk]}`, JSON.stringify(r));
+      }
+    };
+    cacheRows("employees", employees, "employee_id");
+    cacheRows("bays", bays, "bay_id");
+    cacheRows("sr_types", srTypes, "sr_type_id");
+    cacheRows("revenue_splits", revenueSplits, "split_id");
+    cacheRows("alert_configs", alertConfigs, "alert_config_id");
+    cacheRows("job_technician_maps", jobTechnicianMaps, "map_id");
+    cacheRows("job_revenues", jobRevenues, "revenue_id");
+    cacheRows("job_revenue_split_details", jobRevenueSplitDetails, "detail_id");
+    cacheRows("carry_forward_logs", carryForwardLogs, "cf_id");
+    cacheRows("rework_logs", reworkLogs, "rework_id");
+    cacheRows("alert_logs", alertLogs, "alert_id");
+    cacheRows("dms_import_batches", dmsImportBatches, "batch_id");
+    cacheRows("dms_import_rows", dmsImportRows, "row_id");
+    cacheRows("workshops", workshops, "workshop_id");
+    cacheRows("shifts", shifts, "shift_id");
+    cacheRows("approval_matrices", approvalMatrices, "matrix_id");
+    cacheRows("overtime_requests", overtimeRequests, "ot_id");
+    cacheRows("overtime_attachments", overtimeAttachments, "attachment_id");
+    cacheRows("overtime_workflow_history", overtimeWorkflowHistory, "history_id");
+    cacheRows("overtime_api_logs", overtimeApiLogs, "log_id");
+    cacheRows("overtime_audit_logs", overtimeAuditLogs, "log_id");
+    cacheRows("breakdowns", breakdowns, "breakdown_id");
+    cacheRows("qrt_teams", qrtTeams, "qrt_id");
+    cacheRows("breakdown_attachments", breakdownAttachments, "attachment_id");
+    cacheRows("breakdown_communications", breakdownCommunications, "communication_id");
+
+    // job_card_master contains mapped representations in database format
+    for (const r of jobCardMasterRows) {
+      // reconstruct raw format to match saveJobCardsToMaster
+      let jobStatus = 'Unassigned';
+      const statusLower = String(r.job_status || '').toLowerCase();
+      if (statusLower === 'waiting') jobStatus = 'Unassigned';
+      else if (statusLower === 'in progress' || statusLower === 'assigned') jobStatus = 'In Progress';
+      else if (statusLower === 'ready') jobStatus = 'Ready';
+      else if (statusLower === 'delivered') jobStatus = 'Delivered';
+      else if (statusLower === 'carry forward') jobStatus = 'Carry Forward';
+      else if (statusLower === 'rework') jobStatus = 'In Progress';
+      else if (statusLower === 'cancelled') jobStatus = 'Unassigned';
+
+      let serviceType = 'General Repair';
+      if (r.service_type === 'Oil Change') serviceType = 'Oil Change';
+      else if (r.service_type === 'Electrical') serviceType = 'Electrical';
+      else if (r.service_type === '2 Service') serviceType = '2 Service';
+
+      const masterRow = {
+        job_card_id: r.job_card_id,
+        job_card_no: r.job_card_no,
+        bay_id: r.bay_id || 1,
+        vehicle_reg: (r.vehicle_reg || '').substring(0, 10),
+        vin: r.vin ? r.vin.substring(0, 50) : null,
+        customer_name: (r.customer_name || 'Walk-in Customer').substring(0, 100),
+        driver_mobile: (r.driver_mobile || '0000000000').substring(0, 15),
+        service_type: r.service_type || serviceType,
+        job_status: r.job_status || jobStatus,
+        assigned_to: r.assigned_to || 22,
+        etd: safeMysqlDatetime(r.etd, safeMysqlDatetime(new Date())!),
+        actual_delivery: safeMysqlDatetime(r.actual_delivery, null),
+        created_by: r.created_by || 22,
+        live_status: r.live_status || 'Waiting',
+        billing_status: r.billing_status || 'Pending',
+        estimated_amount: Number(r.estimated_amount || 0),
+        last_service_date: r.last_service_date || r.actual_delivery || r.created_at || null,
+        odometer_reading: r.odometer_reading || null,
+        chassis_no: r.chassis_no || null,
+        gate_out_time: safeMysqlDatetime(r.gate_out_time, null)
+      };
+      dbRowCache.set(`job_card_master:${r.job_card_id}`, JSON.stringify(masterRow));
+    }
+
     return {
       employees: mapBooleans(employees, ["is_active"]),
       bays: mapBooleans(bays, ["is_active"]),
@@ -922,7 +1510,19 @@ export async function syncLoad(): Promise<any> {
       reworkLogs,
       alertLogs,
       dmsImportBatches,
-      dmsImportRows: parsedDmsImportRows
+      dmsImportRows: parsedDmsImportRows,
+      workshops: mapBooleans(workshops || [], ["is_active"]),
+      shifts: mapBooleans(shifts || [], ["is_active"]),
+      approvalMatrices: mapBooleans(approvalMatrices || [], ["is_active"]),
+      overtimeRequests: mapBooleans(overtimeRequests || [], ["gps_matched"]),
+      overtimeAttachments: overtimeAttachments || [],
+      overtimeWorkflowHistory: overtimeWorkflowHistory || [],
+      overtimeApiLogs: overtimeApiLogs || [],
+      overtimeAuditLogs: overtimeAuditLogs || [],
+      breakdowns: mapBooleans(breakdowns || [], ["vehicle_movable", "towing_required", "parts_required", "resolved_at_site"]),
+      qrtTeams: mapBooleans(qrtTeams || [], ["availability"]),
+      breakdownAttachments: breakdownAttachments || [],
+      breakdownCommunications: breakdownCommunications || []
     };
   } catch (error) {
     console.error("Database sync load failed, falling back to local file:", error);
@@ -978,6 +1578,22 @@ export async function syncSave(data: any): Promise<void> {
       }));
       await upsertRows("dms_import_rows", formattedRows, "row_id");
     }
+
+    // Overtime module tables sync save
+    await upsertRows("workshops", data.workshops || [], "workshop_id");
+    await upsertRows("shifts", data.shifts || [], "shift_id");
+    await upsertRows("approval_matrices", data.approvalMatrices || [], "matrix_id");
+    await upsertRows("overtime_requests", data.overtimeRequests || [], "ot_id");
+    await upsertRows("overtime_attachments", data.overtimeAttachments || [], "attachment_id");
+    await upsertRows("overtime_workflow_history", data.overtimeWorkflowHistory || [], "history_id");
+    await upsertRows("overtime_api_logs", data.overtimeApiLogs || [], "log_id");
+    await upsertRows("overtime_audit_logs", data.overtimeAuditLogs || [], "log_id");
+
+    // Breakdown module tables sync save
+    await upsertRows("breakdowns", data.breakdowns || [], "breakdown_id");
+    await upsertRows("qrt_teams", data.qrtTeams || [], "qrt_id");
+    await upsertRows("breakdown_attachments", data.breakdownAttachments || [], "attachment_id");
+    await upsertRows("breakdown_communications", data.breakdownCommunications || [], "communication_id");
 
     console.log("MySQL DB sync save completed successfully!");
   } catch (error) {

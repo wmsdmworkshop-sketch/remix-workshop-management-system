@@ -1,8 +1,58 @@
-node_modules
+# Dependencies
+node_modules/
+
+# Build artifacts (will be rebuilt inside container)
+dist/
+
+# Environment files — NEVER bake secrets into the image
+# Inject DB_*, JWT_SECRET via Cloud Run environment variables or Secret Manager
 .env
-.git
-.github
-dist
-wms-workshop
+.env.*
+!.env.example
+
+# Scratch/migration scripts — not needed in production
+scratch/
+*.cjs
+gsheets_backdate_import.cjs
+migrate_local.cjs
+migrate_gate_out.cjs
+seed_all_users.cjs
+seed_users.cjs
+insert_jcs.cjs
+check_db.cjs
+update_db.js
+update_db_mysql.cjs
+update_bay_names.cjs
+update_modals.cjs
+replace_loaders.cjs
+fix_imports.cjs
+read_pdf.cjs
+read_pdf.js
+read_pdf_esm.js
+populate-productivity-data.ts
+fix-technician-maps-and-resplit.ts
+
+# Database dumps / CSV imports — business data should NOT be in image
 *.sql
-*.apk
+*.csv
+railway_dump.sql
+
+# Backup files
+*.bak
+server.ts.bak
+
+# Local screenshots / PNGs
+*.png
+deployed_login.png
+local_*.png
+MH12TM9090.png
+45210.png
+
+# Git history
+.git
+
+# Logs
+*.log
+
+# Dev environment
+.DS_Store
