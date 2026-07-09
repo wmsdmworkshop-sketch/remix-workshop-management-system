@@ -3433,6 +3433,49 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       db.jobCards[index] = updatedJob;
       setDB(db);
       await syncSave(db);
+
+      // ── Role Transition Alerts ──
+      try {
+        // Alert 1: SA assigned to job card
+        if (
+          updatedJob.service_advisor &&
+          updatedJob.service_advisor !== 'Unassigned' &&
+          (!oldJob.service_advisor || oldJob.service_advisor === 'Unassigned')
+        ) {
+          await dbPool.execute(
+            `INSERT INTO alert_logs (jc_id, role, type, message, created_at, is_read)
+             VALUES (?, 'advisor', 'sa_assigned', 'New job assigned to you', NOW(), false)`,
+            [id]
+          );
+        }
+
+        // Alert 2: Job pushed to supervisor
+        if (
+          updatedJob.status === 'Pending Supervisor Review' &&
+          oldJob.status !== 'Pending Supervisor Review'
+        ) {
+          await dbPool.execute(
+            `INSERT INTO alert_logs (jc_id, role, type, message, created_at, is_read)
+             VALUES (?, 'supervisor', 'job_pending_review', 'Job ready for floor supervisor review', NOW(), false)`,
+            [id]
+          );
+        }
+
+        // Alert 3: Technician marks job finished (status → Completed)
+        if (
+          updatedJob.status === 'Completed' &&
+          oldJob.status !== 'Completed'
+        ) {
+          await dbPool.execute(
+            `INSERT INTO alert_logs (jc_id, role, type, message, created_at, is_read)
+             VALUES (?, 'supervisor', 'qc_required', 'Job finished - QC check required', NOW(), false)`,
+            [id]
+          );
+        }
+      } catch (alertErr: any) {
+        console.error('[ALERT] Role transition alert insert failed:', alertErr.message);
+      }
+
       res.json(updatedJob);
     } else {
       res.status(404).json({ error: "Job card not found" });
@@ -6759,6 +6802,17 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         saveDB(cachedDB);
       }
 
+      // Alert 6: Gate pass issued → notify security
+      try {
+        await dbPool.execute(
+          `INSERT INTO alert_logs (jc_id, role, type, message, created_at, is_read)
+           VALUES (?, 'security', 'gate_pass_ready', 'Gate pass issued - vehicle ready for exit', NOW(), false)`,
+          [jobId]
+        );
+      } catch (alertErr: any) {
+        console.error('[ALERT] Gate pass alert insert failed:', alertErr.message);
+      }
+
       res.json({
         success: true,
         message: 'Job card marked as billed successfully.',
@@ -7726,6 +7780,19 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       saveDB(cachedDB);
       await syncSave(cachedDB);
 
+      // Alert 4: QC passed → notify manager
+      if (qc_status === 'passed') {
+        try {
+          await dbPool.execute(
+            `INSERT INTO alert_logs (jc_id, role, type, message, created_at, is_read)
+             VALUES (?, 'manager', 'ready_for_approval', 'QC passed - manager review required', NOW(), false)`,
+            [jobId]
+          );
+        } catch (alertErr: any) {
+          console.error('[ALERT] QC passed alert insert failed:', alertErr.message);
+        }
+      }
+
       res.json({
         success: true,
         message: `QC check registered as ${qc_status}. Status updated to ${newStatus}`,
@@ -7824,6 +7891,17 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       saveDB(cachedDB);
       await syncSave(cachedDB);
 
+      // Alert 5: Manager approved → notify cashier
+      try {
+        await dbPool.execute(
+          `INSERT INTO alert_logs (jc_id, role, type, message, created_at, is_read)
+           VALUES (?, 'cashier', 'ready_for_billing', 'Job approved - proceed to billing', NOW(), false)`,
+          [jobId]
+        );
+      } catch (alertErr: any) {
+        console.error('[ALERT] Manager approval alert insert failed:', alertErr.message);
+      }
+
       res.json({
         success: true,
         message: `Manager approved job card. Status updated to ${newStatus}`,
@@ -7838,12 +7916,12 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
 
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // ETD ESCALATION BACKGROUND SCHEDULER
+  // ETD ESCALATION BACKGROUND SCHEDULER — v2
   // Runs every 5 minutes. Queries job_cards where ETD is not yet set and the
   // job has been open for at least 5 minutes, then escalates in three levels:
-  //   Level 1 (5–9 min)  → notify supervisor
+  //   Level 1 (5–9 min)   → notify supervisor
   //   Level 2 (10–14 min) → notify GM
-  //   Level 3 (≥15 min)  → auto-assign ETD = NOW() + 2 h, notify with note
+  //   Level 3 (≥15 min)   → auto-assign ETD = NOW() + 2 h, log with notes
   // ─────────────────────────────────────────────────────────────────────────────
   const ETD_ESCALATION_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -7854,7 +7932,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         SELECT job_id, job_card_no, created_at
         FROM job_cards
         WHERE etd IS NULL
-          AND status NOT IN ('Completed', 'Cancelled', 'Invoiced')
+          AND status NOT IN ('Completed', 'Cancelled', 'Invoiced', 'Awaiting Gate Out')
           AND created_at < NOW() - INTERVAL 5 MINUTE
       `) as any[];
 
@@ -7864,56 +7942,56 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         );
 
         if (ageMinutes >= 15) {
-          // ── Level 3: auto-assign ETD + log with note ──
+          // ── Level 3: auto-assign ETD + log with notes ──
           await dbPool.execute(`
             UPDATE job_cards
             SET etd = NOW() + INTERVAL 2 HOUR
             WHERE job_id = ? AND etd IS NULL
           `, [row.job_id]);
 
-          // Check if a Level 3 escalation already exists to avoid duplicate inserts
-          const [existing] = await dbPool.execute(`
+          // Idempotency guard — only insert if no Level 3 log exists for this job
+          const [existing3] = await dbPool.execute(`
             SELECT escalation_id FROM etd_escalation_log
-            WHERE job_id = ? AND escalation_level = 3
+            WHERE jc_id = ? AND escalation_level = 3
           `, [row.job_id]) as any[];
 
-          if ((existing as any[]).length === 0) {
+          if ((existing3 as any[]).length === 0) {
             await dbPool.execute(`
               INSERT INTO etd_escalation_log
-                (job_id, escalation_level, escalated_to, note, resolved, created_at)
-              VALUES (?, 3, 'gm', 'auto-assigned', 0, NOW())
+                (jc_id, escalation_level, escalated_to, notes, resolved, escalated_at)
+              VALUES (?, 3, 'gm', 'auto-assigned default ETD', false, NOW())
             `, [row.job_id]);
             console.log(`[ETD-ESC] Level 3: Job ${row.job_card_no} — ETD auto-assigned, logged.`);
           }
 
         } else if (ageMinutes >= 10) {
           // ── Level 2: notify GM ──
-          const [existing] = await dbPool.execute(`
+          const [existing2] = await dbPool.execute(`
             SELECT escalation_id FROM etd_escalation_log
-            WHERE job_id = ? AND escalation_level = 2
+            WHERE jc_id = ? AND escalation_level = 2
           `, [row.job_id]) as any[];
 
-          if ((existing as any[]).length === 0) {
+          if ((existing2 as any[]).length === 0) {
             await dbPool.execute(`
               INSERT INTO etd_escalation_log
-                (job_id, escalation_level, escalated_to, note, resolved, created_at)
-              VALUES (?, 2, 'gm', NULL, 0, NOW())
+                (jc_id, escalation_level, escalated_to, notes, resolved, escalated_at)
+              VALUES (?, 2, 'gm', NULL, false, NOW())
             `, [row.job_id]);
             console.log(`[ETD-ESC] Level 2: Job ${row.job_card_no} — escalated to GM.`);
           }
 
         } else {
           // ── Level 1: notify supervisor (5–9 min) ──
-          const [existing] = await dbPool.execute(`
+          const [existing1] = await dbPool.execute(`
             SELECT escalation_id FROM etd_escalation_log
-            WHERE job_id = ? AND escalation_level = 1
+            WHERE jc_id = ? AND escalation_level = 1
           `, [row.job_id]) as any[];
 
-          if ((existing as any[]).length === 0) {
+          if ((existing1 as any[]).length === 0) {
             await dbPool.execute(`
               INSERT INTO etd_escalation_log
-                (job_id, escalation_level, escalated_to, note, resolved, created_at)
-              VALUES (?, 1, 'supervisor', NULL, 0, NOW())
+                (jc_id, escalation_level, escalated_to, notes, resolved, escalated_at)
+              VALUES (?, 1, 'supervisor', NULL, false, NOW())
             `, [row.job_id]);
             console.log(`[ETD-ESC] Level 1: Job ${row.job_card_no} — escalated to supervisor.`);
           }
@@ -7927,35 +8005,36 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   // Kick off immediately on startup, then repeat every 5 minutes
   runEtdEscalationCheck();
   setInterval(runEtdEscalationCheck, ETD_ESCALATION_INTERVAL_MS);
-  console.log('[ETD-ESC] Escalation scheduler started (interval: 5 min).');
+  console.log('[ETD-ESC] Escalation scheduler started — v2 (interval: 5 min).');
 
   // ─────────────────────────────────────────────────────────────────────────────
   // GET /api/etd-escalations
-  // Returns all unresolved ETD escalation records for the GM dashboard.
+  // Returns all unresolved ETD escalation records for the GM dashboard,
+  // ordered by most recent escalation first.
   // ─────────────────────────────────────────────────────────────────────────────
   app.get('/api/etd-escalations', express.json(), async (req: any, res) => {
     try {
       const [rows] = await dbPool.execute(`
         SELECT
           el.escalation_id,
-          el.job_id,
+          el.jc_id,
           jc.job_card_no,
           jc.vrn,
           jc.customer_name,
-          jc.status AS job_status,
-          jc.created_at AS job_created_at,
+          jc.status      AS job_status,
+          jc.created_at  AS job_created_at,
           jc.etd,
           el.escalation_level,
           el.escalated_to,
-          el.note,
+          el.notes,
           el.resolved,
           el.acknowledged_by,
           el.acknowledged_at,
-          el.created_at AS escalated_at
+          el.escalated_at
         FROM etd_escalation_log el
-        LEFT JOIN job_cards jc ON jc.job_id = el.job_id
-        WHERE el.resolved = 0
-        ORDER BY el.escalation_level DESC, el.created_at ASC
+        LEFT JOIN job_cards jc ON jc.job_id = el.jc_id
+        WHERE el.resolved = false
+        ORDER BY el.escalated_at DESC
       `) as any[];
 
       res.json({ success: true, data: rows });
@@ -7985,13 +8064,13 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       const [result] = await dbPool.execute(`
         UPDATE etd_escalation_log
         SET
-          resolved = 1,
+          resolved        = true,
           acknowledged_by = ?,
           acknowledged_at = NOW()
-        WHERE escalation_id = ? AND resolved = 0
+        WHERE escalation_id = ? AND resolved = false
       `, [acknowledged_by.trim(), escalationId]) as any[];
 
-      if (result.affectedRows === 0) {
+      if ((result as any).affectedRows === 0) {
         return res.status(404).json({
           success: false,
           error: 'Escalation not found or already acknowledged.'
