@@ -843,8 +843,10 @@ async function startServer() {
 
   app.get("/api/debug-cols", async (req, res) => {
     try {
-      const [rows] = await dbPool.query("DESCRIBE vehicle_master");
-      res.json({ success: true, columns: rows });
+      const [vm] = await dbPool.query("DESCRIBE vehicle_master");
+      const [sh] = await dbPool.query("DESCRIBE service_history");
+      const [inv] = await dbPool.query("DESCRIBE invoices");
+      res.json({ success: true, vehicle_master: vm, service_history: sh, invoices: inv });
     } catch (err: any) {
       res.json({ success: false, error: err.message });
     }
