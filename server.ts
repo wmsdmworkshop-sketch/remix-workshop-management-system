@@ -7836,7 +7836,182 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ETD ESCALATION BACKGROUND SCHEDULER
+  // Runs every 5 minutes. Queries job_cards where ETD is not yet set and the
+  // job has been open for at least 5 minutes, then escalates in three levels:
+  //   Level 1 (5–9 min)  → notify supervisor
+  //   Level 2 (10–14 min) → notify GM
+  //   Level 3 (≥15 min)  → auto-assign ETD = NOW() + 2 h, notify with note
+  // ─────────────────────────────────────────────────────────────────────────────
+  const ETD_ESCALATION_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+  async function runEtdEscalationCheck() {
+    try {
+      // Fetch open job cards with no ETD, older than 5 minutes
+      const [rows] = await dbPool.execute(`
+        SELECT job_id, job_card_no, created_at
+        FROM job_cards
+        WHERE etd IS NULL
+          AND status NOT IN ('Completed', 'Cancelled', 'Invoiced')
+          AND created_at < NOW() - INTERVAL 5 MINUTE
+      `) as any[];
+
+      for (const row of rows) {
+        const ageMinutes = Math.floor(
+          (Date.now() - new Date(row.created_at).getTime()) / 60000
+        );
+
+        if (ageMinutes >= 15) {
+          // ── Level 3: auto-assign ETD + log with note ──
+          await dbPool.execute(`
+            UPDATE job_cards
+            SET etd = NOW() + INTERVAL 2 HOUR
+            WHERE job_id = ? AND etd IS NULL
+          `, [row.job_id]);
+
+          // Check if a Level 3 escalation already exists to avoid duplicate inserts
+          const [existing] = await dbPool.execute(`
+            SELECT escalation_id FROM etd_escalation_log
+            WHERE job_id = ? AND escalation_level = 3
+          `, [row.job_id]) as any[];
+
+          if ((existing as any[]).length === 0) {
+            await dbPool.execute(`
+              INSERT INTO etd_escalation_log
+                (job_id, escalation_level, escalated_to, note, resolved, created_at)
+              VALUES (?, 3, 'gm', 'auto-assigned', 0, NOW())
+            `, [row.job_id]);
+            console.log(`[ETD-ESC] Level 3: Job ${row.job_card_no} — ETD auto-assigned, logged.`);
+          }
+
+        } else if (ageMinutes >= 10) {
+          // ── Level 2: notify GM ──
+          const [existing] = await dbPool.execute(`
+            SELECT escalation_id FROM etd_escalation_log
+            WHERE job_id = ? AND escalation_level = 2
+          `, [row.job_id]) as any[];
+
+          if ((existing as any[]).length === 0) {
+            await dbPool.execute(`
+              INSERT INTO etd_escalation_log
+                (job_id, escalation_level, escalated_to, note, resolved, created_at)
+              VALUES (?, 2, 'gm', NULL, 0, NOW())
+            `, [row.job_id]);
+            console.log(`[ETD-ESC] Level 2: Job ${row.job_card_no} — escalated to GM.`);
+          }
+
+        } else {
+          // ── Level 1: notify supervisor (5–9 min) ──
+          const [existing] = await dbPool.execute(`
+            SELECT escalation_id FROM etd_escalation_log
+            WHERE job_id = ? AND escalation_level = 1
+          `, [row.job_id]) as any[];
+
+          if ((existing as any[]).length === 0) {
+            await dbPool.execute(`
+              INSERT INTO etd_escalation_log
+                (job_id, escalation_level, escalated_to, note, resolved, created_at)
+              VALUES (?, 1, 'supervisor', NULL, 0, NOW())
+            `, [row.job_id]);
+            console.log(`[ETD-ESC] Level 1: Job ${row.job_card_no} — escalated to supervisor.`);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error('[ETD-ESC] Scheduler error:', err.message);
+    }
+  }
+
+  // Kick off immediately on startup, then repeat every 5 minutes
+  runEtdEscalationCheck();
+  setInterval(runEtdEscalationCheck, ETD_ESCALATION_INTERVAL_MS);
+  console.log('[ETD-ESC] Escalation scheduler started (interval: 5 min).');
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // GET /api/etd-escalations
+  // Returns all unresolved ETD escalation records for the GM dashboard.
+  // ─────────────────────────────────────────────────────────────────────────────
+  app.get('/api/etd-escalations', express.json(), async (req: any, res) => {
+    try {
+      const [rows] = await dbPool.execute(`
+        SELECT
+          el.escalation_id,
+          el.job_id,
+          jc.job_card_no,
+          jc.vrn,
+          jc.customer_name,
+          jc.status AS job_status,
+          jc.created_at AS job_created_at,
+          jc.etd,
+          el.escalation_level,
+          el.escalated_to,
+          el.note,
+          el.resolved,
+          el.acknowledged_by,
+          el.acknowledged_at,
+          el.created_at AS escalated_at
+        FROM etd_escalation_log el
+        LEFT JOIN job_cards jc ON jc.job_id = el.job_id
+        WHERE el.resolved = 0
+        ORDER BY el.escalation_level DESC, el.created_at ASC
+      `) as any[];
+
+      res.json({ success: true, data: rows });
+    } catch (err: any) {
+      console.error('[ETD-ESC] GET /api/etd-escalations error:', err.message);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // POST /api/etd-escalations/:id/acknowledge
+  // Body: { acknowledged_by: string }
+  // Marks an escalation as resolved with acknowledgement metadata.
+  // ─────────────────────────────────────────────────────────────────────────────
+  app.post('/api/etd-escalations/:id/acknowledge', express.json(), async (req: any, res) => {
+    try {
+      const escalationId = parseInt(req.params.id, 10);
+      const { acknowledged_by } = req.body;
+
+      if (!escalationId || isNaN(escalationId)) {
+        return res.status(400).json({ success: false, error: 'Invalid escalation ID.' });
+      }
+      if (!acknowledged_by || typeof acknowledged_by !== 'string') {
+        return res.status(400).json({ success: false, error: 'acknowledged_by is required.' });
+      }
+
+      const [result] = await dbPool.execute(`
+        UPDATE etd_escalation_log
+        SET
+          resolved = 1,
+          acknowledged_by = ?,
+          acknowledged_at = NOW()
+        WHERE escalation_id = ? AND resolved = 0
+      `, [acknowledged_by.trim(), escalationId]) as any[];
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({
+          success: false,
+          error: 'Escalation not found or already acknowledged.'
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Escalation acknowledged successfully.',
+        escalation_id: escalationId,
+        acknowledged_by: acknowledged_by.trim()
+      });
+    } catch (err: any) {
+      console.error('[ETD-ESC] POST /api/etd-escalations/:id/acknowledge error:', err.message);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
 }
 
 startServer();
+
 
