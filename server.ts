@@ -841,6 +841,15 @@ async function startServer() {
     res.json({ status: "ok", time: new Date().toISOString() });
   });
 
+  app.get("/api/debug-cols", async (req, res) => {
+    try {
+      const [rows] = await dbPool.query("DESCRIBE vehicle_master");
+      res.json({ success: true, columns: rows });
+    } catch (err: any) {
+      res.json({ success: false, error: err.message });
+    }
+  });
+
   // Helper middleware to verify JWT token — strict mode, no bypasses
   const authenticateToken = (req: any, res: any, next: any) => {
     const authHeader = req.headers["authorization"];
