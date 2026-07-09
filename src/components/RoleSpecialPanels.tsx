@@ -916,7 +916,7 @@ export function TechnicianProfilePanel({ employees, employeeId: propsEmployeeId 
 
   const fetchProfile = async () => {
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("wms_token");
       const res = await fetch("/api/my-profile", {
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -967,7 +967,7 @@ export function TechnicianProfilePanel({ employees, employeeId: propsEmployeeId 
     }
 
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("wms_token");
       const res = await fetch("/api/my-profile", {
         method: "POST",
         headers: {
