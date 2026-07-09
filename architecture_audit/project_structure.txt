@@ -1,0 +1,60 @@
+remix-workshop-management-system/
+├── .dockerignore                 # Excludes local files (node_modules, local secrets) from docker context
+├── .env.example                  # Standardized template showing required configuration keys
+├── .gitignore                    # Prevents checking in builds and local credentials
+├── .railwayignore                # Directs Railway builds to ignore specific files
+├── Dockerfile                    # Multi-stage production container build (Vite client / Node Express server)
+├── README.md                     # Brief local setup guide
+├── package.json                  # Dependencies (Vite 6, Express, Drizzle, Recharts) and build scripts
+├── tsconfig.json                 # TypeScript compiler parameters
+├── vite.config.ts                # Build configuration for primary dashboard application
+├── vite.customer.config.ts       # Build configuration for customer portal client
+├── server.ts                     # Main Express backend server hosting both API endpoints and static assets
+├── workshop_db.json              # Local memory backup database schema
+├── dist/                         # compiled production outputs (HTML, CSS, JS assets)
+│   ├── index.html                # Entry point for the primary dashboard
+│   ├── assets/                   # Main app assets
+│   └── customer-portal/          # Customer entry points and assets
+├── scratch/                      # Diagnostic and database manipulation utility scripts
+└── src/                          # Application source code
+    ├── App.tsx                   # Root React layout, theme configs, and tab route mappings
+    ├── main.tsx                  # Vite registration entry point
+    ├── types.ts                  # Shared Type definitions (JobCards, Employees, Users, Bays)
+    ├── components/               # Core view layers and features
+    │   ├── ActiveBayTatMonitor.tsx # Active bay status monitoring & TAT metrics
+    │   ├── AttendanceShiftLog.tsx # daily attendance records & sub-tabs controller
+    │   ├── AuthScreen.tsx        # Login panel and OTP verification forms
+    │   ├── BreakdownManagement.tsx # Breakdown vehicle repair log tracker
+    │   ├── CashierManager.tsx    # Cash collection & financial exit gates
+    │   ├── CpscCertificationPanel.tsx # CPSC safety certifications management
+    │   ├── Dashboard.tsx         # Primary metrics visualizer
+    │   ├── DmsImporter.tsx       # DMS file comparison engine
+    │   ├── EmployeeDirectory.tsx # HR employee master list
+    │   ├── ExceptionReport.tsx   # Active validation errors panel
+    │   ├── GateEntryManager.tsx  # Inward vehicle gate entry registrar
+    │   ├── GeminiAssistant.tsx   # Integrated generative AI chat module
+    │   ├── GoogleIntegration.tsx # GCS/Google APIs storage connector
+    │   ├── JobCardManager.tsx    # Core operations controller for job card allocations
+    │   ├── OvertimeApprovalPortal.tsx # Supervisor approval screen for overtime requests
+    │   ├── OvertimeEmployeeDashboard.tsx # Employee logging panel for overtime hours
+    │   ├── PartsWarrantyManager.tsx # Parts warranty validator & AI circular consult
+    │   ├── ProductivityCalculator.tsx # Technician KPIs helper
+    │   ├── ProductivityDashboard.tsx # Main workforce efficiency dashboard
+    │   ├── RoleSpecialPanels.tsx # Custom profile views
+    │   ├── SelfServiceAttendance.tsx # Employee check-in/out form
+    │   ├── UserManagement.tsx    # System operator profiles & permission manager
+    │   ├── VehicleLookup.tsx     # Historic service/invoice history lookup
+    │   └── fsb.tsx               # FSB records audit log
+    ├── config/                   # Configuration adapters
+    │   └── env.ts                # Environment validation layer
+    ├── customer-portal/          # Customer portal entry point
+    │   ├── customer-main.tsx     # Vite registration for client portal
+    │   ├── customer-App.tsx      # Main layout for clients
+    │   └── api/                  # Customer portal handlers
+    │       └── middleware.ts     # Customer JWT token validator
+    ├── db/                       # Database mapping logic
+    │   ├── index.ts              # Database connector bootstrap
+    │   ├── schema.ts             # Drizzle MySQL schema definition
+    │   └── sync.ts               # Auto sync helper for migrations
+    ├── hooks/                    # Reusable React hooks
+    └── lib/                      # Helper libraries
