@@ -1220,7 +1220,7 @@ export default function App() {
       )}
 
       {/* Primary Main Stage */}
-      <main className={`md:ml-64 flex-1 p-4 md:p-6 w-full min-h-screen overflow-y-auto ${showBottomNav ? "pb-24" : ""}`}>
+      <main className={`md:ml-64 flex-1 p-4 md:p-6 w-auto max-w-full min-h-screen overflow-y-auto overflow-x-hidden ${showBottomNav ? "pb-24" : ""}`}>
         <div className="max-w-7xl mx-auto w-full">
           {activeTab === "dashboard" && (
             <Dashboard 
