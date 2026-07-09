@@ -7618,6 +7618,223 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
+  // --- PIPELINE STATUS ENFORCEMENT ENDPOINTS ---
+
+  // POST /api/job-cards/:id/estimate-approval
+  app.post("/api/job-cards/:id/estimate-approval", express.json(), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status, approved_by, notes } = req.body;
+
+      if (!id || !status) {
+        return res.status(400).json({ success: false, error: 'Missing job_id or status' });
+      }
+
+      const jobId = parseInt(id);
+      const index = cachedDB.jobCards.findIndex((jc: any) => jc.job_id === jobId);
+
+      if (index === -1) {
+        return res.status(404).json({ success: false, error: 'Job card not found' });
+      }
+
+      const jobCard = cachedDB.jobCards[index];
+      const newStatus = status === 'approved' ? 'Estimate Approved' : 'Estimate Rejected';
+
+      cachedDB.jobCards[index] = {
+        ...jobCard,
+        status: newStatus,
+        customer_approval_status: status,
+        estimate_approval_notes: notes || null,
+        estimate_approved_by: approved_by || null
+      };
+
+      // If estimate is rejected, trigger an alert to the Service Advisor
+      if (status === 'rejected') {
+        if (!cachedDB.alertLogs) cachedDB.alertLogs = [];
+        cachedDB.alertLogs.push({
+          alert_id: cachedDB.alertLogs.length + 1,
+          alert_config_id: 1,
+          entity_type: "JobCard",
+          entity_id: jobId,
+          alert_message: `Estimate rejected for Job Card ${jobCard.job_card_no}. SA Action Required. Notes: ${notes || 'None'}`,
+          severity: "High",
+          status: "Active",
+          created_at: new Date().toISOString()
+        });
+      }
+
+      saveDB(cachedDB);
+      await syncSave(cachedDB);
+
+      res.json({
+        success: true,
+        message: `Estimate ${status} successfully. Status updated to ${newStatus}`,
+        job_id: jobId,
+        status: newStatus
+      });
+    } catch (error: any) {
+      console.error('Estimate approval error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // POST /api/job-cards/:id/qc-check
+  app.post("/api/job-cards/:id/qc-check", express.json(), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { qc_status, checked_by, fail_reason, checklist } = req.body;
+
+      if (!id || !qc_status) {
+        return res.status(400).json({ success: false, error: 'Missing job_id or qc_status' });
+      }
+
+      const jobId = parseInt(id);
+      const index = cachedDB.jobCards.findIndex((jc: any) => jc.job_id === jobId);
+
+      if (index === -1) {
+        return res.status(404).json({ success: false, error: 'Job card not found' });
+      }
+
+      const jobCard = cachedDB.jobCards[index];
+      const newStatus = qc_status === 'passed' ? 'QC Passed' : 'QC Failed';
+
+      cachedDB.jobCards[index] = {
+        ...jobCard,
+        status: newStatus,
+        qc_status: qc_status,
+        qc_checked_by: checked_by || null,
+        qc_checked_at: new Date().toISOString(),
+        qc_fail_reason: fail_reason || null,
+        qc_checklist: checklist || []
+      };
+
+      // If QC failed, notify technician and supervisor
+      if (qc_status === 'failed') {
+        if (!cachedDB.alertLogs) cachedDB.alertLogs = [];
+        cachedDB.alertLogs.push({
+          alert_id: cachedDB.alertLogs.length + 1,
+          alert_config_id: 2,
+          entity_type: "JobCard",
+          entity_id: jobId,
+          alert_message: `QC Failed for Job Card ${jobCard.job_card_no}. Reason: ${fail_reason || 'Not specified'}. Supervisor and Technician notified.`,
+          severity: "High",
+          status: "Active",
+          created_at: new Date().toISOString()
+        });
+      }
+
+      saveDB(cachedDB);
+      await syncSave(cachedDB);
+
+      res.json({
+        success: true,
+        message: `QC check registered as ${qc_status}. Status updated to ${newStatus}`,
+        job_id: jobId,
+        status: newStatus
+      });
+    } catch (error: any) {
+      console.error('QC check error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // POST /api/job-cards/:id/pre-invoice
+  app.post("/api/job-cards/:id/pre-invoice", express.json(), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { sent_to, sent_via, invoice_no } = req.body;
+
+      if (!id || !invoice_no) {
+        return res.status(400).json({ success: false, error: 'Missing job_id or invoice_no' });
+      }
+
+      const jobId = parseInt(id);
+      const index = cachedDB.jobCards.findIndex((jc: any) => jc.job_id === jobId);
+
+      if (index === -1) {
+        return res.status(404).json({ success: false, error: 'Job card not found' });
+      }
+
+      const jobCard = cachedDB.jobCards[index];
+      const newStatus = 'Pre-Invoice Sent';
+
+      // Insert into pre_invoice_log array in cachedDB
+      if (!cachedDB.preInvoiceLog) {
+        cachedDB.preInvoiceLog = [];
+      }
+      cachedDB.preInvoiceLog.push({
+        id: `PRE-${Date.now()}`,
+        job_id: jobId,
+        sent_to: sent_to || null,
+        sent_via: sent_via || null,
+        invoice_no: invoice_no,
+        timestamp: new Date().toISOString()
+      });
+
+      cachedDB.jobCards[index] = {
+        ...jobCard,
+        status: newStatus,
+        pre_invoice_no: invoice_no
+      };
+
+      saveDB(cachedDB);
+      await syncSave(cachedDB);
+
+      res.json({
+        success: true,
+        message: `Pre-invoice sent successfully. Status updated to ${newStatus}`,
+        job_id: jobId,
+        status: newStatus,
+        pre_invoice_no: invoice_no
+      });
+    } catch (error: any) {
+      console.error('Pre-invoice error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // POST /api/job-cards/:id/manager-approve
+  app.post("/api/job-cards/:id/manager-approve", express.json(), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { approved_by, notes } = req.body;
+
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'Missing job_id' });
+      }
+
+      const jobId = parseInt(id);
+      const index = cachedDB.jobCards.findIndex((jc: any) => jc.job_id === jobId);
+
+      if (index === -1) {
+        return res.status(404).json({ success: false, error: 'Job card not found' });
+      }
+
+      const jobCard = cachedDB.jobCards[index];
+      const newStatus = 'Awaiting Gate Out';
+
+      cachedDB.jobCards[index] = {
+        ...jobCard,
+        status: newStatus,
+        manager_approved_by: approved_by || null,
+        manager_approval_notes: notes || null,
+        manager_approved_at: new Date().toISOString()
+      };
+
+      saveDB(cachedDB);
+      await syncSave(cachedDB);
+
+      res.json({
+        success: true,
+        message: `Manager approved job card. Status updated to ${newStatus}`,
+        job_id: jobId,
+        status: newStatus
+      });
+    } catch (error: any) {
+      console.error('Manager approval error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
 
 }
 
