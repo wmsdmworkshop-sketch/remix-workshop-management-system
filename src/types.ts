@@ -34,6 +34,7 @@ export interface Employee {
   joining_date?: string | null;
   profile_photo_url?: string | null;
   face_embedding_reference?: string | null;
+  record_status?: 'CANONICAL' | 'LEGACY' | string;
 }
 
 export interface WorkforceAttendance {

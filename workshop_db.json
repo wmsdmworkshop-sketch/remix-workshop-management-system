@@ -32,7 +32,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "BD ASSISTANT/ DRIVER"
     },
     {
       "employee_id": 2,
@@ -66,13 +68,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "BILLER"
     },
     {
       "employee_id": 3,
       "full_name": "ALTAF HUSSAIN",
       "employee_code": "EMP003",
-      "role": "Jr. technician",
+      "role": "technician",
       "employee_grade": "Junior",
       "basic_salary": 16480,
       "mobile": "+9198765270289",
@@ -100,13 +104,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Jr. technician"
     },
     {
       "employee_id": 4,
       "full_name": "ASHFAQ HUSSAIN",
       "employee_code": "EMP004",
-      "role": "Jr. technician",
+      "role": "technician",
       "employee_grade": "Senior",
       "basic_salary": 18000,
       "mobile": "+9198765503050",
@@ -134,7 +140,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Jr. technician"
     },
     {
       "employee_id": 5,
@@ -168,7 +176,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "electrician"
     },
     {
       "employee_id": 6,
@@ -202,7 +212,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Sr. Electrician"
     },
     {
       "employee_id": 7,
@@ -212,7 +224,7 @@
       "employee_grade": "Junior",
       "basic_salary": 18000,
       "mobile": "7795550899",
-      "is_active": 1,
+      "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
       "allocated_revenue": 0,
       "target_revenue": 54000,
@@ -229,20 +241,22 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": "patilshashi5558@gmail.com",
+      "email": "hameed.patel@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "service_advisor"
     },
     {
       "employee_id": 8,
       "full_name": "HANNAMANTHRAYA",
       "employee_code": "EMP008",
-      "role": "Jr. technician",
+      "role": "technician",
       "employee_grade": "Junior",
       "basic_salary": 12960,
       "mobile": "+9198765365293",
@@ -270,13 +284,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Jr. technician"
     },
     {
       "employee_id": 9,
       "full_name": "HUNCHIRAY",
       "employee_code": "EMP009",
-      "role": "Jr. technician",
+      "role": "technician",
       "employee_grade": "Junior",
       "basic_salary": 14080,
       "mobile": "+9198765829969",
@@ -304,13 +320,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Jr. technician"
     },
     {
       "employee_id": 10,
       "full_name": "JAGADISH",
       "employee_code": "EMP010",
-      "role": "DRIVER",
+      "role": "driver",
       "employee_grade": "Junior",
       "basic_salary": 18000,
       "mobile": "+9198765994394",
@@ -338,13 +356,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "DRIVER"
     },
     {
       "employee_id": 11,
       "full_name": "LOKU",
       "employee_code": "EMP011",
-      "role": "Sr. Technician",
+      "role": "senior_technician",
       "employee_grade": "Senior",
       "basic_salary": 25000,
       "mobile": "+9198765468799",
@@ -372,7 +392,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Sr. Technician"
     },
     {
       "employee_id": 12,
@@ -382,7 +404,7 @@
       "employee_grade": "Junior",
       "basic_salary": 15040,
       "mobile": "9988776655",
-      "is_active": 1,
+      "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
       "allocated_revenue": 0,
       "target_revenue": 45120,
@@ -399,20 +421,22 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": "mustafaladaf50@gmail.com",
+      "email": "mahmed.altaf.ahmed@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "service_advisor"
     },
     {
       "employee_id": 13,
       "full_name": "MALLINATH",
       "employee_code": "EMP013",
-      "role": "Sr. Technician",
+      "role": "senior_technician",
       "employee_grade": "Senior",
       "basic_salary": 25000,
       "mobile": "+9198765833226",
@@ -440,7 +464,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Sr. Technician"
     },
     {
       "employee_id": 14,
@@ -474,7 +500,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "WARRANTY ASSISTANT"
     },
     {
       "employee_id": 15,
@@ -508,13 +536,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Sr. Electrician"
     },
     {
       "employee_id": 16,
       "full_name": "MD GOUSE",
       "employee_code": "EMP016",
-      "role": "Jr. technician",
+      "role": "technician",
       "employee_grade": "Junior",
       "basic_salary": 18000,
       "mobile": "+9198765216861",
@@ -542,13 +572,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Jr. technician"
     },
     {
       "employee_id": 17,
       "full_name": "MD JAVEED",
       "employee_code": "EMP017",
-      "role": "Sr. Technician",
+      "role": "senior_technician",
       "employee_grade": "Senior",
       "basic_salary": 25000,
       "mobile": "+9198765735156",
@@ -576,13 +608,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Sr. Technician"
     },
     {
       "employee_id": 18,
       "full_name": "MEHMOOD",
       "employee_code": "EMP018",
-      "role": "Helper",
+      "role": "helper",
       "employee_grade": "Junior",
       "basic_salary": 10080,
       "mobile": "+9198765208562",
@@ -610,13 +644,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Helper"
     },
     {
       "employee_id": 19,
       "full_name": "MOHAMMED SHOAIB",
       "employee_code": "EMP019",
-      "role": "Sr. Technician",
+      "role": "senior_technician",
       "employee_grade": "Junior",
       "basic_salary": 18080,
       "mobile": "+9198765449819",
@@ -644,13 +680,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Sr. Technician"
     },
     {
       "employee_id": 20,
       "full_name": "MOHAMMED ZAKI",
       "employee_code": "EMP020",
-      "role": "Jr. technician",
+      "role": "technician",
       "employee_grade": "Junior",
       "basic_salary": 16000,
       "mobile": "+9198765936864",
@@ -678,13 +716,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Jr. technician"
     },
     {
       "employee_id": 21,
       "full_name": "MOHSIN NAWAZ",
       "employee_code": "EMP021",
-      "role": "Jr. elecrician",
+      "role": "electrician",
       "employee_grade": "Junior",
       "basic_salary": 16000,
       "mobile": "+9198765367510",
@@ -712,13 +752,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Jr. elecrician"
     },
     {
       "employee_id": 22,
       "full_name": "MUSTAFA",
       "employee_code": "EMP022",
-      "role": "SA",
+      "role": "service_advisor",
       "employee_grade": "Junior",
       "basic_salary": 12000,
       "mobile": "+9198765186525",
@@ -746,7 +788,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "LEGACY",
+      "legacy_role": "SA"
     },
     {
       "employee_id": 23,
@@ -780,13 +824,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Electrician Trainee"
     },
     {
       "employee_id": 24,
       "full_name": "NAGESH",
       "employee_code": "EMP024",
-      "role": "Jr. technician",
+      "role": "technician",
       "employee_grade": "Junior",
       "basic_salary": 15040,
       "mobile": "+9198765914706",
@@ -814,13 +860,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Jr. technician"
     },
     {
       "employee_id": 25,
       "full_name": "PRAHLAD KULKARNI",
       "employee_code": "EMP025",
-      "role": "SUPERVISOR",
+      "role": "floor_supervisor",
       "employee_grade": "Senior",
       "basic_salary": 16000,
       "mobile": "+9198765422374",
@@ -848,7 +896,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "SUPERVISOR"
     },
     {
       "employee_id": 26,
@@ -882,13 +932,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "FLOOR INCHARGE"
     },
     {
       "employee_id": 27,
       "full_name": "RAJKUMAR AMABARAYA MENTE",
       "employee_code": "EMP027",
-      "role": "Sr. Technician",
+      "role": "senior_technician",
       "employee_grade": "Senior",
       "basic_salary": 25000,
       "mobile": "+9198765454549",
@@ -916,13 +968,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Sr. Technician"
     },
     {
       "employee_id": 28,
       "full_name": "SANGAPPA",
       "employee_code": "EMP028",
-      "role": "Sr. Technician",
+      "role": "senior_technician",
       "employee_grade": "Senior",
       "basic_salary": 24160,
       "mobile": "+9198765567581",
@@ -950,13 +1004,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Sr. Technician"
     },
     {
       "employee_id": 29,
       "full_name": "SHASHIKUMAR",
       "employee_code": "EMP029",
-      "role": "SA",
+      "role": "service_advisor",
       "employee_grade": "Junior",
       "basic_salary": 17440,
       "mobile": "+9198765265541",
@@ -984,13 +1040,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "LEGACY",
+      "legacy_role": "SA"
     },
     {
       "employee_id": 30,
       "full_name": "SIRAJ AHMED",
       "employee_code": "EMP030",
-      "role": "Sr. Technician",
+      "role": "senior_technician",
       "employee_grade": "Senior",
       "basic_salary": 21000,
       "mobile": "+9198765727063",
@@ -1018,13 +1076,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Sr. Technician"
     },
     {
       "employee_id": 31,
       "full_name": "SRINATH M. N",
       "employee_code": "EMP031",
-      "role": "Jr. technician",
+      "role": "technician",
       "employee_grade": "Junior",
       "basic_salary": 15040,
       "mobile": "+9198765718204",
@@ -1052,13 +1112,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Jr. technician"
     },
     {
       "employee_id": 32,
       "full_name": "UMAKANTA",
       "employee_code": "EMP032",
-      "role": "Helper",
+      "role": "helper",
       "employee_grade": "Junior",
       "basic_salary": 15040,
       "mobile": "+9198765750567",
@@ -1086,7 +1148,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Helper"
     },
     {
       "employee_id": 33,
@@ -1120,7 +1184,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Sr. Electrician"
     },
     {
       "employee_id": 34,
@@ -1154,7 +1220,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "OIL INCHARGE"
     },
     {
       "employee_id": 35,
@@ -1188,7 +1256,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "TOOLS INCHARGE"
     },
     {
       "employee_id": 36,
@@ -1222,13 +1292,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "technician trainee"
     },
     {
       "employee_id": 37,
       "full_name": "JAVEED PASHA",
       "employee_code": "EMP037",
-      "role": "MECHANICAL HELPER",
+      "role": "helper",
       "employee_grade": "Junior",
       "basic_salary": 15000,
       "mobile": "+9198765860006",
@@ -1256,7 +1328,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "MECHANICAL HELPER"
     },
     {
       "employee_id": 38,
@@ -1290,7 +1364,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Electrician trainee"
     },
     {
       "employee_id": 39,
@@ -1324,13 +1400,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "BAY REPORTER"
     },
     {
       "employee_id": 40,
       "full_name": "AHMED HUSSAIN",
       "employee_code": "EMP040",
-      "role": "SUPERVISOR",
+      "role": "floor_supervisor",
       "employee_grade": "Senior",
       "basic_salary": 30000,
       "mobile": "+9198765562622",
@@ -1358,13 +1436,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "SUPERVISOR"
     },
     {
       "employee_id": 42,
       "full_name": "MUBEEN",
       "employee_code": "EMP042",
-      "role": "MECHANICAL HELPER",
+      "role": "helper",
       "employee_grade": "Junior",
       "basic_salary": 0,
       "mobile": "+9198765997178",
@@ -1392,13 +1472,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "MECHANICAL HELPER"
     },
     {
       "employee_id": 43,
       "full_name": "SHARNBASAPPA",
       "employee_code": "EMP043",
-      "role": "Jr. technician",
+      "role": "technician",
       "employee_grade": "Junior",
       "basic_salary": 15040,
       "mobile": "+919999999020",
@@ -1426,7 +1508,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Jr. technician"
     },
     {
       "employee_id": 44,
@@ -1440,8 +1524,8 @@
       "created_at": null,
       "allocated_revenue": 0,
       "target_revenue": null,
-      "paid_pct": "0.00%",
-      "tml_claim_pct": "0.00%",
+      "paid_pct": null,
+      "tml_claim_pct": null,
       "certification_level": null,
       "certification_date": null,
       "certification_expiry_date": null,
@@ -1460,13 +1544,15 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Parts"
     },
     {
       "employee_id": 45,
       "full_name": "SAMEERUDDIN",
       "employee_code": "EMP330",
-      "role": "Sr. Technician",
+      "role": "senior_technician",
       "employee_grade": "Junior",
       "basic_salary": 20000,
       "mobile": "",
@@ -1474,8 +1560,8 @@
       "created_at": null,
       "allocated_revenue": 0,
       "target_revenue": null,
-      "paid_pct": "0.00%",
-      "tml_claim_pct": "0.00%",
+      "paid_pct": null,
+      "tml_claim_pct": null,
       "certification_level": null,
       "certification_date": null,
       "certification_expiry_date": null,
@@ -1494,7 +1580,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Sr. Technician"
     },
     {
       "employee_id": 46,
@@ -1508,8 +1596,8 @@
       "created_at": null,
       "allocated_revenue": 0,
       "target_revenue": null,
-      "paid_pct": "0.00%",
-      "tml_claim_pct": "0.00%",
+      "paid_pct": null,
+      "tml_claim_pct": null,
       "certification_level": null,
       "certification_date": null,
       "certification_expiry_date": null,
@@ -1528,7 +1616,9 @@
       "date_of_joining": null,
       "bank_details": null,
       "pan": null,
-      "aadhaar": null
+      "aadhaar": null,
+      "record_status": "CANONICAL",
+      "legacy_role": "Parts Helper"
     }
   ],
   "bays": [
@@ -1847,7 +1937,7 @@
       "technician_assignments": [
         {
           "technician_id": 7,
-          "technician_name": "HAMEED PATEL",
+          "technician_name": "Shashi",
           "role_type": "Primary",
           "assigned_at": "2026-06-24 08:28:32"
         }
@@ -2047,7 +2137,7 @@
       "technician_assignments": [
         {
           "technician_id": 7,
-          "technician_name": "HAMEED PATEL",
+          "technician_name": "Shashi",
           "role_type": "Primary",
           "assigned_at": "2026-06-24 08:28:32"
         }
@@ -2247,7 +2337,7 @@
       "technician_assignments": [
         {
           "technician_id": 7,
-          "technician_name": "HAMEED PATEL",
+          "technician_name": "Shashi",
           "role_type": "Primary",
           "assigned_at": "2026-06-24 08:28:32"
         }
@@ -299086,6 +299176,59 @@
       "priority": "P1 - Vehicle Off Road (VOR)",
       "assigned_advisor_id": 1,
       "sla_limit_hours": 2
+    },
+    {
+      "breakdown_id": 7,
+      "sr_number": "SR-022030",
+      "complaint_date": "2026-07-11 11:40:22",
+      "complaint_number": null,
+      "vehicle_number": "MH-12-AB-1234",
+      "assigned_qrt": null,
+      "assignment_time": null,
+      "attendance_time": null,
+      "complaint": "Test breakdown: Engine overheating and smoke from hood.",
+      "technician": null,
+      "assistant_technician": null,
+      "mechanical_helper": null,
+      "electrician": null,
+      "job_close_time": null,
+      "csc_conversion_number": null,
+      "driver_name": null,
+      "job_card_close_date": null,
+      "location": null,
+      "job_card_number": null,
+      "odometer": null,
+      "claim_type": "Paid",
+      "parts_amount": "0.00",
+      "labour_amount": "0.00",
+      "description_remarks": "",
+      "current_status": "Complaint Received",
+      "status_history": "[{\"status\":\"Complaint Received\",\"user\":\"Mustafa\",\"date\":\"11/7/2026\",\"time\":\"5:10:22 pm\",\"gps\":\"18.5204, 73.8567\",\"remarks\":\"Breakdown logged in WMS System\"}]",
+      "tata_complaint_number": null,
+      "driver_mobile": null,
+      "alternate_mobile": null,
+      "fleet_owner": null,
+      "fleet_manager": null,
+      "fleet_manager_mobile": null,
+      "preferred_workshop_id": null,
+      "auto_suggested_workshop_id": null,
+      "assigned_workshop_id": null,
+      "vehicle_movable": true,
+      "towing_required": false,
+      "parts_required": false,
+      "resolved_at_site": false,
+      "gps_latitude": "18.520400",
+      "gps_longitude": "73.856700",
+      "gps_address": null,
+      "gps_maps_link": "https://www.google.com/maps/search/?api=1&query=18.5204,73.8567",
+      "internal_breakdown_number": "IBD-1783770022030",
+      "expected_eta": null,
+      "actual_arrival_time": null,
+      "delay_minutes": 0,
+      "delay_reason": null,
+      "priority": "P3 - Can Drive to Workshop",
+      "assigned_advisor_id": 12,
+      "sla_limit_hours": 24
     }
   ],
   "qrtTeams": [
@@ -299283,28 +299426,6 @@
       "recipient_role": "Customer",
       "message": "QRT Omega is enroute to your location. Expected ETA: 60 mins.",
       "logged_at": "2026-07-09 08:33:56"
-    }
-  ],
-  "users": [
-    {
-      "user_id": 1,
-      "full_name": "Developer Operator",
-      "username": "developer",
-      "password_hash": "$2b$10$0qK5zfR2LFQTKpdZxR3ReuS8rWgCNm4DkNl4htmEfHnXdpa0duT6K",
-      "role": "developer",
-      "is_active": 1,
-      "created_at": "2026-07-11T11:35:06.424Z",
-      "last_login": null
-    },
-    {
-      "user_id": 2,
-      "full_name": "Admin Operator",
-      "username": "admin",
-      "password_hash": "$2b$10$DkqkXSRKMSOJucl1dcBtieQv4OUgQvfjtcRFK/UlsV/QMq0t8wMju",
-      "role": "admin",
-      "is_active": 1,
-      "created_at": "2026-07-11T11:35:06.424Z",
-      "last_login": null
     }
   ]
 }

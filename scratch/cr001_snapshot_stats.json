@@ -1,0 +1,411 @@
+{
+  "users": {
+    "total": 31,
+    "active": 31,
+    "inactive": 0,
+    "duplicates": {
+      "usernames": [],
+      "emails": []
+    }
+  },
+  "employees": {
+    "total": 45,
+    "duplicates": {
+      "employee_ids": [],
+      "names": [
+        {
+          "val": "MUSTAFA",
+          "count": 2
+        }
+      ],
+      "mobiles": [],
+      "emails": [
+        {
+          "val": "altaf.hussain@dwip.com",
+          "count": 2
+        },
+        {
+          "val": "prabhuling@dwip.com",
+          "count": 2
+        },
+        {
+          "val": "suresh.shivaji.natikar@dwip.com",
+          "count": 2
+        }
+      ],
+      "roles": [
+        {
+          "val": "Jr. technician",
+          "count": 9
+        },
+        {
+          "val": "Sr. Electrician",
+          "count": 3
+        },
+        {
+          "val": "service_advisor",
+          "count": 2
+        },
+        {
+          "val": "Sr. Technician",
+          "count": 8
+        },
+        {
+          "val": "Helper",
+          "count": 2
+        },
+        {
+          "val": "SA",
+          "count": 2
+        },
+        {
+          "val": "SUPERVISOR",
+          "count": 2
+        },
+        {
+          "val": "MECHANICAL HELPER",
+          "count": 2
+        }
+      ]
+    }
+  },
+  "employee_master": {
+    "total": 42,
+    "duplicates": {
+      "employee_ids": [],
+      "names": [],
+      "mobiles": [],
+      "emails": []
+    }
+  },
+  "relationships": {
+    "users_to_employees": {
+      "unmatched": [],
+      "multiple": [],
+      "missing_mappings": [
+        {
+          "user_id": 3,
+          "username": "wmsdmworkshop@gmail.com"
+        },
+        {
+          "user_id": 4,
+          "username": "admin"
+        },
+        {
+          "user_id": 5,
+          "username": "manager"
+        },
+        {
+          "user_id": 6,
+          "username": "supervisor"
+        },
+        {
+          "user_id": 7,
+          "username": "accounts"
+        },
+        {
+          "user_id": 8,
+          "username": "advisor"
+        },
+        {
+          "user_id": 9,
+          "username": "reception"
+        },
+        {
+          "user_id": 10,
+          "username": "gate"
+        },
+        {
+          "user_id": 11,
+          "username": "technician"
+        },
+        {
+          "user_id": 12,
+          "username": "spareparts"
+        },
+        {
+          "user_id": 13,
+          "username": "warranty"
+        },
+        {
+          "user_id": 14,
+          "username": "cashier"
+        },
+        {
+          "user_id": 15,
+          "username": "developer"
+        },
+        {
+          "user_id": 16,
+          "username": "afrozsladaf@gmail.com"
+        },
+        {
+          "user_id": 17,
+          "username": "abdulqadeer999@gmail.com"
+        },
+        {
+          "user_id": 18,
+          "username": "patilshashi5558@gmail.com"
+        },
+        {
+          "user_id": 19,
+          "username": "kulkarna040@gmail.com"
+        },
+        {
+          "user_id": 20,
+          "username": "pujarimanjunath295@gmail.com"
+        },
+        {
+          "user_id": 21,
+          "username": "kpkulkarni02@gmail.com"
+        },
+        {
+          "user_id": 22,
+          "username": "Mdadhn98@gmail.com"
+        },
+        {
+          "user_id": 23,
+          "username": "mustafaladaf50@gmail.com"
+        },
+        {
+          "user_id": 24,
+          "username": "devanandwarranty@gmail.com"
+        },
+        {
+          "user_id": 25,
+          "username": "khaja"
+        },
+        {
+          "user_id": 26,
+          "username": "nagesh"
+        },
+        {
+          "user_id": 27,
+          "username": "shivkumar"
+        },
+        {
+          "user_id": 28,
+          "username": "afroz"
+        },
+        {
+          "user_id": 29,
+          "username": "khasim"
+        },
+        {
+          "user_id": 30,
+          "username": "suryakant"
+        },
+        {
+          "user_id": 31,
+          "username": "gani"
+        },
+        {
+          "user_id": 32,
+          "username": "workshop_admin"
+        },
+        {
+          "user_id": 33,
+          "username": "vitthal"
+        }
+      ]
+    },
+    "employees_to_employee_master": {
+      "unmatched": [],
+      "multiple": [
+        {
+          "employee_id": 3,
+          "full_name": "ALTAF HUSSAIN",
+          "matched": [
+            2,
+            3
+          ]
+        },
+        {
+          "employee_id": 4,
+          "full_name": "ASHFAQ HUSSAIN",
+          "matched": [
+            3,
+            4
+          ]
+        },
+        {
+          "employee_id": 5,
+          "full_name": "ASIF",
+          "matched": [
+            4,
+            5
+          ]
+        },
+        {
+          "employee_id": 6,
+          "full_name": "FAKIRAAPA",
+          "matched": [
+            5,
+            6
+          ]
+        },
+        {
+          "employee_id": 9,
+          "full_name": "HUNCHIRAY",
+          "matched": [
+            8,
+            9
+          ]
+        },
+        {
+          "employee_id": 10,
+          "full_name": "JAGADISH",
+          "matched": [
+            9,
+            10
+          ]
+        },
+        {
+          "employee_id": 11,
+          "full_name": "LOKU",
+          "matched": [
+            10,
+            11
+          ]
+        },
+        {
+          "employee_id": 12,
+          "full_name": "Mustafa",
+          "matched": [
+            12,
+            22
+          ]
+        },
+        {
+          "employee_id": 13,
+          "full_name": "MALLINATH",
+          "matched": [
+            12,
+            13
+          ]
+        },
+        {
+          "employee_id": 14,
+          "full_name": "MANJUNATH",
+          "matched": [
+            13,
+            14
+          ]
+        },
+        {
+          "employee_id": 15,
+          "full_name": "MD ABDUL KHADEER",
+          "matched": [
+            14,
+            15
+          ]
+        },
+        {
+          "employee_id": 16,
+          "full_name": "MD GOUSE",
+          "matched": [
+            15,
+            16
+          ]
+        },
+        {
+          "employee_id": 17,
+          "full_name": "MD JAVEED",
+          "matched": [
+            16,
+            17
+          ]
+        },
+        {
+          "employee_id": 28,
+          "full_name": "SANGAPPA",
+          "matched": [
+            28,
+            30
+          ]
+        },
+        {
+          "employee_id": 29,
+          "full_name": "SHASHIKUMAR",
+          "matched": [
+            29,
+            32
+          ]
+        },
+        {
+          "employee_id": 30,
+          "full_name": "SIRAJ AHMED",
+          "matched": [
+            30,
+            33
+          ]
+        },
+        {
+          "employee_id": 31,
+          "full_name": "SRINATH M. N",
+          "matched": [
+            31,
+            34
+          ]
+        },
+        {
+          "employee_id": 32,
+          "full_name": "UMAKANTA",
+          "matched": [
+            32,
+            36
+          ]
+        },
+        {
+          "employee_id": 33,
+          "full_name": "YUNUS ALI",
+          "matched": [
+            33,
+            37
+          ]
+        },
+        {
+          "employee_id": 34,
+          "full_name": "REVANSIDAPPA",
+          "matched": [
+            28,
+            34
+          ]
+        },
+        {
+          "employee_id": 36,
+          "full_name": "ASLAM",
+          "matched": [
+            36,
+            40
+          ]
+        },
+        {
+          "employee_id": 38,
+          "full_name": "AZHAR",
+          "matched": [
+            38,
+            41
+          ]
+        },
+        {
+          "employee_id": 39,
+          "full_name": "AFROZ",
+          "matched": [
+            17,
+            39
+          ]
+        },
+        {
+          "employee_id": 40,
+          "full_name": "AHMED HUSSAIN",
+          "matched": [
+            38,
+            40
+          ]
+        }
+      ],
+      "missing_mappings": []
+    }
+  }
+}

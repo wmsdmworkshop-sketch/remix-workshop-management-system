@@ -1,0 +1,263 @@
+{
+  "normalizations": [
+    {
+      "employee_id": 3,
+      "full_name": "ALTAF HUSSAIN",
+      "original": "Jr. technician",
+      "normalized": "technician"
+    },
+    {
+      "employee_id": 4,
+      "full_name": "ASHFAQ HUSSAIN",
+      "original": "Jr. technician",
+      "normalized": "technician"
+    },
+    {
+      "employee_id": 5,
+      "full_name": "ASIF",
+      "original": "electrician",
+      "normalized": "electrician"
+    },
+    {
+      "employee_id": 7,
+      "full_name": "Shashi",
+      "original": "service_advisor",
+      "normalized": "service_advisor"
+    },
+    {
+      "employee_id": 8,
+      "full_name": "HANNAMANTHRAYA",
+      "original": "Jr. technician",
+      "normalized": "technician"
+    },
+    {
+      "employee_id": 9,
+      "full_name": "HUNCHIRAY",
+      "original": "Jr. technician",
+      "normalized": "technician"
+    },
+    {
+      "employee_id": 10,
+      "full_name": "JAGADISH",
+      "original": "DRIVER",
+      "normalized": "driver"
+    },
+    {
+      "employee_id": 11,
+      "full_name": "LOKU",
+      "original": "Sr. Technician",
+      "normalized": "senior_technician"
+    },
+    {
+      "employee_id": 12,
+      "full_name": "Mustafa",
+      "original": "service_advisor",
+      "normalized": "service_advisor"
+    },
+    {
+      "employee_id": 13,
+      "full_name": "MALLINATH",
+      "original": "Sr. Technician",
+      "normalized": "senior_technician"
+    },
+    {
+      "employee_id": 16,
+      "full_name": "MD GOUSE",
+      "original": "Jr. technician",
+      "normalized": "technician"
+    },
+    {
+      "employee_id": 17,
+      "full_name": "MD JAVEED",
+      "original": "Sr. Technician",
+      "normalized": "senior_technician"
+    },
+    {
+      "employee_id": 18,
+      "full_name": "MEHMOOD",
+      "original": "Helper",
+      "normalized": "helper"
+    },
+    {
+      "employee_id": 19,
+      "full_name": "MOHAMMED SHOAIB",
+      "original": "Sr. Technician",
+      "normalized": "senior_technician"
+    },
+    {
+      "employee_id": 20,
+      "full_name": "MOHAMMED ZAKI",
+      "original": "Jr. technician",
+      "normalized": "technician"
+    },
+    {
+      "employee_id": 21,
+      "full_name": "MOHSIN NAWAZ",
+      "original": "Jr. elecrician",
+      "normalized": "electrician"
+    },
+    {
+      "employee_id": 22,
+      "full_name": "MUSTAFA",
+      "original": "SA",
+      "normalized": "service_advisor"
+    },
+    {
+      "employee_id": 24,
+      "full_name": "NAGESH",
+      "original": "Jr. technician",
+      "normalized": "technician"
+    },
+    {
+      "employee_id": 25,
+      "full_name": "PRAHLAD KULKARNI",
+      "original": "SUPERVISOR",
+      "normalized": "floor_supervisor"
+    },
+    {
+      "employee_id": 27,
+      "full_name": "RAJKUMAR AMABARAYA MENTE",
+      "original": "Sr. Technician",
+      "normalized": "senior_technician"
+    },
+    {
+      "employee_id": 28,
+      "full_name": "SANGAPPA",
+      "original": "Sr. Technician",
+      "normalized": "senior_technician"
+    },
+    {
+      "employee_id": 29,
+      "full_name": "SHASHIKUMAR",
+      "original": "SA",
+      "normalized": "service_advisor"
+    },
+    {
+      "employee_id": 30,
+      "full_name": "SIRAJ AHMED",
+      "original": "Sr. Technician",
+      "normalized": "senior_technician"
+    },
+    {
+      "employee_id": 31,
+      "full_name": "SRINATH M. N",
+      "original": "Jr. technician",
+      "normalized": "technician"
+    },
+    {
+      "employee_id": 32,
+      "full_name": "UMAKANTA",
+      "original": "Helper",
+      "normalized": "helper"
+    },
+    {
+      "employee_id": 37,
+      "full_name": "JAVEED PASHA",
+      "original": "MECHANICAL HELPER",
+      "normalized": "helper"
+    },
+    {
+      "employee_id": 40,
+      "full_name": "AHMED HUSSAIN",
+      "original": "SUPERVISOR",
+      "normalized": "floor_supervisor"
+    },
+    {
+      "employee_id": 42,
+      "full_name": "MUBEEN",
+      "original": "MECHANICAL HELPER",
+      "normalized": "helper"
+    },
+    {
+      "employee_id": 43,
+      "full_name": "SHARNBASAPPA",
+      "original": "Jr. technician",
+      "normalized": "technician"
+    },
+    {
+      "employee_id": 45,
+      "full_name": "SAMEERUDDIN",
+      "original": "Sr. Technician",
+      "normalized": "senior_technician"
+    }
+  ],
+  "compounds": [
+    {
+      "employee_id": 1,
+      "full_name": "ABDUL GANI SHEK",
+      "role": "BD ASSISTANT/ DRIVER"
+    },
+    {
+      "employee_id": 46,
+      "full_name": "SURESH SHIVAJI NATIKAR",
+      "role": "Parts Helper"
+    }
+  ],
+  "manuals": [
+    {
+      "employee_id": 2,
+      "full_name": "ABDUL QADEER",
+      "role": "BILLER"
+    },
+    {
+      "employee_id": 6,
+      "full_name": "FAKIRAAPA",
+      "role": "Sr. Electrician"
+    },
+    {
+      "employee_id": 14,
+      "full_name": "MANJUNATH",
+      "role": "WARRANTY ASSISTANT"
+    },
+    {
+      "employee_id": 15,
+      "full_name": "MD ABDUL KHADEER",
+      "role": "Sr. Electrician"
+    },
+    {
+      "employee_id": 23,
+      "full_name": "MUZAMILL",
+      "role": "Electrician Trainee"
+    },
+    {
+      "employee_id": 26,
+      "full_name": "RAGHAVENDRA KULKARNI",
+      "role": "FLOOR INCHARGE"
+    },
+    {
+      "employee_id": 33,
+      "full_name": "YUNUS ALI",
+      "role": "Sr. Electrician"
+    },
+    {
+      "employee_id": 34,
+      "full_name": "REVANSIDAPPA",
+      "role": "OIL INCHARGE"
+    },
+    {
+      "employee_id": 35,
+      "full_name": "KHASIM",
+      "role": "TOOLS INCHARGE"
+    },
+    {
+      "employee_id": 36,
+      "full_name": "ASLAM",
+      "role": "technician trainee"
+    },
+    {
+      "employee_id": 38,
+      "full_name": "AZHAR",
+      "role": "Electrician trainee"
+    },
+    {
+      "employee_id": 39,
+      "full_name": "AFROZ",
+      "role": "BAY REPORTER"
+    },
+    {
+      "employee_id": 44,
+      "full_name": "PRABHULING",
+      "role": "Parts"
+    }
+  ]
+}
