@@ -118,6 +118,7 @@ export const employees = mysqlTable("employees", {
   joining_date: text("joining_date"),
   profile_photo_url: text("profile_photo_url"),
   face_embedding_reference: text("face_embedding_reference"),
+  email: text("email"),
 });
 
 // Bays

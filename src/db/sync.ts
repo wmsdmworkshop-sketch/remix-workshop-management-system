@@ -206,6 +206,7 @@ export async function ensureTablesExist(): Promise<void> {
       \`certification_date\` VARCHAR(100) DEFAULT NULL,
       \`certification_expiry_date\` VARCHAR(100) DEFAULT NULL,
       \`certification_remarks\` TEXT DEFAULT NULL,
+      \`email\` VARCHAR(100) DEFAULT NULL,
       PRIMARY KEY (\`employee_id\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
   `);

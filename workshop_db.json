@@ -6,7 +6,7 @@
       "employee_code": "EMP001",
       "role": "BD ASSISTANT/ DRIVER",
       "employee_grade": "Senior",
-      "basic_salary": 18000,
+      "basic_salary": 18080,
       "mobile": "+9198765927112",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -25,7 +25,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "abdul.gani.shek@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -40,7 +40,7 @@
       "employee_code": "EMP002",
       "role": "BILLER",
       "employee_grade": "Senior",
-      "basic_salary": 20000,
+      "basic_salary": 16480,
       "mobile": "+9198765102881",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -59,7 +59,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "altaf.hussain@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -74,7 +74,7 @@
       "employee_code": "EMP003",
       "role": "Jr. technician",
       "employee_grade": "Junior",
-      "basic_salary": 18000,
+      "basic_salary": 16480,
       "mobile": "+9198765270289",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -93,7 +93,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "altaf.hussain@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -108,7 +108,7 @@
       "employee_code": "EMP004",
       "role": "Jr. technician",
       "employee_grade": "Senior",
-      "basic_salary": 20000,
+      "basic_salary": 18000,
       "mobile": "+9198765503050",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -127,7 +127,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "ashfaq.hussain@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -142,7 +142,7 @@
       "employee_code": "EMP005",
       "role": "electrician",
       "employee_grade": "Junior",
-      "basic_salary": 15000,
+      "basic_salary": 15040,
       "mobile": "+9198765588734",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -161,7 +161,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "asif@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -195,7 +195,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "fakiraapa@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -206,13 +206,13 @@
     },
     {
       "employee_id": 7,
-      "full_name": "HAMEED PATEL",
+      "full_name": "Shashi",
       "employee_code": "EMP007",
-      "role": "Alignment Technician",
+      "role": "service_advisor",
       "employee_grade": "Junior",
       "basic_salary": 18000,
-      "mobile": "+9198765218053",
-      "is_active": true,
+      "mobile": "7795550899",
+      "is_active": 1,
       "created_at": "2026-06-26T13:13:40.379Z",
       "allocated_revenue": 0,
       "target_revenue": 54000,
@@ -229,7 +229,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "patilshashi5558@gmail.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -244,7 +244,7 @@
       "employee_code": "EMP008",
       "role": "Jr. technician",
       "employee_grade": "Junior",
-      "basic_salary": 13000,
+      "basic_salary": 12960,
       "mobile": "+9198765365293",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -263,7 +263,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "hanumath.raya@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -278,7 +278,7 @@
       "employee_code": "EMP009",
       "role": "Jr. technician",
       "employee_grade": "Junior",
-      "basic_salary": 14000,
+      "basic_salary": 14080,
       "mobile": "+9198765829969",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -297,7 +297,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "hunchiray@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -331,7 +331,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "jagadish@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -365,7 +365,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "loku@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -376,13 +376,13 @@
     },
     {
       "employee_id": 12,
-      "full_name": "MAHMED ALTAF AHMED",
+      "full_name": "Mustafa",
       "employee_code": "EMP012",
-      "role": "Jr.Electrician",
+      "role": "service_advisor",
       "employee_grade": "Junior",
-      "basic_salary": 15000,
-      "mobile": "+9198765756809",
-      "is_active": true,
+      "basic_salary": 15040,
+      "mobile": "9988776655",
+      "is_active": 1,
       "created_at": "2026-06-26T13:13:40.379Z",
       "allocated_revenue": 0,
       "target_revenue": 45120,
@@ -399,7 +399,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "mustafaladaf50@gmail.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -433,7 +433,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "mallinath@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -448,7 +448,7 @@
       "employee_code": "EMP014",
       "role": "WARRANTY ASSISTANT",
       "employee_grade": "Junior",
-      "basic_salary": 14000,
+      "basic_salary": 14080,
       "mobile": "+9198765209934",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -467,7 +467,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "manjunath@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -482,7 +482,7 @@
       "employee_code": "EMP015",
       "role": "Sr. Electrician",
       "employee_grade": "Junior",
-      "basic_salary": 15000,
+      "basic_salary": 15040,
       "mobile": "+9198765750694",
       "is_active": false,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -501,7 +501,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "md.abdul.khadeer@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -516,7 +516,7 @@
       "employee_code": "EMP016",
       "role": "Jr. technician",
       "employee_grade": "Junior",
-      "basic_salary": 17500,
+      "basic_salary": 18000,
       "mobile": "+9198765216861",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -535,7 +535,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "md.gouse@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -569,7 +569,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "md.javeed@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -584,7 +584,7 @@
       "employee_code": "EMP018",
       "role": "Helper",
       "employee_grade": "Junior",
-      "basic_salary": 12000,
+      "basic_salary": 10080,
       "mobile": "+9198765208562",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -603,7 +603,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "mehmood@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -618,7 +618,7 @@
       "employee_code": "EMP019",
       "role": "Sr. Technician",
       "employee_grade": "Junior",
-      "basic_salary": 18000,
+      "basic_salary": 18080,
       "mobile": "+9198765449819",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -637,7 +637,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "mohammed.shoaib@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -671,7 +671,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "mohammed.zaki@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -686,7 +686,7 @@
       "employee_code": "EMP021",
       "role": "Jr. elecrician",
       "employee_grade": "Junior",
-      "basic_salary": 17000,
+      "basic_salary": 16000,
       "mobile": "+9198765367510",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -705,7 +705,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "mohsin.nawaz@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -720,7 +720,7 @@
       "employee_code": "EMP022",
       "role": "SA",
       "employee_grade": "Junior",
-      "basic_salary": 13000,
+      "basic_salary": 12000,
       "mobile": "+9198765186525",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -739,7 +739,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "mustafaladaf50@gmail.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -773,7 +773,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "muzamill@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -788,7 +788,7 @@
       "employee_code": "EMP024",
       "role": "Jr. technician",
       "employee_grade": "Junior",
-      "basic_salary": 18000,
+      "basic_salary": 15040,
       "mobile": "+9198765914706",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -807,7 +807,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "nagesh@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -822,7 +822,7 @@
       "employee_code": "EMP025",
       "role": "SUPERVISOR",
       "employee_grade": "Senior",
-      "basic_salary": 25000,
+      "basic_salary": 16000,
       "mobile": "+9198765422374",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -841,7 +841,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "prabhuling@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -875,7 +875,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "raghuvendra.kulkarni@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -909,7 +909,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "rajkumar.amabaraya.mente@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -924,7 +924,7 @@
       "employee_code": "EMP028",
       "role": "Sr. Technician",
       "employee_grade": "Senior",
-      "basic_salary": 25000,
+      "basic_salary": 24160,
       "mobile": "+9198765567581",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -943,7 +943,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "sangappa@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -958,7 +958,7 @@
       "employee_code": "EMP029",
       "role": "SA",
       "employee_grade": "Junior",
-      "basic_salary": 18000,
+      "basic_salary": 17440,
       "mobile": "+9198765265541",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -977,7 +977,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "shashikumar@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -992,7 +992,7 @@
       "employee_code": "EMP030",
       "role": "Sr. Technician",
       "employee_grade": "Senior",
-      "basic_salary": 20000,
+      "basic_salary": 21000,
       "mobile": "+9198765727063",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -1011,7 +1011,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "siraj.ahmed@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -1026,7 +1026,7 @@
       "employee_code": "EMP031",
       "role": "Jr. technician",
       "employee_grade": "Junior",
-      "basic_salary": 17000,
+      "basic_salary": 15040,
       "mobile": "+9198765718204",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -1045,7 +1045,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "srinath.m..n@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -1060,7 +1060,7 @@
       "employee_code": "EMP032",
       "role": "Helper",
       "employee_grade": "Junior",
-      "basic_salary": 18000,
+      "basic_salary": 15040,
       "mobile": "+9198765750567",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -1079,7 +1079,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "umakanta@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -1113,7 +1113,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "yunus.ali@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -1128,7 +1128,7 @@
       "employee_code": "EMP034",
       "role": "OIL INCHARGE",
       "employee_grade": "Junior",
-      "basic_salary": 10000,
+      "basic_salary": 10080,
       "mobile": "+9198765341681",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -1147,7 +1147,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "revansidappa@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -1162,7 +1162,7 @@
       "employee_code": "EMP035",
       "role": "TOOLS INCHARGE",
       "employee_grade": "Junior",
-      "basic_salary": 10000,
+      "basic_salary": 16960,
       "mobile": "+9198765229072",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -1181,7 +1181,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "suresh.shivaji.natikar@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -1196,7 +1196,7 @@
       "employee_code": "EMP036",
       "role": "technician trainee",
       "employee_grade": "Junior",
-      "basic_salary": 10000,
+      "basic_salary": 12000,
       "mobile": "+9198765242831",
       "is_active": false,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -1215,7 +1215,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "aslam@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -1230,7 +1230,7 @@
       "employee_code": "EMP037",
       "role": "MECHANICAL HELPER",
       "employee_grade": "Junior",
-      "basic_salary": 13000,
+      "basic_salary": 15000,
       "mobile": "+9198765860006",
       "is_active": false,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -1249,7 +1249,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "javeed.j@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -1264,7 +1264,7 @@
       "employee_code": "EMP038",
       "role": "Electrician trainee",
       "employee_grade": "Junior",
-      "basic_salary": 13000,
+      "basic_salary": 12000,
       "mobile": "+9198765914884",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -1283,7 +1283,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "azhar@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -1298,7 +1298,7 @@
       "employee_code": "EMP039",
       "role": "BAY REPORTER",
       "employee_grade": "Junior",
-      "basic_salary": 10000,
+      "basic_salary": 12000,
       "mobile": "+9198765134545",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -1317,7 +1317,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "afroz@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -1351,7 +1351,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "ahmed.hussain@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -1366,7 +1366,7 @@
       "employee_code": "EMP042",
       "role": "MECHANICAL HELPER",
       "employee_grade": "Junior",
-      "basic_salary": 13000,
+      "basic_salary": 0,
       "mobile": "+9198765997178",
       "is_active": true,
       "created_at": "2026-06-26T13:13:40.379Z",
@@ -1385,7 +1385,7 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "wmsdmworkshop@gmail.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -1400,7 +1400,7 @@
       "employee_code": "EMP043",
       "role": "Jr. technician",
       "employee_grade": "Junior",
-      "basic_salary": 15000,
+      "basic_salary": 15040,
       "mobile": "+919999999020",
       "is_active": true,
       "created_at": "2026-06-26T13:47:32.199Z",
@@ -1419,7 +1419,109 @@
       "profile_photo_url": null,
       "face_embedding_reference": null,
       "alt_mobile": null,
-      "email": null,
+      "email": "sharnbasappa@dwip.com",
+      "designation": null,
+      "workshop": null,
+      "reporting_manager": null,
+      "date_of_joining": null,
+      "bank_details": null,
+      "pan": null,
+      "aadhaar": null
+    },
+    {
+      "employee_id": 44,
+      "full_name": "PRABHULING",
+      "employee_code": "EMP604",
+      "role": "Parts",
+      "employee_grade": "Junior",
+      "basic_salary": 16000,
+      "mobile": "",
+      "is_active": true,
+      "created_at": null,
+      "allocated_revenue": 0,
+      "target_revenue": null,
+      "paid_pct": "0.00%",
+      "tml_claim_pct": "0.00%",
+      "certification_level": null,
+      "certification_date": null,
+      "certification_expiry_date": null,
+      "certification_remarks": null,
+      "department": null,
+      "workshop_id": null,
+      "shift_id": null,
+      "joining_date": null,
+      "profile_photo_url": null,
+      "face_embedding_reference": null,
+      "alt_mobile": null,
+      "email": "prabhuling@dwip.com",
+      "designation": null,
+      "workshop": null,
+      "reporting_manager": null,
+      "date_of_joining": null,
+      "bank_details": null,
+      "pan": null,
+      "aadhaar": null
+    },
+    {
+      "employee_id": 45,
+      "full_name": "SAMEERUDDIN",
+      "employee_code": "EMP330",
+      "role": "Sr. Technician",
+      "employee_grade": "Junior",
+      "basic_salary": 20000,
+      "mobile": "",
+      "is_active": true,
+      "created_at": null,
+      "allocated_revenue": 0,
+      "target_revenue": null,
+      "paid_pct": "0.00%",
+      "tml_claim_pct": "0.00%",
+      "certification_level": null,
+      "certification_date": null,
+      "certification_expiry_date": null,
+      "certification_remarks": null,
+      "department": null,
+      "workshop_id": null,
+      "shift_id": null,
+      "joining_date": null,
+      "profile_photo_url": null,
+      "face_embedding_reference": null,
+      "alt_mobile": null,
+      "email": "sameeruddin@dwip.com",
+      "designation": null,
+      "workshop": null,
+      "reporting_manager": null,
+      "date_of_joining": null,
+      "bank_details": null,
+      "pan": null,
+      "aadhaar": null
+    },
+    {
+      "employee_id": 46,
+      "full_name": "SURESH SHIVAJI NATIKAR",
+      "employee_code": "EMP510",
+      "role": "Parts Helper",
+      "employee_grade": "Junior",
+      "basic_salary": 16960,
+      "mobile": "",
+      "is_active": true,
+      "created_at": null,
+      "allocated_revenue": 0,
+      "target_revenue": null,
+      "paid_pct": "0.00%",
+      "tml_claim_pct": "0.00%",
+      "certification_level": null,
+      "certification_date": null,
+      "certification_expiry_date": null,
+      "certification_remarks": null,
+      "department": null,
+      "workshop_id": null,
+      "shift_id": null,
+      "joining_date": null,
+      "profile_photo_url": null,
+      "face_embedding_reference": null,
+      "alt_mobile": null,
+      "email": "suresh.shivaji.natikar@dwip.com",
       "designation": null,
       "workshop": null,
       "reporting_manager": null,
@@ -280480,12 +280582,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:55:57.959Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:55:57.959Z"
     },
     {
       "alert_id": 2,
@@ -280498,12 +280595,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:55:58.672Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:55:58.672Z"
     },
     {
       "alert_id": 3,
@@ -280516,12 +280608,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:55:59.077Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:55:59.077Z"
     },
     {
       "alert_id": 4,
@@ -280534,12 +280621,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:55:59.482Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:55:59.482Z"
     },
     {
       "alert_id": 5,
@@ -280552,12 +280634,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:55:59.898Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:55:59.898Z"
     },
     {
       "alert_id": 6,
@@ -280570,12 +280647,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:00.328Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:00.328Z"
     },
     {
       "alert_id": 7,
@@ -280588,12 +280660,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:00.746Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:00.746Z"
     },
     {
       "alert_id": 8,
@@ -280606,12 +280673,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:01.186Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:01.186Z"
     },
     {
       "alert_id": 9,
@@ -280624,12 +280686,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:01.593Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:01.593Z"
     },
     {
       "alert_id": 10,
@@ -280642,12 +280699,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:02.013Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:02.013Z"
     },
     {
       "alert_id": 11,
@@ -280660,12 +280712,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:02.445Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:02.445Z"
     },
     {
       "alert_id": 12,
@@ -280678,12 +280725,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:02.852Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:02.852Z"
     },
     {
       "alert_id": 13,
@@ -280696,12 +280738,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:03.252Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:03.252Z"
     },
     {
       "alert_id": 14,
@@ -280714,12 +280751,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:03.663Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:03.663Z"
     },
     {
       "alert_id": 15,
@@ -280732,12 +280764,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:04.074Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:04.074Z"
     },
     {
       "alert_id": 16,
@@ -280750,12 +280777,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:04.477Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:04.477Z"
     },
     {
       "alert_id": 17,
@@ -280768,12 +280790,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:04.878Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:04.878Z"
     },
     {
       "alert_id": 18,
@@ -280786,12 +280803,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:05.283Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:05.283Z"
     },
     {
       "alert_id": 19,
@@ -280804,12 +280816,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:05.685Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:05.685Z"
     },
     {
       "alert_id": 20,
@@ -280822,12 +280829,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:06.091Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:06.091Z"
     },
     {
       "alert_id": 21,
@@ -280840,12 +280842,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:06.503Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:06.503Z"
     },
     {
       "alert_id": 22,
@@ -280858,12 +280855,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:06.916Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:06.916Z"
     },
     {
       "alert_id": 23,
@@ -280876,12 +280868,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:07.399Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:07.399Z"
     },
     {
       "alert_id": 24,
@@ -280894,12 +280881,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:07.807Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:07.807Z"
     },
     {
       "alert_id": 25,
@@ -280912,12 +280894,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:08.214Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:08.214Z"
     },
     {
       "alert_id": 26,
@@ -280930,12 +280907,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:08.661Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:08.661Z"
     },
     {
       "alert_id": 27,
@@ -280948,12 +280920,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:09.071Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:09.071Z"
     },
     {
       "alert_id": 28,
@@ -280966,12 +280933,7 @@
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_at": null,
-      "created_at": "2026-07-10T13:56:09.481Z",
-      "target_roles": [
-        "service_manager",
-        "supervisor",
-        "workshop_manager"
-      ]
+      "created_at": "2026-07-10T13:56:09.481Z"
     }
   ],
   "dmsImportBatches": [
@@ -299321,6 +299283,28 @@
       "recipient_role": "Customer",
       "message": "QRT Omega is enroute to your location. Expected ETA: 60 mins.",
       "logged_at": "2026-07-09 08:33:56"
+    }
+  ],
+  "users": [
+    {
+      "user_id": 1,
+      "full_name": "Developer Operator",
+      "username": "developer",
+      "password_hash": "$2b$10$0qK5zfR2LFQTKpdZxR3ReuS8rWgCNm4DkNl4htmEfHnXdpa0duT6K",
+      "role": "developer",
+      "is_active": 1,
+      "created_at": "2026-07-11T11:35:06.424Z",
+      "last_login": null
+    },
+    {
+      "user_id": 2,
+      "full_name": "Admin Operator",
+      "username": "admin",
+      "password_hash": "$2b$10$DkqkXSRKMSOJucl1dcBtieQv4OUgQvfjtcRFK/UlsV/QMq0t8wMju",
+      "role": "admin",
+      "is_active": 1,
+      "created_at": "2026-07-11T11:35:06.424Z",
+      "last_login": null
     }
   ]
 }
