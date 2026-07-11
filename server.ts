@@ -18,8 +18,7 @@ import { getReworkHistoryForTechnician } from "./src/engines/rework-tracking-ser
 import { validateOvertimeRequest } from "./src/engines/overtime-rules.ts";
 import { verifyFace } from "./src/engines/face-verifier.ts";
 import { verifyJobCard } from "./src/engines/ocr-processor.ts";
-
-
+import { EmployeeIdentityService, RoleService, AuditService } from "./src/core/identity.ts";
 // ---- Customer Portal Imports ----
 import {
   authenticateCustomerToken,
@@ -1080,25 +1079,10 @@ async function startServer() {
       }
 
       try {
-        const [rows] = await dbPool.query(
-          "SELECT can_view, can_edit, can_comment FROM role_permissions WHERE role_name = ? AND module_name = ?",
-          [req.user.role, moduleName]
-        ) as any[];
-
-        if (!rows || rows.length === 0) {
-          return res.status(403).json({ error: `Access denied. No permissions configured for ${moduleName} module.` });
-        }
-
-        const perm = rows[0];
-        let permitted = false;
-        if (action === 'view') permitted = perm.can_view === 1;
-        else if (action === 'edit') permitted = perm.can_edit === 1;
-        else if (action === 'comment') permitted = perm.can_comment === 1;
-
+        const permitted = await RoleService.hasPermission(req.user.role, moduleName, action);
         if (!permitted) {
           return res.status(403).json({ error: `Access denied. Insufficient permissions to ${action} module ${moduleName}.` });
         }
-
         next();
       } catch (err) {
         console.error("Permission check error:", err);
@@ -1643,6 +1627,16 @@ async function startServer() {
             [finalRole, finalFullName, finalMobileNo || "", finalEmployeeId]
           );
         }
+
+        // Audit log the user details change
+        const adminUserId = req.user.user_id || 999;
+        const adminUsername = req.user.username || "admin";
+        await AuditService.logAction(
+          adminUserId,
+          adminUsername,
+          "USER_PROFILE_UPDATE",
+          `Updated profile of user '${existingUser.username}' (ID: ${userId}): role=${finalRole}, employee_id=${finalEmployeeId}, is_active=${finalIsActive}`
+        );
       } catch (dbErr) {
         console.warn("MySQL user update failed, updating local cache only:", dbErr);
       }
@@ -2264,13 +2258,18 @@ async function startServer() {
   });
 
   // --- EMPLOYEES ENDPOINTS ---
-  app.get("/api/employees", (req, res) => {
-    const db = getDB();
-    const employeesWithDefaults = db.employees.map((e: any) => ({
-      ...e,
-      target_revenue: e.target_revenue || ((e.basic_salary || 0) * 3)
-    }));
-    res.json(employeesWithDefaults);
+  app.get("/api/employees", async (req, res) => {
+    try {
+      const includeLegacy = req.query.includeLegacy === "true";
+      const employees = await EmployeeIdentityService.getEmployees(includeLegacy);
+      const employeesWithDefaults = employees.map((e: any) => ({
+        ...e,
+        target_revenue: e.target_revenue || ((e.basic_salary || 0) * 3)
+      }));
+      res.json(employeesWithDefaults);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to fetch employees." });
+    }
   });
 
   app.post("/api/employees", (req, res) => {
@@ -5880,30 +5879,28 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
-  app.post("/api/permissions", authenticateToken, requirePermission("User Management", "edit"), express.json(), async (req, res) => {
+  app.post("/api/permissions", authenticateToken, requirePermission("User Management", "edit"), express.json(), async (req: any, res) => {
     const { permissions } = req.body;
     if (!Array.isArray(permissions)) {
       return res.status(400).json({ error: "Permissions must be an array." });
     }
 
     try {
+      const adminUserId = req.user.user_id || 999;
+      const adminUsername = req.user.username || "admin";
+      
       for (const p of permissions) {
-        const [existing] = await dbPool.query(
-          "SELECT permission_id FROM role_permissions WHERE role_name = ? AND module_name = ?",
-          [p.role_name, p.module_name]
-        ) as any[];
-
-        if (existing && existing.length > 0) {
-          await dbPool.execute(
-            "UPDATE role_permissions SET can_view = ?, can_edit = ?, can_comment = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE permission_id = ?",
-            [p.can_view ? 1 : 0, p.can_edit ? 1 : 0, p.can_comment ? 1 : 0, p.updated_by || null, existing[0].permission_id]
-          );
-        } else {
-          await dbPool.execute(
-            "INSERT INTO role_permissions (role_name, module_name, can_view, can_edit, can_comment, updated_by) VALUES (?, ?, ?, ?, ?, ?)",
-            [p.role_name, p.module_name, p.can_view ? 1 : 0, p.can_edit ? 1 : 0, p.can_comment ? 1 : 0, p.updated_by || null]
-          );
-        }
+        await RoleService.setPermission(
+          p.role_name,
+          p.module_name,
+          {
+            can_view: p.can_view,
+            can_edit: p.can_edit,
+            can_comment: p.can_comment
+          },
+          adminUserId,
+          adminUsername
+        );
       }
       res.json({ success: true, message: "Permissions updated successfully." });
     } catch (e: any) {

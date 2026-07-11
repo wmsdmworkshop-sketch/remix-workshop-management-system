@@ -1,7 +1,7 @@
 {
   "totalPassed": 23,
   "totalFailed": 0,
-  "duration": "40.38",
+  "duration": "34.24",
   "results": [
     {
       "file": "complaint-form.test.ts",
