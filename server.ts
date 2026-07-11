@@ -19,6 +19,7 @@ import { validateOvertimeRequest } from "./src/engines/overtime-rules.ts";
 import { verifyFace } from "./src/engines/face-verifier.ts";
 import { verifyJobCard } from "./src/engines/ocr-processor.ts";
 import { EmployeeIdentityService, RoleService, AuditService } from "./src/core/identity.ts";
+import { EmployeeRepository, PermissionRepository, AuditRepository } from "./src/core/repositories.ts";
 // ---- Customer Portal Imports ----
 import {
   authenticateCustomerToken,
@@ -329,6 +330,15 @@ async function getLocalUsers() {
 
 // Start the Express app
 async function startServer() {
+  // Initialize and inject repositories into Services (Dependency Injection Container pattern)
+  const auditRepo = new AuditRepository(dbPool);
+  const employeeRepo = new EmployeeRepository(dbPool);
+  const permissionRepo = new PermissionRepository(dbPool);
+
+  AuditService.init(auditRepo);
+  EmployeeIdentityService.init(employeeRepo, auditRepo);
+  RoleService.init(permissionRepo, auditRepo);
+
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
 
@@ -1522,6 +1532,16 @@ async function startServer() {
             [role, full_name, employee_id]
           );
         }
+
+        // Audit log user creation
+        const adminUserId = req.user.user_id || 999;
+        const adminUsername = req.user.username || "admin";
+        await AuditService.logAction(
+          adminUserId,
+          adminUsername,
+          "USER_CREATION",
+          `Created new user '${username}' with role '${role}' and linked to employee ID ${employee_id || "None"}`
+        );
       } catch (dbErr) {
         console.warn("MySQL user creation failed, saving to local cache only:", dbErr);
       }

@@ -1,7 +1,7 @@
 {
-  "totalPassed": 23,
+  "totalPassed": 24,
   "totalFailed": 0,
-  "duration": "34.24",
+  "duration": "36.26",
   "results": [
     {
       "file": "complaint-form.test.ts",
@@ -25,6 +25,10 @@
     },
     {
       "file": "floor-supervisor.test.ts",
+      "success": true
+    },
+    {
+      "file": "identity-architecture.test.ts",
       "success": true
     },
     {
