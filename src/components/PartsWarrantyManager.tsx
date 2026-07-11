@@ -30,6 +30,7 @@ interface PartsWarrantyManagerProps {
   jobCards: JobCard[];
   onUpdateJob: (id: number, updatedFields: Partial<JobCard>) => void;
   onRefresh: () => void;
+  aiModeEnabled?: boolean;
 }
 
 interface PartRequisition {
@@ -58,7 +59,8 @@ interface WarrantyClaim {
 export default function PartsWarrantyManager({ 
   jobCards, 
   onUpdateJob,
-  onRefresh 
+  onRefresh,
+  aiModeEnabled = true
 }: PartsWarrantyManagerProps) {
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -941,17 +943,19 @@ export default function PartsWarrantyManager({
 
                         {/* Quick links / Actions */}
                         <div className="pt-3 border-t border-slate-100 flex flex-wrap gap-2.5 justify-end">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const validatorElem = document.getElementById("ai-warranty-validator-title");
-                              if (validatorElem) validatorElem.scrollIntoView({ behavior: "smooth" });
-                            }}
-                            className="px-3.5 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-[10px] uppercase tracking-wider rounded-xl transition flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <Cpu className="h-3.5 w-3.5 text-indigo-500" />
-                            <span>Consult AI Validator</span>
-                          </button>
+                          {aiModeEnabled && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const validatorElem = document.getElementById("ai-warranty-validator-title");
+                                if (validatorElem) validatorElem.scrollIntoView({ behavior: "smooth" });
+                              }}
+                              className="px-3.5 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-[10px] uppercase tracking-wider rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Cpu className="h-3.5 w-3.5 text-indigo-500" />
+                              <span>Consult AI Validator</span>
+                            </button>
+                          )}
                           
                           <button
                             type="button"
@@ -974,7 +978,8 @@ export default function PartsWarrantyManager({
           </div>
 
           {/* AI Warranty Eligibility Validator (Query Box) */}
-          <div className="bg-slate-900 text-slate-100 rounded-2xl p-6 shadow-md border border-slate-800 space-y-4">
+          {aiModeEnabled && (
+            <div className="bg-slate-900 text-slate-100 rounded-2xl p-6 shadow-md border border-slate-800 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg border border-indigo-500/20">
@@ -1270,6 +1275,7 @@ export default function PartsWarrantyManager({
               </div>
             )}
           </div>
+          )}
 
           {/* Log OEM Warranty Claim Section */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

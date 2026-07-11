@@ -34,7 +34,13 @@ import {
   AlertTriangle,
   AlertOctagon,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  ClipboardCopy,
+  FileText,
+  Building,
+  Smartphone,
+  FileSpreadsheet,
+  Server
 } from "lucide-react";
 import UserManagement from "./components/UserManagement";
 import { 
@@ -49,6 +55,22 @@ import GateEntryManager from "./components/GateEntryManager";
 import PartsWarrantyManager from "./components/PartsWarrantyManager";
 import CashierManager from "./components/CashierManager";
 import FunnyLoader from "./components/FunnyLoader";
+import WorkshopDashboard from "./components/workshop-manager/WorkshopDashboard";
+import ExecutiveDashboard from "./components/workshop-manager/ExecutiveDashboard";
+import ServiceAdvisorWorkspace from "./components/ServiceAdvisorWorkspace";
+import FloorSupervisorWorkspace from "./components/FloorSupervisorWorkspace";
+import TechnicianWorkspace from "./components/TechnicianWorkspace";
+import QCInspectorWorkspace from "./components/QCInspectorWorkspace";
+import PartsCommandCenter from "./components/PartsCommandCenter";
+import BillingWorkspace from "./components/BillingWorkspace";
+import CashierWorkspace from "./components/CashierWorkspace";
+import VehicleDeliveryWorkspace from "./components/VehicleDeliveryWorkspace";
+import GMServiceCommandCenter from "./components/GMServiceCommandCenter";
+import DealerPrincipalCommandCenter from "./components/DealerPrincipalCommandCenter";
+import CustomerExperiencePlatform from "./components/CustomerExperiencePlatform";
+import MobilePlatformWorkspace from "./components/MobilePlatformWorkspace";
+import PowerBiAnalytics from "./components/PowerBiAnalytics";
+import SystemHardeningMetrics from "./components/SystemHardeningMetrics";
 import { 
   Employee, 
   Bay, 
@@ -133,12 +155,20 @@ export default function App() {
   });
   const [showSettingsDrawer, setShowSettingsDrawer] = useState<boolean>(false);
   const [showMobileMoreTabs, setShowMobileMoreTabs] = useState<boolean>(false);
+  const [aiModeEnabled, setAiModeEnabled] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const val = localStorage.getItem("wms_ai_mode");
+      return val === null ? true : val === "true";
+    }
+    return true;
+  });
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       localStorage.setItem("wms_primary_color", primaryColor);
       localStorage.setItem("wms_mobile_friendly", String(mobileFriendly));
       localStorage.setItem("wms_show_bottom_nav", String(showBottomNav));
+      localStorage.setItem("wms_ai_mode", String(aiModeEnabled));
       
       // Inject css variables
       document.documentElement.style.setProperty("--brand-color", primaryColor);
@@ -146,7 +176,7 @@ export default function App() {
       const hoverColor = darkenColor(primaryColor, 10);
       document.documentElement.style.setProperty("--brand-color-hover", hoverColor);
     }
-  }, [primaryColor, mobileFriendly, showBottomNav]);
+  }, [primaryColor, mobileFriendly, showBottomNav, aiModeEnabled]);
 
   const handleLookupVehicle = (vrn: string) => {
     setLookupQuery(vrn);
@@ -177,6 +207,44 @@ export default function App() {
     }
   });
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [userPermissions, setUserPermissions] = useState<any[]>([]);
+
+  const TAB_MODULE_MAPPING: Record<string, string> = {
+    dashboard: "Dashboard",
+    "workshop-cockpit": "Dashboard",
+    "executive-cockpit": "Dashboard",
+    "dealer-principal-cockpit": "Dashboard",
+    "advisor-workspace": "Job Cards",
+    "supervisor-workspace": "Job Cards",
+    "technician-workspace": "Job Cards",
+    "qc-workspace": "Job Cards",
+    jobs: "Job Cards",
+    "gate-entry": "Job Cards",
+    "delivery-workspace": "Job Cards",
+    "parts-command": "Warranty",
+    "parts-warranty": "Warranty",
+    "billing-workspace": "Billing",
+    "cashier-workspace": "Billing",
+    "billing-exit": "Billing",
+    "dms-import": "DMS Import",
+    employees: "User Management",
+    users: "User Management",
+    breakdown: "Breakdowns",
+    query: "Query",
+  };
+
+  const isTabPermitted = (tabId: string) => {
+    if (!user) return false;
+    if (user.role === "developer") return true;
+    
+    const mappedModule = TAB_MODULE_MAPPING[tabId];
+    if (!mappedModule) return true;
+
+    if (!userPermissions || userPermissions.length === 0) return true;
+
+    const perm = userPermissions.find(p => p.module_name.toLowerCase() === mappedModule.toLowerCase());
+    return perm ? perm.can_view === 1 : false;
+  };
 
   const userRole = user ? user.role : "reception";
   const isAdmin = userRole === "admin" || userRole === "developer";
@@ -202,6 +270,22 @@ export default function App() {
   const ROLE_TABS: Record<string, Array<{ id: string; label: string; icon: any }>> = {
     developer: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
+      { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
+      { id: "technician-workspace", label: "Technician Workspace", icon: Wrench },
+      { id: "qc-workspace", label: "QC Workspace", icon: ClipboardCheck },
+      { id: "parts-command", label: "Parts Command", icon: Package },
+      { id: "billing-workspace", label: "Billing Workspace", icon: FileText },
+      { id: "cashier-workspace", label: "Cashier Desk", icon: DollarSign },
+      { id: "delivery-workspace", label: "Vehicle Delivery", icon: Truck },
+      { id: "gm-command", label: "GM Command", icon: Building },
+      { id: "dealer-principal-cockpit", label: "Dealer Principal", icon: Sparkles },
+      { id: "customer-portal", label: "Customer Portal", icon: UserIcon },
+      { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
+      { id: "powerbi-analytics", label: "Power BI Analytics", icon: FileSpreadsheet },
+      { id: "system-hardening", label: "System Hardening", icon: Server },
+      { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
+      { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "breakdown", label: "Breakdowns", icon: AlertTriangle },
       { id: "exception-report", label: "Exceptions", icon: AlertOctagon },
@@ -222,6 +306,22 @@ export default function App() {
     ],
     admin: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
+      { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
+      { id: "technician-workspace", label: "Technician Workspace", icon: Wrench },
+      { id: "qc-workspace", label: "QC Workspace", icon: ClipboardCheck },
+      { id: "parts-command", label: "Parts Command", icon: Package },
+      { id: "billing-workspace", label: "Billing Workspace", icon: FileText },
+      { id: "cashier-workspace", label: "Cashier Desk", icon: DollarSign },
+      { id: "delivery-workspace", label: "Vehicle Delivery", icon: Truck },
+      { id: "gm-command", label: "GM Command", icon: Building },
+      { id: "dealer-principal-cockpit", label: "Dealer Principal", icon: Sparkles },
+      { id: "customer-portal", label: "Customer Portal", icon: UserIcon },
+      { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
+      { id: "powerbi-analytics", label: "Power BI Analytics", icon: FileSpreadsheet },
+      { id: "system-hardening", label: "System Hardening", icon: Server },
+      { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
+      { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "breakdown", label: "Breakdowns", icon: AlertTriangle },
       { id: "exception-report", label: "Exceptions", icon: AlertOctagon },
@@ -248,6 +348,7 @@ export default function App() {
     ],
     service_advisor: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "jobs", label: "Job Cards", icon: Wrench },
@@ -255,6 +356,7 @@ export default function App() {
     ],
     floor_supervisor: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "jobs", label: "Job Cards", icon: Wrench },
       { id: "productivity", label: "Productivity", icon: TrendingUp },
@@ -280,6 +382,8 @@ export default function App() {
     ],
     workshop_manager: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
+      { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
@@ -293,6 +397,13 @@ export default function App() {
       { id: "dms-import", label: "DMS Import", icon: FileDown },
       { id: "revenue", label: "Revenue Split", icon: DollarSign },
     ],
+    gm_service: [
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
+      { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
+      { id: "vehicle-lookup", label: "Vehicle History", icon: History },
+    ],
+    // Removed first duplicate dealer_principal block
     spares_manager: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
@@ -330,7 +441,7 @@ export default function App() {
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
     ],
     breakdown: [
-      { id: "tech-jobs", label: "My Jobs", icon: Wrench },
+      { id: "breakdown", label: "Breakdowns", icon: AlertTriangle },
       { id: "tech-kpi", label: "My KPI", icon: TrendingUp },
       { id: "tech-profile", label: "My Profile", icon: UserIcon },
       { id: "attendance", label: "Attendance", icon: ClipboardCheck },
@@ -384,7 +495,7 @@ export default function App() {
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
     ],
     technician: [
-      { id: "tech-jobs", label: "My Jobs", icon: Wrench },
+      { id: "technician-workspace", label: "Technician Workspace", icon: Wrench },
       { id: "tech-kpi", label: "My KPI", icon: TrendingUp },
       { id: "tech-profile", label: "My Profile", icon: UserIcon },
       { id: "attendance", label: "Attendance", icon: ClipboardCheck },
@@ -406,11 +517,7 @@ export default function App() {
     }
   });
 
-  const isTabPermitted = (tabId: string) => {
-    if (!user) return false;
-    const permittedTabs = ROLE_TABS[user.role] || [];
-    return permittedTabs.some(t => t.id === tabId);
-  };
+
 
   // Keep active tab safe on user load or role change
   useEffect(() => {
@@ -588,6 +695,56 @@ export default function App() {
     }
   }, []);
 
+  // Session Sync Engine: Poll /api/auth/me every 4 seconds.
+  // If the user's role or details changed in the DB (e.g., by an admin), update context instantly.
+  useEffect(() => {
+    if (!token || !user) return;
+
+    const syncSession = async () => {
+      try {
+        const res = await fetch("/api/auth/me", {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (res.status === 401) {
+          handleLogout();
+          return;
+        }
+        if (res.ok) {
+          const data = await res.json();
+          const freshUser = data.user;
+          const freshPermissions = data.permissions;
+
+          if (freshPermissions && Array.isArray(freshPermissions)) {
+            setUserPermissions(freshPermissions);
+          }
+
+          if (freshUser && (
+            freshUser.role !== user.role ||
+            freshUser.full_name !== user.full_name ||
+            freshUser.is_active !== user.is_active
+          )) {
+            console.log("[Session Sync] Role change detected. Refreshing context...", freshUser);
+            const updatedUser = { ...user, ...freshUser };
+            localStorage.setItem("wms_user", JSON.stringify(updatedUser));
+            setUser(updatedUser);
+            // Redirect to first valid tab if current tab is no longer accessible
+            const currentRoleTabs = ROLE_TABS[freshUser.role] || ROLE_TABS["reception"] || [];
+            if (!currentRoleTabs.some(t => t.id === activeTab)) {
+              setActiveTab(currentRoleTabs[0]?.id || "dashboard");
+            }
+          }
+        }
+      } catch (e) {
+        // Silent fail — network blip should not disrupt the user
+      }
+    };
+
+    // Initial sync on mount + login
+    syncSession();
+    const intervalId = setInterval(syncSession, 4000);
+    return () => clearInterval(intervalId);
+  }, [token, user?.role]);
+
   const handleLogin = async () => {
     // Custom database JWT authentication is handled by AuthScreen
   };
@@ -731,6 +888,47 @@ export default function App() {
       console.error(e);
     }
   };
+
+  const handleResolveCarryForward = async (id: number, status: "Approved" | "Rejected") => {
+    try {
+      const res = await fetch(`/api/carry-forward/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cf_status: status, approved_by: user?.employee_id || 1 })
+      });
+      if (res.ok) {
+        fetchAllData();
+        showToast(`Carry forward request ${status.toLowerCase()} successfully.`, "success");
+      } else {
+        const err = await res.json().catch(() => ({ error: "Unknown error" }));
+        showToast(`Failed to update carry forward: ${err.error || res.statusText}`, "error");
+      }
+    } catch (e: any) {
+      console.error(e);
+      showToast("Network error resolving carry forward.", "error");
+    }
+  };
+
+  const handleResolveRework = async (id: number, status: "Approved" | "Rejected") => {
+    try {
+      const res = await fetch(`/api/rework/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rework_status: status, approved_by: user?.employee_id || 1 })
+      });
+      if (res.ok) {
+        fetchAllData();
+        showToast(`Rework request ${status.toLowerCase()} successfully.`, "success");
+      } else {
+        const err = await res.json().catch(() => ({ error: "Unknown error" }));
+        showToast(`Failed to update rework request: ${err.error || res.statusText}`, "error");
+      }
+    } catch (e: any) {
+      console.error(e);
+      showToast("Network error resolving rework request.", "error");
+    }
+  };
+
 
   const handleAddEmployee = async (employeeData: Partial<Employee>) => {
     try {
@@ -956,7 +1154,9 @@ export default function App() {
     );
   }
 
-  const baseTabs = (user && ROLE_TABS[user.role]) || ROLE_TABS["reception"] || [];
+  const baseTabs = ((user && ROLE_TABS[user.role]) || ROLE_TABS["reception"] || []).filter(
+    t => (t.id !== "assistant" || aiModeEnabled) && isTabPermitted(t.id)
+  );
   const permittedTabs = [
     ...baseTabs,
     { id: "logout-deep-link", label: "Logout", icon: LogOut }
@@ -1044,6 +1244,25 @@ export default function App() {
 
         {/* User context footer */}
         <div className="border-t border-slate-800/80 pt-4 flex flex-col gap-3">
+          <button
+            onClick={() => setAiModeEnabled(prev => !prev)}
+            className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+              aiModeEnabled
+                ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/15"
+                : "bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800/80"
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <Sparkles className={`h-3.5 w-3.5 ${aiModeEnabled ? "text-indigo-400 animate-pulse" : "text-slate-500"}`} />
+              <span>AI Mode</span>
+            </div>
+            <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+              aiModeEnabled ? "bg-indigo-500/20 text-indigo-300" : "bg-slate-800 text-slate-500"
+            }`}>
+              {aiModeEnabled ? "Active" : "Off"}
+            </span>
+          </button>
+
           <div className="flex items-center space-x-3 px-3 py-2 mb-1 bg-slate-950/60 border border-slate-800/80 rounded-xl">
             <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
             <span className="text-[9px] text-[#06B6D4] font-bold uppercase tracking-widest">SYSTEM ONLINE • v1.1</span>
@@ -1141,7 +1360,18 @@ export default function App() {
           <div className="w-6 h-6 bg-brand rounded flex items-center justify-center font-bold text-sm text-white">W</div>
           <h2 className="font-bold text-sm uppercase tracking-tight">WMS Workshop</h2>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setAiModeEnabled(prev => !prev)}
+            className={`p-1 rounded-lg border transition-all cursor-pointer ${
+              aiModeEnabled
+                ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/35 hover:bg-indigo-500/15"
+                : "bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800/80"
+            }`}
+            title={`AI Mode: ${aiModeEnabled ? "Active" : "Disabled"}`}
+          >
+            <Sparkles className={`h-4 w-4 ${aiModeEnabled ? "text-indigo-400 animate-pulse" : "text-slate-500"}`} />
+          </button>
           <button 
             onClick={() => setShowSettingsDrawer(true)} 
             className="text-slate-300 hover:text-white transition-colors cursor-pointer"
@@ -1236,6 +1466,7 @@ export default function App() {
               onTabChange={(tab) => setActiveTab(tab as any)}
               projectedRevenue={projectedRevenue}
               generatedRevenue={generatedRevenue}
+              aiModeEnabled={aiModeEnabled}
             />
           )}
 
@@ -1276,6 +1507,7 @@ export default function App() {
               currentUserRole={userRole}
               currentUser={user}
               onLookupVehicle={handleLookupVehicle}
+              aiModeEnabled={aiModeEnabled}
             />
           )}
 
@@ -1312,6 +1544,7 @@ export default function App() {
               isAdmin={isAdmin}
               isManager={isManager}
               setIsAdmin={() => {}}
+              aiModeEnabled={aiModeEnabled}
             />
           )}
 
@@ -1332,12 +1565,13 @@ export default function App() {
               onResolveRow={handleResolveRow}
               isAdmin={isAdmin}
               userRole={userRole}
+              aiModeEnabled={aiModeEnabled}
             />
           )}
 
 
           {activeTab === "query" && (
-            <QuerySearch />
+            <QuerySearch aiModeEnabled={aiModeEnabled} />
           )}
 
           {activeTab === "billing-exit" && (
@@ -1356,7 +1590,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === "assistant" && (
+          {activeTab === "assistant" && aiModeEnabled && (
             <GeminiAssistant 
               employees={employees}
               bays={bays}
@@ -1386,6 +1620,177 @@ export default function App() {
             <RevenueDashboard employees={employees} jobCards={jobCards} revenues={revenues} splitDetails={splitDetails} onRefresh={fetchAllData} />
           )}
 
+          {activeTab === "workshop-cockpit" && (
+            <WorkshopDashboard 
+              jobCards={jobCards}
+              bays={bays}
+              employees={employees}
+              allocations={allocations}
+              alertLogs={alertLogs}
+              onRefresh={fetchAllData}
+              onUpdateJob={handleUpdateJob}
+              onAssignTechnicians={handleAssignTechnicians}
+              onResolveCarryForward={handleResolveCarryForward}
+              onResolveRework={handleResolveRework}
+              onRaiseCarryForward={handleRaiseCarryForward}
+              onRaiseRework={handleRaiseRework}
+              currentUser={user}
+              aiModeEnabled={aiModeEnabled}
+            />
+          )}
+
+          {activeTab === "executive-cockpit" && (
+            <ExecutiveDashboard 
+              jobCards={jobCards}
+              bays={bays}
+              employees={employees}
+              alertLogs={alertLogs}
+              onRefresh={fetchAllData}
+              onSelectWorkshopTab={(workshopName) => {
+                setActiveTab("workshop-cockpit");
+              }}
+              onSelectVehicle={(jobId) => {
+                const job = jobCards.find(j => j.job_id === jobId);
+                if (job) setDashboardSelectedJob(job);
+                setActiveTab("jobs");
+              }}
+              onSelectEmployee={(empId) => {
+                setActiveTab("employees");
+              }}
+              aiModeEnabled={aiModeEnabled}
+            />
+          )}
+
+          {activeTab === "advisor-workspace" && (
+            <ServiceAdvisorWorkspace 
+              jobCards={jobCards}
+              bays={bays}
+              employees={employees}
+              alertLogs={alertLogs}
+              onRefresh={fetchAllData}
+              onUpdateJob={handleUpdateJob}
+              onAssignTechnicians={handleAssignTechnicians}
+              currentUser={user}
+              aiModeEnabled={aiModeEnabled}
+            />
+          )}
+
+          {activeTab === "supervisor-workspace" && (
+            <FloorSupervisorWorkspace 
+              jobCards={jobCards}
+              bays={bays}
+              employees={employees}
+              alertLogs={alertLogs}
+              allocations={allocations}
+              onRefresh={fetchAllData}
+              onUpdateJob={handleUpdateJob}
+              onAssignTechnicians={handleAssignTechnicians}
+              currentUser={user}
+              aiModeEnabled={aiModeEnabled}
+            />
+          )}
+
+          {activeTab === "technician-workspace" && (
+            <TechnicianWorkspace 
+              jobCards={jobCards}
+              employees={employees}
+              onRefresh={fetchAllData}
+              onUpdateJob={handleUpdateJob}
+              currentUser={user}
+              aiModeEnabled={aiModeEnabled}
+            />
+          )}
+
+          {activeTab === "qc-workspace" && (
+            <QCInspectorWorkspace 
+              jobCards={jobCards}
+              employees={employees}
+              onRefresh={fetchAllData}
+              onUpdateJob={handleUpdateJob}
+              currentUser={user}
+              aiModeEnabled={aiModeEnabled}
+            />
+          )}
+
+          {activeTab === "parts-command" && (
+            <PartsCommandCenter 
+              jobCards={jobCards}
+              onRefresh={fetchAllData}
+              currentUser={user}
+              aiModeEnabled={aiModeEnabled}
+            />
+          )}
+
+          {activeTab === "billing-workspace" && (
+            <BillingWorkspace 
+              jobCards={jobCards}
+              onRefresh={fetchAllData}
+              onUpdateJob={handleUpdateJob}
+              currentUser={user}
+            />
+          )}
+
+          {activeTab === "cashier-workspace" && (
+            <CashierWorkspace 
+              jobCards={jobCards}
+              onRefresh={fetchAllData}
+              onUpdateJob={handleUpdateJob}
+              currentUser={user}
+            />
+          )}
+
+          {activeTab === "delivery-workspace" && (
+            <VehicleDeliveryWorkspace 
+              jobCards={jobCards}
+              onRefresh={fetchAllData}
+              onUpdateJob={handleUpdateJob}
+              currentUser={user}
+            />
+          )}
+
+          {activeTab === "gm-command" && (
+            <GMServiceCommandCenter 
+              jobCards={jobCards}
+              onRefresh={fetchAllData}
+              aiModeEnabled={aiModeEnabled}
+            />
+          )}
+
+          {activeTab === "dealer-principal-cockpit" && (
+            <DealerPrincipalCommandCenter 
+              jobCards={jobCards}
+              onRefresh={fetchAllData}
+              aiModeEnabled={aiModeEnabled}
+            />
+          )}
+
+          {activeTab === "customer-portal" && (
+            <CustomerExperiencePlatform 
+              jobCards={jobCards}
+              onRefresh={fetchAllData}
+            />
+          )}
+
+          {activeTab === "mobile-platform" && (
+            <MobilePlatformWorkspace 
+              jobCards={jobCards}
+              onRefresh={fetchAllData}
+            />
+          )}
+
+          {activeTab === "powerbi-analytics" && (
+            <PowerBiAnalytics 
+              jobCards={jobCards}
+              onRefresh={fetchAllData}
+            />
+          )}
+
+          {activeTab === "system-hardening" && (
+            <SystemHardeningMetrics 
+              onRefresh={fetchAllData}
+            />
+          )}
+
           {activeTab === "gate-entry" && (
             <GateEntryManager 
               bays={bays} 
@@ -1401,6 +1806,7 @@ export default function App() {
               jobCards={jobCards} 
               onUpdateJob={handleUpdateJob}
               onRefresh={fetchAllData} 
+              aiModeEnabled={aiModeEnabled}
             />
           )}
 
@@ -1409,6 +1815,7 @@ export default function App() {
               jobCards={jobCards} 
               onUpdateJob={handleUpdateJob}
               onRefresh={fetchAllData} 
+              aiModeEnabled={aiModeEnabled}
             />
           )}
 
@@ -1656,6 +2063,27 @@ export default function App() {
                       type="checkbox" 
                       checked={showBottomNav} 
                       onChange={(e) => setShowBottomNav(e.target.checked)} 
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand"></div>
+                  </label>
+                </div>
+              </div>
+
+              {/* AI Settings & Co-Pilot */}
+              <div className="space-y-4">
+                <h4 className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest border-b border-slate-850 pb-1">AI Co-Pilot Settings</h4>
+
+                <div className="flex items-center justify-between py-2 border-b border-slate-800/40">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wide">Enable AI features</label>
+                    <p className="text-[9px] text-slate-500 font-medium">Toggle suggestion widgets & OCR uploaders</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={aiModeEnabled} 
+                      onChange={(e) => setAiModeEnabled(e.target.checked)} 
                       className="sr-only peer"
                     />
                     <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand"></div>

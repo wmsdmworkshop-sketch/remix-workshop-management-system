@@ -50,6 +50,7 @@ interface DashboardProps {
   onTabChange: (tab: string) => void;
   projectedRevenue?: number;
   generatedRevenue?: number;
+  aiModeEnabled?: boolean;
 }
 
 // Curated Luxury Color Palette
@@ -109,26 +110,38 @@ export default function Dashboard({
   onAcknowledgeAlert,
   onSelectJob,
   onTabChange,
-  projectedRevenue = 680000,
-  generatedRevenue = 710000
+  projectedRevenue = 0,
+  generatedRevenue = 0,
+  aiModeEnabled = true
 }: DashboardProps) {
   const [activeSubView, setActiveSubView] = useState<"overview" | "workshop" | "workforce">("overview");
   const [warrantySearch, setWarrantySearch] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Calculate rich metrics
+  // Calculate KPIs from live props — no hardcoded values
   const vehiclesInsideCount = bays.filter(b => b.status === "Active").length;
   const openJobCardsCount = jobCards.filter(j => j.status === "Active" || j.status === "Waiting").length;
-  const todayDeliveryCount = jobCards.filter(j => j.status === "Completed" || j.status === "Invoiced").length;
+  const todayStr = new Date().toDateString();
+  const todayDeliveryCount = jobCards.filter(j =>
+    (j.status === "Completed" || j.status === "Invoiced") &&
+    (j.completed_at ? new Date(j.completed_at).toDateString() === todayStr : false)
+  ).length;
   const activeTechs = employees.filter(e => ["Technician", "Electrician", "Add Tech"].includes(e.role) && e.is_active);
-  const attendanceRate = 96.4; // Realistic fixed KPI
-  const bayUtilization = Math.round((bays.filter(b => b.status !== "Idle").length / bays.length) * 100) || 78;
-  const warrantyPending = 14;
-  const customersWaiting = stateAJobsCount();
-  const activeOTRequests = 4;
+  // Attendance rate: active employees / total employees (excludes developer accounts)
+  const totalStaff = employees.filter(e => e.role !== "developer").length;
+  const activeStaff = employees.filter(e => e.role !== "developer" && e.is_active).length;
+  const attendanceRate = totalStaff > 0 ? Math.round((activeStaff / totalStaff) * 1000) / 10 : 0;
+  const bayUtilization = bays.length > 0 ? Math.round((bays.filter(b => b.status !== "Idle").length / bays.length) * 100) : 0;
+  // Warranty pending: job cards with claim_type set and not invoiced
+  const warrantyPending = jobCards.filter(j => (j as any).claim_type && (j as any).claim_type !== "" && j.status !== "Invoiced").length;
+  // Revenue delta: if projected > 0, compare generated vs projected
+  const revenueDelta = projectedRevenue > 0
+    ? ((generatedRevenue - projectedRevenue) / projectedRevenue * 100).toFixed(1)
+    : null;
+  const revenuePositive = revenueDelta !== null ? parseFloat(revenueDelta) >= 0 : true;
 
   function stateAJobsCount() {
-    return jobCards.filter(j => j.status === "Waiting" && !j.bay_id).length || 3;
+    return jobCards.filter(j => j.status === "Waiting" && !j.bay_id).length;
   }
 
   // Mini-sparkline components using lightweight SVGs
@@ -221,7 +234,7 @@ export default function Dashboard({
           {/* Hero KPI Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             
-            {/* Card 1: Today's Revenue */}
+            {/* Card 1: Today's Revenue (live from DB via /api/job-cards) */}
             <motion.div 
               whileHover={{ y: -5, scale: 1.01 }}
               transition={{ duration: 0.2 }}
@@ -232,17 +245,26 @@ export default function Dashboard({
                 <div className="space-y-1">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Today's Revenue</span>
                   <span className="text-3xl font-black tracking-tight text-white">₹{generatedRevenue.toLocaleString()}</span>
+                  {projectedRevenue > 0 && (
+                    <span className="text-[10px] text-slate-500">Target: ₹{projectedRevenue.toLocaleString()}</span>
+                  )}
                 </div>
                 <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-[#10B981]">
                   <TrendingUp className="h-5 w-5" />
                 </div>
               </div>
               <div className="flex items-center justify-between mt-4">
-                <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                  <ArrowUpRight className="h-3 w-3" />
-                  <span>+12.4%</span>
-                </div>
-                <Sparkline points={[60, 62, 59, 68, 71, 74, 71]} color="#10B981" />
+                {revenueDelta !== null ? (
+                  <div className={`flex items-center gap-1.5 text-xs font-bold px-2 py-0.5 rounded-full ${
+                    revenuePositive ? "text-emerald-400 bg-emerald-500/10" : "text-red-400 bg-red-500/10"
+                  }`}>
+                    {revenuePositive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                    <span>{revenuePositive ? "+" : ""}{revenueDelta}% vs target</span>
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-slate-500">Awaiting invoice data</div>
+                )}
+                <Sparkline points={[60, 62, 59, 68, 71, 74, generatedRevenue > 0 ? 80 : 0]} color="#10B981" />
               </div>
             </motion.div>
 
@@ -330,8 +352,9 @@ export default function Dashboard({
 
             <div className="bg-slate-900/40 border border-slate-800/60 rounded-xl p-4 flex items-center justify-between">
               <div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Attendance Ratio</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Staff Active Rate</span>
                 <span className="text-xl font-bold text-emerald-400">{attendanceRate}%</span>
+                <span className="text-[9px] text-slate-500 block">{activeStaff}/{totalStaff} staff</span>
               </div>
               <Activity className="h-5 w-5 text-emerald-500" />
             </div>
@@ -346,8 +369,8 @@ export default function Dashboard({
 
             <div className="bg-slate-900/40 border border-slate-800/60 rounded-xl p-4 flex items-center justify-between">
               <div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Warranty Adjudication</span>
-                <span className="text-xl font-bold text-amber-400">{warrantyPending} Pending</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Warranty Pending</span>
+                <span className="text-xl font-bold text-amber-400">{warrantyPending} Open</span>
               </div>
               <ShieldCheck className="h-5 w-5 text-amber-500" />
             </div>
@@ -441,7 +464,8 @@ export default function Dashboard({
           {/* AI Copilot Smart panel & live alerts */}
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
             
-            {/* AI Adjudication & Warranty Advisor Panel */}
+            {/* AI Adjudication & Warranty Advisor Panel — gated by aiModeEnabled */}
+            {aiModeEnabled ? (
             <div className="xl:col-span-2 rounded-[18px] bg-slate-900/60 border border-slate-800/80 p-6 backdrop-blur-md shadow-xl relative overflow-hidden">
               <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-radial from-[#06B6D4]/10 to-transparent pointer-events-none rounded-full blur-xl -mr-16 -mt-16" />
               
@@ -511,6 +535,17 @@ export default function Dashboard({
                 </div>
               </div>
             </div>
+            ) : (
+            <div className="xl:col-span-2 rounded-[18px] bg-slate-900/60 border border-slate-700/50 p-6 backdrop-blur-md shadow-xl flex items-center justify-center">
+              <div className="text-center space-y-3">
+                <div className="h-12 w-12 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center mx-auto">
+                  <ShieldCheck className="h-6 w-6 text-slate-500" />
+                </div>
+                <p className="text-sm font-bold text-slate-400">AI Warranty Adjudicator</p>
+                <p className="text-xs text-slate-600">AI Mode is disabled. Enable AI Mode to view recommendations, confidence scores, and auto-approval suggestions.</p>
+              </div>
+            </div>
+            )}
 
             {/* Breach Alerts / Live updates Feed */}
             <div className="rounded-[18px] bg-slate-900/60 border border-slate-800/80 p-5 backdrop-blur-md shadow-xl flex flex-col justify-between">

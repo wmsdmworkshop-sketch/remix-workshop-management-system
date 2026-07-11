@@ -103,6 +103,7 @@ export interface JobCard {
   created_by: number;
   created_at: string;
   updated_at?: string;
+  rework_count?: number;
   workshop_stage?: string;
   l1_delay?: string;
   l2_delay?: string;

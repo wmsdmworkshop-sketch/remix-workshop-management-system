@@ -1,0 +1,21 @@
+J C NO,VRN,SR TYPE,ODOMETER,SR ASSIGNED TO,COMPLAINT,SERVICE DATE,NAME
+JC-001,KA32AB1001,Running Repairs,12500,Anil Kumar,Engine oil leaking,15-06-2026,Alok Kumar
+JC-002,KA32AB1002,Running Repair,24000,Anil Kumar,Brake pedal soft,16-06-2026,Babu Lal
+JC-003,KA32AB1003,General Repair,8500,Sunil Dev,AC not cooling,17-06-2026,Chandra Sekhar
+JC-004,KA32AB1004,Running Repairs,31200,Sunil Dev,Steering vibration,18-06-2026,Dinesh Karthik
+JC-005,KA32AB1005,Running Repairs,15400,Mahesh,Clutch slipping,19-06-2026,Eshwar Rao
+JC-006,KA32AB1006,Warranty,,Mahesh,Starter motor failure,20-06-2026,Farhan Khan
+JC-007,KA32AB1007,Warranty,nan,Mahesh,Paint peeling,21-06-2026,Girish M
+JC-008,KA32AB1008,Warranty,,Anil Kumar,Gear shift hard,22-06-2026,Hari Prasad
+JC-009,KA32AB1001,W/A,,Anil Kumar,Coolant leak,23-06-2026,Alok Kumar
+JC-010,KA32AB1002,Warranty,,Sunil Dev,Horn not working,24-06-2026,Babu Lal
+JC-011,KA32AB1009,Paid Service,52000,Sunil Dev,Scheduled servicing,25-06-2026,Irfan Pathan
+JC-012,KA32AB1010,Paid Service,64000,Sunil Dev,Scheduled servicing,26-06-2026,Javed Miandad
+JC-013,KA32AB1003,First Free Service,1000,Mahesh,First checkup,27-06-2026,Chandra Sekhar
+JC-014,KA32AB1004,Second Free Service,5000,Mahesh,Second checkup,28-06-2026,Dinesh Karthik
+JC-015,KA32AB1005,AMC,18000,Anil Kumar,General checkup,29-06-2026,Eshwar Rao
+JC-016,KA32AB1006,E Breakdown,19500,Anil Kumar,Roadside breakdown steering,30-06-2026,Farhan Khan
+JC-017,KA32AB1007,W/A Service 1 (<10000Km),9800,Sunil Dev,Scheduled 10k service,01-07-2026,Girish M
+JC-018,KA32AB1008,Retro Fitment,12000,Sunil Dev,GPS tracker fitment,02-07-2026,Hari Prasad
+JC-019,KA32AB1001,Running Repair,14500,Mahesh,Headlamp replacement,03-07-2026,Alok Kumar
+JC-020,KA32AB1002,Running Repair,26500,Mahesh,Wiper blade replacement,04-07-2026,Babu Lal

@@ -11,6 +11,7 @@ interface DmsImporterProps {
   jobCards: JobCard[];
   onImportRows: (fileName: string, rows: any[]) => void;
   onResolveRow: (rowId: number, status: DMSImportRow["match_status"], matchedJobId: number) => void;
+  aiModeEnabled?: boolean;
 }
 
 
@@ -21,7 +22,8 @@ export default function DmsImporter({
   onImportRows,
   onResolveRow,
   isAdmin,
-  userRole
+  userRole,
+  aiModeEnabled = true
 }: DmsImporterProps) {
   const [dragActive, setDragActive] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
@@ -94,7 +96,12 @@ export default function DmsImporter({
   React.useEffect(() => {
     if (activeMode === "master-data") {
       setLoadingMasterVehicles(true);
-      fetch("/api/master/vehicles")
+      const token = localStorage.getItem("wms_token");
+      fetch("/api/master/vehicles", {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {})
+        }
+      })
         .then(res => res.json())
         .then(data => {
           setMasterVehicles(Array.isArray(data) ? data : []);
@@ -370,6 +377,50 @@ export default function DmsImporter({
     }
   };
 
+  const runStaticHeaderMatch = (headers: string[], templateType: string) => {
+    const mapping: Record<string, string | null> = {};
+    headers.forEach(h => {
+      const lower = h.toLowerCase().trim();
+      if (templateType === 'vehicle_master') {
+        if (lower.includes("chassis") || lower.includes("vin")) mapping[h] = "chassis_no";
+        else if (lower.includes("reg") || lower.includes("vrn")) mapping[h] = "registration_no";
+        else if (lower.includes("booking")) mapping[h] = "booking_ref_no";
+        else if (lower.includes("engine")) mapping[h] = "engine_no";
+        else if (lower.includes("product line") || lower.includes("line")) mapping[h] = "product_line";
+        else if (lower.includes("owner") || lower.includes("account name")) mapping[h] = "owner_account_name";
+        else if (lower.includes("sale")) mapping[h] = "original_sale_date";
+        else if (lower.includes("expiry date") || lower.includes("warranty expiry")) mapping[h] = "warranty_expiry_date";
+        else if (lower.includes("expiry km")) mapping[h] = "warranty_expiry_km";
+        else if (lower.includes("status")) mapping[h] = "status";
+        else mapping[h] = null;
+      } else if (templateType === 'service_history') {
+        if (lower.includes("sh #") || lower.includes("sh_no") || lower.includes("history")) mapping[h] = "sh_no";
+        else if (lower.includes("chassis")) mapping[h] = "chassis_no";
+        else if (lower.includes("reg") || lower.includes("vrn")) mapping[h] = "registration_no";
+        else if (lower.includes("account")) mapping[h] = "account";
+        else if (lower.includes("sr #") || lower.includes("sr_no")) mapping[h] = "sr_no";
+        else if (lower.includes("datetime") || lower.includes("date/time")) mapping[h] = "service_datetime";
+        else if (lower.includes("odometer") || lower.includes("odo")) mapping[h] = "odometer_reading";
+        else if (lower.includes("summary")) mapping[h] = "summary";
+        else if (lower.includes("type")) mapping[h] = "sr_type";
+        else mapping[h] = null;
+      } else if (templateType === 'invoices') {
+        if (lower.includes("invoice #") || lower.includes("invoice_no") || lower.includes("invoice number")) mapping[h] = "invoice_no";
+        else if (lower.includes("chassis")) mapping[h] = "chassis_no";
+        else if (lower.includes("reg") || lower.includes("vrn")) mapping[h] = "registration_no";
+        else if (lower.includes("date")) mapping[h] = "invoice_date";
+        else if (lower.includes("assigned") || lower.includes("advisor")) mapping[h] = "sr_assigned_to";
+        else if (lower.includes("labour")) mapping[h] = "final_labour_amount";
+        else if (lower.includes("spares") || lower.includes("parts")) mapping[h] = "final_spares_amount";
+        else if (lower.includes("consolidated") || lower.includes("total")) mapping[h] = "final_consolidated_amt";
+        else if (lower.includes("order")) mapping[h] = "order_no";
+        else if (lower.includes("sr #") || lower.includes("sr_no")) mapping[h] = "sr_no";
+        else mapping[h] = null;
+      }
+    });
+    return mapping;
+  };
+
   const handleFileUploaded = async (file: File) => {
     setDetectedFileName(file.name);
     setMatchingHeadersLoading(true);
@@ -387,11 +438,23 @@ export default function DmsImporter({
       setCsvRows(parsed.rows);
       setPreviewRows(parsed.rows.slice(0, 5));
 
+      if (!aiModeEnabled) {
+        const mapping = runStaticHeaderMatch(parsed.headers, selectedTemplate);
+        setAiHeaderMapping(mapping);
+        setImporterStep(3);
+        setMatchingHeadersLoading(false);
+        return;
+      }
+
       // Call AI mapping
       try {
+        const token = localStorage.getItem("wms_token");
         const res = await fetch("/api/import/ai-match", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { "Authorization": `Bearer ${token}` } : {})
+          },
           body: JSON.stringify({
             headers: parsed.headers,
             templateType: selectedTemplate
@@ -513,9 +576,13 @@ export default function DmsImporter({
     else if (selectedTemplate === "invoices") endpoint = "/api/import/invoices";
 
     try {
+      const token = localStorage.getItem("wms_token");
       const res = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({ rows: transformedRows })
       });
       const data = await res.json();
@@ -657,7 +724,9 @@ export default function DmsImporter({
               <div>
                 <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">Drag & Drop CSV File or Click to Browse</h4>
                 <p className="text-[10px] text-slate-400 mt-1 max-w-md mx-auto leading-relaxed">
-                  The system will automatically parse headers, call Gemini AI to match matching columns, and run database sanity checks.
+                  {aiModeEnabled 
+                    ? "The system will automatically parse headers, call Gemini AI to match matching columns, and run database sanity checks."
+                    : "The system will automatically parse headers, run static keyword matching rules, and run database sanity checks."}
                 </p>
               </div>
             </div>
@@ -665,7 +734,7 @@ export default function DmsImporter({
             {matchingHeadersLoading && (
               <div className="p-4 bg-indigo-50 border border-indigo-150 rounded-xl flex items-center justify-center gap-2 text-indigo-700 text-xs font-bold animate-pulse">
                 <FunnySpinner className="h-4 w-4" />
-                <span>Consulting Gemini AI to auto-match CSV headers and clean values...</span>
+                <span>{aiModeEnabled ? "Consulting Gemini AI to auto-match CSV headers and clean values..." : "Running static matching rules on CSV headers..."}</span>
               </div>
             )}
           </div>
@@ -680,7 +749,7 @@ export default function DmsImporter({
                   3. Verify Header Mapping & Data Preview
                 </h3>
                 <p className="text-[11px] text-slate-400">
-                  Verify the AI-matched columns from <span className="font-bold text-slate-600">{detectedFileName}</span>.
+                  Verify the matched columns from <span className="font-bold text-slate-600">{detectedFileName}</span>.
                 </p>
               </div>
               <button onClick={resetWizard} className="text-xs font-bold text-slate-400 hover:text-slate-600 underline">
@@ -691,7 +760,7 @@ export default function DmsImporter({
             {/* AI Columns Mapped Grid */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
               <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">
-                🧠 Gemini AI Header Match Matrix
+                {aiModeEnabled ? "🧠 Gemini AI Header Match Matrix" : "📋 Static Header Match Matrix"}
               </span>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                 {Object.keys(aiHeaderMapping).map((csvHeader) => (

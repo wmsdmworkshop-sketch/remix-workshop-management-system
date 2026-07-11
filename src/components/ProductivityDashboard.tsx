@@ -53,6 +53,7 @@ interface ProductivityProps {
   isAdmin: boolean;
   isManager?: boolean;
   setIsAdmin: (isAdmin: boolean) => void;
+  aiModeEnabled?: boolean;
 }
 
 // Initial spreadsheet raw data copy-pasted for quick restore / default seeding
@@ -85,7 +86,7 @@ aslam,technician trainee,"1,292.10","36,000.00",3.59%,0.00%,55.56%
 MOHAMMED ZAKI,Jr. technician,590.00,"48,000.00",1.23%,0.00%,51.61%
 MAHMED ALTAF AHMED,Jr.Electrician,0.00,"45,120.00",0.00%,0.00%,100.00%`;
 
-export default function ProductivityDashboard({ employees, jobCards, onRefresh, isAdmin, isManager, setIsAdmin }: ProductivityProps) {
+export default function ProductivityDashboard({ employees, jobCards, onRefresh, isAdmin, isManager, setIsAdmin, aiModeEnabled = true }: ProductivityProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
   const [activeTab, setActiveTab] = useState<"table" | "charts" | "importer" | "calculator">("table");
@@ -1057,6 +1058,7 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
           employees={employees}
           jobCards={jobCards}
           onRefresh={onRefresh}
+          aiModeEnabled={aiModeEnabled}
         />
       )}
 

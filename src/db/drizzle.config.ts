@@ -26,8 +26,7 @@ console.log(`Using user: ${user} to connect to database.`);
 export default defineConfig({
   schema: "./src/db/schema.ts",
   out: "./drizzle", // Output directory for migrations.
-  dialect: "postgresql",
-  schemaFilter: ["public"],
+  dialect: "mysql",
   dbCredentials: {
     host: sqlHost,
     user: user,

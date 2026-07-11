@@ -25,13 +25,15 @@ interface ProductivityCalculatorProps {
   jobCards: JobCard[];
   onRefresh: () => Promise<void>;
   onUpdateJob?: (id: number, updatedFields: Partial<JobCard>) => void;
+  aiModeEnabled?: boolean;
 }
 
 export default function ProductivityCalculator({ 
   employees, 
   jobCards, 
   onRefresh,
-  onUpdateJob
+  onUpdateJob,
+  aiModeEnabled = true
 }: ProductivityCalculatorProps) {
   // Input mode selection
   const [activePurpose, setActivePurpose] = useState<"a" | "b" | "c" | "d">("c");
@@ -375,52 +377,56 @@ export default function ProductivityCalculator({
               <Upload className="h-4 w-4 text-orange-500" />
               1. CRM DMS Ingestion Panel
             </h3>
-            <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">Upload completed invoices for processing</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{aiModeEnabled ? "Upload completed invoices for processing" : "Enter completed invoice details manually"}</p>
           </div>
 
           {/* Quick Sample Buttons */}
-          <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Click a Sample Invoice to Load Instantly</label>
-            <div className="grid grid-cols-2 gap-2">
-              {sampleInvoices.map((s, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handleLoadSample(s)}
-                  className="px-2 py-1.5 text-left bg-slate-50 hover:bg-orange-50 hover:border-orange-200 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 transition-all flex items-center justify-between"
-                >
-                  <span className="truncate">{s.label}</span>
-                  <ArrowRight className="h-3 w-3 text-slate-400 shrink-0 ml-1" />
-                </button>
-              ))}
+          {aiModeEnabled && (
+            <div className="space-y-2">
+              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Click a Sample Invoice to Load Instantly</label>
+              <div className="grid grid-cols-2 gap-2">
+                {sampleInvoices.map((s, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleLoadSample(s)}
+                    className="px-2 py-1.5 text-left bg-slate-50 hover:bg-orange-50 hover:border-orange-200 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 transition-all flex items-center justify-between"
+                  >
+                    <span className="truncate">{s.label}</span>
+                    <ArrowRight className="h-3 w-3 text-slate-400 shrink-0 ml-1" />
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="relative border border-dashed border-slate-300 hover:border-orange-500 rounded-xl p-5 transition-all bg-slate-50/50 flex flex-col items-center justify-center space-y-3">
-            <Upload className="h-8 w-8 text-slate-400" />
-            <div className="text-center">
-              <span className="text-[10px] font-extrabold text-slate-600 block uppercase">Drag and Drop PDF / Image Invoice Here</span>
-              <span className="text-[9px] font-bold text-slate-400 block uppercase mt-0.5">or paste text to extract</span>
+          {aiModeEnabled && (
+            <div className="relative border border-dashed border-slate-300 hover:border-orange-500 rounded-xl p-5 transition-all bg-slate-50/50 flex flex-col items-center justify-center space-y-3">
+              <Upload className="h-8 w-8 text-slate-400" />
+              <div className="text-center">
+                <span className="text-[10px] font-extrabold text-slate-600 block uppercase">Drag and Drop PDF / Image Invoice Here</span>
+                <span className="text-[9px] font-bold text-slate-400 block uppercase mt-0.5">or paste text to extract</span>
+              </div>
+              <textarea
+                rows={3}
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                placeholder="Paste raw invoice CRM text copy-pasted from DMS screen..."
+                className="w-full text-[10px] p-2 border border-slate-200 rounded bg-white font-mono focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
+              />
+              <button
+                onClick={handleAiExtract}
+                disabled={loading}
+                className="w-full py-2 bg-slate-900 hover:bg-slate-950 text-white rounded-lg text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-orange-400 animate-spin-slow" />
+                {loading ? "Parsing CRM document..." : "Process Invoice with Gemini OCR"}
+              </button>
             </div>
-            <textarea
-              rows={3}
-              value={textInput}
-              onChange={(e) => setTextInput(e.target.value)}
-              placeholder="Paste raw invoice CRM text copy-pasted from DMS screen..."
-              className="w-full text-[10px] p-2 border border-slate-200 rounded bg-white font-mono focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
-            />
-            <button
-              onClick={handleAiExtract}
-              disabled={loading}
-              className="w-full py-2 bg-slate-900 hover:bg-slate-950 text-white rounded-lg text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
-            >
-              <Sparkles className="h-3.5 w-3.5 text-orange-400 animate-spin-slow" />
-              {loading ? "Parsing CRM document..." : "Process Invoice with Gemini OCR"}
-            </button>
-          </div>
+          )}
 
           {/* Extracted Form Editor */}
           <div className="space-y-4 pt-2 border-t border-slate-100">
-            <h4 className="text-[10px] font-black uppercase text-slate-800 tracking-wider">Review Extracted Invoice Data</h4>
+            <h4 className="text-[10px] font-black uppercase text-slate-800 tracking-wider">{aiModeEnabled ? "Review Extracted Invoice Data" : "Enter Invoice Details"}</h4>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Invoice No</label>

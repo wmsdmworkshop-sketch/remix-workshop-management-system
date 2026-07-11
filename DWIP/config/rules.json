@@ -1,0 +1,128 @@
+{
+  "project": "DWIP Workforce v1.1",
+  "version": "1.1.0",
+  "database": {
+    "path": "database/dwip.db",
+    "schema": "database/schema.sql"
+  },
+  "synonyms": {
+    "vrn": [
+      "vrn", "vehicle number", "vehicle registration", "registration no",
+      "registration number", "reg no", "vehicle_no", "veh no", "reg number"
+    ],
+    "chassis_no": [
+      "chassis", "chassis no", "chassis number", "vin", "vin number",
+      "vehicle identification number", "frame no", "frame number"
+    ],
+    "engine_no": [
+      "engine", "engine no", "engine number", "eng no"
+    ],
+    "invoice_no": [
+      "invoice no", "invoice number", "invoice #", "bill no", "bill number",
+      "inv no", "invoice_no"
+    ],
+    "job_card_no": [
+      "j c no", "job card no", "job card number", "jc no", "jc number",
+      "order#", "order no", "order number", "jcno", "job_card_no"
+    ],
+    "invoice_date": [
+      "invoice date", "billing date", "date of invoice", "bill date"
+    ],
+    "service_date": [
+      "service date", "job date", "open date", "service datetime",
+      "job_card_open_date", "jc open date"
+    ],
+    "sr_type": [
+      "sr type", "service classification", "service type", "jc type",
+      "job type", "work type"
+    ],
+    "odometer": [
+      "odometer", "odometer reading", "mileage", "mileage reading",
+      "km reading", "kms", "run km", "odo", "km"
+    ],
+    "service_advisor": [
+      "sr assigned to", "service advisor", "advisor", "advisior",
+      "assigned to", "sa name", "sa"
+    ],
+    "customer_name": [
+      "name", "customer name", "customer", "account", "owner name",
+      "vehicle owner", "client name"
+    ],
+    "labour_amount": [
+      "labour", "labor", "labour amount", "labor amount",
+      "final labour invoice amount", "labour charges"
+    ],
+    "spares_amount": [
+      "spares", "parts", "spares amount", "parts amount",
+      "final spares invoice amount", "spare parts"
+    ],
+    "total_amount": [
+      "total", "total bill", "total amount",
+      "final consolidated invoice amount", "grand total", "net amount"
+    ],
+    "complaint": [
+      "complaint", "complaint description", "job description",
+      "symptoms", "reported symptoms", "customer complaint", "remarks"
+    ],
+    "manufacturer": [
+      "manufacturer", "make", "brand", "vehicle make", "oem"
+    ],
+    "model": [
+      "model", "product line", "vehicle model", "model name", "variant"
+    ],
+    "fuel_type": [
+      "fuel type", "fuel", "energy type", "propulsion"
+    ],
+    "original_sale_date": [
+      "original sale date", "sale date", "dor", "date of registration",
+      "purchase date", "delivery date", "retail date"
+    ],
+    "phone": [
+      "phone", "mobile", "contact", "phone number", "mobile number",
+      "contact number", "cell"
+    ],
+    "address": [
+      "address", "customer address", "location", "city"
+    ]
+  },
+  "source_priority": {
+    "service_classification": ["service_history", "invoice"],
+    "service_advisor":        ["service_history", "invoice"],
+    "total_bill":             ["invoice"],
+    "service_date":           ["invoice"],
+    "odometer":               ["service_history"],
+    "complaint":              ["service_history"],
+    "vehicle_manufacturer":   ["vehicle_master", "invoice", "service_history", "other"],
+    "vehicle_model":          ["vehicle_master", "invoice", "service_history", "other"],
+    "vehicle_chassis":        ["vehicle_master", "invoice", "service_history", "other"],
+    "vehicle_engine":         ["vehicle_master", "invoice", "service_history", "other"],
+    "vehicle_sale_date":      ["vehicle_master", "invoice", "service_history", "other"],
+    "vehicle_fuel_type":      ["vehicle_master", "invoice", "service_history", "other"],
+    "customer":               ["vehicle_master", "invoice", "customer_master"]
+  },
+  "validation": {
+    "impossible_odometer_jump_km_per_day": 1000,
+    "jc_prefix_patterns": ["JC-"],
+    "jc_prefix_case_sensitive": false,
+    "allowed_sr_type_categories": [
+      "REPAIR", "WARRANTY", "FREE_SERVICE", "AMC",
+      "BREAKDOWN", "PAID_SERVICE", "OTHER"
+    ],
+    "max_confidence_score": 100.0,
+    "min_acceptable_confidence": 50.0
+  },
+  "file_type_signatures": {
+    "vehicle_master":   ["chassis_no", "engine_no", "original_sale_date"],
+    "invoice":          ["invoice_no", "total_amount", "labour_amount"],
+    "service_history":  ["odometer", "sr_type", "service_advisor"],
+    "customer_master":  ["phone", "address"]
+  },
+  "input_subfolders": {
+    "invoices":         "invoice",
+    "service_history":  "service_history",
+    "vehicle_master":   "vehicle_master",
+    "customers":        "customer_master",
+    "warranty":         "service_history",
+    "breakdown":        "service_history"
+  }
+}

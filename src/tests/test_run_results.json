@@ -1,0 +1,99 @@
+{
+  "totalPassed": 23,
+  "totalFailed": 0,
+  "duration": "30.00",
+  "results": [
+    {
+      "file": "complaint-form.test.ts",
+      "success": true
+    },
+    {
+      "file": "customer-search.test.ts",
+      "success": true
+    },
+    {
+      "file": "escalation.test.ts",
+      "success": true
+    },
+    {
+      "file": "event-bus.test.ts",
+      "success": true
+    },
+    {
+      "file": "executive-dashboard.test.ts",
+      "success": true
+    },
+    {
+      "file": "floor-supervisor.test.ts",
+      "success": true
+    },
+    {
+      "file": "inspection.test.ts",
+      "success": true
+    },
+    {
+      "file": "notification-engine.test.ts",
+      "success": true
+    },
+    {
+      "file": "notification-hardened.test.ts",
+      "success": true
+    },
+    {
+      "file": "qc-inspector.test.ts",
+      "success": true
+    },
+    {
+      "file": "queue-platform.test.ts",
+      "success": true
+    },
+    {
+      "file": "remaining-modules.test.ts",
+      "success": true
+    },
+    {
+      "file": "scheduler-platform.test.ts",
+      "success": true
+    },
+    {
+      "file": "security-module.test.ts",
+      "success": true
+    },
+    {
+      "file": "service-advisor.test.ts",
+      "success": true
+    },
+    {
+      "file": "technician.test.ts",
+      "success": true
+    },
+    {
+      "file": "timeline-platform.test.ts",
+      "success": true
+    },
+    {
+      "file": "timer-platform.test.ts",
+      "success": true
+    },
+    {
+      "file": "transaction-manager.test.ts",
+      "success": true
+    },
+    {
+      "file": "vehicle-search.test.ts",
+      "success": true
+    },
+    {
+      "file": "workflow-engine.test.ts",
+      "success": true
+    },
+    {
+      "file": "workflow-reception-integration.test.ts",
+      "success": true
+    },
+    {
+      "file": "workshop-ai-copilot.test.ts",
+      "success": true
+    }
+  ]
+}

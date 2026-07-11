@@ -140,22 +140,39 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
     'Query', 
     'Billing', 
     'DMS Import', 
-    'User Management'
+    'User Management',
+    'Breakdowns'
   ];
 
   const ROLES = [
     { key: 'admin', label: 'Admin' },
-    { key: 'service_manager', label: 'Manager' },
+    { key: 'service_manager', label: 'Service Manager' },
+    { key: 'workshop_manager', label: 'Workshop Manager' },
     { key: 'technician', label: 'Technician' },
+    { key: 'floor_supervisor', label: 'Floor Supervisor' },
+    { key: 'floor_incharge', label: 'Floor Incharge' },
     { key: 'reception', label: 'Receptionist' },
     { key: 'service_advisor', label: 'Service Advisor' },
+    { key: 'breakdown', label: 'Breakdown Assistant' },
+    { key: 'spares_manager', label: 'Spares Manager' },
+    { key: 'billing', label: 'Billing' },
+    { key: 'cashier', label: 'Cashier' },
+    { key: 'dealer_principal', label: 'Dealer Principal' },
+    { key: 'gm_service', label: 'GM Service' },
+    { key: 'security_agent', label: 'Security Agent' },
+    { key: 'tools_incharge', label: 'Tools Incharge' },
+    { key: 'dkam', label: 'DKAM' },
     { key: 'developer', label: 'Developer' }
   ];
 
   const fetchPermissions = async () => {
     setPermissionsLoading(true);
     try {
-      const res = await fetch("/api/permissions");
+      const res = await fetch("/api/permissions", {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
       const data = await res.json();
       console.log("/api/permissions", data);
       setPermissionsList(Array.isArray(data) ? data : []);
@@ -236,7 +253,11 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
 
   const fetchRoles = async () => {
     try {
-      const res = await fetch("/api/roles");
+      const res = await fetch("/api/roles", {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
       if (res.ok) {
         const data = await res.json();
         setDbRoles(data);
@@ -378,7 +399,10 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
     try {
       const res = await fetch("/api/roles", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
           role_name: newRoleName.trim(),
           permission_level: newPermissionLevel

@@ -98,6 +98,12 @@ interface VehicleHealthCard {
 export default function BreakdownManagement() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "tracking" | "qrt" | "reports">("dashboard");
   const [breakdowns, setBreakdowns] = useState<Breakdown[]>([]);
+
+  // Auth helper: always include JWT token in fetch calls
+  const getAuthHeaders = (): Record<string, string> => {
+    const t = localStorage.getItem("wms_token");
+    return t ? { "Authorization": `Bearer ${t}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+  };
   const [qrtTeams, setQrtTeams] = useState<QRTTeam[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [workshops, setWorkshops] = useState<any[]>([]);
@@ -167,12 +173,13 @@ export default function BreakdownManagement() {
   const fetchAll = async () => {
     setLoading(true);
     try {
+      const headers = getAuthHeaders();
       const [bdRes, qrtRes, statsRes, empRes, wsRes] = await Promise.all([
-        fetch("/api/breakdowns").then(r => r.json()),
-        fetch("/api/qrt_teams").then(r => r.json()),
-        fetch("/api/breakdowns/analytics/dashboard").then(r => r.json()),
-        fetch("/api/employees").then(r => r.json()),
-        fetch("/api/workshops").then(r => r.json())
+        fetch("/api/breakdowns", { headers }).then(r => r.json()),
+        fetch("/api/qrt_teams", { headers }).then(r => r.json()),
+        fetch("/api/breakdowns/analytics/dashboard", { headers }).then(r => r.json()),
+        fetch("/api/employees", { headers }).then(r => r.json()),
+        fetch("/api/workshops", { headers }).then(r => r.json())
       ]);
       console.log("/api/breakdowns", bdRes);
       setBreakdowns(Array.isArray(bdRes) ? bdRes : []);
@@ -235,7 +242,7 @@ export default function BreakdownManagement() {
     try {
       const res = await fetch("/api/breakdowns", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           vehicle_number: newVehicle,
           priority: newPriority,
@@ -288,7 +295,7 @@ export default function BreakdownManagement() {
   // Convert incident to Job Card
   const handleConvertJobCard = async (id: number) => {
     try {
-      const res = await fetch(`/api/breakdowns/${id}/convert`, { method: "POST" });
+      const res = await fetch(`/api/breakdowns/${id}/convert`, { method: "POST", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         triggerNotify(`Successfully converted to Job Card ${data.job_card_no}!`);
@@ -310,7 +317,7 @@ export default function BreakdownManagement() {
     try {
       const res = await fetch(`/api/breakdowns/${selectedBreakdown.breakdown_id}/communication`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           communication_type: commType,
           sender_id: parseInt(responsibleEmp),
@@ -330,7 +337,7 @@ export default function BreakdownManagement() {
 
   const loadDetails = async (id: number) => {
     try {
-      const res = await fetch(`/api/breakdowns/${id}`);
+      const res = await fetch(`/api/breakdowns/${id}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setSelectedBreakdown(data);
@@ -355,7 +362,7 @@ export default function BreakdownManagement() {
     try {
       const res = await fetch(`/api/breakdowns/${id}/status`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           status: nextStatus,
           remarks: statusRemarks || `Updated to ${nextStatus}`,
@@ -402,13 +409,13 @@ export default function BreakdownManagement() {
       if (editingQrt) {
         res = await fetch(`/api/qrt_teams/${editingQrt.qrt_id}`, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: getAuthHeaders(),
           body: JSON.stringify(payload)
         });
       } else {
         res = await fetch("/api/qrt_teams", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getAuthHeaders(),
           body: JSON.stringify(payload)
         });
       }
@@ -450,7 +457,7 @@ export default function BreakdownManagement() {
   const handleDeleteQrt = async (id: number) => {
     if (!confirm("Are you sure you want to delete this QRT squad?")) return;
     try {
-      const res = await fetch(`/api/qrt_teams/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/qrt_teams/${id}`, { method: "DELETE", headers: getAuthHeaders() });
       if (res.ok) {
         triggerNotify("QRT Team deleted from Master.");
         fetchAll();
@@ -468,7 +475,7 @@ export default function BreakdownManagement() {
     try {
       const res = await fetch(`/api/breakdowns/${bdId}/assign`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           qrt_id: qrtId,
           assigned_advisor_id: parseInt(advisorId || "") || null,

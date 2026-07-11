@@ -1,0 +1,22 @@
+{
+  "_comment": "Confirmed header-to-standard-field mappings per filename. Auto-saved after user confirmation. Keyed by filename (not path).",
+  "JC_Backdate_June2026.csv": {
+    "INVOICE DATE":    "invoice_date",
+    "INVOICE NO":      "invoice_no",
+    "J C NO":          "job_card_no",
+    "VRN":             "vrn",
+    "NAME":            "customer_name",
+    "LABOUR":          "labour_amount",
+    "SPARES":          "spares_amount",
+    "TOTAL":           "total_amount",
+    "ADVISIOR":        "service_advisor",
+    "JC TYPE":         "sr_type",
+    "MECH":            "_technician",
+    "TEC":             "_technician",
+    "ELE":             "_technician",
+    "TEC.1":           "_technician",
+    "ELE.1":           "_technician",
+    "ADDITIONAL TECH": "_technician",
+    "ADDITIONAL ELEC": "_technician"
+  }
+}

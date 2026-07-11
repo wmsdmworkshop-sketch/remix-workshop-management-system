@@ -704,6 +704,149 @@ async function startServer() {
     }
 
     console.log("Performance index verification complete.");
+
+    // Seeding role_permissions on boot
+    try {
+      console.log("Verifying role_permissions table in database...");
+      await dbPool.execute(`
+        CREATE TABLE IF NOT EXISTS \`role_permissions\` (
+          \`permission_id\` int NOT NULL AUTO_INCREMENT,
+          \`role_name\` varchar(50) NOT NULL,
+          \`module_name\` varchar(100) NOT NULL,
+          \`can_view\` tinyint(1) NOT NULL DEFAULT '0',
+          \`can_edit\` tinyint(1) NOT NULL DEFAULT '0',
+          \`can_comment\` tinyint(1) NOT NULL DEFAULT '0',
+          \`updated_by\` int DEFAULT NULL,
+          \`updated_at\` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (\`permission_id\`),
+          UNIQUE KEY \`role_module_unique\` (\`role_name\`, \`module_name\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+      `);
+
+      const defaultRolePermissions = [
+        // admin
+        { role_name: "admin", module_name: "Dashboard", can_view: 1, can_edit: 1 },
+        { role_name: "admin", module_name: "Bay Queue", can_view: 1, can_edit: 1 },
+        { role_name: "admin", module_name: "Job Cards", can_view: 1, can_edit: 1 },
+        { role_name: "admin", module_name: "Revenue", can_view: 1, can_edit: 1 },
+        { role_name: "admin", module_name: "Ledger", can_view: 1, can_edit: 1 },
+        { role_name: "admin", module_name: "Warranty", can_view: 1, can_edit: 1 },
+        { role_name: "admin", module_name: "FSB", can_view: 1, can_edit: 1 },
+        { role_name: "admin", module_name: "Query", can_view: 1, can_edit: 1 },
+        { role_name: "admin", module_name: "Billing", can_view: 1, can_edit: 1 },
+        { role_name: "admin", module_name: "DMS Import", can_view: 1, can_edit: 1 },
+        { role_name: "admin", module_name: "User Management", can_view: 1, can_edit: 1 },
+        { role_name: "admin", module_name: "Breakdowns", can_view: 1, can_edit: 1 },
+
+        // service_manager (Workshop Manager)
+        { role_name: "service_manager", module_name: "Dashboard", can_view: 1, can_edit: 1 },
+        { role_name: "service_manager", module_name: "Bay Queue", can_view: 1, can_edit: 1 },
+        { role_name: "service_manager", module_name: "Job Cards", can_view: 1, can_edit: 1 },
+        { role_name: "service_manager", module_name: "Revenue", can_view: 1, can_edit: 1 },
+        { role_name: "service_manager", module_name: "Ledger", can_view: 1, can_edit: 1 },
+        { role_name: "service_manager", module_name: "Warranty", can_view: 1, can_edit: 1 },
+        { role_name: "service_manager", module_name: "FSB", can_view: 1, can_edit: 1 },
+        { role_name: "service_manager", module_name: "Query", can_view: 1, can_edit: 1 },
+        { role_name: "service_manager", module_name: "Billing", can_view: 1, can_edit: 1 },
+        { role_name: "service_manager", module_name: "DMS Import", can_view: 1, can_edit: 1 },
+        { role_name: "service_manager", module_name: "User Management", can_view: 1, can_edit: 1 },
+        { role_name: "service_manager", module_name: "Breakdowns", can_view: 1, can_edit: 1 },
+
+        // workshop_manager
+        { role_name: "workshop_manager", module_name: "Dashboard", can_view: 1, can_edit: 1 },
+        { role_name: "workshop_manager", module_name: "Bay Queue", can_view: 1, can_edit: 1 },
+        { role_name: "workshop_manager", module_name: "Job Cards", can_view: 1, can_edit: 1 },
+        { role_name: "workshop_manager", module_name: "Revenue", can_view: 1, can_edit: 1 },
+        { role_name: "workshop_manager", module_name: "Ledger", can_view: 1, can_edit: 1 },
+        { role_name: "workshop_manager", module_name: "Warranty", can_view: 1, can_edit: 1 },
+        { role_name: "workshop_manager", module_name: "FSB", can_view: 1, can_edit: 1 },
+        { role_name: "workshop_manager", module_name: "Query", can_view: 1, can_edit: 1 },
+        { role_name: "workshop_manager", module_name: "Billing", can_view: 1, can_edit: 1 },
+        { role_name: "workshop_manager", module_name: "DMS Import", can_view: 1, can_edit: 1 },
+        { role_name: "workshop_manager", module_name: "User Management", can_view: 1, can_edit: 1 },
+        { role_name: "workshop_manager", module_name: "Breakdowns", can_view: 1, can_edit: 1 },
+
+        // service_advisor
+        { role_name: "service_advisor", module_name: "Dashboard", can_view: 1, can_edit: 0 },
+        { role_name: "service_advisor", module_name: "Job Cards", can_view: 1, can_edit: 1 },
+        { role_name: "service_advisor", module_name: "Query", can_view: 1, can_edit: 1 },
+        { role_name: "service_advisor", module_name: "Bay Queue", can_view: 1, can_edit: 1 },
+
+        // technician
+        { role_name: "technician", module_name: "Job Cards", can_view: 1, can_edit: 1 },
+        { role_name: "technician", module_name: "Dashboard", can_view: 1, can_edit: 0 },
+
+        // floor_supervisor
+        { role_name: "floor_supervisor", module_name: "Dashboard", can_view: 1, can_edit: 0 },
+        { role_name: "floor_supervisor", module_name: "Bay Queue", can_view: 1, can_edit: 1 },
+        { role_name: "floor_supervisor", module_name: "Job Cards", can_view: 1, can_edit: 1 },
+
+        // reception
+        { role_name: "reception", module_name: "Dashboard", can_view: 1, can_edit: 0 },
+        { role_name: "reception", module_name: "Job Cards", can_view: 1, can_edit: 1 },
+        { role_name: "reception", module_name: "Query", can_view: 1, can_edit: 0 },
+
+        // security_agent
+        { role_name: "security_agent", module_name: "Job Cards", can_view: 1, can_edit: 1 },
+
+        // breakdown (Breakdown Assistant)
+        { role_name: "breakdown", module_name: "Dashboard", can_view: 1, can_edit: 0 },
+        { role_name: "breakdown", module_name: "Job Cards", can_view: 1, can_edit: 1 },
+        { role_name: "breakdown", module_name: "Query", can_view: 1, can_edit: 0 },
+        { role_name: "breakdown", module_name: "Breakdowns", can_view: 1, can_edit: 1 },
+
+        // spares_manager
+        { role_name: "spares_manager", module_name: "Dashboard", can_view: 1, can_edit: 0 },
+        { role_name: "spares_manager", module_name: "Warranty", can_view: 1, can_edit: 1 },
+        { role_name: "spares_manager", module_name: "FSB", can_view: 1, can_edit: 0 },
+
+        // billing
+        { role_name: "billing", module_name: "Dashboard", can_view: 1, can_edit: 0 },
+        { role_name: "billing", module_name: "Billing", can_view: 1, can_edit: 1 },
+        { role_name: "billing", module_name: "Revenue", can_view: 1, can_edit: 1 },
+        { role_name: "billing", module_name: "DMS Import", can_view: 1, can_edit: 1 },
+
+        // cashier
+        { role_name: "cashier", module_name: "Dashboard", can_view: 1, can_edit: 0 },
+        { role_name: "cashier", module_name: "Billing", can_view: 1, can_edit: 1 },
+        { role_name: "cashier", module_name: "Revenue", can_view: 1, can_edit: 1 },
+
+        // dealer_principal
+        { role_name: "dealer_principal", module_name: "Dashboard", can_view: 1, can_edit: 1 },
+        { role_name: "dealer_principal", module_name: "Bay Queue", can_view: 1, can_edit: 1 },
+        { role_name: "dealer_principal", module_name: "Job Cards", can_view: 1, can_edit: 1 },
+        { role_name: "dealer_principal", module_name: "Revenue", can_view: 1, can_edit: 1 },
+        { role_name: "dealer_principal", module_name: "Ledger", can_view: 1, can_edit: 1 },
+        { role_name: "dealer_principal", module_name: "Warranty", can_view: 1, can_edit: 1 },
+        { role_name: "dealer_principal", module_name: "FSB", can_view: 1, can_edit: 1 },
+        { role_name: "dealer_principal", module_name: "Query", can_view: 1, can_edit: 1 },
+        { role_name: "dealer_principal", module_name: "Billing", can_view: 1, can_edit: 1 },
+        { role_name: "dealer_principal", module_name: "DMS Import", can_view: 1, can_edit: 1 },
+        { role_name: "dealer_principal", module_name: "User Management", can_view: 1, can_edit: 1 },
+        { role_name: "dealer_principal", module_name: "Breakdowns", can_view: 1, can_edit: 1 },
+
+        // gm_service
+        { role_name: "gm_service", module_name: "Dashboard", can_view: 1, can_edit: 0 },
+        { role_name: "gm_service", module_name: "Query", can_view: 1, can_edit: 0 },
+      ];
+
+      for (const p of defaultRolePermissions) {
+        const [existing] = await dbPool.query(
+          "SELECT permission_id FROM role_permissions WHERE role_name = ? AND module_name = ?",
+          [p.role_name, p.module_name]
+        ) as any[];
+        if (existing.length === 0) {
+          console.log(`Seeding default permission: ${p.role_name} -> ${p.module_name}`);
+          await dbPool.execute(
+            "INSERT INTO role_permissions (role_name, module_name, can_view, can_edit, can_comment) VALUES (?, ?, ?, ?, 0)",
+            [p.role_name, p.module_name, p.can_view, p.can_edit]
+          );
+        }
+      }
+      console.log("Role permissions seeding verified and completed successfully.");
+    } catch (permErr) {
+      console.warn("Error seeding role permissions:", permErr);
+    }
   } catch (error) {
     console.error("Failed to verify or seed users/view tables:", error);
   }
@@ -843,7 +986,7 @@ async function startServer() {
 
 
   // Helper middleware to verify JWT token — strict mode, no bypasses
-  const authenticateToken = (req: any, res: any, next: any) => {
+  const authenticateToken = async (req: any, res: any, next: any) => {
     const authHeader = req.headers["authorization"];
     const token = authHeader && authHeader.split(" ")[1];
 
@@ -852,8 +995,58 @@ async function startServer() {
     }
 
     try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      req.user = decoded;
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      
+      // Resolve user details dynamically from the database to ensure instant synchronization
+      let userRole = decoded.role;
+      let employeeId = decoded.employee_id;
+      let isActive = 1;
+      let fullName = decoded.full_name;
+
+      try {
+        const [rows] = await dbPool.query(
+          "SELECT user_role, employee_id, is_active, full_name FROM user_access_master WHERE user_id = ?",
+          [decoded.user_id]
+        ) as any[];
+        if (rows && rows.length > 0) {
+          userRole = rows[0].user_role;
+          employeeId = rows[0].employee_id;
+          isActive = rows[0].is_active;
+          fullName = rows[0].full_name;
+        } else {
+          // Fallback to local memory cache
+          const localUsers = await getLocalUsers();
+          const localUser = localUsers.find((u: any) => Number(u.user_id) === Number(decoded.user_id));
+          if (localUser) {
+            userRole = localUser.role || localUser.user_role;
+            employeeId = localUser.employee_id;
+            isActive = localUser.is_active;
+            fullName = localUser.full_name;
+          }
+        }
+      } catch (dbErr) {
+        // Fallback to local memory cache
+        const localUsers = await getLocalUsers();
+        const localUser = localUsers.find((u: any) => Number(u.user_id) === Number(decoded.user_id));
+        if (localUser) {
+          userRole = localUser.role || localUser.user_role;
+          employeeId = localUser.employee_id;
+          isActive = localUser.is_active;
+          fullName = localUser.full_name;
+        }
+      }
+
+      const isUserActive = isActive === 1 || isActive === true || isActive === "1";
+      if (!isUserActive) {
+        return res.status(401).json({ error: "This user account has been deactivated." });
+      }
+
+      req.user = {
+        ...decoded,
+        role: userRole,
+        employee_id: employeeId,
+        full_name: fullName
+      };
       next();
     } catch (error: any) {
       const isExpired = error.name === "TokenExpiredError";
@@ -873,6 +1066,44 @@ async function startServer() {
         return res.status(403).json({ error: "Access denied. Insufficient permissions." });
       }
       next();
+    };
+  };
+
+  // Helper middleware to restrict access based on dynamically loaded DB permissions (single source of truth)
+  const requirePermission = (moduleName: string, action: 'view' | 'edit' | 'comment' = 'view') => {
+    return async (req: any, res: any, next: any) => {
+      if (!req.user) {
+        return res.status(401).json({ error: "Access denied. Please log in." });
+      }
+      if (req.user.role === "developer") {
+        return next(); // Developer always bypasses
+      }
+
+      try {
+        const [rows] = await dbPool.query(
+          "SELECT can_view, can_edit, can_comment FROM role_permissions WHERE role_name = ? AND module_name = ?",
+          [req.user.role, moduleName]
+        ) as any[];
+
+        if (!rows || rows.length === 0) {
+          return res.status(403).json({ error: `Access denied. No permissions configured for ${moduleName} module.` });
+        }
+
+        const perm = rows[0];
+        let permitted = false;
+        if (action === 'view') permitted = perm.can_view === 1;
+        else if (action === 'edit') permitted = perm.can_edit === 1;
+        else if (action === 'comment') permitted = perm.can_comment === 1;
+
+        if (!permitted) {
+          return res.status(403).json({ error: `Access denied. Insufficient permissions to ${action} module ${moduleName}.` });
+        }
+
+        next();
+      } catch (err) {
+        console.error("Permission check error:", err);
+        return res.status(500).json({ error: "Failed to verify access control permissions." });
+      }
     };
   };
 
@@ -1182,13 +1413,39 @@ async function startServer() {
     }
   });
 
-  // AUTH API: Get current user
-  app.get("/api/auth/me", authenticateToken, (req: any, res) => {
-    res.json({ user: req.user });
+  // AUTH API: Get current user (used by Session Sync Engine to detect role changes)
+  app.get("/api/auth/me", authenticateToken, async (req: any, res) => {
+    try {
+      const freshUser = {
+        user_id: req.user.user_id,
+        username: req.user.username,
+        full_name: req.user.full_name,
+        role: req.user.role,
+        employee_id: req.user.employee_id,
+        is_active: req.user.is_active ?? 1
+      };
+
+      let permissions: any[] = [];
+      if (req.user.role !== "developer") {
+        try {
+          const [rows] = await dbPool.query(
+            "SELECT module_name, can_view, can_edit, can_comment FROM role_permissions WHERE role_name = ?",
+            [req.user.role]
+          ) as any[];
+          permissions = rows || [];
+        } catch (permErr) {
+          console.warn("Could not load permissions for role:", req.user.role, permErr);
+        }
+      }
+
+      res.json({ user: freshUser, permissions });
+    } catch (err) {
+      res.json({ user: req.user, permissions: [] });
+    }
   });
 
   // USER MANAGEMENT API: Get all users
-  app.get("/api/users", authenticateToken, requireRoles(["developer", "admin", "dealer_principal"]), async (req, res) => {
+  app.get("/api/users", authenticateToken, requirePermission("User Management", "view"), async (req, res) => {
     try {
       const [rows] = await dbPool.query("SELECT user_id, full_name, employee_id, username, email, user_role, access_level, is_active, created_at, mobile_no FROM user_access_master ORDER BY user_id DESC") as any[];
       // Map user_role to role for frontend compatibility
@@ -1222,7 +1479,7 @@ async function startServer() {
   });
 
   // USER MANAGEMENT API: Create new user
-  app.post("/api/users", authenticateToken, requireRoles(["developer", "admin", "dealer_principal"]), async (req: any, res) => {
+  app.post("/api/users", authenticateToken, requirePermission("User Management", "edit"), async (req: any, res) => {
     const { full_name, username, password, role, employee_id, email, mobile_no } = req.body;
     if (!full_name || !username || !password || !role) {
       return res.status(400).json({ error: "Missing required fields." });
@@ -1257,7 +1514,7 @@ async function startServer() {
            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
           [
             full_name,
-            employee_id || 0,
+            employee_id || null,
             username,
             email || null,
             role,          // maps to user_role column
@@ -1267,6 +1524,20 @@ async function startServer() {
           ]
         ) as any;
         newUserId = result.insertId;
+
+        // Also insert into users table to keep in sync
+        await dbPool.execute(
+          `INSERT INTO users (full_name, username, password_hash, role, employee_id, is_active) VALUES (?, ?, ?, ?, ?, 1)`,
+          [full_name, username, password_hash, role, employee_id || null]
+        );
+
+        // Also update employees table if employee_id is set
+        if (employee_id) {
+          await dbPool.execute(
+            "UPDATE employees SET role = ?, full_name = ? WHERE employee_id = ?",
+            [role, full_name, employee_id]
+          );
+        }
       } catch (dbErr) {
         console.warn("MySQL user creation failed, saving to local cache only:", dbErr);
       }
@@ -1283,6 +1554,21 @@ async function startServer() {
         created_at: new Date().toISOString()
       };
       localUsers.push(newUser);
+
+      // Sync local employees memory cache
+      if (employee_id) {
+        const empIdx = cachedDB.employees.findIndex((e: any) => Number(e.employee_id) === Number(employee_id));
+        if (empIdx !== -1) {
+          cachedDB.employees[empIdx] = {
+            ...cachedDB.employees[empIdx],
+            role,
+            full_name,
+            mobile: mobile_no || cachedDB.employees[empIdx].mobile,
+            email: email || cachedDB.employees[empIdx].email,
+            is_active: 1
+          };
+        }
+      }
       saveDB(cachedDB);
 
       res.status(201).json({
@@ -1300,7 +1586,7 @@ async function startServer() {
   });
 
   // USER MANAGEMENT API: Update user
-  app.put("/api/users/:user_id", authenticateToken, requireRoles(["developer", "admin", "dealer_principal"]), async (req, res) => {
+  app.put("/api/users/:user_id", authenticateToken, requirePermission("User Management", "edit"), async (req, res) => {
     const userId = Number(req.params.user_id);
     const { full_name, role, employee_id, is_active, password, mobile_no, email } = req.body;
 
@@ -1343,6 +1629,20 @@ async function startServer() {
           "UPDATE user_access_master SET full_name = ?, user_role = ?, access_level = ?, employee_id = ?, is_active = ?, password_hash = ?, mobile_no = ?, email = ? WHERE user_id = ?",
           [finalFullName, finalRole, finalRole, finalEmployeeId, finalIsActive, password_hash, finalMobileNo || "", finalEmail || null, userId]
         );
+
+        // Keep users table in sync
+        await dbPool.execute(
+          "UPDATE users SET role = ?, full_name = ?, password_hash = ?, is_active = ? WHERE username = ?",
+          [finalRole, finalFullName, password_hash, finalIsActive, existingUser.username]
+        );
+
+        // Keep employees table in sync
+        if (finalEmployeeId) {
+          await dbPool.execute(
+            "UPDATE employees SET role = ?, full_name = ?, mobile = ? WHERE employee_id = ?",
+            [finalRole, finalFullName, finalMobileNo || "", finalEmployeeId]
+          );
+        }
       } catch (dbErr) {
         console.warn("MySQL user update failed, updating local cache only:", dbErr);
       }
@@ -1358,8 +1658,23 @@ async function startServer() {
           mobile_no: finalMobileNo,
           email: finalEmail
         };
-        saveDB(cachedDB);
       }
+
+      // Sync local employees memory cache
+      if (finalEmployeeId) {
+        const empIdx = cachedDB.employees.findIndex((e: any) => Number(e.employee_id) === Number(finalEmployeeId));
+        if (empIdx !== -1) {
+          cachedDB.employees[empIdx] = {
+            ...cachedDB.employees[empIdx],
+            role: finalRole,
+            full_name: finalFullName,
+            mobile: finalMobileNo || cachedDB.employees[empIdx].mobile,
+            email: finalEmail || cachedDB.employees[empIdx].email,
+            is_active: finalIsActive
+          };
+        }
+      }
+      saveDB(cachedDB);
 
       res.json({
         user_id: userId,
@@ -5555,7 +5870,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // --- ROLE PERMISSIONS ENDPOINTS ---
-  app.get("/api/permissions", async (req, res) => {
+  app.get("/api/permissions", authenticateToken, requirePermission("User Management", "view"), async (req, res) => {
     try {
       const [rows] = await dbPool.query("SELECT * FROM role_permissions") as any[];
       res.json(rows);
@@ -5565,7 +5880,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
-  app.post("/api/permissions", express.json(), async (req, res) => {
+  app.post("/api/permissions", authenticateToken, requirePermission("User Management", "edit"), express.json(), async (req, res) => {
     const { permissions } = req.body;
     if (!Array.isArray(permissions)) {
       return res.status(400).json({ error: "Permissions must be an array." });
@@ -6088,9 +6403,18 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   // --- BREAKDOWN MANAGEMENT ENDPOINTS ---
 
   // 1. Get all breakdowns
-  app.get("/api/breakdowns", async (req, res) => {
+  app.get("/api/breakdowns", authenticateToken, requirePermission("Breakdowns", "view"), async (req: any, res) => {
     try {
-      const [rows] = await dbPool.query("SELECT * FROM breakdowns ORDER BY complaint_date DESC") as any[];
+      let queryStr = "SELECT * FROM breakdowns ORDER BY complaint_date DESC";
+      let params: any[] = [];
+      
+      // Filter strictly to assigned breakdowns for the breakdown assistant role
+      if (req.user.role === "breakdown" && req.user.employee_id) {
+        queryStr = "SELECT * FROM breakdowns WHERE assigned_advisor_id = ? ORDER BY complaint_date DESC";
+        params = [req.user.employee_id];
+      }
+      
+      const [rows] = await dbPool.query(queryStr, params) as any[];
       res.json(rows);
     } catch (e: any) {
       res.status(500).json({ error: e.message || "Failed to load breakdowns" });
@@ -6098,16 +6422,22 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // 2. Get breakdown details
-  app.get("/api/breakdowns/:id", async (req, res) => {
+  app.get("/api/breakdowns/:id", authenticateToken, requirePermission("Breakdowns", "view"), async (req: any, res) => {
     try {
       const [rows] = await dbPool.query("SELECT * FROM breakdowns WHERE breakdown_id = ?", [req.params.id]) as any[];
       if (rows.length === 0) return res.status(404).json({ error: "Breakdown not found" });
+      
+      const breakdown = rows[0];
+      // Restrict details access if role is breakdown and it's not assigned to them
+      if (req.user.role === "breakdown" && req.user.employee_id && Number(breakdown.assigned_advisor_id) !== Number(req.user.employee_id)) {
+        return res.status(403).json({ error: "Access denied. You are not assigned to this breakdown." });
+      }
       
       const [comms] = await dbPool.query("SELECT * FROM breakdown_communications WHERE breakdown_id = ?", [req.params.id]) as any[];
       const [attachments] = await dbPool.query("SELECT * FROM breakdown_attachments WHERE breakdown_id = ?", [req.params.id]) as any[];
       
       res.json({
-        ...rows[0],
+        ...breakdown,
         communications: comms || [],
         attachments: attachments || []
       });
@@ -6117,7 +6447,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // 3. Create breakdown with priority and geofencing suggestions
-  app.post("/api/breakdowns", express.json(), async (req, res) => {
+  app.post("/api/breakdowns", authenticateToken, requirePermission("Breakdowns", "edit"), express.json(), async (req: any, res) => {
     try {
       const {
         vehicle_number, priority, complaint, driver_name, driver_mobile,
@@ -6178,12 +6508,14 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
 
       const initialHistory = [{
         status: "Complaint Received",
-        user: "Admin Operator",
+        user: req.user ? req.user.full_name || req.user.username : "Admin Operator",
         date: new Date().toLocaleDateString(),
         time: new Date().toLocaleTimeString(),
         gps: gps_latitude && gps_longitude ? `${gps_latitude}, ${gps_longitude}` : "18.5204, 73.8567",
         remarks: "Breakdown logged in WMS System"
       }];
+
+      const assignedAdvisorId = (req.user && req.user.role === "breakdown" && req.user.employee_id) ? req.user.employee_id : null;
 
       const [result] = await dbPool.execute(`
         INSERT INTO breakdowns (
@@ -6192,15 +6524,17 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
           alternate_mobile, fleet_owner, fleet_manager, fleet_manager_mobile,
           preferred_workshop_id, auto_suggested_workshop_id, assigned_workshop_id,
           gps_latitude, gps_longitude, gps_address, gps_maps_link, complaint,
-          odometer, claim_type, description_remarks, current_status, status_history
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          odometer, claim_type, description_remarks, current_status, status_history,
+          assigned_advisor_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         sr_number, complaint_date, tata_complaint_number || null, internal_breakdown_number,
         vehicle_number, priority, sla_limit_hours, driver_name || null, driver_mobile || null,
         alternate_mobile || null, fleet_owner || null, fleet_manager || null, fleet_manager_mobile || null,
         preferred_workshop_id || null, auto_suggested_workshop_id, auto_suggested_workshop_id,
         gps_latitude || null, gps_longitude || null, gps_address || null, gps_maps_link, complaint,
-        odometer || null, claim_type || 'Paid', description_remarks || '', 'Complaint Received', JSON.stringify(initialHistory)
+        odometer || null, claim_type || 'Paid', description_remarks || '', 'Complaint Received', JSON.stringify(initialHistory),
+        assignedAdvisorId
       ]) as any;
 
       res.json({ success: true, breakdown_id: result.insertId, internal_breakdown_number });
@@ -6210,13 +6544,17 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // 4. Update status & add to history with SLA check
-  app.post("/api/breakdowns/:id/status", express.json(), async (req, res) => {
+  app.post("/api/breakdowns/:id/status", authenticateToken, requirePermission("Breakdowns", "edit"), express.json(), async (req: any, res) => {
     try {
       const { status, remarks, gps, responsible_employee_id, delay_reason } = req.body;
       const [existing] = await dbPool.query("SELECT * FROM breakdowns WHERE breakdown_id = ?", [req.params.id]) as any[];
       if (existing.length === 0) return res.status(404).json({ error: "Breakdown not found" });
 
       const record = existing[0];
+      // Restrict status updates if role is breakdown and it's not assigned to them
+      if (req.user.role === "breakdown" && req.user.employee_id && Number(record.assigned_advisor_id) !== Number(req.user.employee_id)) {
+        return res.status(403).json({ error: "Access denied. You are not assigned to this breakdown." });
+      }
       let history = [];
       try {
         history = JSON.parse(record.status_history || "[]");
@@ -6317,11 +6655,17 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // 5. Assign QRT Team
-  app.post("/api/breakdowns/:id/assign", express.json(), async (req, res) => {
+  app.post("/api/breakdowns/:id/assign", authenticateToken, requirePermission("Breakdowns", "edit"), express.json(), async (req: any, res) => {
     try {
       const { qrt_id, assigned_advisor_id, expected_eta, assigned_workshop_id } = req.body;
       const [existing] = await dbPool.query("SELECT * FROM breakdowns WHERE breakdown_id = ?", [req.params.id]) as any[];
       if (existing.length === 0) return res.status(404).json({ error: "Breakdown not found" });
+
+      const record = existing[0];
+      // Restrict assignment updates if role is breakdown and it's not assigned to them
+      if (req.user.role === "breakdown" && req.user.employee_id && Number(record.assigned_advisor_id) !== Number(req.user.employee_id)) {
+        return res.status(403).json({ error: "Access denied. You are not assigned to this breakdown." });
+      }
 
       let qrt_name = null;
       if (qrt_id) {
@@ -6448,11 +6792,19 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // 9. Customer Communication Log API
-  app.post("/api/breakdowns/:id/communication", express.json(), async (req, res) => {
+  app.post("/api/breakdowns/:id/communication", authenticateToken, requirePermission("Breakdowns", "edit"), express.json(), async (req: any, res) => {
     try {
       const { communication_type, sender_id, recipient_role, message } = req.body;
       if (!communication_type || !sender_id || !recipient_role || !message) {
         return res.status(400).json({ error: "Missing required communication details." });
+      }
+      const [existing] = await dbPool.query("SELECT * FROM breakdowns WHERE breakdown_id = ?", [req.params.id]) as any[];
+      if (existing.length === 0) return res.status(404).json({ error: "Breakdown not found" });
+
+      const record = existing[0];
+      // Restrict communication updates if role is breakdown and it's not assigned to them
+      if (req.user.role === "breakdown" && req.user.employee_id && Number(record.assigned_advisor_id) !== Number(req.user.employee_id)) {
+        return res.status(403).json({ error: "Access denied. You are not assigned to this breakdown." });
       }
       await dbPool.execute(`
         INSERT INTO breakdown_communications (breakdown_id, communication_type, sender_id, recipient_role, message)
@@ -6465,13 +6817,17 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // 10. Auto-conversion from Breakdown to Workshop Job Card
-  app.post("/api/breakdowns/:id/convert", express.json(), async (req, res) => {
+  app.post("/api/breakdowns/:id/convert", authenticateToken, requirePermission("Breakdowns", "edit"), express.json(), async (req: any, res) => {
     try {
       const { id } = req.params;
       const [existing] = await dbPool.query("SELECT * FROM breakdowns WHERE breakdown_id = ?", [id]) as any[];
       if (existing.length === 0) return res.status(404).json({ error: "Breakdown not found" });
 
       const bd = existing[0];
+      // Restrict conversion if role is breakdown and it's not assigned to them
+      if (req.user.role === "breakdown" && req.user.employee_id && Number(bd.assigned_advisor_id) !== Number(req.user.employee_id)) {
+        return res.status(403).json({ error: "Access denied. You are not assigned to this breakdown." });
+      }
       const db = getDB();
 
       const nextJobId = db.jobCards.reduce((max: number, j: any) => Math.max(max, j.job_id), 0) + 1;
@@ -6520,9 +6876,18 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // 11. Breakdown dashboard analytics
-  app.get("/api/breakdowns/analytics/dashboard", async (req, res) => {
+  app.get("/api/breakdowns/analytics/dashboard", authenticateToken, requirePermission("Breakdowns", "view"), async (req: any, res) => {
     try {
-      const [all] = await dbPool.query("SELECT * FROM breakdowns") as any[];
+      let queryStr = "SELECT * FROM breakdowns";
+      let params: any[] = [];
+      
+      // Filter strictly to assigned breakdowns for the breakdown assistant role
+      if (req.user.role === "breakdown" && req.user.employee_id) {
+        queryStr = "SELECT * FROM breakdowns WHERE assigned_advisor_id = ?";
+        params = [req.user.employee_id];
+      }
+      
+      const [all] = await dbPool.query(queryStr, params) as any[];
 
       const today = new Date().toISOString().split('T')[0];
       const todayComplaints = all.filter(b => b.complaint_date && new Date(b.complaint_date).toISOString().split('T')[0] === today).length;
@@ -6601,8 +6966,8 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     });
   }
 
-  const server = app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Workshop Server running on http://localhost:${PORT}`);
+  const server = app.listen(Number(process.env.PORT || 3001), "0.0.0.0", () => {
+    console.log(`Workshop Server running on http://localhost:${process.env.PORT || 3001}`);
   });
 
   // WebSocket Server for Live voice chat (manual upgrades)

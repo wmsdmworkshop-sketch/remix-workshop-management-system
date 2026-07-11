@@ -1,0 +1,28 @@
+{
+  "synonyms": {
+    "vrn": ["vrn", "vehicle number", "vehicle registration", "registration no", "registration number", "reg no", "vehicle_no"],
+    "chassis_no": ["chassis", "chassis no", "chassis number", "vin", "vin number", "vehicle identification number"],
+    "engine_no": ["engine", "engine no", "engine number"],
+    "invoice_no": ["invoice no", "invoice number", "invoice #", "bill no", "bill number"],
+    "job_card_no": ["j c no", "job card no", "job card number", "jc no", "jc number", "order#", "order no", "order number"],
+    "invoice_date": ["invoice date", "billing date", "date of invoice"],
+    "service_date": ["service date", "job date", "open date", "service datetime", "job_card_open_date"],
+    "sr_type": ["sr type", "service classification", "service type", "jc type"],
+    "odometer": ["odometer", "odometer reading", "mileage", "mileage reading", "km reading", "kms", "run km"],
+    "service_advisor": ["sr assigned to", "service advisor", "advisor", "advisior"],
+    "customer_name": ["name", "customer name", "customer", "account"],
+    "labour_amount": ["labour", "labor", "labour amount", "labor amount", "final labour invoice amount"],
+    "spares_amount": ["spares", "parts", "spares amount", "parts amount", "final spares invoice amount"],
+    "total_amount": ["total", "total bill", "total amount", "final consolidated invoice amount"],
+    "complaint": ["complaint", "complaint description", "job description", "symptoms", "reported symptoms"]
+  },
+  "source_priority": {
+    "vehicle_attributes": ["vehicle_master", "invoice", "service_history", "customer_master"],
+    "billing": ["invoice"],
+    "service": ["service_history", "invoice"]
+  },
+  "validation": {
+    "impossible_odometer_jump_km_per_day": 1000,
+    "allowed_sr_types": ["General Repair", "Running Repair", "Warranty", "Accident", "Free Service", "AMC"]
+  }
+}
