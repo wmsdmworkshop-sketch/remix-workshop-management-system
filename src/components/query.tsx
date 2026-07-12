@@ -201,7 +201,7 @@ export default function QuerySearch({ aiModeEnabled = true }: QuerySearchProps) 
                   ) : (
                     <button
                       onClick={stopAudioRecording}
-                      className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-medium transition animate-pulse"
+                      className="ds-button-danger flex items-center gap-2 px-4 py-2   hover:bg-rose-700 text-white rounded-lg font-medium transition animate-pulse"
                     >
                       <Square className="w-4 h-4" /> Stop Recording
                     </button>
@@ -230,7 +230,7 @@ export default function QuerySearch({ aiModeEnabled = true }: QuerySearchProps) 
                     ) : (
                       <button
                         onClick={stopVideoRecording}
-                        className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-medium transition animate-pulse"
+                        className="ds-button-danger flex items-center gap-2 px-4 py-2   hover:bg-rose-700 text-white rounded-lg font-medium transition animate-pulse"
                       >
                         <Square className="w-4 h-4" /> Stop Video
                       </button>
@@ -294,7 +294,7 @@ export default function QuerySearch({ aiModeEnabled = true }: QuerySearchProps) 
                 Type any OEM part number or part name below to query current inventory levels, warehouse bin locations, unit prices, and stock indicators instantly.
               </p>
               <div className="space-y-2">
-                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider">Search Query</label>
+                <label className="ds-label block text-[10px] font-black uppercase   tracking-wider">Search Query</label>
                 <div className="relative">
                   <input
                     type="text"

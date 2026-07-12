@@ -174,14 +174,14 @@ export default function Dashboard({
   return (
     <div className="space-y-8 bg-[#0B1220] text-slate-100 min-h-screen p-1">
       {/* Top Welcome Panel with Glassmorphism */}
-      <div className="relative overflow-hidden rounded-[18px] bg-slate-900/60 border border-slate-800/80 p-6 md:p-8 backdrop-blur-md shadow-2xl">
+      <div className="ds-card relative overflow-hidden rounded-[18px]   border  /80 p-6 md:p-8 backdrop-blur-md shadow-2xl">
         <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-gradient-radial from-[#2563EB]/10 to-transparent pointer-events-none rounded-full blur-3xl -mr-48 -mt-48" />
         <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-gradient-radial from-[#06B6D4]/5 to-transparent pointer-events-none rounded-full blur-2xl -ml-36 -mb-36" />
         
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="ds-button-success flex h-2.5 w-2.5 rounded-full   animate-pulse" />
               <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
                 SYSTEM LIVE • ASIA-SOUTH1
               </span>
@@ -238,7 +238,7 @@ export default function Dashboard({
             <motion.div 
               whileHover={{ y: -5, scale: 1.01 }}
               transition={{ duration: 0.2 }}
-              className="group relative overflow-hidden rounded-[18px] bg-slate-900/60 border border-slate-800/80 p-5 backdrop-blur-md shadow-lg flex flex-col justify-between h-44"
+              className="ds-card group relative overflow-hidden rounded-[18px]   border  /80 p-5 backdrop-blur-md shadow-lg flex flex-col justify-between h-44"
             >
               <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-[#10B981] to-emerald-400" />
               <div className="flex items-start justify-between">
@@ -249,7 +249,7 @@ export default function Dashboard({
                     <span className="text-[10px] text-slate-500">Target: ₹{projectedRevenue.toLocaleString()}</span>
                   )}
                 </div>
-                <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-[#10B981]">
+                <div className="ds-button-success h-10 w-10 rounded-xl  /10 border border-emerald-500/20 flex items-center justify-center text-[#10B981]">
                   <TrendingUp className="h-5 w-5" />
                 </div>
               </div>
@@ -271,7 +271,7 @@ export default function Dashboard({
             {/* Card 2: Vehicles Inside */}
             <motion.div 
               whileHover={{ y: -5, scale: 1.01 }}
-              className="group relative overflow-hidden rounded-[18px] bg-slate-900/60 border border-slate-800/80 p-5 backdrop-blur-md shadow-lg flex flex-col justify-between h-44"
+              className="ds-card group relative overflow-hidden rounded-[18px]   border  /80 p-5 backdrop-blur-md shadow-lg flex flex-col justify-between h-44"
             >
               <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-[#2563EB] to-[#06B6D4]" />
               <div className="flex items-start justify-between">
@@ -294,7 +294,7 @@ export default function Dashboard({
             {/* Card 3: Open Job Cards */}
             <motion.div 
               whileHover={{ y: -5, scale: 1.01 }}
-              className="group relative overflow-hidden rounded-[18px] bg-slate-900/60 border border-slate-800/80 p-5 backdrop-blur-md shadow-lg flex flex-col justify-between h-44"
+              className="ds-card group relative overflow-hidden rounded-[18px]   border  /80 p-5 backdrop-blur-md shadow-lg flex flex-col justify-between h-44"
             >
               <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-[#F59E0B] to-amber-400" />
               <div className="flex items-start justify-between">
@@ -317,7 +317,7 @@ export default function Dashboard({
             {/* Card 4: Today's Delivery */}
             <motion.div 
               whileHover={{ y: -5, scale: 1.01 }}
-              className="group relative overflow-hidden rounded-[18px] bg-slate-900/60 border border-slate-800/80 p-5 backdrop-blur-md shadow-lg flex flex-col justify-between h-44"
+              className="ds-card group relative overflow-hidden rounded-[18px]   border  /80 p-5 backdrop-blur-md shadow-lg flex flex-col justify-between h-44"
             >
               <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-[#06B6D4] to-cyan-300" />
               <div className="flex items-start justify-between">
@@ -381,7 +381,7 @@ export default function Dashboard({
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
             
             {/* Main Area Chart: Revenue Trend */}
-            <div className="xl:col-span-2 rounded-[18px] bg-slate-900/60 border border-slate-800/80 p-5 backdrop-blur-md shadow-xl space-y-6">
+            <div className="ds-card xl:col-span-2 rounded-[18px]   border  /80 p-5 backdrop-blur-md shadow-xl space-y-6">
               <div className="flex items-center justify-between border-b border-slate-800 pb-4">
                 <div>
                   <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300">Live Revenue Projection vs Realized</h3>
@@ -417,7 +417,7 @@ export default function Dashboard({
             </div>
 
             {/* Pie Chart: Vehicle Categories inside Workshop */}
-            <div className="rounded-[18px] bg-slate-900/60 border border-slate-800/80 p-5 backdrop-blur-md shadow-xl flex flex-col justify-between">
+            <div className="ds-card rounded-[18px]   border  /80 p-5 backdrop-blur-md shadow-xl flex flex-col justify-between">
               <div className="border-b border-slate-800 pb-4">
                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300">Fleet Mix Distribution</h3>
                 <p className="text-xs text-slate-500 mt-0.5">Active vehicles inside the workshop by platform.</p>
@@ -466,7 +466,7 @@ export default function Dashboard({
             
             {/* AI Adjudication & Warranty Advisor Panel — gated by aiModeEnabled */}
             {aiModeEnabled ? (
-            <div className="xl:col-span-2 rounded-[18px] bg-slate-900/60 border border-slate-800/80 p-6 backdrop-blur-md shadow-xl relative overflow-hidden">
+            <div className="ds-card xl:col-span-2 rounded-[18px]   border  /80 p-6 backdrop-blur-md shadow-xl relative overflow-hidden">
               <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-radial from-[#06B6D4]/10 to-transparent pointer-events-none rounded-full blur-xl -mr-16 -mt-16" />
               
               <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
@@ -548,7 +548,7 @@ export default function Dashboard({
             )}
 
             {/* Breach Alerts / Live updates Feed */}
-            <div className="rounded-[18px] bg-slate-900/60 border border-slate-800/80 p-5 backdrop-blur-md shadow-xl flex flex-col justify-between">
+            <div className="ds-card rounded-[18px]   border  /80 p-5 backdrop-blur-md shadow-xl flex flex-col justify-between">
               <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
                 <div className="flex items-center gap-2">
                   <AlertCircle className="h-4.5 w-4.5 text-amber-500" />
@@ -673,7 +673,7 @@ export default function Dashboard({
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {employees.map((emp) => (
-              <div key={emp.employee_id} className="bg-slate-900/60 border border-slate-800/80 rounded-[18px] p-5 backdrop-blur-md shadow-lg flex flex-col justify-between h-52 transition-all hover:y-[-2px]">
+              <div key={emp.employee_id} className="ds-card   border  /80 rounded-[18px] p-5 backdrop-blur-md shadow-lg flex flex-col justify-between h-52 transition-all hover:y-[-2px]">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#2563EB] to-[#06B6D4] flex items-center justify-center font-black text-white text-sm">

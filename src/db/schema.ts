@@ -984,6 +984,22 @@ export const tblWorkflowHistory = mysqlTable("tbl_workflow_history", {
 
   // Purpose: Supervisor explanation reason notes.
   reason: text("reason"),
+
+  // ── Extended Operational Event Store Fields ──
+  event_id: text("event_id"),
+  correlation_id: text("correlation_id"),
+  parent_event_id: text("parent_event_id"),
+  sequence_number: int("sequence_number"),
+  source_system: text("source_system"),
+  event_version: text("event_version"),
+  event_status: text("event_status"),
+  event_category: text("event_category"),
+  source: text("source"),
+  event_type: text("event_type"),
+  user: text("user"),
+  role: text("role"),
+  workshop_id: int("workshop_id"),
+  payload: text("payload"),
 }, (table) => [
   index("idx_workflow_history_job").on(table.job_id),
   index("idx_workflow_history_states").on(table.new_state, table.old_state),

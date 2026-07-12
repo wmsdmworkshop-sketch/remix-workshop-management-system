@@ -505,7 +505,7 @@ export default function BreakdownManagement() {
       )}
 
       {/* Module Title with Gradient */}
-      <div className="relative overflow-hidden rounded-[18px] bg-slate-900/60 border border-slate-800/80 p-6 md:p-8 backdrop-blur-md shadow-2xl">
+      <div className="ds-card relative overflow-hidden rounded-[18px]   border  /80 p-6 md:p-8 backdrop-blur-md shadow-2xl">
         <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-gradient-radial from-rose-500/10 to-transparent pointer-events-none rounded-full blur-3xl -mr-48 -mt-48" />
         
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -527,7 +527,7 @@ export default function BreakdownManagement() {
           <div className="flex items-center gap-3 shrink-0">
             <button 
               onClick={() => setShowLogModal(true)}
-              className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl shadow-lg shadow-rose-950/30 flex items-center gap-2 transition-all"
+              className="ds-button-danger   hover:bg-rose-500 text-white font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl shadow-lg shadow-rose-950/30 flex items-center gap-2 transition-all"
             >
               <Plus className="h-4 w-4" /> Log Breakdown
             </button>
@@ -556,7 +556,7 @@ export default function BreakdownManagement() {
         <>
           {/* Dashboard KPIs Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="bg-slate-900/60 border border-slate-800/80 rounded-[18px] p-5 backdrop-blur-md shadow-lg flex items-center justify-between">
+            <div className="ds-card   border  /80 rounded-[18px] p-5 backdrop-blur-md shadow-lg flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Today's Complaints</span>
                 <span className="text-3xl font-black text-white">{stats.todayComplaints || 0}</span>
@@ -566,7 +566,7 @@ export default function BreakdownManagement() {
               </div>
             </div>
 
-            <div className="bg-slate-900/60 border border-slate-800/80 rounded-[18px] p-5 backdrop-blur-md shadow-lg flex items-center justify-between">
+            <div className="ds-card   border  /80 rounded-[18px] p-5 backdrop-blur-md shadow-lg flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Open Cases</span>
                 <span className="text-3xl font-black text-rose-500">{stats.openComplaints || 0}</span>
@@ -576,17 +576,17 @@ export default function BreakdownManagement() {
               </div>
             </div>
 
-            <div className="bg-slate-900/60 border border-slate-800/80 rounded-[18px] p-5 backdrop-blur-md shadow-lg flex items-center justify-between">
+            <div className="ds-card   border  /80 rounded-[18px] p-5 backdrop-blur-md shadow-lg flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">SLA Compliance</span>
                 <span className="text-3xl font-black text-emerald-400">{stats.slaCompliancePct || 100}%</span>
               </div>
-              <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+              <div className="ds-button-success h-10 w-10 rounded-xl  /10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
                 <Clock className="h-5 w-5" />
               </div>
             </div>
 
-            <div className="bg-slate-900/60 border border-slate-800/80 rounded-[18px] p-5 backdrop-blur-md shadow-lg flex items-center justify-between">
+            <div className="ds-card   border  /80 rounded-[18px] p-5 backdrop-blur-md shadow-lg flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Repeat Breakdowns</span>
                 <span className="text-3xl font-black text-amber-500">{stats.repeatBreakdownsCount || 0}</span>
@@ -609,7 +609,7 @@ export default function BreakdownManagement() {
             
             {/* Responsible Dispatcher Picker */}
             <div className="flex items-center gap-2">
-              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Responsible Operator:</label>
+              <label className="ds-label text-[10px]   font-bold uppercase tracking-wider">Responsible Operator:</label>
               <select
                 value={responsibleEmp}
                 onChange={(e) => setResponsibleEmp(e.target.value)}
@@ -666,7 +666,7 @@ export default function BreakdownManagement() {
             </div>
 
             {/* Incident Details Sidebar */}
-            <div className="bg-slate-900/60 border border-slate-800/80 rounded-[18px] p-5 backdrop-blur-md shadow-2xl h-fit">
+            <div className="ds-card   border  /80 rounded-[18px] p-5 backdrop-blur-md shadow-2xl h-fit">
               {selectedBreakdown ? (
                 <div className="space-y-6">
                   <div className="border-b border-slate-800 pb-3 flex items-center justify-between">
@@ -675,13 +675,13 @@ export default function BreakdownManagement() {
                       <h3 className="font-extrabold text-slate-200 mt-0.5">{selectedBreakdown.vehicle_number}</h3>
                     </div>
                     {selectedBreakdown.job_card_number ? (
-                      <span className="text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 px-2.5 py-1 rounded-lg font-mono">
+                      <span className="ds-button-success text-[10px] font-bold  /10 text-emerald-400 border border-emerald-500/25 px-2.5 py-1 rounded-lg font-mono">
                         Job Card: {selectedBreakdown.job_card_number}
                       </span>
                     ) : (
                       <button 
                         onClick={() => handleConvertJobCard(selectedBreakdown.breakdown_id)}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-lg transition-all"
+                        className="ds-button-success ds-button-success   hover:  text-white font-bold text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-lg transition-all"
                       >
                         Convert to JC
                       </button>
@@ -875,7 +875,7 @@ export default function BreakdownManagement() {
                 clearQrtForm();
                 setShowQrtModal(true);
               }}
-              className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl flex items-center gap-2 transition-all"
+              className="ds-button-danger   hover:bg-rose-500 text-white font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl flex items-center gap-2 transition-all"
             >
               <Plus className="h-4 w-4" /> Create Squad
             </button>
@@ -883,7 +883,7 @@ export default function BreakdownManagement() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {qrtTeams.map((team) => (
-              <div key={team.qrt_id} className="bg-slate-900/60 border border-slate-800/80 rounded-[18px] p-5 backdrop-blur-md shadow-lg flex flex-col justify-between h-64">
+              <div key={team.qrt_id} className="ds-card   border  /80 rounded-[18px] p-5 backdrop-blur-md shadow-lg flex flex-col justify-between h-64">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-rose-500 to-amber-500 flex items-center justify-center font-black text-white text-sm">
@@ -923,7 +923,7 @@ export default function BreakdownManagement() {
                   {selectedBreakdown && selectedBreakdown.current_status === "Complaint Received" && team.availability === 1 && (
                     <button
                       onClick={() => handleQrtAssignment(selectedBreakdown.breakdown_id, team.qrt_id)}
-                      className="flex-1 bg-rose-600 hover:bg-rose-500 text-[10px] text-white font-bold py-2 rounded-lg border border-transparent transition-all text-center uppercase tracking-wider"
+                      className="ds-button-danger flex-1   hover:bg-rose-500 text-[10px] text-white font-bold py-2 rounded-lg border border-transparent transition-all text-center uppercase tracking-wider"
                     >
                       Dispatch
                     </button>
@@ -955,7 +955,7 @@ export default function BreakdownManagement() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-slate-900/60 border border-slate-800/80 rounded-[18px] p-5 backdrop-blur-md shadow-xl space-y-6">
+            <div className="ds-card   border  /80 rounded-[18px] p-5 backdrop-blur-md shadow-xl space-y-6">
               <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300 border-b border-slate-800 pb-3">Monthly Cost Split (₹ Lakhs)</h3>
               <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -978,7 +978,7 @@ export default function BreakdownManagement() {
               </div>
             </div>
 
-            <div className="bg-slate-900/60 border border-slate-800/80 rounded-[18px] p-5 backdrop-blur-md shadow-xl space-y-6">
+            <div className="ds-card   border  /80 rounded-[18px] p-5 backdrop-blur-md shadow-xl space-y-6">
               <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300 border-b border-slate-800 pb-3">Response vs Resolution Trend (Mins)</h3>
               <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -1013,7 +1013,7 @@ export default function BreakdownManagement() {
             <form onSubmit={handleLogBreakdown} className="space-y-4 text-xs text-slate-300">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Vehicle Number *</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Vehicle Number *</label>
                   <input 
                     type="text" 
                     placeholder="e.g. MH-12-AB-1234"
@@ -1024,7 +1024,7 @@ export default function BreakdownManagement() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Priority Class *</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Priority Class *</label>
                   <select 
                     value={newPriority}
                     onChange={(e) => setNewPriority(e.target.value)}
@@ -1059,7 +1059,7 @@ export default function BreakdownManagement() {
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Driver Name</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Driver Name</label>
                   <input 
                     type="text" 
                     placeholder="Driver Name"
@@ -1069,7 +1069,7 @@ export default function BreakdownManagement() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Driver Mobile</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Driver Mobile</label>
                   <input 
                     type="text" 
                     placeholder="Driver Phone"
@@ -1079,7 +1079,7 @@ export default function BreakdownManagement() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Alternate Mobile</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Alternate Mobile</label>
                   <input 
                     type="text" 
                     placeholder="Alternate Phone"
@@ -1092,7 +1092,7 @@ export default function BreakdownManagement() {
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Fleet Owner</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Fleet Owner</label>
                   <input 
                     type="text" 
                     placeholder="Company / Owner"
@@ -1102,7 +1102,7 @@ export default function BreakdownManagement() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Fleet Manager</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Fleet Manager</label>
                   <input 
                     type="text" 
                     placeholder="Manager Name"
@@ -1112,7 +1112,7 @@ export default function BreakdownManagement() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Manager Mobile</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Manager Mobile</label>
                   <input 
                     type="text" 
                     placeholder="Manager Phone"
@@ -1125,7 +1125,7 @@ export default function BreakdownManagement() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Preferred Workshop Branch</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Preferred Workshop Branch</label>
                   <select 
                     value={newPreferredWorkshop}
                     onChange={(e) => setNewPreferredWorkshop(e.target.value)}
@@ -1138,7 +1138,7 @@ export default function BreakdownManagement() {
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Tata CRM Complaint Number</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Tata CRM Complaint Number</label>
                   <input 
                     type="text" 
                     placeholder="e.g. TML-10294"
@@ -1151,7 +1151,7 @@ export default function BreakdownManagement() {
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">GPS Latitude</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">GPS Latitude</label>
                   <input 
                     type="text" 
                     value={newLat}
@@ -1160,7 +1160,7 @@ export default function BreakdownManagement() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">GPS Longitude</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">GPS Longitude</label>
                   <input 
                     type="text" 
                     value={newLng}
@@ -1169,7 +1169,7 @@ export default function BreakdownManagement() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Milestone / Highway Address</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Milestone / Highway Address</label>
                   <input 
                     type="text" 
                     placeholder="e.g. Highway Milestone 42"
@@ -1181,7 +1181,7 @@ export default function BreakdownManagement() {
               </div>
 
               <div className="space-y-1">
-                <label className="font-bold text-slate-400 uppercase tracking-widest block">Incident Complaint Details *</label>
+                <label className="ds-label font-bold   uppercase tracking-widest block">Incident Complaint Details *</label>
                 <textarea 
                   placeholder="Engine overheating, transmission failure, air pressure lock..."
                   value={newComplaint}
@@ -1194,7 +1194,7 @@ export default function BreakdownManagement() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Odometer Reading</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Odometer Reading</label>
                   <input 
                     type="number" 
                     placeholder="Current Mileage"
@@ -1204,7 +1204,7 @@ export default function BreakdownManagement() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Claim Type</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Claim Type</label>
                   <select 
                     value={newClaimType}
                     onChange={(e) => setNewClaimType(e.target.value)}
@@ -1221,13 +1221,13 @@ export default function BreakdownManagement() {
                 <button 
                   type="button"
                   onClick={() => setShowLogModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-bold uppercase tracking-wider"
+                  className="ds-button-secondary px-4 py-2     text-slate-300 rounded-lg font-bold uppercase tracking-wider"
                 >
                   Cancel
                 </button>
                 <button 
                   type="submit"
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-bold uppercase tracking-wider"
+                  className="ds-button-danger px-4 py-2   hover:bg-rose-500 text-white rounded-lg font-bold uppercase tracking-wider"
                 >
                   Dispatch Incident
                 </button>
@@ -1247,7 +1247,7 @@ export default function BreakdownManagement() {
 
             <form onSubmit={handleSaveQrtTeam} className="space-y-4 text-xs text-slate-350">
               <div className="space-y-1">
-                <label className="font-bold text-slate-400 uppercase tracking-widest block">Team Name *</label>
+                <label className="ds-label font-bold   uppercase tracking-widest block">Team Name *</label>
                 <input 
                   type="text"
                   required
@@ -1260,7 +1260,7 @@ export default function BreakdownManagement() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Vehicle No</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Vehicle No</label>
                   <input 
                     type="text"
                     placeholder="MH-12-Q-0000"
@@ -1270,7 +1270,7 @@ export default function BreakdownManagement() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Dispatcher Phone</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Dispatcher Phone</label>
                   <input 
                     type="text"
                     placeholder="Squad Mobile"
@@ -1283,7 +1283,7 @@ export default function BreakdownManagement() {
 
               <div className="grid grid-cols-2 gap-4 border-t border-slate-800/80 pt-3">
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Lead Technician</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Lead Technician</label>
                   <select 
                     value={qrtTech}
                     onChange={(e) => setQrtTech(e.target.value)}
@@ -1296,7 +1296,7 @@ export default function BreakdownManagement() {
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Assistant Tech</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Assistant Tech</label>
                   <select 
                     value={qrtAssistant}
                     onChange={(e) => setQrtAssistant(e.target.value)}
@@ -1312,7 +1312,7 @@ export default function BreakdownManagement() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Mechanical Helper</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Mechanical Helper</label>
                   <select 
                     value={qrtHelper}
                     onChange={(e) => setQrtHelper(e.target.value)}
@@ -1325,7 +1325,7 @@ export default function BreakdownManagement() {
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="font-bold text-slate-400 uppercase tracking-widest block">Electrician</label>
+                  <label className="ds-label font-bold   uppercase tracking-widest block">Electrician</label>
                   <select 
                     value={qrtElectrician}
                     onChange={(e) => setQrtElectrician(e.target.value)}
@@ -1347,13 +1347,13 @@ export default function BreakdownManagement() {
                     setEditingQrt(null);
                     clearQrtForm();
                   }}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-350 rounded-lg font-bold"
+                  className="ds-button-secondary px-4 py-2     text-slate-350 rounded-lg font-bold"
                 >
                   Cancel
                 </button>
                 <button 
                   type="submit"
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-bold"
+                  className="ds-button-danger px-4 py-2   hover:bg-rose-500 text-white rounded-lg font-bold"
                 >
                   Save Team
                 </button>

@@ -54,7 +54,7 @@ export default function ReceptionQueue({
               <p className="font-bold">{item.customerName}</p>
               <p className="text-xs text-slate-400">{item.vrn}</p>
             </div>
-            <span className="text-xs px-2.5 py-1 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20">
+            <span className="ds-button-primary text-xs px-2.5 py-1 rounded  /10 text-orange-400 border border-orange-500/20">
               {item.waitMinutes}m wait
             </span>
           </li>

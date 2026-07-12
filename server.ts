@@ -20,6 +20,14 @@ import { verifyFace } from "./src/engines/face-verifier.ts";
 import { verifyJobCard } from "./src/engines/ocr-processor.ts";
 import { EmployeeIdentityService, RoleService, AuditService } from "./src/core/identity.ts";
 import { EmployeeRepository, PermissionRepository, AuditRepository } from "./src/core/repositories.ts";
+import { EventBus } from "./src/core/event-bus.ts";
+import { 
+  OperationalEventRepository, 
+  OperationalEventService, 
+  TimelineService, 
+  LiveTatService, 
+  ReplayEngine 
+} from "./src/core/event-engine.ts";
 // ---- Customer Portal Imports ----
 import {
   authenticateCustomerToken,
@@ -334,6 +342,11 @@ async function startServer() {
   const auditRepo = new AuditRepository(dbPool);
   const employeeRepo = new EmployeeRepository(dbPool);
   const permissionRepo = new PermissionRepository(dbPool);
+
+  const eventBus = new EventBus();
+  const operationalEventRepo = new OperationalEventRepository(dbPool);
+  const operationalEventService = new OperationalEventService(operationalEventRepo, eventBus);
+  const timelineService = new TimelineService(operationalEventRepo);
 
   AuditService.init(auditRepo);
   EmployeeIdentityService.init(employeeRepo, auditRepo);
@@ -3317,7 +3330,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     });
   });
 
-  app.post("/api/job-cards", (req, res) => {
+  app.post("/api/job-cards", async (req, res) => {
     const db = getDB();
     const newJob: JobCard = req.body;
     const nextId = db.jobCards.reduce((max: number, j: JobCard) => Math.max(max, j.job_id), 0) + 1;
@@ -3332,6 +3345,50 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
 
     db.jobCards.push(newJob);
     setDB(db);
+
+    try {
+      const correlationId = `CORR-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+      
+      // 1. Publish VEHICLE_GATE_IN event (CCTV/Manual start)
+      await operationalEventService.publish({
+        job_id: nextId,
+        job_card_no: newJob.job_card_no,
+        user: newJob.service_advisor || "SYSTEM",
+        role: "Service Advisor",
+        workshop_id: newJob.workshop_id || 1,
+        source: "MANUAL",
+        event_category: "CCTV",
+        event_type: "VEHICLE_GATE_IN",
+        remarks: "Vehicle registered at gate.",
+        correlation_id: correlationId,
+        source_system: "WMS-Core",
+        payload: { old_state: null, new_state: "GATE_IN", queue: "INTAKE_QUEUE" }
+      });
+
+      // 2. Publish INTAKE_INITIALIZED event
+      await operationalEventService.publish({
+        job_id: nextId,
+        job_card_no: newJob.job_card_no,
+        user: newJob.service_advisor || "SYSTEM",
+        role: "Service Advisor",
+        workshop_id: newJob.workshop_id || 1,
+        source: "MANUAL",
+        event_category: "Operational",
+        event_type: "INTAKE_INITIALIZED",
+        remarks: "Job card intake initiated.",
+        correlation_id: correlationId,
+        source_system: "WMS-Core",
+        payload: { old_state: "GATE_IN", new_state: "INTAKE_PENDING", queue: "INTAKE_QUEUE" }
+      });
+
+      // Synchronize in-memory cachedDB workflowHistory
+      const freshDB = await syncLoad();
+      cachedDB.workflowHistory = freshDB.workflowHistory;
+      saveDB(cachedDB);
+    } catch (e: any) {
+      console.error("Failed to publish initial events during Job Card creation:", e);
+    }
+
     res.json(newJob);
   });
 
@@ -7133,6 +7190,29 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         started_by: started_by
       };
 
+      try {
+        await operationalEventService.publish({
+          job_id: jobId,
+          job_card_no: cachedDB.jobCards[jobCardIndex].job_card_no,
+          user: started_by || "SYSTEM",
+          role: "Technician",
+          workshop_id: cachedDB.jobCards[jobCardIndex].workshop_id || 1,
+          source: "MANUAL",
+          event_category: "Operational",
+          event_type: "WIP_STARTED",
+          remarks: "Repair labor started.",
+          correlation_id: `CORR-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
+          source_system: "WMS-Core",
+          payload: { old_state: "ESTIMATE_APPROVED", new_state: "WIP_START", queue: "WIP_QUEUE" }
+        });
+
+        // Synchronize in-memory cachedDB workflowHistory
+        const freshDB = await syncLoad();
+        cachedDB.workflowHistory = freshDB.workflowHistory;
+      } catch (e: any) {
+        console.error("Failed to publish WIP_STARTED event:", e);
+      }
+
       saveDB(cachedDB);
       await syncSave(cachedDB);
 
@@ -7181,6 +7261,30 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
           billing_status: 'Invoiced',
           invoice_no: invoice_no
         };
+
+        try {
+          await operationalEventService.publish({
+            job_id: jobId,
+            job_card_no: cachedDB.jobCards[index].job_card_no,
+            user: "Cashier",
+            role: "Cashier",
+            workshop_id: cachedDB.jobCards[index].workshop_id || 1,
+            source: "MANUAL",
+            event_category: "Integration",
+            event_type: "INVOICE_GENERATED",
+            remarks: `Invoice generated: ${invoice_no}`,
+            correlation_id: `CORR-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
+            source_system: "WMS-Core",
+            payload: { invoice_no, old_state: "FINAL_REVIEW", new_state: "INVOICED", queue: "DELIVERY_QUEUE" }
+          });
+
+          // Synchronize in-memory cachedDB workflowHistory
+          const freshDB = await syncLoad();
+          cachedDB.workflowHistory = freshDB.workflowHistory;
+        } catch (e: any) {
+          console.error("Failed to publish INVOICE_GENERATED event:", e);
+        }
+
         saveDB(cachedDB);
       }
 
@@ -8099,6 +8203,91 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         });
       }
 
+      if (status === 'approved') {
+        try {
+          await operationalEventService.publish({
+            job_id: jobId,
+            job_card_no: jobCard.job_card_no,
+            user: approved_by || "Customer",
+            role: "Customer",
+            workshop_id: jobCard.workshop_id || 1,
+            source: "API",
+            event_category: "Operational",
+            event_type: "ESTIMATE_APPROVED",
+            remarks: notes || "Estimate approved by customer.",
+            correlation_id: `CORR-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
+            source_system: "WMS-Core",
+            payload: { old_state: "ESTIMATE_PENDING", new_state: "ESTIMATE_APPROVED", queue: "WIP_QUEUE" }
+          });
+
+          // Synchronize in-memory cachedDB workflowHistory
+          const freshDB = await syncLoad();
+          cachedDB.workflowHistory = freshDB.workflowHistory;
+        } catch (e: any) {
+          console.error("Failed to publish ESTIMATE_APPROVED event:", e);
+        }
+      }
+
+      try {
+        const correlationId = `CORR-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+
+        // 1. Publish QC_SUBMITTED
+        await operationalEventService.publish({
+          job_id: jobId,
+          job_card_no: jobCard.job_card_no,
+          user: checked_by || "QC Inspector",
+          role: "QC Inspector",
+          workshop_id: jobCard.workshop_id || 1,
+          source: "MOBILE",
+          event_category: "Mobile",
+          event_type: "QC_SUBMITTED",
+          remarks: "QC verification submitted.",
+          correlation_id: correlationId,
+          source_system: "WMS-Core",
+          payload: { old_state: "WIP_START", new_state: "QC_PENDING", queue: "QC_QUEUE" }
+        });
+
+        if (qc_status === 'passed') {
+          // 2a. Publish FINAL_REVIEW_STARTED
+          await operationalEventService.publish({
+            job_id: jobId,
+            job_card_no: jobCard.job_card_no,
+            user: checked_by || "QC Inspector",
+            role: "QC Inspector",
+            workshop_id: jobCard.workshop_id || 1,
+            source: "MOBILE",
+            event_category: "Operational",
+            event_type: "FINAL_REVIEW_STARTED",
+            remarks: "QC passed. Vehicle ready for delivery.",
+            correlation_id: correlationId,
+            source_system: "WMS-Core",
+            payload: { old_state: "QC_PENDING", new_state: "FINAL_REVIEW", queue: "DELIVERY_QUEUE" }
+          });
+        } else {
+          // 2b. Publish QC_FAILED
+          await operationalEventService.publish({
+            job_id: jobId,
+            job_card_no: jobCard.job_card_no,
+            user: checked_by || "QC Inspector",
+            role: "QC Inspector",
+            workshop_id: jobCard.workshop_id || 1,
+            source: "MOBILE",
+            event_category: "Operational",
+            event_type: "QC_FAILED",
+            remarks: fail_reason || "QC check failed.",
+            correlation_id: correlationId,
+            source_system: "WMS-Core",
+            payload: { old_state: "QC_PENDING", new_state: "QC_FAILED", queue: "QC_QUEUE" }
+          });
+        }
+
+        // Synchronize in-memory cachedDB workflowHistory
+        const freshDB = await syncLoad();
+        cachedDB.workflowHistory = freshDB.workflowHistory;
+      } catch (e: any) {
+        console.error("Failed to publish QC events:", e);
+      }
+
       saveDB(cachedDB);
       await syncSave(cachedDB);
 
@@ -8292,6 +8481,139 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       });
     } catch (error: any) {
       console.error('Manager approval error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+
+  // ── OPERATIONAL EVENT ENGINE ENDPOINTS ──
+
+  // POST /api/events - Publish a new operational event
+  app.post("/api/events", express.json(), async (req: any, res: any) => {
+    try {
+      const {
+        job_id,
+        job_card_no,
+        user,
+        role,
+        workshop_id,
+        source,
+        event_category,
+        event_type,
+        remarks,
+        correlation_id,
+        parent_event_id,
+        source_system,
+        payload
+      } = req.body;
+
+      if (!job_id || !job_card_no || !source || !event_category || !event_type || !correlation_id) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "Missing required event fields: job_id, job_card_no, source, event_category, event_type, correlation_id" 
+        });
+      }
+
+      const event = await operationalEventService.publish({
+        job_id: parseInt(job_id),
+        job_card_no,
+        user: user || "SYSTEM",
+        role: role || "System",
+        workshop_id: workshop_id ? parseInt(workshop_id) : 1,
+        source,
+        event_category,
+        event_type,
+        remarks: remarks || null,
+        correlation_id,
+        parent_event_id: parent_event_id || null,
+        source_system: source_system || "WMS-Core",
+        payload: payload || null
+      });
+
+      // Synchronize in-memory cachedDB
+      const freshDB = await syncLoad();
+      cachedDB.workflowHistory = freshDB.workflowHistory;
+      saveDB(cachedDB);
+
+      res.status(201).json({ success: true, event });
+    } catch (error: any) {
+      console.error("Publish event error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // GET /api/job-cards/:id/events - Get event timeline for a Job Card
+  app.get("/api/job-cards/:id/events", async (req: any, res: any) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      if (isNaN(jobId)) {
+        return res.status(400).json({ success: false, error: "Invalid Job Card ID" });
+      }
+
+      const timeline = await timelineService.getTimeline(jobId);
+      res.json({ success: true, events: timeline });
+    } catch (error: any) {
+      console.error("Get events error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // GET /api/job-cards/:id/tat - Get live TAT analytics
+  app.get("/api/job-cards/:id/tat", async (req: any, res: any) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      if (isNaN(jobId)) {
+        return res.status(400).json({ success: false, error: "Invalid Job Card ID" });
+      }
+
+      const events = await timelineService.getTimeline(jobId);
+      const tat = LiveTatService.calculateTAT(events);
+      res.json({ success: true, tat });
+    } catch (error: any) {
+      console.error("Get TAT error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // POST /api/events/replay - Read-only event replay engine simulation
+  app.post("/api/events/replay", express.json(), async (req: any, res: any) => {
+    try {
+      const { job_id } = req.body;
+
+      if (job_id) {
+        const jobId = parseInt(job_id);
+        const events = await timelineService.getTimeline(jobId);
+        if (events.length === 0) {
+          return res.status(404).json({ success: false, error: `No events found for Job Card ID ${jobId}` });
+        }
+        const projection = ReplayEngine.replay(events);
+        return res.json({ success: true, replay: projection });
+      }
+
+      // Replay all job cards
+      const [allWorkflowHistory] = await dbPool.query("SELECT * FROM tbl_workflow_history ORDER BY transition_time ASC, history_id ASC") as any[];
+      const eventsByJob = new Map<number, any[]>();
+      for (const row of allWorkflowHistory) {
+        const list = eventsByJob.get(row.job_id) || [];
+        list.push(row);
+        eventsByJob.set(row.job_id, list);
+      }
+
+      const replays: any[] = [];
+      const repo = new OperationalEventRepository(dbPool);
+      for (const [jobId, rows] of eventsByJob.entries()) {
+        try {
+          const events = rows.map((r: any) => repo["mapRowToEvent"](r));
+          const projection = ReplayEngine.replay(events);
+          replays.push(projection);
+        } catch (e) {
+          // Skip failures
+        }
+      }
+
+      res.json({ success: true, replays });
+    } catch (error: any) {
+      console.error("Replay events error:", error);
       res.status(500).json({ success: false, error: error.message });
     }
   });

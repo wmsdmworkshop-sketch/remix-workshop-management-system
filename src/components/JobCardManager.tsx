@@ -1251,7 +1251,7 @@ export default function JobCardManager({
           </div>
           <button 
             onClick={() => setShowCreateModal(true)}
-            className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider shadow-sm"
+            className="ds-button-primary   hover:bg-orange-600 text-white px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider shadow-sm"
           >
             <Plus className="h-3.5 w-3.5" />
             New Job
@@ -1382,7 +1382,7 @@ export default function JobCardManager({
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4 gap-4">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-[9px] font-mono bg-orange-500/10 text-orange-600 border border-orange-500/20 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
+                  <span className="ds-button-primary text-[9px] font-mono  /10 text-orange-600 border border-orange-500/20 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
                     {selectedJob.job_card_no}
                   </span>
                   {selectedJob.priority === "Express" && (
@@ -1429,7 +1429,7 @@ export default function JobCardManager({
                     </select>
                     <button 
                       onClick={() => onUpdateJobStatus(selectedJob.job_id, "Active")}
-                      className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-[10px] px-3 py-1.5 rounded uppercase tracking-wider shadow-sm cursor-pointer"
+                      className="ds-button-primary   hover:bg-orange-600 text-white font-bold text-[10px] px-3 py-1.5 rounded uppercase tracking-wider shadow-sm cursor-pointer"
                     >
                       Start Repair
                     </button>
@@ -1457,7 +1457,7 @@ export default function JobCardManager({
                 {selectedJob.status === "Completed" && currentUserRole === "Workshop Manager" && (
                   <button 
                     onClick={() => onUpdateJobStatus(selectedJob.job_id, "Invoiced")}
-                    className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-[10px] px-3 py-1.5 rounded uppercase tracking-wider shadow-sm cursor-pointer flex items-center gap-1"
+                    className="ds-button-primary   hover:bg-orange-600 text-white font-bold text-[10px] px-3 py-1.5 rounded uppercase tracking-wider shadow-sm cursor-pointer flex items-center gap-1"
                   >
                     <DollarSign className="h-3.5 w-3.5" />
                     Mark Invoiced
@@ -1485,7 +1485,7 @@ export default function JobCardManager({
 
             {/* Quick CF / Rework Inline Forms */}
             {showCfForm && (
-              <div className="p-4 bg-orange-500/5 rounded-lg border border-orange-500/20 space-y-3">
+              <div className="ds-button-primary p-4  /5 rounded-lg border border-orange-500/20 space-y-3">
                 <div className="flex items-center gap-2 text-orange-600">
                   <ShieldAlert className="h-4 w-4" />
                   <h3 className="font-bold text-xs uppercase tracking-wider">Request Carry Forward Approval</h3>
@@ -1498,7 +1498,7 @@ export default function JobCardManager({
                 />
                 <div className="flex justify-end gap-2">
                   <button onClick={() => setShowCfForm(false)} className="text-[10px] font-bold px-3 py-1.5 bg-slate-100 rounded text-slate-700 uppercase tracking-wider">Cancel</button>
-                  <button onClick={handleCfSubmit} className="text-[10px] font-bold px-4 py-1.5 bg-orange-500 hover:bg-orange-600 rounded text-white uppercase tracking-wider shadow-sm">Submit Request</button>
+                  <button onClick={handleCfSubmit} className="ds-button-primary text-[10px] font-bold px-4 py-1.5   hover:bg-orange-600 rounded text-white uppercase tracking-wider shadow-sm">Submit Request</button>
                 </div>
               </div>
             )}
@@ -1517,7 +1517,7 @@ export default function JobCardManager({
                 />
                 <div className="flex justify-end gap-2">
                   <button onClick={() => setShowReworkForm(false)} className="text-[10px] font-bold px-3 py-1.5 bg-slate-100 rounded text-slate-700 uppercase tracking-wider">Cancel</button>
-                  <button onClick={handleReworkSubmit} className="text-[10px] font-bold px-4 py-1.5 bg-red-600 hover:bg-red-700 rounded text-white uppercase tracking-wider shadow-sm">Raise Rework</button>
+                  <button onClick={handleReworkSubmit} className="ds-button-danger text-[10px] font-bold px-4 py-1.5   hover:bg-red-700 rounded text-white uppercase tracking-wider shadow-sm">Raise Rework</button>
                 </div>
               </div>
             )}
@@ -1627,7 +1627,7 @@ export default function JobCardManager({
                 <div className="border-b border-slate-200/60 pb-2.5">
                   <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Status</span>
                   <p className="mt-0.5">
-                    <span className="px-2 py-0.5 font-bold text-[10px] rounded border uppercase tracking-wider bg-orange-500/10 text-orange-700 border-orange-200">
+                    <span className="ds-button-primary px-2 py-0.5 font-bold text-[10px] rounded border uppercase tracking-wider  /10 text-orange-700 border-orange-200">
                       {selectedJob.status}
                     </span>
                   </p>
@@ -1742,7 +1742,7 @@ export default function JobCardManager({
                 {currentUserRole !== "Service Advisor" && (
                   <button 
                     onClick={addStaffAllocation}
-                    className="bg-orange-500/10 text-orange-600 border border-orange-500/20 hover:bg-orange-500/20 font-bold text-[10px] px-3 py-2 rounded uppercase tracking-wider transition-all cursor-pointer"
+                    className="ds-button-primary bg-orange-500/10 text-orange-600 border border-orange-500/20 hover: /20 font-bold text-[10px] px-3 py-2 rounded uppercase tracking-wider transition-all cursor-pointer"
                   >
                     + Add Specialist
                   </button>
@@ -1760,7 +1760,7 @@ export default function JobCardManager({
                       return (
                         <div key={idx} className="flex items-center gap-2 bg-slate-50 text-slate-800 rounded px-2.5 py-1 text-xs font-semibold border border-slate-200 shadow-3xs">
                           <span>{emp?.full_name}</span>
-                          <span className="text-[9px] bg-orange-500/10 text-orange-600 border border-orange-500/20 font-bold uppercase tracking-wider px-2 py-0.5 rounded">
+                          <span className="ds-button-primary text-[9px]  /10 text-orange-600 border border-orange-500/20 font-bold uppercase tracking-wider px-2 py-0.5 rounded">
                             {staff.tech_role}
                           </span>
                           {currentUserRole !== "Service Advisor" && (
@@ -1781,7 +1781,7 @@ export default function JobCardManager({
                   <div className="flex justify-end pt-2">
                     <button 
                       onClick={handleSaveAllocations}
-                      className="bg-orange-500 hover:bg-orange-600 text-white text-[10px] font-bold px-4 py-2 rounded uppercase tracking-wider shadow-sm transition-all cursor-pointer"
+                      className="ds-button-primary   hover:bg-orange-600 text-white text-[10px] font-bold px-4 py-2 rounded uppercase tracking-wider shadow-sm transition-all cursor-pointer"
                     >
                       Save Allocations
                     </button>
@@ -1803,7 +1803,7 @@ export default function JobCardManager({
                   
                   <div className="space-y-2">
                     <div>
-                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Labour Amount (₹)</label>
+                      <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">Labour Amount (₹)</label>
                       <input 
                         type="number"
                         disabled={currentUserRole !== "Workshop Manager"}
@@ -1813,7 +1813,7 @@ export default function JobCardManager({
                       />
                     </div>
                     <div>
-                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Parts Amount (₹)</label>
+                      <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">Parts Amount (₹)</label>
                       <input 
                         type="number"
                         disabled={currentUserRole !== "Workshop Manager"}
@@ -1827,14 +1827,14 @@ export default function JobCardManager({
                   <button 
                     onClick={handleCalculateRevSplit}
                     disabled={currentUserRole !== "Workshop Manager"}
-                    className="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-[10px] py-2 rounded uppercase tracking-wider shadow-sm transition-colors cursor-pointer"
+                    className="ds-button-primary w-full   hover:bg-orange-600 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-[10px] py-2 rounded uppercase tracking-wider shadow-sm transition-colors cursor-pointer"
                   >
                     Calculate Split Share
                   </button>
                 </div>
  
                 {/* Display splits */}
-                <div className="space-y-3 bg-orange-500/5 p-3 rounded-lg border border-orange-500/10">
+                <div className="ds-button-primary space-y-3  /5 p-3 rounded-lg border border-orange-500/10">
                   <h4 className="text-[10px] font-bold text-orange-700 uppercase tracking-wider">Current Split Shares</h4>
                   
                   {selectedJobSplits.length === 0 ? (
@@ -2103,7 +2103,7 @@ export default function JobCardManager({
                                   <button
                                     type="button"
                                     onClick={() => handleApplyBatchCardToForm(batchOcrQueue[activeBatchIndex])}
-                                    className="text-[8.5px] font-black uppercase tracking-wider text-white bg-emerald-600 hover:bg-emerald-700 flex items-center gap-1 px-2.5 py-1 rounded-lg shadow-xs cursor-pointer"
+                                    className="ds-button-success text-[8.5px] font-black uppercase tracking-wider text-white   hover:bg-emerald-700 flex items-center gap-1 px-2.5 py-1 rounded-lg shadow-xs cursor-pointer"
                                   >
                                     <Check className="h-3 w-3" />
                                     Pre-fill Main Form
@@ -2430,7 +2430,7 @@ export default function JobCardManager({
                         placeholder="e.g. MH-12-AB-1234"
                         className="w-full bg-slate-50 border border-slate-200 rounded p-2 pr-9 text-xs font-semibold uppercase focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
                       />
-                      <label className="absolute right-2 cursor-pointer text-slate-400 hover:text-orange-500 transition-colors" title="Scan Numberplate Photo">
+                      <label className="ds-label absolute right-2 cursor-pointer   hover:text-orange-500 transition-colors" title="Scan Numberplate Photo">
                         <Camera className="h-4.5 w-4.5" />
                         <input 
                           type="file" 
@@ -2468,7 +2468,7 @@ export default function JobCardManager({
                   </div>
                   {isOcrReadingVrn && (
                     <div className="text-[9px] text-orange-500 font-semibold animate-pulse mt-0.5 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-ping"></span>
+                      <span className="ds-button-primary w-1.5 h-1.5   rounded-full animate-ping"></span>
                       Scanning plate via OCR...
                     </div>
                   )}
@@ -2614,7 +2614,7 @@ export default function JobCardManager({
                       placeholder="e.g. 12500"
                       className="w-full bg-slate-50 border border-slate-200 rounded p-2 pr-9 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
                     />
-                    <label className="absolute right-2 cursor-pointer text-slate-400 hover:text-orange-500 transition-colors" title="Scan Odometer Photo">
+                    <label className="ds-label absolute right-2 cursor-pointer   hover:text-orange-500 transition-colors" title="Scan Odometer Photo">
                       <Camera className="h-4.5 w-4.5" />
                       <input 
                         type="file" 
@@ -2626,7 +2626,7 @@ export default function JobCardManager({
                   </div>
                   {isOcrReadingOdo && (
                     <div className="text-[9px] text-orange-500 font-semibold animate-pulse mt-0.5 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-ping"></span>
+                      <span className="ds-button-primary w-1.5 h-1.5   rounded-full animate-ping"></span>
                       Scanning dashboard via OCR...
                     </div>
                   )}
@@ -2810,12 +2810,12 @@ export default function JobCardManager({
 
               {/* Gemma-4 Real-time Interactive Form Copilot Widget */}
               {aiModeEnabled && (
-                <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3 space-y-2.5">
+                <div className="ds-button-success  /5 border border-emerald-500/20 rounded-lg p-3 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
                     <span className="flex h-2 w-2 relative">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                      <span className="ds-button-success relative inline-flex rounded-full h-2 w-2  "></span>
                     </span>
                     <span className="text-[10px] font-black uppercase text-emerald-800 tracking-wider">
                       ✨ Gemma-4 Form Copilot
@@ -2825,7 +2825,7 @@ export default function JobCardManager({
                     type="button"
                     disabled={isAiAnalyzing}
                     onClick={() => handleAiFormAnalysis("create", jobDescription, vehicleModel, kmReading, priority)}
-                    className="text-[9px] bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-black uppercase tracking-wider px-2.5 py-1 rounded transition-all cursor-pointer shadow-3xs"
+                    className="ds-button-success text-[9px]   hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-black uppercase tracking-wider px-2.5 py-1 rounded transition-all cursor-pointer shadow-3xs"
                   >
                     {isAiAnalyzing ? "⏳ Analyzing..." : "⚡ Suggest & Calculate"}
                   </button>
@@ -2890,7 +2890,7 @@ export default function JobCardManager({
                     <button
                       type="button"
                       onClick={() => applyAiSuggestions("create")}
-                      className="w-full text-center bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] uppercase font-black tracking-wider py-1.5 rounded cursor-pointer transition-colors"
+                      className="ds-button-success w-full text-center   hover:bg-emerald-700 text-white text-[10px] uppercase font-black tracking-wider py-1.5 rounded cursor-pointer transition-colors"
                     >
                       ✅ Apply AI Recommendations
                     </button>
@@ -2917,7 +2917,7 @@ export default function JobCardManager({
                     <button
                       type="button"
                       onClick={startAudioRecording}
-                      className="flex-1 bg-red-600 hover:bg-red-700 text-white text-[9.5px] font-bold uppercase tracking-wider py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      className="ds-button-danger flex-1   hover:bg-red-700 text-white text-[9.5px] font-bold uppercase tracking-wider py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                     >
                       <Mic className="h-3.5 w-3.5" />
                       Record Customer Voice
@@ -2993,7 +2993,7 @@ export default function JobCardManager({
                 </button>
                 <button 
                   type="submit"
-                  className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2.5 rounded text-xs uppercase tracking-wider shadow-sm transition-colors cursor-pointer"
+                  className="ds-button-primary flex-1   hover:bg-orange-600 text-white font-bold py-2.5 rounded text-xs uppercase tracking-wider shadow-sm transition-colors cursor-pointer"
                 >
                   Create Job Card
                 </button>
@@ -3088,7 +3088,7 @@ export default function JobCardManager({
                       onChange={(e) => setEditVrn(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded p-2 pr-9 text-xs font-semibold uppercase focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
                     />
-                    <label className="absolute right-2 cursor-pointer text-slate-400 hover:text-orange-500 transition-colors" title="Scan Numberplate Photo">
+                    <label className="ds-label absolute right-2 cursor-pointer   hover:text-orange-500 transition-colors" title="Scan Numberplate Photo">
                       <Camera className="h-4.5 w-4.5" />
                       <input 
                         type="file" 
@@ -3100,7 +3100,7 @@ export default function JobCardManager({
                   </div>
                   {isEditOcrReadingVrn && (
                     <div className="text-[9px] text-orange-500 font-semibold animate-pulse mt-0.5 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-ping"></span>
+                      <span className="ds-button-primary w-1.5 h-1.5   rounded-full animate-ping"></span>
                       Scanning plate via OCR...
                     </div>
                   )}
@@ -3218,7 +3218,7 @@ export default function JobCardManager({
                       onChange={(e) => setEditKmReading(e.target.value === "" ? "" : Number(e.target.value))}
                       className="w-full bg-slate-50 border border-slate-200 rounded p-2 pr-9 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
                     />
-                    <label className="absolute right-2 cursor-pointer text-slate-400 hover:text-orange-500 transition-colors" title="Scan Odometer Photo">
+                    <label className="ds-label absolute right-2 cursor-pointer   hover:text-orange-500 transition-colors" title="Scan Odometer Photo">
                       <Camera className="h-4.5 w-4.5" />
                       <input 
                         type="file" 
@@ -3230,7 +3230,7 @@ export default function JobCardManager({
                   </div>
                   {isEditOcrReadingOdo && (
                     <div className="text-[9px] text-orange-500 font-semibold animate-pulse mt-0.5 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-ping"></span>
+                      <span className="ds-button-primary w-1.5 h-1.5   rounded-full animate-ping"></span>
                       Scanning dashboard via OCR...
                     </div>
                   )}
@@ -3433,7 +3433,7 @@ export default function JobCardManager({
 
               <button 
                 type="submit"
-                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2.5 rounded text-xs uppercase tracking-wider shadow-sm transition-colors cursor-pointer"
+                className="ds-button-primary w-full   hover:bg-orange-600 text-white font-bold py-2.5 rounded text-xs uppercase tracking-wider shadow-sm transition-colors cursor-pointer"
               >
                 Save Changes
               </button>

@@ -113,7 +113,7 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="ds-button-success flex h-2 w-2 rounded-full   animate-pulse" />
             <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">
               Active Technician Bay Console
             </span>
@@ -263,7 +263,7 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
             <div className="grid grid-cols-3 gap-2.5">
               <button 
                 onClick={handleStartTimer}
-                className="flex items-center justify-center gap-1.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
+                className="ds-button-success flex items-center justify-center gap-1.5 py-2.5   hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
               >
                 <Play className="h-3.5 w-3.5" /> Start
               </button>
@@ -275,7 +275,7 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
               </button>
               <button 
                 onClick={handleStopTimer}
-                className="flex items-center justify-center gap-1.5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
+                className="ds-button-danger flex items-center justify-center gap-1.5 py-2.5   hover:bg-red-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
               >
                 <Square className="h-3.5 w-3.5" /> Complete
               </button>
@@ -298,7 +298,7 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
                 <input 
                   type="text" 
                   placeholder="e.g. Brake pad kit front, oil filter..."
-                  className="w-full bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-xs text-slate-200 outline-none"
+                  className="ds-input w-full   border border-slate-850 rounded-xl p-2.5 text-xs text-slate-200 outline-none"
                 />
               </div>
               <button 

@@ -121,7 +121,7 @@ export default function PreInvoicePanel({
   // ── Confirmation state ─────────────────────────────────────────────────────
   if (sent) {
     return (
-      <div className="p-5 rounded-xl border bg-emerald-500/5 border-emerald-500/20 flex items-center gap-4">
+      <div className="ds-button-success p-5 rounded-xl border  /5 border-emerald-500/20 flex items-center gap-4">
         <CheckCircle2 className="h-8 w-8 text-emerald-400 flex-shrink-0" />
         <div>
           <p className="font-bold text-sm text-emerald-300">Pre-Invoice Sent!</p>
@@ -139,7 +139,7 @@ export default function PreInvoicePanel({
     <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <div className="p-2.5 bg-orange-500/10 rounded-lg">
+        <div className="ds-button-primary p-2.5  /10 rounded-lg">
           <FileText className="h-5 w-5 text-orange-400" />
         </div>
         <div>
@@ -206,7 +206,7 @@ export default function PreInvoicePanel({
 
       {/* Recipient input */}
       <div>
-        <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+        <label className="ds-label block text-[11px] font-bold   uppercase tracking-wider mb-1.5">
           Send To
         </label>
         <input
@@ -220,7 +220,7 @@ export default function PreInvoicePanel({
 
       {/* Channel selector */}
       <div>
-        <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+        <label className="ds-label block text-[11px] font-bold   uppercase tracking-wider mb-2">
           Send Via
         </label>
         <div className="grid grid-cols-4 gap-2">
@@ -253,7 +253,7 @@ export default function PreInvoicePanel({
       <button
         onClick={handleSend}
         disabled={loading || !sentTo.trim()}
-        className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm font-bold bg-orange-500/15 hover:bg-orange-500/20 border border-orange-500/30 text-orange-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        className="ds-button-primary w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm font-bold bg-orange-500/15 hover: /20 border border-orange-500/30 text-orange-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading
           ? <><FunnySpinner className="h-4 w-4" /> Sending…</>

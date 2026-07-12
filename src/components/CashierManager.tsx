@@ -145,7 +145,7 @@ export default function CashierManager({
     <div className="space-y-6">
       {/* Alert banner */}
       {success && (
-        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 rounded-xl flex items-center gap-3 text-xs animate-in slide-in-from-top-2 duration-200">
+        <div className="ds-button-success p-4  /10 border border-emerald-500/20 text-emerald-600 rounded-xl flex items-center gap-3 text-xs animate-in slide-in-from-top-2 duration-200">
           <CheckCircle className="h-5 w-5 shrink-0" />
           <span>{success}</span>
         </div>
@@ -288,7 +288,7 @@ export default function CashierManager({
                       📄 Invoice PDF/Image Upload (OCR)
                     </span>
                     {ocrParsedText && (
-                      <span className="text-[8px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 font-bold uppercase px-1.5 py-0.5 rounded">
+                      <span className="ds-button-success text-[8px]  /10 border border-emerald-500/20 text-emerald-500 font-bold uppercase px-1.5 py-0.5 rounded">
                         Digitized
                       </span>
                     )}
@@ -341,7 +341,7 @@ export default function CashierManager({
                 <form onSubmit={handlePayBill} className="space-y-4">
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+                      <label className="ds-label block text-[10px] font-bold   uppercase mb-1">
                         Discounts Offered (₹)
                       </label>
                       <input
@@ -354,7 +354,7 @@ export default function CashierManager({
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+                      <label className="ds-label block text-[10px] font-bold   uppercase mb-1">
                         Settlement Mode
                       </label>
                       <select
@@ -371,7 +371,7 @@ export default function CashierManager({
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+                    <label className="ds-label block text-[10px] font-bold   uppercase mb-1">
                       Transaction Reference / Txn Receipt ID
                     </label>
                     <input

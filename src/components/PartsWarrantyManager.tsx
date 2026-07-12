@@ -512,7 +512,7 @@ export default function PartsWarrantyManager({
     <div className="space-y-6">
       {/* Success alert banner */}
       {success && (
-        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 rounded-xl flex items-center gap-3 text-xs animate-in slide-in-from-top-2 duration-200">
+        <div className="ds-button-success p-4  /10 border border-emerald-500/20 text-emerald-600 rounded-xl flex items-center gap-3 text-xs animate-in slide-in-from-top-2 duration-200">
           <CheckCircle className="h-5 w-5 shrink-0" />
           <span>{success}</span>
         </div>
@@ -708,35 +708,35 @@ export default function PartsWarrantyManager({
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-left text-xs">
+              <table className="ds-table w-full border-collapse text-left text-xs">
                 <thead>
                   <tr className="bg-slate-50/50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                    <th className="py-3 px-5">Requisition ID</th>
-                    <th className="py-3 px-5">Job Card</th>
-                    <th className="py-3 px-5">Part Details</th>
-                    <th className="py-3 px-5">Qty</th>
-                    <th className="py-3 px-5">Est Cost</th>
-                    <th className="py-3 px-5">Request Date</th>
-                    <th className="py-3 px-5 text-right">Status / Actions</th>
+                    <th className="ds-th py-3 px-5">Requisition ID</th>
+                    <th className="ds-th py-3 px-5">Job Card</th>
+                    <th className="ds-th py-3 px-5">Part Details</th>
+                    <th className="ds-th py-3 px-5">Qty</th>
+                    <th className="ds-th py-3 px-5">Est Cost</th>
+                    <th className="ds-th py-3 px-5">Request Date</th>
+                    <th className="ds-th py-3 px-5 text-right">Status / Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {requisitions.map((req) => (
-                    <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="py-3 px-5 font-mono font-bold text-slate-800">{req.id}</td>
-                      <td className="py-3 px-5">
+                    <tr key={req.id} className="ds-table-row hover:bg-slate-50/50 transition-colors">
+                      <td className="ds-td py-3 px-5 font-mono font-bold text-slate-800">{req.id}</td>
+                      <td className="ds-td py-3 px-5">
                         <span className="font-mono text-slate-700 bg-slate-100 border px-1.5 py-0.5 rounded font-bold">
                           {req.jobCardNo}
                         </span>
                       </td>
-                      <td className="py-3 px-5">
+                      <td className="ds-td py-3 px-5">
                         <p className="font-semibold text-slate-800">{req.partName}</p>
                         <p className="text-[10px] text-slate-400 font-mono">{req.partCode}</p>
                       </td>
-                      <td className="py-3 px-5 font-mono">{req.qty}</td>
-                      <td className="py-3 px-5 font-mono">₹{(req.qty * req.unitPrice).toLocaleString()}</td>
-                      <td className="py-3 px-5 text-slate-400">{new Date(req.requestedAt).toLocaleString("en-IN", { hour: "2-digit", minute: "2-digit" })}</td>
-                      <td className="py-3 px-5 text-right">
+                      <td className="ds-td py-3 px-5 font-mono">{req.qty}</td>
+                      <td className="ds-td py-3 px-5 font-mono">₹{(req.qty * req.unitPrice).toLocaleString()}</td>
+                      <td className="ds-td py-3 px-5 text-slate-400">{new Date(req.requestedAt).toLocaleString("en-IN", { hour: "2-digit", minute: "2-digit" })}</td>
+                      <td className="ds-td py-3 px-5 text-right">
                         {req.status === "Issued" ? (
                           <span className="text-[9px] font-mono font-bold px-2.5 py-1 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase tracking-wider">
                             Issued
@@ -744,7 +744,7 @@ export default function PartsWarrantyManager({
                         ) : (
                           <button
                             onClick={() => handleIssuePart(req.id, req.jobId, req.partName)}
-                            className="px-2.5 py-1 bg-orange-500 hover:bg-orange-600 text-white font-bold text-[9px] uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+                            className="ds-button-primary px-2.5 py-1   hover:bg-orange-600 text-white font-bold text-[9px] uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
                           >
                             Mark Issued & Release WIP
                           </button>
@@ -1032,7 +1032,7 @@ export default function PartsWarrantyManager({
 
               {valVehicleInfo && (
                 <div className="space-y-3 pt-1">
-                  <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] text-slate-300">
+                  <div className="ds-card   p-3 rounded-lg border   grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] text-slate-300">
                     <div>
                       <span className="text-slate-500 block text-[9px] uppercase font-bold">Chassis Number</span>
                       <span className="font-mono text-slate-200 font-bold">{valVehicleInfo.vehicle.chassis_no}</span>
@@ -1063,7 +1063,7 @@ export default function PartsWarrantyManager({
 
             <form onSubmit={handleValidateWarranty} className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                <label className="ds-label block text-[10px] font-bold   uppercase tracking-wider mb-1">
                   1. Active Workshop Job (Optional)
                 </label>
                 <select
@@ -1082,7 +1082,7 @@ export default function PartsWarrantyManager({
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                <label className="ds-label block text-[10px] font-bold   uppercase tracking-wider mb-1">
                   2. Date of Sale / Commissioning
                 </label>
                 <input
@@ -1096,7 +1096,7 @@ export default function PartsWarrantyManager({
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                <label className="ds-label block text-[10px] font-bold   uppercase tracking-wider mb-1">
                   3. Vehicle Model / PPL Segment
                 </label>
                 <input
@@ -1110,7 +1110,7 @@ export default function PartsWarrantyManager({
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                <label className="ds-label block text-[10px] font-bold   uppercase tracking-wider mb-1">
                   4. FSB (Field Service Bulletin) Status
                 </label>
                 <select
@@ -1126,7 +1126,7 @@ export default function PartsWarrantyManager({
               </div>
 
               <div className="md:col-span-4">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                <label className="ds-label block text-[10px] font-bold   uppercase tracking-wider mb-1">
                   5. Enter Warranty Query / Diagnostic failure details *
                 </label>
                 <textarea
@@ -1148,7 +1148,7 @@ export default function PartsWarrantyManager({
                     setValModelNoPpl("ALL M&HCV BSVI Phase-II");
                     setValFsbStatus("Applicable and Done");
                   }}
-                  className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[10px] text-slate-300 font-mono transition-colors cursor-pointer"
+                  className="ds-button-secondary px-2 py-1     rounded text-[10px] text-slate-300 font-mono transition-colors cursor-pointer"
                 >
                   Lift Axle Valve Failure
                 </button>
@@ -1159,7 +1159,7 @@ export default function PartsWarrantyManager({
                     setValModelNoPpl("TATA SIGNA 2830.TK");
                     setValFsbStatus("Not Applicable");
                   }}
-                  className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[10px] text-slate-300 font-mono transition-colors cursor-pointer"
+                  className="ds-button-secondary px-2 py-1     rounded text-[10px] text-slate-300 font-mono transition-colors cursor-pointer"
                 >
                   Air Bellow Covered?
                 </button>
@@ -1170,7 +1170,7 @@ export default function PartsWarrantyManager({
                     setValModelNoPpl("ALL BS6 Phase-2 HCV Cummins Engine");
                     setValFsbStatus("Not Applicable");
                   }}
-                  className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[10px] text-slate-300 font-mono transition-colors cursor-pointer"
+                  className="ds-button-secondary px-2 py-1     rounded text-[10px] text-slate-300 font-mono transition-colors cursor-pointer"
                 >
                   DEF Filter Replacement
                 </button>
@@ -1420,49 +1420,49 @@ export default function PartsWarrantyManager({
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-left text-xs">
+              <table className="ds-table w-full border-collapse text-left text-xs">
                 <thead>
                   <tr className="bg-slate-50/50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                    <th className="py-3 px-5">Claim ID</th>
-                    <th className="py-3 px-5">Job Card</th>
-                    <th className="py-3 px-5">Component Details</th>
-                    <th className="py-3 px-5 font-mono">Cost Value</th>
-                    <th className="py-3 px-5">Failure Diagnostics</th>
-                    <th className="py-3 px-5">Claim Date</th>
-                    <th className="py-3 px-5 text-right">State Clearance / Actions</th>
+                    <th className="ds-th py-3 px-5">Claim ID</th>
+                    <th className="ds-th py-3 px-5">Job Card</th>
+                    <th className="ds-th py-3 px-5">Component Details</th>
+                    <th className="ds-th py-3 px-5 font-mono">Cost Value</th>
+                    <th className="ds-th py-3 px-5">Failure Diagnostics</th>
+                    <th className="ds-th py-3 px-5">Claim Date</th>
+                    <th className="ds-th py-3 px-5 text-right">State Clearance / Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {warrantyClaims.map((claim) => (
-                    <tr key={claim.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="py-3 px-5 font-mono font-bold text-slate-800">{claim.id}</td>
-                      <td className="py-3 px-5">
+                    <tr key={claim.id} className="ds-table-row hover:bg-slate-50/50 transition-colors">
+                      <td className="ds-td py-3 px-5 font-mono font-bold text-slate-800">{claim.id}</td>
+                      <td className="ds-td py-3 px-5">
                         <span className="font-mono text-slate-700 bg-slate-100 border px-1.5 py-0.5 rounded font-bold">
                           {claim.jobCardNo}
                         </span>
                       </td>
-                      <td className="py-3 px-5">
+                      <td className="ds-td py-3 px-5">
                         <p className="font-semibold text-slate-800">{claim.partName}</p>
                         <p className="text-[10px] text-slate-400 font-mono">{claim.partCode}</p>
                       </td>
-                      <td className="py-3 px-5 font-mono font-bold text-slate-700">₹{claim.claimAmount.toLocaleString()}</td>
-                      <td className="py-3 px-5 text-slate-500 max-w-xs truncate" title={claim.failureReason}>
+                      <td className="ds-td py-3 px-5 font-mono font-bold text-slate-700">₹{claim.claimAmount.toLocaleString()}</td>
+                      <td className="ds-td py-3 px-5 text-slate-500 max-w-xs truncate" title={claim.failureReason}>
                         {claim.failureReason}
                       </td>
-                      <td className="py-3 px-5 text-slate-400">{new Date(claim.submittedAt).toLocaleDateString()}</td>
-                      <td className="py-3 px-5 text-right">
+                      <td className="ds-td py-3 px-5 text-slate-400">{new Date(claim.submittedAt).toLocaleDateString()}</td>
+                      <td className="ds-td py-3 px-5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           {claim.status === "Submitted" ? (
                             <>
                               <button
                                 onClick={() => handleUpdateClaimStatus(claim.id, "Approved")}
-                                className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[9px] uppercase tracking-wider rounded"
+                                className="ds-button-success px-2 py-0.5   hover:bg-emerald-700 text-white font-bold text-[9px] uppercase tracking-wider rounded"
                               >
                                 Approve
                               </button>
                               <button
                                 onClick={() => handleUpdateClaimStatus(claim.id, "Rejected")}
-                                className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-[9px] uppercase tracking-wider rounded"
+                                className="ds-button-danger px-2 py-0.5   hover:bg-rose-700 text-white font-bold text-[9px] uppercase tracking-wider rounded"
                               >
                                 Reject
                               </button>
@@ -1590,7 +1590,7 @@ export default function PartsWarrantyManager({
                 <button
                   type="submit"
                   disabled={uploadingCir}
-                  className="w-full py-2.5 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-300 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-1.5 shadow cursor-pointer"
+                  className="ds-button-primary w-full py-2.5 bg-orange-600 hover:  disabled:bg-slate-300 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-1.5 shadow cursor-pointer"
                 >
                   <Plus className="h-4 w-4" />
                   <span>{uploadingCir ? "Indexing..." : "Upload & Index Circular"}</span>
@@ -1682,7 +1682,7 @@ export default function PartsWarrantyManager({
             {/* Header */}
             <div className="p-5 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-orange-500/10 text-orange-400 flex items-center justify-center">
+                <div className="ds-button-primary w-8 h-8 rounded-lg  /10 text-orange-400 flex items-center justify-center">
                   <Camera className="h-4 w-4" />
                 </div>
                 <div>
@@ -1727,7 +1727,7 @@ export default function PartsWarrantyManager({
 
               {/* OCR Results */}
               {partOcrResult && (
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] leading-relaxed flex items-start gap-2.5 font-mono whitespace-pre">
+                <div className="ds-button-success p-3  /10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] leading-relaxed flex items-start gap-2.5 font-mono whitespace-pre">
                   <Check className="h-4 w-4 shrink-0 mt-0.5 text-emerald-400" />
                   <span>{partOcrResult}</span>
                 </div>

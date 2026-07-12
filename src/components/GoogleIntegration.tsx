@@ -525,7 +525,7 @@ export default function GoogleIntegration({
             {/* Google Sheets Card */}
             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col justify-between h-72">
               <div className="space-y-3">
-                <div className="h-10 w-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 flex items-center justify-center">
+                <div className="ds-button-success h-10 w-10 rounded-lg  /10 border border-emerald-500/20 text-emerald-600 flex items-center justify-center">
                   <FileSpreadsheet className="h-5 w-5" />
                 </div>
                 <div>

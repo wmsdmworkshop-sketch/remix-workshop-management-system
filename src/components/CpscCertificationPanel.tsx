@@ -125,7 +125,7 @@ export default function CpscCertificationPanel() {
         </div>
         <button
           onClick={fetchData}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-xs font-semibold text-slate-300 transition-all"
+          className="ds-button-secondary flex items-center gap-1.5 px-3 py-1.5     border border-slate-700/50 rounded-lg text-xs font-semibold text-slate-300 transition-all"
         >
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh
@@ -312,7 +312,7 @@ export default function CpscCertificationPanel() {
                 <button
                   onClick={() => handleUpgrade(c.employee_id)}
                   disabled={upgradeLoading === c.employee_id}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+                  className="ds-button-success flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/20 hover: /30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
                 >
                   {upgradeLoading === c.employee_id ? (
                     <FunnySpinner className="h-3 w-3" />

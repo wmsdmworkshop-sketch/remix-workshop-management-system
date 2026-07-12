@@ -249,7 +249,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = React.memo(
         <div className="flex items-center gap-3">
           <button 
             onClick={handlePowerBiExport}
-            className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg transition-colors"
+            className="ds-button-success flex items-center gap-2 px-3.5 py-2   hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg transition-colors"
           >
             <FileSpreadsheet className="h-4 w-4" />
             Export Power BI Dataset
@@ -483,10 +483,10 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = React.memo(
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Top 20 Critical Vehicles Monitor</h3>
         </div>
         <div className="overflow-x-auto pr-1">
-          <table className="w-full text-left text-xs text-slate-300">
+          <table className="ds-table w-full text-left text-xs text-slate-300">
             <thead>
               <tr className="border-b border-slate-800 text-[10px] text-slate-500 uppercase tracking-wider">
-                <th className="py-2.5">VRN</th>
+                <th className="ds-th py-2.5">VRN</th>
                 <th>Customer</th>
                 <th>Workshop Location</th>
                 <th>Current Phase</th>
@@ -497,8 +497,8 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = React.memo(
             </thead>
             <tbody>
               {criticalVehicles.map((v) => (
-                <tr key={v.id} className="border-b border-slate-850/60 hover:bg-slate-950/20 transition-colors">
-                  <td className="py-2.5 font-mono font-bold text-slate-200">
+                <tr key={v.id} className="ds-table-row border-b border-slate-850/60 hover:bg-slate-950/20 transition-colors">
+                  <td className="ds-td py-2.5 font-mono font-bold text-slate-200">
                     <button 
                       onClick={() => onSelectVehicle && onSelectVehicle(v.id)}
                       className="hover:underline hover:text-blue-400"
@@ -507,10 +507,10 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = React.memo(
                     </button>
                   </td>
                   <td>{v.customer}</td>
-                  <td className="uppercase text-[11px] text-slate-400 font-bold">{v.workshop}</td>
+                  <td className="ds-td uppercase text-[11px] text-slate-400 font-bold">{v.workshop}</td>
                   <td>{v.stage}</td>
-                  <td className="font-mono font-bold">{v.eta}</td>
-                  <td className="text-red-400 font-bold">{v.delay}</td>
+                  <td className="ds-td font-mono font-bold">{v.eta}</td>
+                  <td className="ds-td text-red-400 font-bold">{v.delay}</td>
                   <td>
                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
                       v.priority === "Express" ? "bg-red-500/10 text-red-400" :

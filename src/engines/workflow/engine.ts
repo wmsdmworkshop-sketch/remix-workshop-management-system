@@ -19,6 +19,11 @@ export interface TransitionPayload {
   overrideFlag?: boolean;
   overrideReasonCode?: string;
   overrideJustification?: string;
+  correlationId?: string;
+  parentEventId?: string;
+  source?: string;
+  sourceSystem?: string;
+  user?: string;
 }
 
 export class WorkflowEngine {
@@ -120,12 +125,38 @@ export class WorkflowEngine {
         await db.execute("UPDATE job_cards SET rework_count = rework_count + 1 WHERE job_id = ?", [payload.jobId]);
       }
 
-      // 5. Append-only Audits, History, and Notification logging
-      // Workflow History
+      // Calculate sequence number
+      const [seqRows] = await db.execute(
+        "SELECT COUNT(*) as count FROM tbl_workflow_history WHERE job_id = ?",
+        [payload.jobId]
+      ) as any[];
+      const sequenceNumber = (seqRows[0]?.count || 0) + 1;
+
+      // Validate event source
+      const allowedSources = ["MANUAL", "ORACLE_IMPORT", "SYSTEM", "MOBILE", "QR", "CCTV", "AI", "API"];
+      const eventSource = (payload.source || "SYSTEM").toUpperCase();
+      if (!allowedSources.includes(eventSource)) {
+        return { success: false, error: `Invalid event source: ${eventSource}` };
+      }
+
+      // Generate UUID
+      const eventId = `EV-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+
+      // Get user display name
+      let userName = payload.user;
+      if (!userName) {
+        const [empRows] = await db.execute("SELECT full_name FROM employees WHERE employee_id = ?", [payload.actorId]) as any[];
+        userName = empRows && empRows[0] ? empRows[0].full_name : "SYSTEM";
+      }
+
       await db.execute(
-        `INSERT INTO tbl_workflow_history 
-         (job_id, old_state, new_state, queue, sla_status, etd, transition_by, duration, reason) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO tbl_workflow_history (
+          job_id, old_state, new_state, queue, sla_status, etd, transition_by, 
+          duration, reason, event_id, correlation_id, parent_event_id, 
+          sequence_number, source_system, event_version, event_status, 
+          event_category, source, event_type, user, role, workshop_id, payload,
+          transition_time
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           payload.jobId,
           oldState,
@@ -136,6 +167,21 @@ export class WorkflowEngine {
           payload.actorId,
           durationSeconds,
           payload.reason || "Workflow transition success.",
+          eventId,
+          payload.correlationId || logContext.correlationId || "SYSTEM",
+          payload.parentEventId || null,
+          sequenceNumber,
+          payload.sourceSystem || "WMS-Core",
+          "1.0",
+          "PROCESSED",
+          "Operational",
+          eventSource,
+          newWorkflowState,
+          userName,
+          payload.actorRole,
+          job.workshop_id || 1,
+          JSON.stringify({ old_state: oldState, new_state: newWorkflowState, queue: newQueue }),
+          new Date()
         ]
       );
 

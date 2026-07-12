@@ -60,7 +60,7 @@ export const KPIHeader: React.FC<KPIHeaderProps> = React.memo(({
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
       {/* Received */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+      <div className="ds-card   border   rounded-xl p-4 flex flex-col justify-between">
         <div className="flex items-center justify-between text-slate-500 text-[9px] uppercase font-bold tracking-wider">
           <span>Vehicles Received</span>
           <Car className="h-3.5 w-3.5 text-emerald-400" />
@@ -72,7 +72,7 @@ export const KPIHeader: React.FC<KPIHeaderProps> = React.memo(({
       </div>
 
       {/* Delivered */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+      <div className="ds-card   border   rounded-xl p-4 flex flex-col justify-between">
         <div className="flex items-center justify-between text-slate-500 text-[9px] uppercase font-bold tracking-wider">
           <span>Vehicles Delivered</span>
           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
@@ -84,7 +84,7 @@ export const KPIHeader: React.FC<KPIHeaderProps> = React.memo(({
       </div>
 
       {/* Active Workload */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+      <div className="ds-card   border   rounded-xl p-4 flex flex-col justify-between">
         <div className="flex items-center justify-between text-slate-500 text-[9px] uppercase font-bold tracking-wider">
           <span>Active Workload</span>
           <TrendingUp className="h-3.5 w-3.5 text-indigo-400" />
@@ -96,7 +96,7 @@ export const KPIHeader: React.FC<KPIHeaderProps> = React.memo(({
       </div>
 
       {/* Bay Utilization */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+      <div className="ds-card   border   rounded-xl p-4 flex flex-col justify-between">
         <div className="flex items-center justify-between text-slate-500 text-[9px] uppercase font-bold tracking-wider">
           <span>Bay Utilization</span>
           <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
@@ -108,7 +108,7 @@ export const KPIHeader: React.FC<KPIHeaderProps> = React.memo(({
       </div>
 
       {/* FTR Rate */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+      <div className="ds-card   border   rounded-xl p-4 flex flex-col justify-between">
         <div className="flex items-center justify-between text-slate-500 text-[9px] uppercase font-bold tracking-wider">
           <span>First Time Right</span>
           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />

@@ -685,7 +685,7 @@ export default function DmsImporter({
             <div className="flex justify-end pt-3">
               <button
                 onClick={() => setImporterStep(2)}
-                className="bg-orange-500 hover:bg-orange-600 text-white font-extrabold text-xs py-2.5 px-6 rounded-lg shadow-sm uppercase tracking-wider transition-colors cursor-pointer"
+                className="ds-button-primary   hover:bg-orange-600 text-white font-extrabold text-xs py-2.5 px-6 rounded-lg shadow-sm uppercase tracking-wider transition-colors cursor-pointer"
               >
                 Next: Upload CSV File
               </button>
@@ -787,19 +787,19 @@ export default function DmsImporter({
                 Preview Mapped Records (Top 5 Rows)
               </span>
               <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-3xs">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="ds-table w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-slate-50 text-slate-500 border-b border-slate-200">
                       {parsedHeaders.map(h => (
-                        <th key={h} className="p-2.5 font-bold uppercase tracking-wider border-r border-slate-200">{h}</th>
+                        <th key={h} className="ds-th p-2.5 font-bold uppercase tracking-wider border-r border-slate-200">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                     {previewRows.map((row, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/50">
+                      <tr key={idx} className="ds-table-row hover:bg-slate-50/50">
                         {parsedHeaders.map(h => (
-                          <td key={h} className="p-2.5 border-r border-slate-100 truncate max-w-[150px] font-mono text-[10px]">{row[h] || "—"}</td>
+                          <td key={h} className="ds-td p-2.5 border-r border-slate-100 truncate max-w-[150px] font-mono text-[10px]">{row[h] || "—"}</td>
                         ))}
                       </tr>
                     ))}
@@ -822,7 +822,7 @@ export default function DmsImporter({
                 <button
                   onClick={runImportProcess}
                   disabled={importLoading}
-                  className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-800 text-white font-extrabold text-xs py-2.5 px-6 rounded shadow-sm uppercase tracking-wider transition-colors flex items-center gap-1.5 cursor-pointer"
+                  className="ds-button-success   hover:bg-emerald-700 disabled:bg-slate-800 text-white font-extrabold text-xs py-2.5 px-6 rounded shadow-sm uppercase tracking-wider transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   {importLoading ? (
                     <>
@@ -872,7 +872,7 @@ export default function DmsImporter({
             <div className="pt-4 flex justify-center gap-2">
               <button
                 onClick={resetWizard}
-                className="bg-orange-500 hover:bg-orange-600 text-white font-extrabold text-xs py-2.5 px-6 rounded-lg shadow-sm uppercase tracking-wider transition-colors cursor-pointer"
+                className="ds-button-primary   hover:bg-orange-600 text-white font-extrabold text-xs py-2.5 px-6 rounded-lg shadow-sm uppercase tracking-wider transition-colors cursor-pointer"
               >
                 Import Another File
               </button>
@@ -936,8 +936,8 @@ export default function DmsImporter({
             </div>
 
             <div className="overflow-x-auto border border-slate-200 rounded-xl">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase text-slate-500">
+              <table className="ds-table w-full text-left text-xs">
+                <thead className="ds-th bg-slate-50 border-b border-slate-200 text-[10px] uppercase text-slate-500">
                   <tr>
                     <th 
                       onClick={() => {
@@ -998,17 +998,17 @@ export default function DmsImporter({
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                   {(!Array.isArray(processedMasterVehicles) || processedMasterVehicles.length === 0) ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-400 italic">No master data found.</td>
+                      <td colSpan={6} className="ds-td py-8 text-center text-slate-400 italic">No master data found.</td>
                     </tr>
                   ) : (
                     processedMasterVehicles.map((row, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/50">
-                        <td className="p-3 font-bold text-slate-900">{row.vrn}</td>
-                        <td className="p-3">{row.customer_name || 'N/A'}</td>
-                        <td className="p-3">{row.customer_mobile || 'N/A'}</td>
-                        <td className="p-3 font-mono text-indigo-600">{row.job_date || 'N/A'}</td>
-                        <td className="p-3 font-mono text-slate-400 font-bold">{row.job_card_no}</td>
-                        <td className="p-3 text-emerald-600">{row.status}</td>
+                      <tr key={idx} className="ds-table-row hover:bg-slate-50/50">
+                        <td className="ds-td p-3 font-bold text-slate-900">{row.vrn}</td>
+                        <td className="ds-td p-3">{row.customer_name || 'N/A'}</td>
+                        <td className="ds-td p-3">{row.customer_mobile || 'N/A'}</td>
+                        <td className="ds-td p-3 font-mono text-indigo-600">{row.job_date || 'N/A'}</td>
+                        <td className="ds-td p-3 font-mono text-slate-400 font-bold">{row.job_card_no}</td>
+                        <td className="ds-td p-3 text-emerald-600">{row.status}</td>
                       </tr>
                     ))
                   )}

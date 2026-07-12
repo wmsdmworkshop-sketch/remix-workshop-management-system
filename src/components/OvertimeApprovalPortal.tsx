@@ -272,7 +272,7 @@ export default function OvertimeApprovalPortal({
     ];
 
     return (
-      <div className="flex items-center justify-between w-full p-4 bg-slate-900/60 rounded-xl border border-slate-800/80 gap-1 text-[10px] md:text-xs">
+      <div className="ds-card flex items-center justify-between w-full p-4   rounded-xl border  /80 gap-1 text-[10px] md:text-xs">
         {steps.map((step, idx) => {
           let isActive = false;
           let isCompleted = false;
@@ -428,43 +428,43 @@ export default function OvertimeApprovalPortal({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
+            <table className="ds-table w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-[#0B1220]/65 text-slate-400 border-b border-slate-800/80 uppercase font-black tracking-wider text-[10px]">
-                  <th className="py-3 px-4">Request No</th>
-                  <th className="py-3 px-4">Employee</th>
-                  <th className="py-3 px-4">Role</th>
-                  <th className="py-3 px-4">Date</th>
-                  <th className="py-3 px-4">Category</th>
-                  <th className="py-3 px-4 text-center">Hours</th>
-                  <th className="py-3 px-4">Benefit</th>
-                  <th className="py-3 px-4 text-right">Action</th>
+                  <th className="ds-th py-3 px-4">Request No</th>
+                  <th className="ds-th py-3 px-4">Employee</th>
+                  <th className="ds-th py-3 px-4">Role</th>
+                  <th className="ds-th py-3 px-4">Date</th>
+                  <th className="ds-th py-3 px-4">Category</th>
+                  <th className="ds-th py-3 px-4 text-center">Hours</th>
+                  <th className="ds-th py-3 px-4">Benefit</th>
+                  <th className="ds-th py-3 px-4 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/50">
                 {filteredRequests.map((r) => (
-                  <tr key={r.ot_id} className="hover:bg-slate-800/30 transition-all font-medium">
-                    <td className="py-3.5 px-4 font-bold text-white font-mono">OT-{r.ot_id}</td>
-                    <td className="py-3.5 px-4">
+                  <tr key={r.ot_id} className="ds-table-row hover:bg-slate-800/30 transition-all font-medium">
+                    <td className="ds-td py-3.5 px-4 font-bold text-white font-mono">OT-{r.ot_id}</td>
+                    <td className="ds-td py-3.5 px-4">
                       <div>
                         <p className="font-bold text-slate-200">{r.employee_name}</p>
                         <p className="text-[9px] text-slate-500 font-mono mt-0.5">{r.employee_code}</p>
                       </div>
                     </td>
-                    <td className="py-3.5 px-4 text-slate-400 font-semibold">{r.employee_role}</td>
-                    <td className="py-3.5 px-4">{r.date}</td>
-                    <td className="py-3.5 px-4">
+                    <td className="ds-td py-3.5 px-4 text-slate-400 font-semibold">{r.employee_role}</td>
+                    <td className="ds-td py-3.5 px-4">{r.date}</td>
+                    <td className="ds-td py-3.5 px-4">
                       <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase ${
                         r.ot_category === "WORKSHOP" ? "bg-blue-500/10 text-blue-400" : "bg-purple-500/10 text-purple-400"
                       }`}>
                         {r.ot_category}
                       </span>
                     </td>
-                    <td className="py-3.5 px-4 text-center font-bold text-slate-300">{r.total_hours} hrs</td>
-                    <td className="py-3.5 px-4 font-bold text-slate-300 uppercase tracking-widest text-[9px]">
+                    <td className="ds-td py-3.5 px-4 text-center font-bold text-slate-300">{r.total_hours} hrs</td>
+                    <td className="ds-td py-3.5 px-4 font-bold text-slate-300 uppercase tracking-widest text-[9px]">
                       {r.benefit_type === "MONETARY" ? "Monetary" : "Comp Credit"}
                     </td>
-                    <td className="py-3.5 px-4 text-right">
+                    <td className="ds-td py-3.5 px-4 text-right">
                       <button
                         onClick={() => loadDetails(r.ot_id)}
                         className="inline-flex items-center gap-1 px-3 py-1 bg-[#2563EB]/15 hover:bg-[#2563EB]/25 text-[#06B6D4] rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border border-[#2563EB]/25"
@@ -494,7 +494,7 @@ export default function OvertimeApprovalPortal({
               </div>
               <button
                 onClick={() => setSelectedRequest(null)}
-                className="w-7 h-7 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg flex items-center justify-center transition-all border border-slate-700/80"
+                className="ds-button-secondary w-7 h-7     text-slate-400 hover:text-white rounded-lg flex items-center justify-center transition-all border border-slate-700/80"
               >
                 ✕
               </button>
@@ -512,7 +512,7 @@ export default function OvertimeApprovalPortal({
               )}
 
               {successMessage && (
-                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+                <div className="ds-button-success p-4  /10 border border-emerald-500/20 rounded-xl flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
                   <CheckCircle className="w-4.5 h-4.5 shrink-0" />
                   {successMessage}
                 </div>
@@ -679,26 +679,26 @@ export default function OvertimeApprovalPortal({
                 <div className="space-y-3">
                   <span className="text-[10px] text-slate-500 font-black uppercase tracking-wider block">Decision audit history</span>
                   <div className="bg-[#0B1220]/60 rounded-xl border border-slate-800/80 overflow-hidden text-xs">
-                    <table className="w-full text-left">
+                    <table className="ds-table w-full text-left">
                       <thead>
                         <tr className="bg-slate-900/40 text-slate-500 uppercase font-black tracking-wider text-[9px] border-b border-slate-800/80">
-                          <th className="py-2.5 px-4">Level</th>
-                          <th className="py-2.5 px-4">Approver</th>
-                          <th className="py-2.5 px-4">Role</th>
-                          <th className="py-2.5 px-4">Action Date</th>
-                          <th className="py-2.5 px-4">Decision</th>
-                          <th className="py-2.5 px-4">Remarks</th>
+                          <th className="ds-th py-2.5 px-4">Level</th>
+                          <th className="ds-th py-2.5 px-4">Approver</th>
+                          <th className="ds-th py-2.5 px-4">Role</th>
+                          <th className="ds-th py-2.5 px-4">Action Date</th>
+                          <th className="ds-th py-2.5 px-4">Decision</th>
+                          <th className="ds-th py-2.5 px-4">Remarks</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/50">
                         {selectedRequest.history.map((h: any, idx: number) => (
-                          <tr key={idx} className="hover:bg-slate-800/10">
-                            <td className="py-2.5 px-4 font-bold text-slate-350">Stage {h.level}</td>
-                            <td className="py-2.5 px-4 font-mono">ID: {h.approver_id}</td>
-                            <td className="py-2.5 px-4 text-slate-400 font-bold uppercase tracking-wider text-[9px]">{h.approver_role}</td>
-                            <td className="py-2.5 px-4">{h.action_date} {h.action_time}</td>
-                            <td className="py-2.5 px-4 font-bold">{h.decision}</td>
-                            <td className="py-2.5 px-4 italic text-slate-400">{h.remarks || "No remarks"}</td>
+                          <tr key={idx} className="ds-table-row hover:bg-slate-800/10">
+                            <td className="ds-td py-2.5 px-4 font-bold text-slate-350">Stage {h.level}</td>
+                            <td className="ds-td py-2.5 px-4 font-mono">ID: {h.approver_id}</td>
+                            <td className="ds-td py-2.5 px-4 text-slate-400 font-bold uppercase tracking-wider text-[9px]">{h.approver_role}</td>
+                            <td className="ds-td py-2.5 px-4">{h.action_date} {h.action_time}</td>
+                            <td className="ds-td py-2.5 px-4 font-bold">{h.decision}</td>
+                            <td className="ds-td py-2.5 px-4 italic text-slate-400">{h.remarks || "No remarks"}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -752,7 +752,7 @@ export default function OvertimeApprovalPortal({
                   <button
                     type="button"
                     onClick={() => setSelectedRequest(null)}
-                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all border border-slate-700/80"
+                    className="ds-button-secondary px-4 py-2     text-slate-300 rounded-xl text-xs font-bold transition-all border border-slate-700/80"
                   >
                     Cancel
                   </button>

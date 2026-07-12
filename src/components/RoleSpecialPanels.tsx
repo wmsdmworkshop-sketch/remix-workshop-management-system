@@ -87,7 +87,7 @@ export function RevenueDashboard({ employees, jobCards, revenues, splitDetails, 
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Gross Splitted Revenue</p>
             <p className="text-2xl font-black text-slate-800 mt-1">₹{stats.totalRevenue.toLocaleString()}</p>
           </div>
-          <div className="p-3 bg-orange-500/10 text-orange-600 rounded-xl">
+          <div className="ds-button-primary p-3  /10 text-orange-600 rounded-xl">
             <DollarSign className="h-6 w-6" />
           </div>
         </div>
@@ -107,7 +107,7 @@ export function RevenueDashboard({ employees, jobCards, revenues, splitDetails, 
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Average Split %</p>
             <p className="text-2xl font-black text-slate-800 mt-1">{Math.round(stats.avgPercentage)}%</p>
           </div>
-          <div className="p-3 bg-emerald-500/10 text-emerald-600 rounded-xl">
+          <div className="ds-button-success p-3  /10 text-emerald-600 rounded-xl">
             <TrendingUp className="h-6 w-6" />
           </div>
         </div>
@@ -261,7 +261,7 @@ export function GateEntryPanel({ jobCards, bays, onCreateJob, onRefresh }: GateE
     <div className="space-y-6">
       {/* Alert Banner */}
       {success && (
-        <div className="rounded-xl bg-emerald-500/10 p-4 border border-emerald-500/20 flex items-start gap-3 text-emerald-400 text-xs animate-in slide-in-from-top-2 duration-200">
+        <div className="ds-button-success rounded-xl  /10 p-4 border border-emerald-500/20 flex items-start gap-3 text-emerald-400 text-xs animate-in slide-in-from-top-2 duration-200">
           <CheckCircle className="h-5 w-5 shrink-0" />
           <span>{success}</span>
         </div>
@@ -270,7 +270,7 @@ export function GateEntryPanel({ jobCards, bays, onCreateJob, onRefresh }: GateE
       {/* Stats Summary */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-orange-500/10 text-orange-600 rounded-xl">
+          <div className="ds-button-primary p-3  /10 text-orange-600 rounded-xl">
             <Truck className="h-6 w-6" />
           </div>
           <div>
@@ -301,7 +301,7 @@ export function GateEntryPanel({ jobCards, bays, onCreateJob, onRefresh }: GateE
           <form onSubmit={handleRegisterEntry} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
                   Registration Number (VRN) *
                 </label>
                 <input
@@ -315,7 +315,7 @@ export function GateEntryPanel({ jobCards, bays, onCreateJob, onRefresh }: GateE
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
                   Customer Mobile Number *
                 </label>
                 <input
@@ -329,7 +329,7 @@ export function GateEntryPanel({ jobCards, bays, onCreateJob, onRefresh }: GateE
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
                   Customer Name *
                 </label>
                 <input
@@ -344,7 +344,7 @@ export function GateEntryPanel({ jobCards, bays, onCreateJob, onRefresh }: GateE
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                  <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
                     Vehicle Make
                   </label>
                   <input
@@ -356,7 +356,7 @@ export function GateEntryPanel({ jobCards, bays, onCreateJob, onRefresh }: GateE
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                  <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
                     Vehicle Model
                   </label>
                   <input
@@ -465,7 +465,7 @@ function TechnicianToastItem({ toast, onDismiss, onStartWork }: ToastItemProps) 
     <div className="relative overflow-hidden bg-slate-900 border border-slate-800 text-white rounded-xl shadow-2xl p-4 w-80 flex flex-col gap-2.5 animate-in slide-in-from-right-5 fade-in duration-300">
       <div className="flex items-start justify-between gap-2">
         <div className="flex gap-2">
-          <div className="p-2 bg-orange-500/20 text-orange-400 rounded-lg shrink-0 mt-0.5">
+          <div className="ds-button-primary p-2  /20 text-orange-400 rounded-lg shrink-0 mt-0.5">
             <Bell className="h-4 w-4 animate-bounce" />
           </div>
           <div className="space-y-0.5">
@@ -474,7 +474,7 @@ function TechnicianToastItem({ toast, onDismiss, onStartWork }: ToastItemProps) 
                 {toast.title}
               </span>
               {toast.priority === "Express" && (
-                <span className="text-[8px] font-black uppercase tracking-widest bg-red-600 text-white px-1.5 py-0.5 rounded-md animate-pulse">
+                <span className="ds-button-danger text-[8px] font-black uppercase tracking-widest   text-white px-1.5 py-0.5 rounded-md animate-pulse">
                   Express
                 </span>
               )}
@@ -503,7 +503,7 @@ function TechnicianToastItem({ toast, onDismiss, onStartWork }: ToastItemProps) 
               onStartWork(toast.jobId);
               onDismiss(toast.id);
             }}
-            className="bg-orange-500 hover:bg-orange-600 text-white font-black text-[9px] uppercase tracking-wider px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-all cursor-pointer shadow-md active:scale-95"
+            className="ds-button-primary   hover:bg-orange-600 text-white font-black text-[9px] uppercase tracking-wider px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-all cursor-pointer shadow-md active:scale-95"
           >
             <Play className="h-3 w-3 fill-current" />
             Start WIP Work
@@ -623,7 +623,7 @@ export function TechnicianJobsPanel({ jobCards, employeeId, onUpdateJobStatus, o
       <div className="space-y-6">
         {/* Alert Banner */}
         {success && (
-          <div className="rounded-xl bg-emerald-500/10 p-4 border border-emerald-500/20 flex items-start gap-3 text-emerald-400 text-xs animate-in slide-in-from-top-2 duration-200">
+          <div className="ds-button-success rounded-xl  /10 p-4 border border-emerald-500/20 flex items-start gap-3 text-emerald-400 text-xs animate-in slide-in-from-top-2 duration-200">
             <CheckCircle className="h-5 w-5 shrink-0" />
             <span>{success}</span>
           </div>
@@ -636,7 +636,7 @@ export function TechnicianJobsPanel({ jobCards, employeeId, onUpdateJobStatus, o
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Allocated Jobs</p>
               <p className="text-2xl font-black text-slate-800 mt-1">{myAllocatedJobs.length}</p>
             </div>
-            <div className="p-3 bg-orange-500/10 text-orange-600 rounded-xl">
+            <div className="ds-button-primary p-3  /10 text-orange-600 rounded-xl">
               <Wrench className="h-6 w-6" />
             </div>
           </div>
@@ -660,7 +660,7 @@ export function TechnicianJobsPanel({ jobCards, employeeId, onUpdateJobStatus, o
                 {myAllocatedJobs.filter(j => j.status === "Service Completed").length}
               </p>
             </div>
-            <div className="p-3 bg-emerald-500/10 text-emerald-600 rounded-xl">
+            <div className="ds-button-success p-3  /10 text-emerald-600 rounded-xl">
               <CheckCircle2 className="h-6 w-6" />
             </div>
           </div>
@@ -751,7 +751,7 @@ export function TechnicianJobsPanel({ jobCards, employeeId, onUpdateJobStatus, o
                   {job.status === "Waiting" && (
                     <button
                       onClick={() => handleAction(job.job_id, "Active")}
-                      className="w-full md:w-auto flex items-center justify-center gap-1 px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+                      className="ds-button-primary w-full md:w-auto flex items-center justify-center gap-1 px-3 py-2   hover:bg-orange-600 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
                     >
                       <Play className="h-3 w-3" />
                       <span>Start WIP Work</span>
@@ -769,7 +769,7 @@ export function TechnicianJobsPanel({ jobCards, employeeId, onUpdateJobStatus, o
                       </button>
                       <button
                         onClick={() => handleAction(job.job_id, "Completed")}
-                        className="flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+                        className="ds-button-success flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-2   hover:bg-emerald-700 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
                       >
                         <CheckCircle2 className="h-3 w-3" />
                         <span>Finish & QC</span>
@@ -846,7 +846,7 @@ export function TechnicianKpiPanel({ employees, employeeId }: TechnicianKpiProps
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">My Target Revenue</p>
             <p className="text-2xl font-black text-slate-800 mt-1">₹{target.toLocaleString()}</p>
           </div>
-          <div className="p-3 bg-orange-500/10 text-orange-600 rounded-xl">
+          <div className="ds-button-primary p-3  /10 text-orange-600 rounded-xl">
             <Target className="h-6 w-6" />
           </div>
         </div>
@@ -866,7 +866,7 @@ export function TechnicianKpiPanel({ employees, employeeId }: TechnicianKpiProps
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">KPI Completion Index</p>
             <p className="text-2xl font-black text-slate-800 mt-1">{kpiPercentage}%</p>
           </div>
-          <div className="p-3 bg-emerald-500/10 text-emerald-600 rounded-xl">
+          <div className="ds-button-success p-3  /10 text-emerald-600 rounded-xl">
             <Percent className="h-6 w-6" />
           </div>
         </div>
@@ -1037,7 +1037,7 @@ export function TechnicianProfilePanel({ employees, employeeId: propsEmployeeId 
           <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-orange-600/30 to-indigo-600/30 pointer-events-none" />
           
           <div className="relative space-y-4">
-            <div className="w-20 h-20 bg-orange-500 rounded-2xl flex items-center justify-center border-4 border-slate-800 shadow-md text-white font-black text-3xl uppercase">
+            <div className="ds-button-primary w-20 h-20   rounded-2xl flex items-center justify-center border-4 border-slate-800 shadow-md text-white font-black text-3xl uppercase">
               {currentEmp.full_name.charAt(0)}
             </div>
             <div>
@@ -1129,7 +1129,7 @@ export function TechnicianProfilePanel({ employees, employeeId: propsEmployeeId 
         <form onSubmit={handleUpdate} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Mobile Number</label>
+              <label className="ds-label text-[10px] font-bold   uppercase tracking-wide">Mobile Number</label>
               <input
                 type="text"
                 value={mobile}
@@ -1141,7 +1141,7 @@ export function TechnicianProfilePanel({ employees, employeeId: propsEmployeeId 
             </div>
             
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Alternate Mobile Number</label>
+              <label className="ds-label text-[10px] font-bold   uppercase tracking-wide">Alternate Mobile Number</label>
               <input
                 type="text"
                 value={altMobile}
@@ -1152,7 +1152,7 @@ export function TechnicianProfilePanel({ employees, employeeId: propsEmployeeId 
             </div>
 
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Personal Email ID</label>
+              <label className="ds-label text-[10px] font-bold   uppercase tracking-wide">Personal Email ID</label>
               <input
                 type="email"
                 value={email}

@@ -116,7 +116,7 @@ export default function BillingExit() {
             </span>
             <input
               type="text"
-              className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+              className="ds-input w-full   border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
               placeholder="Search VRN, Job Card No, Customer..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -126,36 +126,36 @@ export default function BillingExit() {
 
         {/* Queue Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="ds-table w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 text-slate-500 text-xs font-semibold uppercase tracking-wider border-b border-slate-200">
-                <th className="p-4 pl-6">Job Card No</th>
-                <th className="p-4">VRN</th>
-                <th className="p-4">Customer Name</th>
-                <th className="p-4">Odometer</th>
-                <th className="p-4">Workshop Stage</th>
-                <th className="p-4 text-center">Action</th>
+                <th className="ds-th p-4 pl-6">Job Card No</th>
+                <th className="ds-th p-4">VRN</th>
+                <th className="ds-th p-4">Customer Name</th>
+                <th className="ds-th p-4">Odometer</th>
+                <th className="ds-th p-4">Workshop Stage</th>
+                <th className="ds-th p-4 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-500 font-medium">
+                  <td colSpan={6} className="ds-td p-8 text-center text-slate-500 font-medium">
                     Loading billing queue...
                   </td>
                 </tr>
               ) : filteredList.map((jc) => (
-                <tr key={jc.job_id} className="hover:bg-slate-50/50 transition">
-                  <td className="p-4 pl-6 font-semibold text-slate-900">{jc.job_card_no}</td>
-                  <td className="p-4 font-mono font-bold text-slate-800">{jc.vrn}</td>
-                  <td className="p-4">{jc.customer_name}</td>
-                  <td className="p-4">{jc.km_reading ? `${jc.km_reading} KM` : 'N/A'}</td>
-                  <td className="p-4">
+                <tr key={jc.job_id} className="ds-table-row hover:bg-slate-50/50 transition">
+                  <td className="ds-td p-4 pl-6 font-semibold text-slate-900">{jc.job_card_no}</td>
+                  <td className="ds-td p-4 font-mono font-bold text-slate-800">{jc.vrn}</td>
+                  <td className="ds-td p-4">{jc.customer_name}</td>
+                  <td className="ds-td p-4">{jc.km_reading ? `${jc.km_reading} KM` : 'N/A'}</td>
+                  <td className="ds-td p-4">
                     <span className="px-2.5 py-1 text-xs font-bold bg-indigo-50 text-indigo-700 rounded-full border border-indigo-100">
                       {jc.workshop_stage || 'Ready'}
                     </span>
                   </td>
-                  <td className="p-4 text-center">
+                  <td className="ds-td p-4 text-center">
                     <button
                       onClick={() => {
                         setBillingJobId(jc.job_id);
@@ -171,7 +171,7 @@ export default function BillingExit() {
               ))}
               {!loading && filteredList.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-400">
+                  <td colSpan={6} className="ds-td p-8 text-center text-slate-400">
                     No pending vehicles requiring billing in the workshop.
                   </td>
                 </tr>
@@ -202,7 +202,7 @@ export default function BillingExit() {
                   type="text"
                   required
                   placeholder="IDEVAN2026123456"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-950 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono tracking-wider"
+                  className="ds-input w-full   border border-slate-300 rounded-xl p-3 text-slate-950 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono tracking-wider"
                   value={invoiceNo}
                   onChange={(e) => setInvoiceNo(e.target.value.toUpperCase())}
                 />

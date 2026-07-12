@@ -330,10 +330,10 @@ export default function GateEntryManager({
           <div xmlns="http://www.w3.org/1999/xhtml" className="text-white p-2 h-full flex flex-col justify-between text-left font-sans select-none">
             <div className="flex justify-between items-center border-b border-slate-800 pb-1">
               <span className="text-[9px] font-black uppercase tracking-wider text-orange-400 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-ping"></span>
+                <span className="ds-button-primary w-1.5 h-1.5   rounded-full animate-ping"></span>
                 TATA Signa 4830.T
               </span>
-              <span className="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20 uppercase tracking-widest">
+              <span className="ds-button-primary text-[8px] font-extrabold px-1.5 py-0.5 rounded  /10 text-orange-400 border border-orange-500/20 uppercase tracking-widest">
                 Gate Registry Live
               </span>
             </div>
@@ -370,7 +370,7 @@ export default function GateEntryManager({
     <div className="space-y-6">
       {/* Success banner */}
       {success && (
-        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 rounded-xl flex items-center gap-3 text-xs animate-in slide-in-from-top-2 duration-200">
+        <div className="ds-button-success p-4  /10 border border-emerald-500/20 text-emerald-600 rounded-xl flex items-center gap-3 text-xs animate-in slide-in-from-top-2 duration-200">
           <CheckCircle className="h-5 w-5 shrink-0" />
           <span>{success}</span>
         </div>
@@ -718,7 +718,7 @@ export default function GateEntryManager({
 
             <button
               type="submit"
-              className="w-full py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow cursor-pointer"
+              className="ds-button-primary w-full py-2.5   hover:bg-orange-600 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow cursor-pointer"
             >
               <Plus className="h-4 w-4" />
               <span>Register Gate Inward & Issue Job Card</span>
@@ -784,36 +784,36 @@ export default function GateEntryManager({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-left text-xs">
+          <table className="ds-table w-full border-collapse text-left text-xs">
             <thead>
               <tr className="bg-slate-50/50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                <th className="py-3 px-5">Job Card / VRN</th>
-                <th className="py-3 px-5">Customer Profile</th>
-                <th className="py-3 px-5">Vehicle Specifics</th>
-                <th className="py-3 px-5 font-mono">Fuel & Odo</th>
-                <th className="py-3 px-5">Arrival State</th>
-                <th className="py-3 px-5 text-right">Gate Action</th>
+                <th className="ds-th py-3 px-5">Job Card / VRN</th>
+                <th className="ds-th py-3 px-5">Customer Profile</th>
+                <th className="ds-th py-3 px-5">Vehicle Specifics</th>
+                <th className="ds-th py-3 px-5 font-mono">Fuel & Odo</th>
+                <th className="ds-th py-3 px-5">Arrival State</th>
+                <th className="ds-th py-3 px-5 text-right">Gate Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {gatePasses.map((job) => (
-                <tr key={job.job_id} className="hover:bg-slate-50/50 transition-colors">
-                  <td className="py-3.5 px-5">
+                <tr key={job.job_id} className="ds-table-row hover:bg-slate-50/50 transition-colors">
+                  <td className="ds-td py-3.5 px-5">
                     <div className="font-mono font-bold text-slate-800">{job.job_card_no}</div>
                     <div className="mt-0.5 text-[10px] font-black text-indigo-600 tracking-wider uppercase bg-indigo-50 border border-indigo-100 px-1.5 py-0.2 rounded inline-block">
                       {job.vrn}
                     </div>
                   </td>
-                  <td className="py-3.5 px-5">
+                  <td className="ds-td py-3.5 px-5">
                     <div className="font-bold text-slate-700">{job.customer_name}</div>
                     <div className="text-[10px] text-slate-400 font-mono">{job.customer_mobile}</div>
                   </td>
-                  <td className="py-3.5 px-5">
+                  <td className="ds-td py-3.5 px-5">
                     {/* vehicle make is always TATA or Tata Motors in all logs */}
                     <div className="font-bold text-slate-700">TATA {job.vehicle_model}</div>
                     <div className="text-[10px] text-slate-400">Type: {job.sr_type || "General Service"}</div>
                   </td>
-                  <td className="py-3.5 px-5 font-mono">
+                  <td className="ds-td py-3.5 px-5 font-mono">
                     <div className="text-slate-700 flex items-center gap-1">
                       <Gauge className="h-3 w-3 text-slate-400" />
                       <span>{job.km_reading || "0"} KM</span>
@@ -827,7 +827,7 @@ export default function GateEntryManager({
                       })()}</span>
                     </div>
                   </td>
-                  <td className="py-3.5 px-5">
+                  <td className="ds-td py-3.5 px-5">
                     <div className="flex flex-col gap-1">
                       <div className="text-[10px] text-slate-400">
                         In: {job.created_at ? new Date(job.created_at).toLocaleString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "N/A"}
@@ -843,7 +843,7 @@ export default function GateEntryManager({
                       </span>
                     </div>
                   </td>
-                  <td className="py-3.5 px-5 text-right">
+                  <td className="ds-td py-3.5 px-5 text-right">
                     {job.status === "Invoiced" ? (
                       <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded">
                         Cleared Outward
@@ -851,7 +851,7 @@ export default function GateEntryManager({
                     ) : job.status === "Completed" ? (
                       <button
                         onClick={() => handleGateOut(job.job_id)}
-                        className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"
+                        className="ds-button-success px-2.5 py-1.5   hover:bg-emerald-700 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"
                       >
                         <LogOut className="h-3 w-3" />
                         <span>Issue Gate-Out Pass</span>
@@ -867,7 +867,7 @@ export default function GateEntryManager({
 
               {gatePasses.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center py-12 text-slate-400 font-medium">
+                  <td colSpan={6} className="ds-td text-center py-12 text-slate-400 font-medium">
                     No vehicles found in Gate Registry ledger.
                   </td>
                 </tr>
@@ -886,7 +886,7 @@ export default function GateEntryManager({
             {/* Header */}
             <div className="p-5 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                <div className="ds-button-success w-8 h-8 rounded-lg  /10 text-emerald-400 flex items-center justify-center">
                   <Camera className="h-4 w-4" />
                 </div>
                 <div>
@@ -905,7 +905,7 @@ export default function GateEntryManager({
             {/* Interactive Photo Upload Scanner Box */}
             <div 
               onClick={() => anprInputRef.current?.click()}
-              className="relative aspect-video bg-slate-950 hover:bg-slate-900/60 transition-all flex flex-col items-center justify-center border-b border-slate-800 overflow-hidden cursor-pointer group"
+              className="ds-card relative aspect-video bg-slate-950 hover:  transition-all flex flex-col items-center justify-center border-b   overflow-hidden cursor-pointer group"
             >
               <input 
                 type="file" 
@@ -953,7 +953,7 @@ export default function GateEntryManager({
                     className="p-3 bg-slate-950 border border-slate-800 rounded-xl hover:border-emerald-500 hover:bg-slate-900/60 transition-all cursor-pointer flex items-center justify-between group"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono text-xs font-bold rounded-lg group-hover:scale-105 transition-transform">
+                      <div className="ds-button-success px-2.5 py-1  /10 border border-emerald-500/20 text-emerald-400 font-mono text-xs font-bold rounded-lg group-hover:scale-105 transition-transform">
                         {item.vrn}
                       </div>
                       <div>
@@ -979,7 +979,7 @@ export default function GateEntryManager({
                   setAnprFailed(true);
                   setShowAnprModal(false);
                 }}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-350 border border-slate-700 rounded-xl text-xs font-bold cursor-pointer transition-colors"
+                className="ds-button-secondary px-4 py-2     text-slate-350 border border-slate-700 rounded-xl text-xs font-bold cursor-pointer transition-colors"
               >
                 Bypass & Enter Manually
               </button>
@@ -1005,7 +1005,7 @@ export default function GateEntryManager({
             {/* Header */}
             <div className="p-5 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-orange-500/10 text-orange-400 flex items-center justify-center">
+                <div className="ds-button-primary w-8 h-8 rounded-lg  /10 text-orange-400 flex items-center justify-center">
                   <Gauge className="h-4 w-4" />
                 </div>
                 <div>
@@ -1073,12 +1073,12 @@ export default function GateEntryManager({
 
                 {/* Scanning line indicator */}
                 {odoScanning && (
-                  <div className="absolute left-0 right-0 h-0.5 bg-orange-500 shadow-[0_0_10px_#f97316] animate-bounce z-20"></div>
+                  <div className="ds-button-primary absolute left-0 right-0 h-0.5   shadow-[0_0_10px_#f97316] animate-bounce z-20"></div>
                 )}
               </div>
 
               {odoCapturedText && (
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] leading-relaxed flex items-start gap-2.5">
+                <div className="ds-button-success p-3  /10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] leading-relaxed flex items-start gap-2.5">
                   <Check className="h-4 w-4 shrink-0 mt-0.5" />
                   <span>{odoCapturedText}</span>
                 </div>
@@ -1128,7 +1128,7 @@ export default function GateEntryManager({
                 <button
                   type="button"
                   onClick={() => setShowOdoModal(false)}
-                  className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold cursor-pointer"
+                  className="ds-button-primary px-4 py-2   hover:bg-orange-600 text-white rounded-xl text-xs font-bold cursor-pointer"
                 >
                   Verify & Confirm
                 </button>
@@ -1147,7 +1147,7 @@ export default function GateEntryManager({
             {/* Header */}
             <div className="p-5 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-orange-500/10 text-orange-400 flex items-center justify-center">
+                <div className="ds-button-primary w-8 h-8 rounded-lg  /10 text-orange-400 flex items-center justify-center">
                   <Fuel className="h-4 w-4" />
                 </div>
                 <div>
@@ -1192,7 +1192,7 @@ export default function GateEntryManager({
               </div>
 
               {fuelCapturedText && (
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] leading-relaxed flex items-start gap-2.5">
+                <div className="ds-button-success p-3  /10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] leading-relaxed flex items-start gap-2.5">
                   <Check className="h-4 w-4 shrink-0 mt-0.5" />
                   <span>{fuelCapturedText}</span>
                 </div>
@@ -1264,7 +1264,7 @@ export default function GateEntryManager({
                 <button
                   type="button"
                   onClick={() => setShowFuelModal(false)}
-                  className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold cursor-pointer"
+                  className="ds-button-primary px-4 py-2   hover:bg-orange-600 text-white rounded-xl text-xs font-bold cursor-pointer"
                 >
                   Confirm & Sync Needle
                 </button>
@@ -1281,7 +1281,7 @@ export default function GateEntryManager({
             {/* Header */}
             <div className="p-5 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-orange-500/10 text-orange-400 flex items-center justify-center">
+                <div className="ds-button-primary w-8 h-8 rounded-lg  /10 text-orange-400 flex items-center justify-center">
                   <FileText className="h-4 w-4" />
                 </div>
                 <div>
@@ -1341,7 +1341,7 @@ export default function GateEntryManager({
 
                 {/* Scanning line indicator */}
                 {chassisScanning && (
-                  <div className="absolute left-0 right-0 h-0.5 bg-orange-500 shadow-[0_0_10px_#f97316] animate-bounce z-20"></div>
+                  <div className="ds-button-primary absolute left-0 right-0 h-0.5   shadow-[0_0_10px_#f97316] animate-bounce z-20"></div>
                 )}
               </div>
 

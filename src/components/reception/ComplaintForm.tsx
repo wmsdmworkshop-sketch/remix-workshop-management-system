@@ -175,7 +175,7 @@ export default function ComplaintForm({
         )}
 
         <div className="space-y-1">
-          <label htmlFor="compDesc" className="text-xs text-slate-400">Description</label>
+          <label htmlFor="compDesc" className="ds-label text-xs  ">Description</label>
           <textarea
             id="compDesc"
             value={description}
@@ -188,7 +188,7 @@ export default function ComplaintForm({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1">
-            <label htmlFor="compCategory" className="text-xs text-slate-400">Category</label>
+            <label htmlFor="compCategory" className="ds-label text-xs  ">Category</label>
             <select
               id="compCategory"
               value={category}
@@ -207,7 +207,7 @@ export default function ComplaintForm({
           </div>
 
           <div className="space-y-1">
-            <label htmlFor="compPriority" className="text-xs text-slate-400">Priority Level</label>
+            <label htmlFor="compPriority" className="ds-label text-xs  ">Priority Level</label>
             <select
               id="compPriority"
               value={priority}
@@ -230,7 +230,7 @@ export default function ComplaintForm({
             <button
               type="button"
               onClick={stopRecording}
-              className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-xs rounded-lg flex items-center gap-1.5 animate-pulse"
+              className="ds-button-danger px-3 py-2   hover:bg-red-700 text-white text-xs rounded-lg flex items-center gap-1.5 animate-pulse"
               aria-label="Stop recording speech-to-text"
             >
               <StopCircle className="h-4 w-4" /> Stop Recording

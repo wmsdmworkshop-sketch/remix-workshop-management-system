@@ -1113,6 +1113,48 @@ export async function ensureTablesExist(): Promise<void> {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
 
+  // Create Workflow History / Event Store Table
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS \`tbl_workflow_history\` (
+      \`history_id\` INT NOT NULL AUTO_INCREMENT,
+      \`job_id\` INT NOT NULL,
+      \`old_state\` TEXT NULL,
+      \`new_state\` TEXT NOT NULL,
+      \`queue\` TEXT NULL,
+      \`sla_status\` TEXT NULL,
+      \`etd\` TIMESTAMP NULL DEFAULT NULL,
+      \`transition_by\` INT DEFAULT NULL,
+      \`transition_time\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`duration\` INT DEFAULT NULL,
+      \`reason\` TEXT NULL,
+      PRIMARY KEY (\`history_id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  const workflowHistoryCols = [
+    { name: "event_id", type: "VARCHAR(100) DEFAULT NULL" },
+    { name: "correlation_id", type: "VARCHAR(100) DEFAULT NULL" },
+    { name: "parent_event_id", type: "VARCHAR(100) DEFAULT NULL" },
+    { name: "sequence_number", type: "INT DEFAULT NULL" },
+    { name: "source_system", type: "VARCHAR(100) DEFAULT NULL" },
+    { name: "event_version", type: "VARCHAR(10) DEFAULT NULL" },
+    { name: "event_status", type: "VARCHAR(50) DEFAULT NULL" },
+    { name: "event_category", type: "VARCHAR(50) DEFAULT NULL" },
+    { name: "source", type: "VARCHAR(100) DEFAULT NULL" },
+    { name: "event_type", type: "VARCHAR(100) DEFAULT NULL" },
+    { name: "user", type: "VARCHAR(100) DEFAULT NULL" },
+    { name: "role", type: "VARCHAR(100) DEFAULT NULL" },
+    { name: "workshop_id", type: "INT DEFAULT NULL" },
+    { name: "payload", type: "TEXT DEFAULT NULL" }
+  ];
+  for (const col of workflowHistoryCols) {
+    try {
+      await db.execute(`ALTER TABLE \`tbl_workflow_history\` ADD COLUMN \`${col.name}\` ${col.type}`);
+    } catch (e) {
+      // Ignore if column already exists
+    }
+  }
+
   console.log("Database table verification completed.");
 }
 
@@ -1267,6 +1309,7 @@ export async function syncLoad(): Promise<any> {
     const [alertLogs] = await db.query("SELECT * FROM alert_logs") as any[];
     const [dmsImportBatches] = await db.query("SELECT * FROM dms_import_batches") as any[];
     const [dmsImportRows] = await db.query("SELECT * FROM dms_import_rows") as any[];
+    const [workflowHistory] = await db.query("SELECT * FROM tbl_workflow_history") as any[];
 
     // Overtime module tables
     const [workshops] = await db.query("SELECT * FROM workshops") as any[];
@@ -1447,6 +1490,7 @@ export async function syncLoad(): Promise<any> {
     cacheRows("overtime_requests", overtimeRequests, "ot_id");
     cacheRows("overtime_attachments", overtimeAttachments, "attachment_id");
     cacheRows("overtime_workflow_history", overtimeWorkflowHistory, "history_id");
+    cacheRows("tbl_workflow_history", workflowHistory, "history_id");
     cacheRows("overtime_api_logs", overtimeApiLogs, "log_id");
     cacheRows("overtime_audit_logs", overtimeAuditLogs, "log_id");
     cacheRows("breakdowns", breakdowns, "breakdown_id");
@@ -1523,7 +1567,8 @@ export async function syncLoad(): Promise<any> {
       breakdowns: mapBooleans(breakdowns || [], ["vehicle_movable", "towing_required", "parts_required", "resolved_at_site"]),
       qrtTeams: mapBooleans(qrtTeams || [], ["availability"]),
       breakdownAttachments: breakdownAttachments || [],
-      breakdownCommunications: breakdownCommunications || []
+      breakdownCommunications: breakdownCommunications || [],
+      workflowHistory: workflowHistory || []
     };
   } catch (error) {
     console.error("Database sync load failed, falling back to local file:", error);
@@ -1595,6 +1640,9 @@ export async function syncSave(data: any): Promise<void> {
     await upsertRows("qrt_teams", data.qrtTeams || [], "qrt_id");
     await upsertRows("breakdown_attachments", data.breakdownAttachments || [], "attachment_id");
     await upsertRows("breakdown_communications", data.breakdownCommunications || [], "communication_id");
+
+    // Workflow history / Event Store sync save
+    await upsertRows("tbl_workflow_history", data.workflowHistory || [], "history_id");
 
     console.log("MySQL DB sync save completed successfully!");
   } catch (error) {

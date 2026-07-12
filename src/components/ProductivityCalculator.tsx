@@ -429,7 +429,7 @@ export default function ProductivityCalculator({
             <h4 className="text-[10px] font-black uppercase text-slate-800 tracking-wider">{aiModeEnabled ? "Review Extracted Invoice Data" : "Enter Invoice Details"}</h4>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Invoice No</label>
+                <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">Invoice No</label>
                 <input 
                   type="text" 
                   value={invoiceNo}
@@ -438,7 +438,7 @@ export default function ProductivityCalculator({
                 />
               </div>
               <div>
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">JC No</label>
+                <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">JC No</label>
                 <input 
                   type="text" 
                   value={jcNo}
@@ -447,7 +447,7 @@ export default function ProductivityCalculator({
                 />
               </div>
               <div>
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Labour Charges (₹)</label>
+                <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">Labour Charges (₹)</label>
                 <input 
                   type="number" 
                   value={labourAmount}
@@ -456,7 +456,7 @@ export default function ProductivityCalculator({
                 />
               </div>
               <div>
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Parts Value (₹)</label>
+                <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">Parts Value (₹)</label>
                 <input 
                   type="number" 
                   value={partsAmount}
@@ -465,7 +465,7 @@ export default function ProductivityCalculator({
                 />
               </div>
               <div>
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">VRN (Vehicle Reg)</label>
+                <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">VRN (Vehicle Reg)</label>
                 <input 
                   type="text" 
                   value={vrn}
@@ -474,7 +474,7 @@ export default function ProductivityCalculator({
                 />
               </div>
               <div>
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Mileage (Odo KM)</label>
+                <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">Mileage (Odo KM)</label>
                 <input 
                   type="number" 
                   value={mileage}
@@ -483,7 +483,7 @@ export default function ProductivityCalculator({
                 />
               </div>
               <div className="col-span-2">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Customer Name</label>
+                <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">Customer Name</label>
                 <input 
                   type="text" 
                   value={customerName}
@@ -492,7 +492,7 @@ export default function ProductivityCalculator({
                 />
               </div>
               <div>
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Chassis No (VIN)</label>
+                <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">Chassis No (VIN)</label>
                 <input 
                   type="text" 
                   value={chassisNo}
@@ -501,7 +501,7 @@ export default function ProductivityCalculator({
                 />
               </div>
               <div>
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Engine No</label>
+                <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">Engine No</label>
                 <input 
                   type="text" 
                   value={engineNo}
@@ -513,7 +513,7 @@ export default function ProductivityCalculator({
 
             {/* Checkbox selector for employees assigned */}
             <div className="space-y-1.5">
-              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Assigned Technicians (Check to include)</label>
+              <label className="ds-label text-[9px] font-bold   uppercase tracking-wider block">Assigned Technicians (Check to include)</label>
               <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto border border-slate-200 rounded-lg p-2.5 bg-slate-50/50">
                 {employees.filter(e => e.is_active).map(emp => (
                   <label key={emp.employee_id} className="flex items-center gap-2 text-[10px] font-bold text-slate-700 cursor-pointer">
@@ -666,34 +666,34 @@ export default function ProductivityCalculator({
                 </div>
 
                 <div className="border border-slate-200 rounded-xl overflow-hidden">
-                  <table className="w-full text-left text-xs border-collapse">
+                  <table className="ds-table w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-[9px] font-black text-slate-400 uppercase tracking-wider">
-                        <th className="p-2.5">JC No</th>
-                        <th className="p-2.5">Advisor / Techs</th>
-                        <th className="p-2.5">Odometer</th>
-                        <th className="p-2.5">Cost</th>
-                        <th className="p-2.5">Date</th>
+                        <th className="ds-th p-2.5">JC No</th>
+                        <th className="ds-th p-2.5">Advisor / Techs</th>
+                        <th className="ds-th p-2.5">Odometer</th>
+                        <th className="ds-th p-2.5">Cost</th>
+                        <th className="ds-th p-2.5">Date</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-medium">
                       {searchHistory.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="p-6 text-center text-slate-400 font-bold uppercase text-[10px]">
+                          <td colSpan={5} className="ds-td p-6 text-center text-slate-400 font-bold uppercase text-[10px]">
                             {vrnSearch ? "No service history records found for this VRN" : "Enter a VRN above to retrieve Tata Motors CRM history"}
                           </td>
                         </tr>
                       ) : (
                         searchHistory.map((jc, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50/50">
-                            <td className="p-2.5 font-bold text-slate-900">{jc.job_card_no}</td>
-                            <td className="p-2.5">
+                          <tr key={idx} className="ds-table-row hover:bg-slate-50/50">
+                            <td className="ds-td p-2.5 font-bold text-slate-900">{jc.job_card_no}</td>
+                            <td className="ds-td p-2.5">
                               <p className="text-[10px] font-bold text-slate-800">{jc.service_advisor || "advisor"}</p>
                               <p className="text-[9px] text-slate-400 uppercase">{jc.technician_name || "techs"}</p>
                             </td>
-                            <td className="p-2.5 font-mono">{jc.km_reading ? `${jc.km_reading.toLocaleString()} KM` : "N/A"}</td>
-                            <td className="p-2.5 font-mono text-emerald-600 font-bold">₹{((jc.labor_price || 0) + (jc.parts_price || 0)).toLocaleString()}</td>
-                            <td className="p-2.5 text-slate-500 font-bold">{new Date(jc.created_at).toLocaleDateString()}</td>
+                            <td className="ds-td p-2.5 font-mono">{jc.km_reading ? `${jc.km_reading.toLocaleString()} KM` : "N/A"}</td>
+                            <td className="ds-td p-2.5 font-mono text-emerald-600 font-bold">₹{((jc.labor_price || 0) + (jc.parts_price || 0)).toLocaleString()}</td>
+                            <td className="ds-td p-2.5 text-slate-500 font-bold">{new Date(jc.created_at).toLocaleDateString()}</td>
                           </tr>
                         ))
                       )}
@@ -716,7 +716,7 @@ export default function ProductivityCalculator({
                   />
                   <button
                     onClick={handleSimulateAutoFill}
-                    className="px-3 bg-orange-500 text-white rounded-lg text-xs font-bold hover:bg-orange-600 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    className="ds-button-primary px-3   text-white rounded-lg text-xs font-bold hover:bg-orange-600 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
                   >
                     <Sparkles className="h-3.5 w-3.5" />
                     Auto-Fill JC
@@ -773,7 +773,7 @@ export default function ProductivityCalculator({
                 <button
                   onClick={handleCommitToDatabase}
                   disabled={loading || selectedTechs.length === 0}
-                  className="w-full py-2.5 bg-orange-500 hover:bg-orange-600 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-lg text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                  className="ds-button-primary w-full py-2.5   hover:bg-orange-600 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-lg text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
                 >
                   <Save className="h-4 w-4" />
                   {loading ? "Writing to Database..." : "Commit Extracted Invoice & Splits"}

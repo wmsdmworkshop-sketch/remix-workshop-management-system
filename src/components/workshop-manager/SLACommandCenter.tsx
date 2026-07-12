@@ -88,7 +88,7 @@ export const SLACommandCenter: React.FC<SLACommandCenterProps> = React.memo(({
         </div>
 
         {/* Emergency Vehicle Queue */}
-        <div className="bg-orange-500/5 border border-orange-500/25 rounded-xl p-3 flex flex-col justify-between">
+        <div className="ds-button-primary  /5 border border-orange-500/25 rounded-xl p-3 flex flex-col justify-between">
           <span className="text-[9px] font-bold text-orange-400 uppercase tracking-wider">Breakdowns / SOS</span>
           <span className="text-2xl font-black text-orange-500 mt-1">{activeMetrics.emergencyCount}</span>
           <span className="text-[9px] text-slate-500 mt-1 uppercase font-semibold">Immediate Priority</span>

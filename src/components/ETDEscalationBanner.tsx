@@ -279,7 +279,7 @@ export default function ETDEscalationBanner({ currentUser }: ETDEscalationBanner
                 <button
                   onClick={() => acknowledge(esc.escalation_id)}
                   disabled={ackLoading === esc.escalation_id}
-                  className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-all disabled:opacity-50"
+                  className="ds-button-success flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover: /30 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-all disabled:opacity-50"
                 >
                   {ackLoading === esc.escalation_id
                     ? <FunnySpinner className="h-3.5 w-3.5" />

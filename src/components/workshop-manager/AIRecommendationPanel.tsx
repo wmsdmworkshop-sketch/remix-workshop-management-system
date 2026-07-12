@@ -79,7 +79,7 @@ export const AIRecommendationPanel: React.FC<AIRecommendationPanelProps> = React
           <div key={rec.id} className="border border-slate-800 rounded-xl p-3 bg-slate-950/20 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-mono font-bold text-slate-200">{rec.vehicle}</span>
-              <span className="text-[10px] bg-emerald-500/10 text-emerald-400 font-bold px-2 py-0.5 rounded border border-emerald-500/20">
+              <span className="ds-button-success text-[10px]  /10 text-emerald-400 font-bold px-2 py-0.5 rounded border border-emerald-500/20">
                 {rec.confidence} Confidence
               </span>
             </div>
@@ -104,7 +104,7 @@ export const AIRecommendationPanel: React.FC<AIRecommendationPanelProps> = React
               {onApplyOverride && (
                 <button
                   onClick={() => onApplyOverride(rec.id)}
-                  className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-[9px] uppercase tracking-wider rounded-md transition-colors flex items-center gap-1"
+                  className="ds-button-success ds-button-success px-2.5 py-1   hover:  text-white font-bold text-[9px] uppercase tracking-wider rounded-md transition-colors flex items-center gap-1"
                 >
                   Apply Recommendation <ChevronRight className="h-3 w-3" />
                 </button>

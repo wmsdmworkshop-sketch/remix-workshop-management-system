@@ -334,7 +334,7 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
           </span>
           {geofenceStatus ? (
             geofenceStatus.within ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
+              <span className="ds-button-success inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black  /10 text-emerald-400 border border-emerald-500/25">
                 ● WITHIN WORKSHOP GEOFENCE
               </span>
             ) : (
@@ -406,7 +406,7 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
       )}
 
       {successMsg && (
-        <div className="flex items-start gap-2.5 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-xs font-semibold animate-bounce">
+        <div className="ds-button-success flex items-start gap-2.5 p-3 rounded-lg  /10 border border-emerald-500/25 text-emerald-400 text-xs font-semibold animate-bounce">
           <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
           <span>{successMsg}</span>
         </div>
@@ -460,7 +460,7 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
         {/* Dynamic Punch Form Details */}
         {!attendance?.check_in && (
           <div className="space-y-1.5 bg-slate-950 p-3 rounded-xl border border-slate-800/80">
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+            <label className="ds-label block text-[10px] font-bold   uppercase tracking-wider">
               Reason for Late Arrival (If Past 9:15 AM Shift Start)
             </label>
             <select
@@ -481,7 +481,7 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
 
         {attendance?.check_in && !attendance?.check_out && (
           <div className="space-y-1.5 bg-slate-950 p-3 rounded-xl border border-slate-800/80">
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+            <label className="ds-label block text-[10px] font-bold   uppercase tracking-wider">
               Overtime Hours Worked (Claim Code Approval Required)
             </label>
             <input
@@ -513,7 +513,7 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
               <button
                 onClick={() => handlePunch("break_end")}
                 disabled={punching || !coords || !attendance.break_start || !!attendance.break_end}
-                className="py-3 px-4 rounded-xl font-extrabold text-xs uppercase tracking-wider text-white transition-all bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:bg-slate-850 flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+                className="ds-button-success ds-button-success py-3 px-4 rounded-xl font-extrabold text-xs uppercase tracking-wider text-white transition-all   hover:  disabled:opacity-40 disabled:bg-slate-850 flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
               >
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 {attendance.break_end ? "Break Ended" : "End Break"}

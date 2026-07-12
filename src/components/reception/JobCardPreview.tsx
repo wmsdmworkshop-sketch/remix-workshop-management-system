@@ -47,7 +47,7 @@ export default function JobCardPreview({
   if (isLoading) {
     return (
       <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl text-center space-y-3 animate-pulse">
-        <div className="w-10 h-10 bg-orange-500/20 rounded-full flex items-center justify-center mx-auto text-orange-500">
+        <div className="ds-button-primary w-10 h-10  /20 rounded-full flex items-center justify-center mx-auto text-orange-500">
           <Clock className="h-5 w-5 animate-spin" />
         </div>
         <p className="text-sm font-semibold text-slate-300">Compiling live workspace telemetry...</p>
@@ -118,12 +118,12 @@ export default function JobCardPreview({
         </div>
 
         {/* --- GEMMA-4 RECEPTION AI ANALYTICS --- */}
-        <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 space-y-4">
+        <div className="ds-button-success  /5 border border-emerald-500/20 rounded-xl p-4 space-y-4">
           <div className="flex items-center justify-between border-b border-emerald-500/10 pb-2">
             <div className="flex items-center gap-1.5">
               <span className="flex h-2 w-2 relative">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                <span className="ds-button-success relative inline-flex rounded-full h-2 w-2  "></span>
               </span>
               <span className="text-[10px] font-black uppercase text-emerald-400 tracking-wider">
                 🧠 Gemma-4 Diagnostic & Routing Engine
@@ -131,7 +131,7 @@ export default function JobCardPreview({
             </div>
             <div className="flex items-center gap-1">
               <span className="text-[8px] uppercase font-black text-slate-450">Confidence:</span>
-              <span className="text-[10px] font-black text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">
+              <span className="ds-button-success text-[10px] font-black text-emerald-400  /10 px-1.5 py-0.5 rounded">
                 {data.confidence}
               </span>
             </div>

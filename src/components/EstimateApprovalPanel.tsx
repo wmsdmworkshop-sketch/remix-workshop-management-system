@@ -174,13 +174,13 @@ export default function EstimateApprovalPanel({
           <Calculator className="h-3.5 w-3.5 text-slate-500" />
           <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Cost Breakdown</span>
         </div>
-        <table className="w-full">
+        <table className="ds-table w-full">
           <tbody>
             {breakdownRows.map((row, i) => (
               <React.Fragment key={row.label}>
-                {row.separator && <tr><td colSpan={2} className="border-t border-slate-700/60" /></tr>}
+                {row.separator && <tr><td colSpan={2} className="ds-td border-t border-slate-700/60" /></tr>}
                 <tr className={`${row.bold ? "bg-slate-800/40" : ""}`}>
-                  <td className="px-4 py-2.5">
+                  <td className="ds-td px-4 py-2.5">
                     <span className="flex items-center gap-2 text-xs text-slate-400">
                       {row.icon}
                       {row.label}
@@ -198,7 +198,7 @@ export default function EstimateApprovalPanel({
 
       {/* Channel selector */}
       <div>
-        <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <label className="ds-label text-[11px] font-bold   uppercase tracking-wider mb-2 flex items-center gap-1.5">
           <Send className="h-3.5 w-3.5" />
           Communication Channel
         </label>
@@ -244,7 +244,7 @@ export default function EstimateApprovalPanel({
         <button
           onClick={() => submit("approved")}
           disabled={!!loading}
-          className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-400 text-sm font-bold transition-all disabled:opacity-50"
+          className="ds-button-success flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover: /15 text-emerald-400 text-sm font-bold transition-all disabled:opacity-50"
         >
           {loading === "approve"
             ? <FunnySpinner className="h-4 w-4" />

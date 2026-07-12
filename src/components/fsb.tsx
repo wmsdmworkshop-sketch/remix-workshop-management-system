@@ -119,7 +119,7 @@ export default function FsbManager() {
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-2">Select Active Job Card</label>
               <select
-                className="w-full bg-slate-50 border border-slate-300 text-slate-950 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none transition"
+                className="ds-select w-full   border border-slate-300 text-slate-950 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none transition"
                 value={selectedJobId || ''}
                 onChange={(e) => {
                   const jId = Number(e.target.value);
@@ -208,24 +208,24 @@ export default function FsbManager() {
           </div>
           
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="ds-table w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 text-slate-500 text-xs font-semibold uppercase tracking-wider border-b border-slate-200">
-                  <th className="p-4 pl-6">Job Card No</th>
-                  <th className="p-4">VRN</th>
-                  <th className="p-4">Vehicle Model</th>
-                  <th className="p-4">FSB status</th>
+                  <th className="ds-th p-4 pl-6">Job Card No</th>
+                  <th className="ds-th p-4">VRN</th>
+                  <th className="ds-th p-4">Vehicle Model</th>
+                  <th className="ds-th p-4">FSB status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm text-slate-700">
                 {jobCards.map((jc) => {
                   const status = getFsbStatusForJob(jc.job_id);
                   return (
-                    <tr key={jc.job_id} className="hover:bg-slate-50/50 transition">
-                      <td className="p-4 pl-6 font-semibold text-slate-900">{jc.job_card_no}</td>
-                      <td className="p-4">{jc.vrn}</td>
-                      <td className="p-4">{jc.vehicle_model}</td>
-                      <td className="p-4">
+                    <tr key={jc.job_id} className="ds-table-row hover:bg-slate-50/50 transition">
+                      <td className="ds-td p-4 pl-6 font-semibold text-slate-900">{jc.job_card_no}</td>
+                      <td className="ds-td p-4">{jc.vrn}</td>
+                      <td className="ds-td p-4">{jc.vehicle_model}</td>
+                      <td className="ds-td p-4">
                         <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${getBadgeClass(status)}`}>
                           {getStatusIcon(status)}
                           {status}
@@ -236,7 +236,7 @@ export default function FsbManager() {
                 })}
                 {jobCards.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="p-8 text-center text-slate-400">
+                    <td colSpan={4} className="ds-td p-8 text-center text-slate-400">
                       No active job cards found.
                     </td>
                   </tr>

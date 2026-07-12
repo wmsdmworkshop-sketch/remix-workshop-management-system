@@ -559,7 +559,7 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Allocated Rev</p>
             <p className="text-xl font-black text-slate-900">₹{summaryStats.totalRevenue.toLocaleString()}</p>
           </div>
-          <div className="h-10 w-10 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-600">
+          <div className="ds-button-primary h-10 w-10 rounded-lg  /10 border border-orange-500/20 flex items-center justify-center text-orange-600">
             <DollarSign className="h-5 w-5" />
           </div>
         </div>
@@ -633,7 +633,7 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
 
           {/* Roster Table */}
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse" id="productivity-roster-table">
+            <table className="ds-table w-full text-left border-collapse" id="productivity-roster-table">
               <thead>
                 <tr className="bg-slate-50/75 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                   <th onClick={() => handleSort("full_name")} className="p-3 cursor-pointer select-none hover:bg-slate-100 transition-colors">
@@ -657,13 +657,13 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
                   <th onClick={() => handleSort("tml_claim_pct")} className="p-3 text-right cursor-pointer select-none hover:bg-slate-100 transition-colors">
                     <span className="flex items-center justify-end gap-1">TML Claim % {renderSortArrow("tml_claim_pct")}</span>
                   </th>
-                  <th className="p-3 text-center select-none">Actions</th>
+                  <th className="ds-th p-3 text-center select-none">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
                 {filteredEmployees.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-12 text-slate-400 font-medium">
+                    <td colSpan={8} className="ds-td text-center py-12 text-slate-400 font-medium">
                       No employees found matching the filters. Paste a sheets report to import metrics.
                     </td>
                   </tr>
@@ -686,10 +686,10 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
                     }
 
                     return (
-                      <tr key={emp.employee_id} className="hover:bg-slate-50/50 transition-all font-medium text-slate-700">
+                      <tr key={emp.employee_id} className="ds-table-row hover:bg-slate-50/50 transition-all font-medium text-slate-700">
                         
                         {/* Name */}
-                        <td className="p-3 font-bold text-slate-900">
+                        <td className="ds-td p-3 font-bold text-slate-900">
                           <div className="flex items-center gap-2">
                             <div className="h-7 w-7 rounded-md bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-600">
                               {emp.full_name.split(" ").map(n => n[0]).join("")}
@@ -702,10 +702,10 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
                         </td>
 
                         {/* Role */}
-                        <td className="p-3 text-slate-500 text-[11px] font-bold uppercase">{emp.role}</td>
+                        <td className="ds-td p-3 text-slate-500 text-[11px] font-bold uppercase">{emp.role}</td>
 
                         {/* Allocated Revenue */}
-                        <td className="p-3 text-right">
+                        <td className="ds-td p-3 text-right">
                           {isEditing ? (
                             <input 
                               type="number"
@@ -719,7 +719,7 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
                         </td>
 
                         {/* Target */}
-                        <td className="p-3 text-right">
+                        <td className="ds-td p-3 text-right">
                           {isEditing ? (
                             <input 
                               type="number"
@@ -733,7 +733,7 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
                         </td>
 
                         {/* % to Target */}
-                        <td className="p-3 text-center">
+                        <td className="ds-td p-3 text-center">
                           <div className="space-y-1 flex flex-col items-center">
                             <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border uppercase tracking-wider ${textColor}`}>
                               {pct.toFixed(1)}%
@@ -747,7 +747,7 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
                         </td>
 
                         {/* Paid % */}
-                        <td className="p-3 text-right font-mono text-[11px]">
+                        <td className="ds-td p-3 text-right font-mono text-[11px]">
                           {isEditing ? (
                             <input 
                               type="text"
@@ -761,7 +761,7 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
                         </td>
 
                         {/* TML Claim % */}
-                        <td className="p-3 text-right font-mono text-[11px]">
+                        <td className="ds-td p-3 text-right font-mono text-[11px]">
                           {isEditing ? (
                             <input 
                               type="text"
@@ -775,7 +775,7 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
                         </td>
 
                         {/* Actions */}
-                        <td className="p-3 text-center">
+                        <td className="ds-td p-3 text-center">
                           {isEditing ? (
                             <div className="flex items-center justify-center gap-1.5">
                               <button 
@@ -1006,7 +1006,7 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
                   id="submit-sync-productivity-btn"
                   onClick={handleImportSubmit}
                   disabled={isImporting}
-                  className="px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white text-xs font-bold uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5"
+                  className="ds-button-primary px-4 py-2 rounded-lg   hover:bg-orange-600 disabled:bg-orange-300 text-white text-xs font-bold uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5"
                 >
                   {isImporting ? (
                     <>
@@ -1023,26 +1023,26 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
               </div>
 
               <div className="max-h-80 overflow-y-auto border border-slate-200/60 rounded-lg bg-white shadow-2xs">
-                <table className="w-full text-left text-xs border-collapse font-medium">
+                <table className="ds-table w-full text-left text-xs border-collapse font-medium">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      <th className="p-2.5">Name</th>
-                      <th className="p-2.5">Role</th>
-                      <th className="p-2.5 text-right">Revenue</th>
-                      <th className="p-2.5 text-right">Target</th>
-                      <th className="p-2.5 text-right">Paid</th>
-                      <th className="p-2.5 text-right">TML Claim</th>
+                      <th className="ds-th p-2.5">Name</th>
+                      <th className="ds-th p-2.5">Role</th>
+                      <th className="ds-th p-2.5 text-right">Revenue</th>
+                      <th className="ds-th p-2.5 text-right">Target</th>
+                      <th className="ds-th p-2.5 text-right">Paid</th>
+                      <th className="ds-th p-2.5 text-right">TML Claim</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {importPreview.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/50 text-slate-700">
-                        <td className="p-2.5 font-bold text-slate-900">{item.full_name}</td>
-                        <td className="p-2.5 uppercase text-[10px] text-slate-500">{item.role}</td>
-                        <td className="p-2.5 text-right font-mono text-slate-900">₹{item.allocated_revenue.toLocaleString()}</td>
-                        <td className="p-2.5 text-right font-mono text-slate-900">₹{item.target_revenue.toLocaleString()}</td>
-                        <td className="p-2.5 text-right font-mono text-slate-500">{item.paid_pct}</td>
-                        <td className="p-2.5 text-right font-mono text-slate-600">{item.tml_claim_pct}</td>
+                      <tr key={idx} className="ds-table-row hover:bg-slate-50/50 text-slate-700">
+                        <td className="ds-td p-2.5 font-bold text-slate-900">{item.full_name}</td>
+                        <td className="ds-td p-2.5 uppercase text-[10px] text-slate-500">{item.role}</td>
+                        <td className="ds-td p-2.5 text-right font-mono text-slate-900">₹{item.allocated_revenue.toLocaleString()}</td>
+                        <td className="ds-td p-2.5 text-right font-mono text-slate-900">₹{item.target_revenue.toLocaleString()}</td>
+                        <td className="ds-td p-2.5 text-right font-mono text-slate-500">{item.paid_pct}</td>
+                        <td className="ds-td p-2.5 text-right font-mono text-slate-600">{item.tml_claim_pct}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1104,7 +1104,7 @@ export default function ProductivityDashboard({ employees, jobCards, onRefresh, 
                 </button>
                 <button 
                   type="submit"
-                  className="w-1/2 text-center text-xs font-bold py-2 bg-orange-500 hover:bg-orange-600 text-white rounded shadow-sm transition-all cursor-pointer"
+                  className="ds-button-primary w-1/2 text-center text-xs font-bold py-2   hover:bg-orange-600 text-white rounded shadow-sm transition-all cursor-pointer"
                 >
                   Verify PIN
                 </button>

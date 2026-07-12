@@ -96,7 +96,7 @@ export const QueueHeatMap: React.FC<QueueHeatMapProps> = React.memo(({
 
       <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-slate-800 shrink-0 text-center text-[10px] font-bold text-slate-400">
         <div>
-          <span className="inline-block w-2 h-2 rounded bg-emerald-500 mr-1" />
+          <span className="ds-button-success inline-block w-2 h-2 rounded   mr-1" />
           <span>Optimal</span>
         </div>
         <div>

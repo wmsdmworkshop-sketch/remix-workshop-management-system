@@ -144,7 +144,7 @@ export default function InspectionChecklist({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-slate-950 p-4 rounded-xl border border-slate-800">
           <div className="space-y-2">
             <div className="flex justify-between items-center">
-              <label htmlFor="fuelSlider" className="text-xs text-slate-400 font-bold uppercase">Fuel Level (%)</label>
+              <label htmlFor="fuelSlider" className="ds-label text-xs   font-bold uppercase">Fuel Level (%)</label>
               <span className="text-sm font-black text-orange-500">{fuelPercent}%</span>
             </div>
             <input
@@ -161,7 +161,7 @@ export default function InspectionChecklist({
 
           <div className="space-y-2">
             <div className="flex justify-between items-center">
-              <label htmlFor="defSlider" className="text-xs text-slate-400 font-bold uppercase">Diesel Exhaust Fluid (DEF) (%)</label>
+              <label htmlFor="defSlider" className="ds-label text-xs   font-bold uppercase">Diesel Exhaust Fluid (DEF) (%)</label>
               <span className="text-sm font-black text-blue-500">{defPercent}%</span>
             </div>
             <input
@@ -222,7 +222,7 @@ export default function InspectionChecklist({
 
         {/* Note area */}
         <div className="space-y-1">
-          <label htmlFor="inspectNotes" className="text-xs text-slate-400">Additional Remarks / Observations</label>
+          <label htmlFor="inspectNotes" className="ds-label text-xs  ">Additional Remarks / Observations</label>
           <textarea
             id="inspectNotes"
             value={notes}

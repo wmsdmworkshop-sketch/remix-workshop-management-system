@@ -53,7 +53,7 @@ export const VehicleDeliveryWorkspace: React.FC<VehicleDeliveryWorkspaceProps> =
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="ds-button-success flex h-2 w-2 rounded-full   animate-pulse" />
             <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">
               Vehicle Handover Workspace
             </span>

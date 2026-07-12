@@ -83,7 +83,7 @@ export const CarryForwardPanel: React.FC<CarryForwardPanelProps> = React.memo(({
                   {onApprove && (
                     <button
                       onClick={() => onApprove(item.id)}
-                      className="p-1 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded text-emerald-400 transition-colors"
+                      className="ds-button-success p-1 bg-emerald-500/10 hover: /20 border border-emerald-500/20 rounded text-emerald-400 transition-colors"
                       aria-label="Approve carry forward request"
                     >
                       <Check className="h-3 w-3" />

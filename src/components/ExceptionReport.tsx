@@ -74,7 +74,7 @@ export default function ExceptionReport() {
     <div className="space-y-8 bg-[#0B1220] text-slate-100 min-h-screen p-1 font-sans">
       
       {/* Top Welcome Panel with Glassmorphism */}
-      <div className="relative overflow-hidden rounded-[18px] bg-slate-900/60 border border-slate-800/80 p-6 md:p-8 backdrop-blur-md shadow-2xl">
+      <div className="ds-card relative overflow-hidden rounded-[18px]   border  /80 p-6 md:p-8 backdrop-blur-md shadow-2xl">
         <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-gradient-radial from-[#2563EB]/10 to-transparent pointer-events-none rounded-full blur-3xl -mr-48 -mt-48" />
         
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -128,7 +128,7 @@ export default function ExceptionReport() {
       </div>
 
       {/* Audit Detail Stage */}
-      <div className="bg-slate-900/60 border border-slate-800/80 rounded-[18px] p-5 backdrop-blur-md shadow-xl">
+      <div className="ds-card   border  /80 rounded-[18px] p-5 backdrop-blur-md shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
           <div>
             <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300">
@@ -139,37 +139,37 @@ export default function ExceptionReport() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="ds-table w-full text-left text-xs">
             <thead>
               <tr className="border-b border-slate-800/80 text-slate-400 font-bold uppercase tracking-wider">
-                <th className="py-3 px-4">Job Card / Invoice No</th>
-                <th className="py-3 px-4">Chassis No</th>
-                <th className="py-3 px-4">Registration No</th>
-                <th className="py-3 px-4">Owner Name / Count</th>
+                <th className="ds-th py-3 px-4">Job Card / Invoice No</th>
+                <th className="ds-th py-3 px-4">Chassis No</th>
+                <th className="ds-th py-3 px-4">Registration No</th>
+                <th className="ds-th py-3 px-4">Owner Name / Count</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={4} className="py-12 text-center text-slate-500 text-xs italic">
+                  <td colSpan={4} className="ds-td py-12 text-center text-slate-500 text-xs italic">
                     Running live database validation rules...
                   </td>
                 </tr>
               ) : !data || getCount(activeExceptionTab) === 0 ? (
                 <tr>
-                  <td colSpan={4} className="py-12 text-center text-emerald-400 text-xs font-semibold flex items-center justify-center gap-2">
+                  <td colSpan={4} className="ds-td py-12 text-center text-emerald-400 text-xs font-semibold flex items-center justify-center gap-2">
                     <CheckCircle2 className="h-4 w-4" /> All checks passed. Zero integrity exceptions found for this rule!
                   </td>
                 </tr>
               ) : (
                 data[activeExceptionTab].map((item, idx) => (
-                  <tr key={idx} className="border-b border-slate-800/40 hover:bg-slate-950/40 transition-colors text-slate-300">
-                    <td className="py-3.5 px-4 font-mono font-bold text-slate-200">
+                  <tr key={idx} className="ds-table-row border-b border-slate-800/40 hover:bg-slate-950/40 transition-colors text-slate-300">
+                    <td className="ds-td py-3.5 px-4 font-mono font-bold text-slate-200">
                       {item.job_card_no || item.invoice_no || "N/A"}
                     </td>
-                    <td className="py-3.5 px-4 font-mono">{item.chassis_no || "N/A"}</td>
-                    <td className="py-3.5 px-4 font-mono">{item.registration_no || "N/A"}</td>
-                    <td className="py-3.5 px-4 font-semibold text-slate-400">
+                    <td className="ds-td py-3.5 px-4 font-mono">{item.chassis_no || "N/A"}</td>
+                    <td className="ds-td py-3.5 px-4 font-mono">{item.registration_no || "N/A"}</td>
+                    <td className="ds-td py-3.5 px-4 font-semibold text-slate-400">
                       {item.customer_name || item.count || "Unknown"}
                     </td>
                   </tr>

@@ -481,7 +481,7 @@ export default function EmployeeDirectory({
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-slate-900 uppercase">Employee & Master Data</h1>
             {isAdmin ? (
-              <span className="flex items-center gap-1 text-[10px] bg-orange-500 text-white font-extrabold px-2 py-0.5 rounded uppercase tracking-wider shadow-2xs">
+              <span className="ds-button-primary flex items-center gap-1 text-[10px]   text-white font-extrabold px-2 py-0.5 rounded uppercase tracking-wider shadow-2xs">
                 <Shield className="h-3 w-3" /> Master Admin Mode
               </span>
             ) : (
@@ -498,7 +498,7 @@ export default function EmployeeDirectory({
             <>
               <button 
                 onClick={() => { setShowPurgeConfirm(true); setPurgeResult(null); }}
-                className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-4 py-2.5 rounded transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                className="ds-button-danger   hover:bg-rose-700 text-white font-bold text-xs px-4 py-2.5 rounded transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
                 title="Purge mistakenly imported customer rows"
               >
                 <Trash2 className="h-4 w-4" />
@@ -506,14 +506,14 @@ export default function EmployeeDirectory({
               </button>
               <button 
                 onClick={() => setShowBulkPanel(!showBulkPanel)}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2.5 rounded transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                className="ds-button-success   hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2.5 rounded transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
               >
                 <FileSpreadsheet className="h-4 w-4" />
                 Bulk Import CSV
               </button>
               <button 
                 onClick={() => setShowAddForm(!showAddForm)}
-                className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs px-4 py-2.5 rounded transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                className="ds-button-primary   hover:bg-orange-600 text-white font-bold text-xs px-4 py-2.5 rounded transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
               >
                 <Plus className="h-4 w-4" />
                 {showAddForm ? "Hide Form" : "Add Employee"}
@@ -529,7 +529,7 @@ export default function EmployeeDirectory({
           ) : (
             <button 
               onClick={() => setShowAdminLogin(true)}
-              className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs px-4 py-2.5 rounded transition-all flex items-center gap-1.5 shadow-xs cursor-pointer animate-pulse"
+              className="ds-button-primary   hover:bg-orange-600 text-white font-bold text-xs px-4 py-2.5 rounded transition-all flex items-center gap-1.5 shadow-xs cursor-pointer animate-pulse"
             >
               <Unlock className="h-4 w-4" />
               Unlock Admin Console
@@ -577,7 +577,7 @@ export default function EmployeeDirectory({
                 </button>
                 <button 
                   type="submit" 
-                  className="text-xs font-bold px-5 py-2 bg-orange-500 hover:bg-orange-600 rounded text-white shadow-sm cursor-pointer"
+                  className="ds-button-primary text-xs font-bold px-5 py-2   hover:bg-orange-600 rounded text-white shadow-sm cursor-pointer"
                 >
                   Unlock Systems
                 </button>
@@ -681,7 +681,7 @@ export default function EmployeeDirectory({
               <div className="pt-2 border-t border-slate-200 mt-4 flex">
                 <button 
                   onClick={handleParseAndImport}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-2 px-4 rounded shadow-sm transition-all cursor-pointer text-center uppercase tracking-wider"
+                  className="ds-button-success w-full   hover:bg-emerald-700 text-white font-extrabold text-xs py-2 px-4 rounded shadow-sm transition-all cursor-pointer text-center uppercase tracking-wider"
                 >
                   Parse & Bulk Save Roster
                 </button>
@@ -848,7 +848,7 @@ export default function EmployeeDirectory({
             </button>
             <button 
               type="submit" 
-              className="text-xs font-bold px-5 py-2 bg-orange-500 hover:bg-orange-600 rounded text-white shadow-sm transition-colors cursor-pointer"
+              className="ds-button-primary text-xs font-bold px-5 py-2   hover:bg-orange-600 rounded text-white shadow-sm transition-colors cursor-pointer"
             >
               Register Employee
             </button>
@@ -901,7 +901,7 @@ export default function EmployeeDirectory({
             <div className="space-y-4">
               <form onSubmit={handleAddNewBay} className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end bg-slate-850 p-3.5 rounded border border-slate-800">
                 <div>
-                  <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">Bay Code</label>
+                  <label className="ds-label text-[9px] font-extrabold   uppercase tracking-wider block mb-1">Bay Code</label>
                   <input 
                     type="text"
                     required
@@ -912,7 +912,7 @@ export default function EmployeeDirectory({
                   />
                 </div>
                 <div>
-                  <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">Bay Name / Label</label>
+                  <label className="ds-label text-[9px] font-extrabold   uppercase tracking-wider block mb-1">Bay Name / Label</label>
                   <input 
                     type="text"
                     required
@@ -923,7 +923,7 @@ export default function EmployeeDirectory({
                   />
                 </div>
                 <div>
-                  <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">Bay Type</label>
+                  <label className="ds-label text-[9px] font-extrabold   uppercase tracking-wider block mb-1">Bay Type</label>
                   <select
                     value={newBayType}
                     onChange={(e) => setNewBayType(e.target.value as any)}
@@ -938,7 +938,7 @@ export default function EmployeeDirectory({
                 <div>
                   <button 
                     type="submit"
-                    className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs py-2 rounded transition-colors cursor-pointer"
+                    className="ds-button-primary w-full   hover:bg-orange-600 text-white font-bold text-xs py-2 rounded transition-colors cursor-pointer"
                   >
                     Create Bay
                   </button>
@@ -970,7 +970,7 @@ export default function EmployeeDirectory({
             <div className="space-y-4">
               <form onSubmit={handleAddNewSRType} className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end bg-slate-850 p-3.5 rounded border border-slate-800">
                 <div>
-                  <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">Code</label>
+                  <label className="ds-label text-[9px] font-extrabold   uppercase tracking-wider block mb-1">Code</label>
                   <input 
                     type="text"
                     required
@@ -981,7 +981,7 @@ export default function EmployeeDirectory({
                   />
                 </div>
                 <div>
-                  <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">Category / Service Name</label>
+                  <label className="ds-label text-[9px] font-extrabold   uppercase tracking-wider block mb-1">Category / Service Name</label>
                   <input 
                     type="text"
                     required
@@ -992,7 +992,7 @@ export default function EmployeeDirectory({
                   />
                 </div>
                 <div>
-                  <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">Default Standard Mins</label>
+                  <label className="ds-label text-[9px] font-extrabold   uppercase tracking-wider block mb-1">Default Standard Mins</label>
                   <input 
                     type="number"
                     required
@@ -1004,7 +1004,7 @@ export default function EmployeeDirectory({
                 <div>
                   <button 
                     type="submit"
-                    className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs py-2 rounded transition-colors cursor-pointer"
+                    className="ds-button-primary w-full   hover:bg-orange-600 text-white font-bold text-xs py-2 rounded transition-colors cursor-pointer"
                   >
                     Create Category
                   </button>
@@ -1039,7 +1039,7 @@ export default function EmployeeDirectory({
                 
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                   <div>
-                    <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">Combination Code</label>
+                    <label className="ds-label text-[9px] font-extrabold   uppercase tracking-wider block mb-1">Combination Code</label>
                     <input 
                       type="text"
                       required
@@ -1050,7 +1050,7 @@ export default function EmployeeDirectory({
                     />
                   </div>
                   <div className="sm:col-span-2">
-                    <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">Visual Label</label>
+                    <label className="ds-label text-[9px] font-extrabold   uppercase tracking-wider block mb-1">Visual Label</label>
                     <input 
                       type="text"
                       required
@@ -1061,7 +1061,7 @@ export default function EmployeeDirectory({
                     />
                   </div>
                   <div>
-                    <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">Min Staff Count</label>
+                    <label className="ds-label text-[9px] font-extrabold   uppercase tracking-wider block mb-1">Min Staff Count</label>
                     <input 
                       type="number"
                       required
@@ -1074,19 +1074,19 @@ export default function EmployeeDirectory({
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                   <div>
-                    <label className="text-[9px] font-bold text-slate-400 block mb-1">Primary Tech (%)</label>
+                    <label className="ds-label text-[9px] font-bold   block mb-1">Primary Tech (%)</label>
                     <input type="number" value={newSplitTech} onChange={(e) => setNewSplitTech(Number(e.target.value))} className="w-full bg-slate-800 border border-slate-700 rounded p-1" />
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold text-slate-400 block mb-1">Co-Tech (%)</label>
+                    <label className="ds-label text-[9px] font-bold   block mb-1">Co-Tech (%)</label>
                     <input type="number" value={newSplitCoTech} onChange={(e) => setNewSplitCoTech(Number(e.target.value))} className="w-full bg-slate-800 border border-slate-700 rounded p-1" />
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold text-slate-400 block mb-1">Electrician (%)</label>
+                    <label className="ds-label text-[9px] font-bold   block mb-1">Electrician (%)</label>
                     <input type="number" value={newSplitElec} onChange={(e) => setNewSplitElec(Number(e.target.value))} className="w-full bg-slate-800 border border-slate-700 rounded p-1" />
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold text-slate-400 block mb-1">Add Tech (%)</label>
+                    <label className="ds-label text-[9px] font-bold   block mb-1">Add Tech (%)</label>
                     <input type="number" value={newSplitAddTech} onChange={(e) => setNewSplitAddTech(Number(e.target.value))} className="w-full bg-slate-800 border border-slate-700 rounded p-1" />
                   </div>
                 </div>
@@ -1105,7 +1105,7 @@ export default function EmployeeDirectory({
                 <div className="flex justify-end pt-2">
                   <button 
                     type="submit"
-                    className="bg-orange-500 hover:bg-orange-600 text-white font-extrabold text-xs px-5 py-2 rounded transition-colors cursor-pointer uppercase tracking-wider"
+                    className="ds-button-primary   hover:bg-orange-600 text-white font-extrabold text-xs px-5 py-2 rounded transition-colors cursor-pointer uppercase tracking-wider"
                   >
                     Add Combination Split Rule
                   </button>
@@ -1225,7 +1225,7 @@ export default function EmployeeDirectory({
                     <div className="space-y-2 text-xs">
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Code</label>
+                          <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">Code</label>
                           <input 
                             type="text"
                             value={editCode}
@@ -1234,7 +1234,7 @@ export default function EmployeeDirectory({
                           />
                         </div>
                         <div>
-                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Mobile</label>
+                          <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">Mobile</label>
                           <input 
                             type="text"
                             value={editMobile}
@@ -1245,7 +1245,7 @@ export default function EmployeeDirectory({
                       </div>
 
                       <div>
-                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Full Name</label>
+                        <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">Full Name</label>
                         <input 
                           type="text"
                           value={editName}
@@ -1256,7 +1256,7 @@ export default function EmployeeDirectory({
 
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Role</label>
+                          <label className="ds-label text-[9px] font-bold   uppercase tracking-wider block mb-1">Role</label>
                           <select 
                             value={editSelectedRole}
                             onChange={(e) => setEditSelectedRole(e.target.value)}
@@ -1279,7 +1279,7 @@ export default function EmployeeDirectory({
                           )}
                         </div>
                         <div>
-                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Grade</label>
+                          <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">Grade</label>
                           <select 
                             value={editGrade}
                             onChange={(e) => setEditGrade(e.target.value as any)}
@@ -1292,7 +1292,7 @@ export default function EmployeeDirectory({
                       </div>
 
                       <div>
-                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Basic Salary (₹)</label>
+                        <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">Basic Salary (₹)</label>
                         <input 
                           type="number"
                           value={editSalary}
@@ -1305,7 +1305,7 @@ export default function EmployeeDirectory({
                         <span className="text-[9px] font-bold text-indigo-600 uppercase tracking-wider block">CPSC Certification</span>
                         <div className="grid grid-cols-2 gap-2">
                           <div>
-                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Level</label>
+                            <label className="ds-label text-[9px] font-bold   uppercase tracking-wider block mb-1">Level</label>
                             <select 
                               value={editCertificationLevel}
                               onChange={(e) => setEditCertificationLevel(e.target.value)}
@@ -1318,7 +1318,7 @@ export default function EmployeeDirectory({
                             </select>
                           </div>
                           <div>
-                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Remarks</label>
+                            <label className="ds-label text-[9px] font-bold   uppercase tracking-wider block mb-1">Remarks</label>
                             <input 
                               type="text" 
                               value={editCertificationRemarks}
@@ -1330,7 +1330,7 @@ export default function EmployeeDirectory({
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                           <div>
-                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Date</label>
+                            <label className="ds-label text-[9px] font-bold   uppercase tracking-wider block mb-1">Date</label>
                             <input 
                               type="date" 
                               value={editCertificationDate ? editCertificationDate.split("T")[0] : ""}
@@ -1339,7 +1339,7 @@ export default function EmployeeDirectory({
                             />
                           </div>
                           <div>
-                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Expiry Date</label>
+                            <label className="ds-label text-[9px] font-bold   uppercase tracking-wider block mb-1">Expiry Date</label>
                             <input 
                               type="date" 
                               value={editCertificationExpiryDate ? editCertificationExpiryDate.split("T")[0] : ""}
@@ -1362,7 +1362,7 @@ export default function EmployeeDirectory({
                       <button 
                         type="button"
                         onClick={() => handleSaveEdit(emp.employee_id)}
-                        className="text-[10px] font-bold px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded shadow-sm transition-all flex items-center gap-1 cursor-pointer"
+                        className="ds-button-primary text-[10px] font-bold px-3 py-1.5   hover:bg-orange-600 text-white rounded shadow-sm transition-all flex items-center gap-1 cursor-pointer"
                       >
                         <Check className="h-3 w-3" /> Save
                       </button>
@@ -1546,7 +1546,7 @@ export default function EmployeeDirectory({
                   type="button"
                   disabled={isPurging}
                   onClick={handlePurgeMistakes}
-                  className="w-1/2 text-center text-xs font-bold py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1 disabled:opacity-50"
+                  className="ds-button-danger w-1/2 text-center text-xs font-bold py-2.5   hover:bg-rose-700 text-white rounded shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1 disabled:opacity-50"
                 >
                   {isPurging ? "Cleaning..." : "Yes, Purge Now"}
                 </button>

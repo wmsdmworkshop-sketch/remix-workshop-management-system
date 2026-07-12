@@ -340,7 +340,7 @@ export default function OvertimeEmployeeDashboard({
   const renderStatusBadge = (status: string) => {
     switch (status) {
       case "PAID":
-        return <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">PAID</span>;
+        return <span className="ds-button-success px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider  /10 text-emerald-400 border border-emerald-500/20">PAID</span>;
       case "APPROVED":
         return <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20">APPROVED</span>;
       case "PENDING_APPROVAL":
@@ -365,7 +365,7 @@ export default function OvertimeEmployeeDashboard({
     ];
 
     return (
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between w-full p-6 bg-slate-900/60 rounded-2xl border border-slate-800/80 gap-6 md:gap-2">
+      <div className="ds-card flex flex-col md:flex-row items-start md:items-center justify-between w-full p-6   rounded-2xl border  /80 gap-6 md:gap-2">
         {steps.map((step, idx) => {
           let isActive = false;
           let isCompleted = false;
@@ -448,7 +448,7 @@ export default function OvertimeEmployeeDashboard({
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="flex items-center justify-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 border border-slate-700/80 rounded-xl text-xs font-bold transition-all text-slate-300 disabled:opacity-50"
+            className="ds-button-secondary flex items-center justify-center gap-2 px-3 py-2     active:bg-slate-900 border border-slate-700/80 rounded-xl text-xs font-bold transition-all text-slate-300 disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
             Refresh
@@ -468,7 +468,7 @@ export default function OvertimeEmployeeDashboard({
                 setView('dashboard');
                 setFormErrors([]);
               }}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all border border-slate-700/80"
+              className="ds-button-secondary flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2     text-slate-300 rounded-xl text-xs font-bold transition-all border border-slate-700/80"
             >
               Back to List
             </button>
@@ -585,18 +585,18 @@ export default function OvertimeEmployeeDashboard({
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="ds-table w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-[#0B1220]/65 text-slate-400 border-b border-slate-800/80 uppercase font-black tracking-wider text-[10px]">
-                      <th className="py-3 px-4">Request No</th>
-                      <th className="py-3 px-4">Date</th>
-                      <th className="py-3 px-4">Category</th>
-                      <th className="py-3 px-4">Job Card</th>
-                      <th className="py-3 px-4 text-center">Requested Hours</th>
-                      <th className="py-3 px-4">Benefit Type</th>
-                      <th className="py-3 px-4">Amount / Credit</th>
-                      <th className="py-3 px-4">Current Status</th>
-                      <th className="py-3 px-4 text-right">Action</th>
+                      <th className="ds-th py-3 px-4">Request No</th>
+                      <th className="ds-th py-3 px-4">Date</th>
+                      <th className="ds-th py-3 px-4">Category</th>
+                      <th className="ds-th py-3 px-4">Job Card</th>
+                      <th className="ds-th py-3 px-4 text-center">Requested Hours</th>
+                      <th className="ds-th py-3 px-4">Benefit Type</th>
+                      <th className="ds-th py-3 px-4">Amount / Credit</th>
+                      <th className="ds-th py-3 px-4">Current Status</th>
+                      <th className="ds-th py-3 px-4 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/50">
@@ -606,31 +606,31 @@ export default function OvertimeEmployeeDashboard({
                         : `${r.comp_attendance_credit_earned || 0.0} Credit`;
 
                       return (
-                        <tr key={r.ot_id} className="hover:bg-slate-800/30 transition-all font-medium">
-                          <td className="py-3.5 px-4 font-bold text-white font-mono">OT-{r.ot_id}</td>
-                          <td className="py-3.5 px-4 font-semibold">{r.date}</td>
-                          <td className="py-3.5 px-4">
+                        <tr key={r.ot_id} className="ds-table-row hover:bg-slate-800/30 transition-all font-medium">
+                          <td className="ds-td py-3.5 px-4 font-bold text-white font-mono">OT-{r.ot_id}</td>
+                          <td className="ds-td py-3.5 px-4 font-semibold">{r.date}</td>
+                          <td className="ds-td py-3.5 px-4">
                             <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase ${
                               r.ot_category === "WORKSHOP" ? "bg-blue-500/10 text-blue-400" : "bg-purple-500/10 text-purple-400"
                             }`}>
                               {r.ot_category}
                             </span>
                           </td>
-                          <td className="py-3.5 px-4 font-mono font-bold text-slate-400">
+                          <td className="ds-td py-3.5 px-4 font-mono font-bold text-slate-400">
                             {r.ot_category === "WORKSHOP" ? (r.job_card_no || `ID: ${r.job_card_id}`) : "N/A - Admin"}
                           </td>
-                          <td className="py-3.5 px-4 text-center font-bold text-slate-300">{r.total_hours} hrs</td>
-                          <td className="py-3.5 px-4 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                          <td className="ds-td py-3.5 px-4 text-center font-bold text-slate-300">{r.total_hours} hrs</td>
+                          <td className="ds-td py-3.5 px-4 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
                             {r.benefit_type === "MONETARY" ? "Monetary" : "Comp Credit"}
                           </td>
-                          <td className="py-3.5 px-4 font-bold text-slate-200">{amountOrCreditStr}</td>
-                          <td className="py-3.5 px-4">{renderStatusBadge(r.current_status)}</td>
-                          <td className="py-3.5 px-4 text-right">
+                          <td className="ds-td py-3.5 px-4 font-bold text-slate-200">{amountOrCreditStr}</td>
+                          <td className="ds-td py-3.5 px-4">{renderStatusBadge(r.current_status)}</td>
+                          <td className="ds-td py-3.5 px-4 text-right">
                             <button
                               onClick={() => {
                                 fetchRequestDetails(r.ot_id);
                               }}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[10px] font-bold transition-all border border-slate-700/80"
+                              className="ds-button-secondary inline-flex items-center gap-1 px-2.5 py-1     text-slate-300 rounded-lg text-[10px] font-bold transition-all border border-slate-700/80"
                             >
                               <Eye className="w-3.5 h-3.5" />
                               Details
@@ -669,7 +669,7 @@ export default function OvertimeEmployeeDashboard({
             )}
 
             {formSuccess && (
-              <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-2.5">
+              <div className="ds-button-success p-4  /10 border border-emerald-500/20 rounded-xl flex items-center gap-2.5">
                 <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
                 <div>
                   <h4 className="text-emerald-400 font-bold text-xs uppercase tracking-wider">Success!</h4>
@@ -696,7 +696,7 @@ export default function OvertimeEmployeeDashboard({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Category */}
               <div>
-                <label className="text-[10px] text-slate-400 font-black uppercase tracking-wider block mb-1.5">Overtime Category</label>
+                <label className="ds-label text-[10px]   font-black uppercase tracking-wider block mb-1.5">Overtime Category</label>
                 <select
                   value={otCategory}
                   onChange={(e) => {
@@ -712,7 +712,7 @@ export default function OvertimeEmployeeDashboard({
 
               {/* Date */}
               <div>
-                <label className="text-[10px] text-slate-400 font-black uppercase tracking-wider block mb-1.5">Request Date</label>
+                <label className="ds-label text-[10px]   font-black uppercase tracking-wider block mb-1.5">Request Date</label>
                 <input
                   type="date"
                   value={date}
@@ -724,7 +724,7 @@ export default function OvertimeEmployeeDashboard({
 
               {/* Shift */}
               <div>
-                <label className="text-[10px] text-slate-400 font-black uppercase tracking-wider block mb-1.5">Assigned Shift Type</label>
+                <label className="ds-label text-[10px]   font-black uppercase tracking-wider block mb-1.5">Assigned Shift Type</label>
                 <select
                   value={shiftId}
                   onChange={(e) => setShiftId(Number(e.target.value))}
@@ -741,7 +741,7 @@ export default function OvertimeEmployeeDashboard({
 
               {/* Benefit type */}
               <div>
-                <label className="text-[10px] text-slate-400 font-black uppercase tracking-wider block mb-1.5">Overtime Benefit Type</label>
+                <label className="ds-label text-[10px]   font-black uppercase tracking-wider block mb-1.5">Overtime Benefit Type</label>
                 <select
                   value={benefitType}
                   onChange={(e) => setBenefitType(e.target.value as any)}
@@ -754,7 +754,7 @@ export default function OvertimeEmployeeDashboard({
 
               {/* Time bounds */}
               <div>
-                <label className="text-[10px] text-slate-400 font-black uppercase tracking-wider block mb-1.5">Overtime Start Time</label>
+                <label className="ds-label text-[10px]   font-black uppercase tracking-wider block mb-1.5">Overtime Start Time</label>
                 <input
                   type="time"
                   value={startTime}
@@ -765,7 +765,7 @@ export default function OvertimeEmployeeDashboard({
               </div>
 
               <div>
-                <label className="text-[10px] text-slate-400 font-black uppercase tracking-wider block mb-1.5">Overtime End Time</label>
+                <label className="ds-label text-[10px]   font-black uppercase tracking-wider block mb-1.5">Overtime End Time</label>
                 <input
                   type="time"
                   value={endTime}
@@ -777,7 +777,7 @@ export default function OvertimeEmployeeDashboard({
 
               {/* Reason Category */}
               <div>
-                <label className="text-[10px] text-slate-400 font-black uppercase tracking-wider block mb-1.5">Reason Category</label>
+                <label className="ds-label text-[10px]   font-black uppercase tracking-wider block mb-1.5">Reason Category</label>
                 <select
                   value={reasonCategory}
                   onChange={(e) => setReasonCategory(e.target.value)}
@@ -798,7 +798,7 @@ export default function OvertimeEmployeeDashboard({
               {/* Conditionally Render Category Fields */}
               {otCategory === "WORKSHOP" ? (
                 <div>
-                  <label className="text-[10px] text-slate-400 font-black uppercase tracking-wider block mb-1.5">Search and Select Job Card</label>
+                  <label className="ds-label text-[10px]   font-black uppercase tracking-wider block mb-1.5">Search and Select Job Card</label>
                   <div className="relative">
                     <input
                       type="text"
@@ -829,7 +829,7 @@ export default function OvertimeEmployeeDashboard({
                 </div>
               ) : (
                 <div>
-                  <label className="text-[10px] text-slate-400 font-black uppercase tracking-wider block mb-1.5">Department</label>
+                  <label className="ds-label text-[10px]   font-black uppercase tracking-wider block mb-1.5">Department</label>
                   <input
                     type="text"
                     placeholder="e.g. Accounts, HR, Stores"
@@ -843,7 +843,7 @@ export default function OvertimeEmployeeDashboard({
 
             {otCategory === "ADMINISTRATIVE" && (
               <div>
-                <label className="text-[10px] text-slate-400 font-black uppercase tracking-wider block mb-1.5">Work Description</label>
+                <label className="ds-label text-[10px]   font-black uppercase tracking-wider block mb-1.5">Work Description</label>
                 <textarea
                   rows={2}
                   placeholder="Mandatory detail of admin tasks completed..."
@@ -855,7 +855,7 @@ export default function OvertimeEmployeeDashboard({
             )}
 
             <div>
-              <label className="text-[10px] text-slate-400 font-black uppercase tracking-wider block mb-1.5">General Remarks (Optional)</label>
+              <label className="ds-label text-[10px]   font-black uppercase tracking-wider block mb-1.5">General Remarks (Optional)</label>
               <textarea
                 rows={2}
                 placeholder="Remarks, delay reasons..."
@@ -989,7 +989,7 @@ export default function OvertimeEmployeeDashboard({
               <button
                 type="button"
                 onClick={() => setView('dashboard')}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all border border-slate-700/80"
+                className="ds-button-secondary px-4 py-2     text-slate-300 rounded-xl text-xs font-bold transition-all border border-slate-700/80"
               >
                 Cancel
               </button>
@@ -1019,7 +1019,7 @@ export default function OvertimeEmployeeDashboard({
               </div>
               <button
                 onClick={() => setSelectedRequest(null)}
-                className="w-7 h-7 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg flex items-center justify-center transition-all border border-slate-700/80"
+                className="ds-button-secondary w-7 h-7     text-slate-400 hover:text-white rounded-lg flex items-center justify-center transition-all border border-slate-700/80"
               >
                 ✕
               </button>
@@ -1133,26 +1133,26 @@ export default function OvertimeEmployeeDashboard({
                 <div className="space-y-3">
                   <span className="text-[10px] text-slate-500 font-black uppercase tracking-wider block">Workflow Decision History</span>
                   <div className="bg-slate-900/40 rounded-2xl border border-slate-800/60 overflow-hidden text-xs">
-                    <table className="w-full text-left">
+                    <table className="ds-table w-full text-left">
                       <thead>
-                        <tr className="bg-slate-900/60 text-slate-400 uppercase font-black tracking-wider text-[9px] border-b border-slate-800/80">
-                          <th className="py-2.5 px-4">Level</th>
-                          <th className="py-2.5 px-4">Approver</th>
-                          <th className="py-2.5 px-4">Role</th>
-                          <th className="py-2.5 px-4">Action Date</th>
-                          <th className="py-2.5 px-4">Decision</th>
-                          <th className="py-2.5 px-4">Remarks</th>
+                        <tr className="ds-card   text-slate-400 uppercase font-black tracking-wider text-[9px] border-b  /80">
+                          <th className="ds-th py-2.5 px-4">Level</th>
+                          <th className="ds-th py-2.5 px-4">Approver</th>
+                          <th className="ds-th py-2.5 px-4">Role</th>
+                          <th className="ds-th py-2.5 px-4">Action Date</th>
+                          <th className="ds-th py-2.5 px-4">Decision</th>
+                          <th className="ds-th py-2.5 px-4">Remarks</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/50">
                         {selectedRequest.history.map((h: any, idx: number) => (
-                          <tr key={idx} className="hover:bg-slate-800/20">
-                            <td className="py-2 px-4 font-bold text-slate-300">Stage {h.level}</td>
-                            <td className="py-2 px-4 font-medium text-slate-200">ID: {h.approver_id}</td>
-                            <td className="py-2 px-4 text-slate-400 font-bold uppercase tracking-wider text-[9px]">{h.approver_role}</td>
-                            <td className="py-2 px-4">{h.action_date} {h.action_time}</td>
-                            <td className="py-2 px-4 font-bold">{h.decision}</td>
-                            <td className="py-2 px-4 italic text-slate-400">{h.remarks || "No remarks"}</td>
+                          <tr key={idx} className="ds-table-row hover:bg-slate-800/20">
+                            <td className="ds-td py-2 px-4 font-bold text-slate-300">Stage {h.level}</td>
+                            <td className="ds-td py-2 px-4 font-medium text-slate-200">ID: {h.approver_id}</td>
+                            <td className="ds-td py-2 px-4 text-slate-400 font-bold uppercase tracking-wider text-[9px]">{h.approver_role}</td>
+                            <td className="ds-td py-2 px-4">{h.action_date} {h.action_time}</td>
+                            <td className="ds-td py-2 px-4 font-bold">{h.decision}</td>
+                            <td className="ds-td py-2 px-4 italic text-slate-400">{h.remarks || "No remarks"}</td>
                           </tr>
                         ))}
                       </tbody>

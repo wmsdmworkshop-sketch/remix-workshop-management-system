@@ -63,7 +63,7 @@ export const BillingWorkspace: React.FC<BillingWorkspaceProps> = React.memo(({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="ds-button-success flex h-2 w-2 rounded-full   animate-pulse" />
             <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">
               Billing & Invoicing Workspace
             </span>
@@ -175,7 +175,7 @@ export const BillingWorkspace: React.FC<BillingWorkspaceProps> = React.memo(({
               </button>
               <button 
                 onClick={handleCompleteBilling}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors ml-auto"
+                className="ds-button-success px-5 py-2   hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors ml-auto"
               >
                 Finalize & Dispatch Invoice
               </button>

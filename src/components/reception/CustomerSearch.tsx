@@ -254,7 +254,7 @@ export default function CustomerSearch({
                   <h4 className="font-bold flex items-center gap-2">
                     {profile.name}
                     {profile.isFleet && (
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                      <span className="ds-button-primary text-[10px] px-2 py-0.5 rounded  /10 text-orange-400 border border-orange-500/20">
                         Fleet
                       </span>
                     )}

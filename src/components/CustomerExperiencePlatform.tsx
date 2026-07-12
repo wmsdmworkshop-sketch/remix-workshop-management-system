@@ -32,7 +32,7 @@ export const CustomerExperiencePlatform: React.FC<CustomerExperiencePlatformProp
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="ds-button-success flex h-2 w-2 rounded-full   animate-pulse" />
             <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">
               Customer Portal
             </span>
@@ -60,7 +60,7 @@ export const CustomerExperiencePlatform: React.FC<CustomerExperiencePlatformProp
             />
             <button 
               onClick={handleCheckStatus}
-              className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
+              className="ds-button-success w-full py-2   hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
             >
               Verify Vehicle Status
             </button>

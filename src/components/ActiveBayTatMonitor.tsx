@@ -905,15 +905,15 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
             </h3>
 
             <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/50">
-              <table className="w-full text-left text-xs border-collapse font-medium">
+              <table className="ds-table w-full text-left text-xs border-collapse font-medium">
                 <thead>
                   <tr className="bg-slate-100/80 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                    <th className="p-3">Bay</th>
-                    <th className="p-3">VRN</th>
-                    <th className="p-3">TAT Status</th>
-                    <th className="p-3">Stage</th>
-                    <th className="p-3">Delay Metrics (L1 &gt; L2 &gt; L3 &gt; L5)</th>
-                    <th className="p-3 text-right">Roster</th>
+                    <th className="ds-th p-3">Bay</th>
+                    <th className="ds-th p-3">VRN</th>
+                    <th className="ds-th p-3">TAT Status</th>
+                    <th className="ds-th p-3">Stage</th>
+                    <th className="ds-th p-3">Delay Metrics (L1 &gt; L2 &gt; L3 &gt; L5)</th>
+                    <th className="ds-th p-3 text-right">Roster</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200/60">
@@ -922,16 +922,16 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
                     const slotJob = jobsInSlot[0] || jobCards.find(j => j.bay_id === bay.bay_id && j.status === "Active"); // fallback to active if no matching slot
 
                     return (
-                      <tr key={bay.bay_id} className="hover:bg-slate-100/30 text-slate-700">
-                        <td className="p-3 font-bold text-slate-900">{bay.bay_name}</td>
-                        <td className="p-3">
+                      <tr key={bay.bay_id} className="ds-table-row hover:bg-slate-100/30 text-slate-700">
+                        <td className="ds-td p-3 font-bold text-slate-900">{bay.bay_name}</td>
+                        <td className="ds-td p-3">
                           {slotJob ? (
                             <span className="font-mono font-bold bg-white border px-1.5 py-0.5 rounded shadow-2xs">{slotJob.vrn}</span>
                           ) : (
                             <span className="text-slate-400 italic">No assigned vehicle</span>
                           )}
                         </td>
-                        <td className="p-3">
+                        <td className="ds-td p-3">
                           {slotJob?.tat_status ? (
                             <span className="text-[10px] font-black uppercase text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md">
                               {slotJob.tat_status}
@@ -940,7 +940,7 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
                             <span className="text-slate-400">-</span>
                           )}
                         </td>
-                        <td className="p-3">
+                        <td className="ds-td p-3">
                           {slotJob?.workshop_stage ? (
                             <span className="text-[10px] font-black uppercase text-orange-600 bg-orange-50 border border-orange-100 px-2 py-0.5 rounded-md">
                               {slotJob.workshop_stage}
@@ -949,7 +949,7 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
                             <span className="text-slate-400">-</span>
                           )}
                         </td>
-                        <td className="p-3">
+                        <td className="ds-td p-3">
                           {slotJob?.l1_delay ? (
                             <div className="flex flex-wrap items-center gap-1">
                               <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">L1: {slotJob.l1_delay}</span>
@@ -965,7 +965,7 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
                             <span className="text-slate-400">-</span>
                           )}
                         </td>
-                        <td className="p-3 text-right">
+                        <td className="ds-td p-3 text-right">
                           <div className="flex flex-wrap justify-end gap-1">
                             {slotJob && SR_TECHS.filter(t => slotJob.delay_notes?.includes(t)).map(t => (
                               <span key={t} className="text-[9px] font-bold bg-slate-200 text-slate-700 px-1 py-0.5 rounded">{t}</span>
@@ -1034,43 +1034,43 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
 
           {/* Job cards table for delay reporting */}
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="ds-table w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                  <th className="p-3">Vehicle Details</th>
-                  <th className="p-3">TAT Status</th>
-                  <th className="p-3">Workshop Stage</th>
-                  <th className="p-3">Delay Reason (L1 &gt; L2)</th>
-                  <th className="p-3">Delay Reason (L3 &gt; L5)</th>
-                  <th className="p-3 text-center">Interval</th>
-                  <th className="p-3 text-center">Actions</th>
+                  <th className="ds-th p-3">Vehicle Details</th>
+                  <th className="ds-th p-3">TAT Status</th>
+                  <th className="ds-th p-3">Workshop Stage</th>
+                  <th className="ds-th p-3">Delay Reason (L1 &gt; L2)</th>
+                  <th className="ds-th p-3">Delay Reason (L3 &gt; L5)</th>
+                  <th className="ds-th p-3 text-center">Interval</th>
+                  <th className="ds-th p-3 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
                 {filteredJobs.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-12 text-slate-400 font-medium">
+                    <td colSpan={7} className="ds-td text-center py-12 text-slate-400 font-medium">
                       No active vehicles match the search or filter criteria.
                     </td>
                   </tr>
                 ) : (
                   filteredJobs.map(job => (
-                    <tr key={job.job_id} className="hover:bg-slate-50/50 transition-all font-medium">
-                      <td className="p-3 font-bold text-slate-900">
+                    <tr key={job.job_id} className="ds-table-row hover:bg-slate-50/50 transition-all font-medium">
+                      <td className="ds-td p-3 font-bold text-slate-900">
                         <p>{job.vrn}</p>
                         <span className="text-[10px] text-slate-400 font-mono font-bold uppercase">{job.customer_name}</span>
                       </td>
-                      <td className="p-3">
+                      <td className="ds-td p-3">
                         <span className="text-[10px] font-black uppercase text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md">
                           {job.tat_status || "PENDING"}
                         </span>
                       </td>
-                      <td className="p-3">
+                      <td className="ds-td p-3">
                         <span className="text-[10px] font-black uppercase text-orange-700 bg-orange-50 border border-orange-100 px-2 py-0.5 rounded-md">
                           {job.workshop_stage || "work-in-progress"}
                         </span>
                       </td>
-                      <td className="p-3">
+                      <td className="ds-td p-3">
                         {job.l1_delay ? (
                           <div className="space-y-0.5">
                             <p className="font-bold text-amber-700 uppercase tracking-wide">L1: {job.l1_delay}</p>
@@ -1080,7 +1080,7 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
                           <span className="text-emerald-600 font-bold">No Delays</span>
                         )}
                       </td>
-                      <td className="p-3">
+                      <td className="ds-td p-3">
                         {job.l1_delay ? (
                           <div className="space-y-0.5">
                             <p className="text-[10px] text-slate-500">L3: {job.l3_delay || "N/A"}</p>
@@ -1090,8 +1090,8 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
                           <span className="text-emerald-500">-</span>
                         )}
                       </td>
-                      <td className="p-3 text-center font-mono font-bold text-slate-500">{job.time_slot || "09:15"}</td>
-                      <td className="p-3 text-center">
+                      <td className="ds-td p-3 text-center font-mono font-bold text-slate-500">{job.time_slot || "09:15"}</td>
+                      <td className="ds-td p-3 text-center">
                         <button
                           onClick={() => openDelayLogger(job)}
                           className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg shadow-2xs transition-all"
@@ -1251,30 +1251,30 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
               </div>
 
               <div className="max-h-80 overflow-y-auto border border-slate-200/60 rounded-lg bg-white shadow-2xs">
-                <table className="w-full text-left text-xs border-collapse font-medium">
+                <table className="ds-table w-full text-left text-xs border-collapse font-medium">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      <th className="p-2.5">Status</th>
-                      <th className="p-2.5">Stage</th>
-                      <th className="p-2.5">L1 Delay</th>
-                      <th className="p-2.5">L2 Delay</th>
-                      <th className="p-2.5">L3/L5 Detail</th>
-                      <th className="p-2.5">Technicians</th>
-                      <th className="p-2.5 text-right">Time Set</th>
+                      <th className="ds-th p-2.5">Status</th>
+                      <th className="ds-th p-2.5">Stage</th>
+                      <th className="ds-th p-2.5">L1 Delay</th>
+                      <th className="ds-th p-2.5">L2 Delay</th>
+                      <th className="ds-th p-2.5">L3/L5 Detail</th>
+                      <th className="ds-th p-2.5">Technicians</th>
+                      <th className="ds-th p-2.5 text-right">Time Set</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {parsedRows.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/50 text-slate-700">
-                        <td className="p-2.5 font-bold text-indigo-700">{item.status}</td>
-                        <td className="p-2.5 uppercase text-[10px] text-slate-500">{item.stage}</td>
-                        <td className="p-2.5 text-amber-700 font-bold font-mono">{item.l1 || "-"}</td>
-                        <td className="p-2.5 text-slate-600 font-mono text-[11px]">{item.l2 || "-"}</td>
-                        <td className="p-2.5 text-slate-500 text-[11px]">{item.l3 || item.l5 || "-"}</td>
-                        <td className="p-2.5 text-[10px]">
+                      <tr key={idx} className="ds-table-row hover:bg-slate-50/50 text-slate-700">
+                        <td className="ds-td p-2.5 font-bold text-indigo-700">{item.status}</td>
+                        <td className="ds-td p-2.5 uppercase text-[10px] text-slate-500">{item.stage}</td>
+                        <td className="ds-td p-2.5 text-amber-700 font-bold font-mono">{item.l1 || "-"}</td>
+                        <td className="ds-td p-2.5 text-slate-600 font-mono text-[11px]">{item.l2 || "-"}</td>
+                        <td className="ds-td p-2.5 text-slate-500 text-[11px]">{item.l3 || item.l5 || "-"}</td>
+                        <td className="ds-td p-2.5 text-[10px]">
                           <span className="font-bold">{item.srTech ? `Sr: ${item.srTech}` : ""} {item.jrTech ? `Jr: ${item.jrTech}` : ""} {item.elecTech ? `Elec: ${item.elecTech}` : ""}</span>
                         </td>
-                        <td className="p-2.5 text-right font-bold text-slate-900 font-mono">{item.timeSlot}</td>
+                        <td className="ds-td p-2.5 text-right font-bold text-slate-900 font-mono">{item.timeSlot}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1307,7 +1307,7 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
               
               {/* TAT Status */}
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active TAT Status Badge</label>
+                <label className="ds-label text-[10px] font-bold   uppercase tracking-wider">Active TAT Status Badge</label>
                 <select
                   value={logForm.tat_status}
                   onChange={(e) => setLogForm({ ...logForm, tat_status: e.target.value })}
@@ -1321,7 +1321,7 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
 
               {/* Workshop Stage */}
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Workshop Repair Stage</label>
+                <label className="ds-label text-[10px] font-bold   uppercase tracking-wider">Workshop Repair Stage</label>
                 <select
                   value={logForm.workshop_stage}
                   onChange={(e) => setLogForm({ ...logForm, workshop_stage: e.target.value })}
@@ -1335,7 +1335,7 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
 
               {/* L1 Delay */}
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">L1 Delay (Root category)</label>
+                <label className="ds-label text-[10px] font-bold   uppercase tracking-wider">L1 Delay (Root category)</label>
                 <select
                   value={logForm.l1_delay}
                   onChange={(e) => setLogForm({ ...logForm, l1_delay: e.target.value, l2_delay: "", l3_delay: "", l5_delay: "" })}
@@ -1352,7 +1352,7 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
                   
                   {/* L2 Delay */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">L2 Delay (Secondary Category)</label>
+                    <label className="ds-label text-[10px] font-bold   uppercase tracking-wider">L2 Delay (Secondary Category)</label>
                     <select
                       value={logForm.l2_delay}
                       onChange={(e) => setLogForm({ ...logForm, l2_delay: e.target.value })}
@@ -1365,7 +1365,7 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
 
                   {/* L3 Delay */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">L3 Delay (Tertiary Reason)</label>
+                    <label className="ds-label text-[10px] font-bold   uppercase tracking-wider">L3 Delay (Tertiary Reason)</label>
                     <select
                       value={logForm.l3_delay}
                       onChange={(e) => setLogForm({ ...logForm, l3_delay: e.target.value })}
@@ -1378,7 +1378,7 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
 
                   {/* L5 Delay */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">L5 Delay (External Obstruction)</label>
+                    <label className="ds-label text-[10px] font-bold   uppercase tracking-wider">L5 Delay (External Obstruction)</label>
                     <select
                       value={logForm.l5_delay}
                       onChange={(e) => setLogForm({ ...logForm, l5_delay: e.target.value })}
@@ -1394,7 +1394,7 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
 
               {/* Time slot set */}
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Timeline Reporting Interval</label>
+                <label className="ds-label text-[10px] font-bold   uppercase tracking-wider">Timeline Reporting Interval</label>
                 <select
                   value={logForm.time_slot}
                   onChange={(e) => setLogForm({ ...logForm, time_slot: e.target.value })}
@@ -1408,7 +1408,7 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
 
               {/* Delay Notes / other */}
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Delay Specific Notes / details</label>
+                <label className="ds-label text-[10px] font-bold   uppercase tracking-wider">Delay Specific Notes / details</label>
                 <input 
                   type="text"
                   value={logForm.delay_notes}

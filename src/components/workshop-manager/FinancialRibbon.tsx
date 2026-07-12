@@ -53,7 +53,7 @@ export const FinancialRibbon: React.FC<FinancialRibbonProps> = React.memo(({
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       {/* Today's Revenue & Achievement */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+      <div className="ds-card   border   rounded-xl p-4 flex flex-col justify-between">
         <div className="flex items-center justify-between text-slate-400 text-[10px] uppercase font-bold tracking-wider">
           <span>Today's Revenue</span>
           <DollarSign className="h-3.5 w-3.5 text-emerald-400" />
@@ -71,7 +71,7 @@ export const FinancialRibbon: React.FC<FinancialRibbonProps> = React.memo(({
       </div>
 
       {/* Target & Remaining */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+      <div className="ds-card   border   rounded-xl p-4 flex flex-col justify-between">
         <div className="flex items-center justify-between text-slate-400 text-[10px] uppercase font-bold tracking-wider">
           <span>Daily Target</span>
           <Target className="h-3.5 w-3.5 text-cyan-400" />
@@ -85,7 +85,7 @@ export const FinancialRibbon: React.FC<FinancialRibbonProps> = React.memo(({
       </div>
 
       {/* Labour & Parts Breakdown */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+      <div className="ds-card   border   rounded-xl p-4 flex flex-col justify-between">
         <div className="flex items-center justify-between text-slate-400 text-[10px] uppercase font-bold tracking-wider">
           <span>Sales Split</span>
           <TrendingUp className="h-3.5 w-3.5 text-amber-500" />
@@ -103,7 +103,7 @@ export const FinancialRibbon: React.FC<FinancialRibbonProps> = React.memo(({
       </div>
 
       {/* Average Job Card Value */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+      <div className="ds-card   border   rounded-xl p-4 flex flex-col justify-between">
         <div className="flex items-center justify-between text-slate-400 text-[10px] uppercase font-bold tracking-wider">
           <span>Average Job Card</span>
           <Sparkles className="h-3.5 w-3.5 text-indigo-400" />

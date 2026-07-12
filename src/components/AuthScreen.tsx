@@ -198,20 +198,20 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
   };
 
   return (
-    <div id="auth-screen-container" className="min-h-screen bg-slate-900 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden font-sans">
+    <div id="auth-screen-container" className="min-h-screen bg-[#0B1220] flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden font-sans">
       
       {/* Decorative Background Accents */}
-      <div className="absolute top-0 left-0 w-96 h-96 bg-orange-500/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2"></div>
+      <div className="ds-button-primary absolute top-0 left-0 w-96 h-96  /10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2"></div>
       <div className="absolute bottom-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl translate-x-1/2 translate-y-1/2"></div>
 
       <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10">
         <div className="flex justify-center items-center gap-3">
-          <div className="w-12 h-12 bg-orange-500 rounded-xl flex items-center justify-center font-bold text-2xl text-white shadow-lg shadow-orange-500/20">
+          <div className="ds-button-primary w-12 h-12   rounded-xl flex items-center justify-center font-bold text-2xl text-white shadow-lg shadow-orange-500/20">
             <Wrench className="h-6 w-6 text-white" />
           </div>
           <div>
             <h1 className="text-2xl font-black text-white tracking-tight uppercase">WMS Workshop</h1>
-            <p className="text-[10px] text-orange-400 font-bold uppercase tracking-widest leading-none">Management & Sync System</p>
+            <p className="text-[10px] text-orange-400 font-bold uppercase tracking-widest leading-none mt-0.5">Management & Sync System</p>
           </div>
         </div>
         
@@ -231,7 +231,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10 px-4 sm:px-0">
-        <div className="bg-slate-800 py-8 px-4 shadow-xl rounded-2xl border border-slate-700/50 sm:px-10">
+        <div className="ds-card sm:px-10 py-8">
           
           {/* Error Banner */}
           {error && (
@@ -245,7 +245,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
             /* ======= LOGIN FORM ======= */
             <form className="space-y-6" onSubmit={handleSubmit}>
               <div>
-                <label htmlFor="username" className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+                <label htmlFor="username" className="ds-label">
                   Username
                 </label>
                 <div className="mt-1.5 relative rounded-xl shadow-sm">
@@ -259,14 +259,14 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                     required
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className="block w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
+                    className="ds-input pl-10"
                     placeholder="e.g. developer"
                   />
                 </div>
               </div>
 
               <div>
-                <label htmlFor="password" className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+                <label htmlFor="password" className="ds-label">
                   Password
                 </label>
                 <div className="mt-1.5 relative rounded-xl shadow-sm">
@@ -280,7 +280,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="block w-full pl-10 pr-10 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
+                    className="ds-input pl-10 pr-10"
                     placeholder="••••••••"
                   />
                   <button
@@ -295,7 +295,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                   <button
                     type="button"
                     onClick={() => setForgotPasswordStep("request")}
-                    className="text-xs text-orange-400 hover:text-orange-300 font-medium transition-colors"
+                    className="text-xs text-orange-400 hover:text-orange-300 font-medium transition-colors cursor-pointer"
                   >
                     Forgot Password?
                   </button>
@@ -307,7 +307,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                   id="login-btn"
                   type="submit"
                   disabled={loading}
-                  className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-lg shadow-orange-500/15 text-sm font-bold text-white bg-orange-500 hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="ds-button-primary w-full"
                 >
                   {loading ? (
                     <>
@@ -327,7 +327,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
             /* ======= FORGOT PASSWORD REQUEST FORM ======= */
             <form className="space-y-6" onSubmit={handleResetRequest}>
               <div>
-                <label htmlFor="resetMobile" className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+                <label htmlFor="resetMobile" className="ds-label">
                   Authorized Mobile No
                 </label>
                 <div className="mt-1.5 relative rounded-xl shadow-sm">
@@ -341,7 +341,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                     required
                     value={resetMobile}
                     onChange={(e) => setResetMobile(e.target.value)}
-                    className="block w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
+                    className="ds-input pl-10"
                     placeholder="e.g. 9876543210"
                   />
                 </div>
@@ -350,7 +350,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-lg shadow-orange-500/15 text-sm font-bold text-white bg-orange-500 hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="ds-button-primary w-full"
                 >
                   {loading ? (
                     <><FunnySpinner className="h-4 w-4" /><span>Sending OTP...</span></>
@@ -362,7 +362,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                   type="button"
                   onClick={handleBackToLogin}
                   disabled={loading}
-                  className="w-full py-3 px-4 border border-slate-600 rounded-xl text-sm font-bold text-slate-300 hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 transition-all"
+                  className="ds-button-secondary w-full"
                 >
                   Back to Login
                 </button>
@@ -372,7 +372,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
             /* ======= FORGOT PASSWORD VERIFY FORM ======= */
             <form className="space-y-6" onSubmit={handleResetVerify}>
               <div>
-                <label htmlFor="resetOtp" className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+                <label htmlFor="resetOtp" className="ds-label">
                   Enter OTP Code
                 </label>
                 <div className="mt-1.5 relative rounded-xl shadow-sm">
@@ -389,13 +389,13 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                     required
                     value={resetOtp}
                     onChange={(e) => setResetOtp(e.target.value.replace(/\D/g, ""))}
-                    className="block w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium tracking-[0.5em] text-center text-lg"
+                    className="ds-input pl-10 tracking-[0.5em] text-center text-lg font-medium"
                     placeholder="• • • • • •"
                   />
                 </div>
               </div>
               <div>
-                <label htmlFor="newPassword" className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+                <label htmlFor="newPassword" className="ds-label">
                   New Password
                 </label>
                 <div className="mt-1.5 relative rounded-xl shadow-sm">
@@ -409,7 +409,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                     required
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="block w-full pl-10 pr-10 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium"
+                    className="ds-input pl-10 pr-10"
                     placeholder="••••••••"
                   />
                   <button
@@ -425,7 +425,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                 <button
                   type="submit"
                   disabled={loading || resetOtp.length < 6}
-                  className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-lg shadow-emerald-500/15 text-sm font-bold text-white bg-emerald-500 hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="ds-button-success w-full"
                 >
                   {loading ? (
                     <><FunnySpinner className="h-4 w-4" /><span>Resetting...</span></>
@@ -437,7 +437,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                   type="button"
                   onClick={handleBackToLogin}
                   disabled={loading}
-                  className="w-full py-3 px-4 border border-slate-600 rounded-xl text-sm font-bold text-slate-300 hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 transition-all"
+                  className="ds-button-secondary w-full"
                 >
                   Cancel
                 </button>
@@ -447,13 +447,13 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
             /* ======= OTP VERIFICATION FORM ======= */
             <form className="space-y-6" onSubmit={handleOtpVerify}>
               <div className="flex items-center justify-center mb-2">
-                <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center border border-emerald-500/20">
+                <div className="ds-button-success w-14 h-14  /10 rounded-2xl flex items-center justify-center border border-emerald-500/20">
                   <ShieldCheck className="h-7 w-7 text-emerald-400" />
                 </div>
               </div>
 
               <div>
-                <label htmlFor="otp" className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+                <label htmlFor="otp" className="ds-label">
                   Enter OTP Code
                 </label>
                 <div className="mt-1.5 relative rounded-xl shadow-sm">
@@ -471,7 +471,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                     required
                     value={otpCode}
                     onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
-                    className="block w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium tracking-[0.5em] text-center text-lg"
+                    className="ds-input pl-10 tracking-[0.5em] text-center text-lg font-medium"
                     placeholder="• • • • • •"
                   />
                 </div>
@@ -485,7 +485,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                   id="verify-otp-btn"
                   type="submit"
                   disabled={loading || otpCode.length < 6}
-                  className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-lg shadow-emerald-500/15 text-sm font-bold text-white bg-emerald-500 hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="ds-button-success w-full"
                 >
                   {loading ? (
                     <>
@@ -503,7 +503,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                 <button
                   type="button"
                   onClick={handleBackToLogin}
-                  className="w-full flex justify-center items-center gap-2 py-2.5 px-4 rounded-xl text-xs font-medium text-slate-400 hover:text-slate-300 hover:bg-slate-700/50 focus:outline-none transition-all"
+                  className="ds-button-secondary w-full"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />
                   <span>Back to Login</span>
@@ -517,7 +517,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
             <div className="mt-6 pt-5 border-t border-slate-700/50 flex flex-col items-center">
               <button
                 onClick={() => setShowHelp(!showHelp)}
-                className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-300 font-medium focus:outline-none"
+                className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-300 font-medium focus:outline-none cursor-pointer"
               >
                 <HelpCircle className="h-3.5 w-3.5" />
                 <span>Need help logging in?</span>
@@ -527,12 +527,12 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                 <div className="mt-4 p-3 bg-slate-900/50 rounded-xl border border-slate-700/40 w-full text-slate-400 space-y-2 text-[11px] leading-relaxed">
                   <p className="font-semibold text-slate-300">Default Demo Credentials:</p>
                   <div className="grid grid-cols-2 gap-2 text-slate-400">
-                    <div className="p-2 bg-slate-900/80 rounded-lg">
+                    <div className="p-2 bg-slate-900/80 rounded-lg text-slate-300 border border-slate-800">
                       <p className="font-bold text-orange-400 uppercase tracking-widest text-[9px]">Developer</p>
                       <p className="mt-1">User: <strong className="text-white">developer</strong></p>
                       <p>Pass: <strong className="text-white">Dev@DWIP2026</strong></p>
                     </div>
-                    <div className="p-2 bg-slate-900/80 rounded-lg">
+                    <div className="p-2 bg-slate-900/80 rounded-lg text-slate-300 border border-slate-800">
                       <p className="font-bold text-indigo-400 uppercase tracking-widest text-[9px]">Admin</p>
                       <p className="mt-1">User: <strong className="text-white">admin</strong></p>
                       <p>Pass: <strong className="text-white">Admin@DWIP2026</strong></p>

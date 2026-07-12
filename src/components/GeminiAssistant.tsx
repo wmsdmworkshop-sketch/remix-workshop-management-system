@@ -711,7 +711,7 @@ export default function GeminiAssistant({
             {/* Chat Title / Header */}
             <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex flex-col xl:flex-row xl:items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-orange-500/15 rounded-lg text-orange-600">
+                <div className="ds-button-primary p-1.5  /15 rounded-lg text-orange-600">
                   <Sparkles className="h-4 w-4" />
                 </div>
                 <div>
@@ -719,7 +719,7 @@ export default function GeminiAssistant({
                     <h2 className="text-xs font-black uppercase tracking-wider text-slate-800">
                       WMS Copilot Workspace
                     </h2>
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                    <span className="ds-button-success inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold  /10 text-emerald-600 border border-emerald-500/20">
                       ⚡ {useLite ? "Gemini Lite" : useThinking ? "Gemini Pro (Thinking)" : "Gemini Flash"}
                     </span>
                   </div>
@@ -839,13 +839,13 @@ export default function GeminiAssistant({
               {/* Assistant Writing / Thinking indicator */}
               {loading && (
                 <div className="flex items-start gap-3 max-w-[80%]">
-                  <div className="h-8 w-8 rounded-lg flex items-center justify-center bg-orange-500 border border-orange-600 text-white shrink-0 animate-pulse">
+                  <div className="ds-button-primary h-8 w-8 rounded-lg flex items-center justify-center   border border-orange-600 text-white shrink-0 animate-pulse">
                     <Sparkles className="h-4 w-4" />
                   </div>
                   <div className="p-3.5 bg-white border border-slate-200 rounded-xl rounded-tl-none shadow-2xs flex items-center gap-2">
-                    <span className="flex h-1.5 w-1.5 bg-orange-500 rounded-full animate-bounce"></span>
-                    <span className="flex h-1.5 w-1.5 bg-orange-500 rounded-full animate-bounce [animation-delay:0.2s]"></span>
-                    <span className="flex h-1.5 w-1.5 bg-orange-500 rounded-full animate-bounce [animation-delay:0.4s]"></span>
+                    <span className="ds-button-primary flex h-1.5 w-1.5   rounded-full animate-bounce"></span>
+                    <span className="ds-button-primary flex h-1.5 w-1.5   rounded-full animate-bounce [animation-delay:0.2s]"></span>
+                    <span className="ds-button-primary flex h-1.5 w-1.5   rounded-full animate-bounce [animation-delay:0.4s]"></span>
                     <span className="text-[10px] text-slate-400 font-semibold ml-1">Copilot is thinking...</span>
                   </div>
                 </div>
@@ -899,7 +899,7 @@ export default function GeminiAssistant({
                 <button 
                   onClick={() => handleSend()}
                   disabled={loading || !input.trim()}
-                  className="bg-orange-500 hover:bg-orange-600 disabled:bg-slate-200 disabled:text-slate-400 disabled:border-transparent text-white font-bold px-4 py-2.5 rounded transition-all flex items-center gap-1.5 cursor-pointer shadow-sm disabled:cursor-not-allowed"
+                  className="ds-button-primary   hover:bg-orange-600 disabled:bg-slate-200 disabled:text-slate-400 disabled:border-transparent text-white font-bold px-4 py-2.5 rounded transition-all flex items-center gap-1.5 cursor-pointer shadow-sm disabled:cursor-not-allowed"
                 >
                   <Send className="h-3.5 w-3.5" />
                   <span className="text-xs uppercase tracking-wider">Send</span>
@@ -914,14 +914,14 @@ export default function GeminiAssistant({
           <div className="flex flex-col flex-1 p-6 items-center justify-center bg-slate-950 text-white h-full relative overflow-hidden">
             
             {/* Ambient Background Glows */}
-            <div className="absolute top-1/4 left-1/4 h-72 w-72 bg-emerald-500/10 rounded-full filter blur-3xl animate-pulse"></div>
-            <div className="absolute bottom-1/4 right-1/4 h-72 w-72 bg-orange-500/10 rounded-full filter blur-3xl animate-pulse [animation-delay:2s]"></div>
+            <div className="ds-button-success absolute top-1/4 left-1/4 h-72 w-72  /10 rounded-full filter blur-3xl animate-pulse"></div>
+            <div className="ds-button-primary absolute bottom-1/4 right-1/4 h-72 w-72  /10 rounded-full filter blur-3xl animate-pulse [animation-delay:2s]"></div>
 
             <div className="z-10 text-center max-w-md space-y-6">
               
               <div className="space-y-2">
-                <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/15 text-emerald-400 text-[10px] font-bold uppercase tracking-wider rounded-full border border-emerald-500/20">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping"></span>
+                <div className="ds-button-success inline-flex items-center gap-2 px-3 py-1  /15 text-emerald-400 text-[10px] font-bold uppercase tracking-wider rounded-full border border-emerald-500/20">
+                  <span className="ds-button-success h-2 w-2 rounded-full   animate-ping"></span>
                   Gemini-3.1-Flash-Live
                 </div>
                 <h3 className="text-xl font-black uppercase tracking-wider text-slate-100">Live Workshop Voice Room</h3>
@@ -1037,7 +1037,7 @@ export default function GeminiAssistant({
 
                   {/* Image input selector */}
                   <div className="space-y-2">
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Upload Reference Photo</label>
+                    <label className="ds-label block text-[10px] font-bold uppercase tracking-wider  ">Upload Reference Photo</label>
                     
                     {selectedVideoImage ? (
                       <div className="relative border border-slate-200 rounded-xl overflow-hidden group">
@@ -1070,7 +1070,7 @@ export default function GeminiAssistant({
 
                   {/* Aspect ratio picker */}
                   <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Target Video Aspect Ratio</label>
+                    <label className="ds-label block text-[10px] font-bold uppercase tracking-wider  ">Target Video Aspect Ratio</label>
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         onClick={() => setVideoAspectRatio("16:9")}
@@ -1097,7 +1097,7 @@ export default function GeminiAssistant({
 
                   {/* Optional Text Guidance Prompt */}
                   <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    <label className="ds-label block text-[10px] font-bold uppercase tracking-wider  ">
                       Animation Prompt Guidelines (Optional)
                     </label>
                     <textarea
@@ -1112,7 +1112,7 @@ export default function GeminiAssistant({
                   <button
                     onClick={triggerVideoGeneration}
                     disabled={videoGenerating || !selectedVideoImage}
-                    className="w-full bg-rose-600 hover:bg-rose-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
+                    className="ds-button-danger w-full   hover:bg-rose-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
                   >
                     {videoGenerating ? (
                       <>

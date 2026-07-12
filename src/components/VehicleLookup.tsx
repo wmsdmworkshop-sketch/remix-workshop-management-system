@@ -158,7 +158,7 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
   const getStatusBadge = (status: JobCard["status"]) => {
     switch (status) {
       case "Invoiced":
-        return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Invoiced & Paid</span>;
+        return <span className="ds-button-success px-2 py-1 text-xs font-semibold rounded-full  /15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Invoiced & Paid</span>;
       case "Completed":
         return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-sky-500/15 text-sky-400 border border-sky-500/30 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Ready / Completed</span>;
       case "Active":
@@ -206,7 +206,7 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
               <input
                 type="text"
                 placeholder="e.g. MH-12-AB-1234 or VIN Chassis..."
-                className="block w-full pl-11 pr-10 py-3 bg-slate-950/60 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 text-sm font-mono tracking-wide"
+                className="ds-input block w-full pl-11 pr-10 py-3  /60 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 text-sm font-mono tracking-wide"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -485,7 +485,7 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
                                   </div>
                                 )}
                                 {job.pending_reason && (
-                                  <div className="text-xs bg-slate-900/60 border border-slate-800/80 p-2.5 rounded text-slate-400">
+                                  <div className="ds-card text-xs   border  /80 p-2.5 rounded text-slate-400">
                                     <span className="font-semibold text-slate-300">Pending Root Cause:</span> {job.pending_reason}
                                   </div>
                                 )}

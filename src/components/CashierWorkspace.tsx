@@ -55,7 +55,7 @@ export const CashierWorkspace: React.FC<CashierWorkspaceProps> = React.memo(({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="ds-button-success flex h-2 w-2 rounded-full   animate-pulse" />
             <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">
               Cashier & Accounts Workspace
             </span>
@@ -140,14 +140,14 @@ export const CashierWorkspace: React.FC<CashierWorkspaceProps> = React.memo(({
             </div>
 
             {/* Section 15: AI Fraud Detection check */}
-            <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-xl flex items-center gap-2.5 text-xs text-emerald-400">
+            <div className="ds-button-success  /10 border border-emerald-500/20 p-3 rounded-xl flex items-center gap-2.5 text-xs text-emerald-400">
               <ShieldCheck className="h-4 w-4 text-emerald-400 animate-pulse flex-shrink-0" />
               <span>Gemma Fraud Scan: UPI dynamic hash verification matches expected settlement payload.</span>
             </div>
 
             <button 
               onClick={handleCollectPayment}
-              className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
+              className="ds-button-success w-full py-2   hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
             >
               Confirm Settlement & Print Receipt
             </button>

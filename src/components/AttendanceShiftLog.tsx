@@ -272,7 +272,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
         <div className="flex items-center gap-2">
           <button
             onClick={fetchData}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-xs font-semibold text-slate-300 transition-all"
+            className="ds-button-secondary flex items-center gap-1.5 px-3 py-1.5     border border-slate-700/50 rounded-lg text-xs font-semibold text-slate-300 transition-all"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Refresh
@@ -364,7 +364,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Employee */}
             <div>
-              <label className="block text-xs font-bold text-slate-400 mb-1">Employee</label>
+              <label className="ds-label block text-xs font-bold   mb-1">Employee</label>
               <select
                 value={formEmployeeId}
                 onChange={(e) => setFormEmployeeId(parseInt(e.target.value))}
@@ -378,7 +378,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
             </div>
             {/* Shift Type */}
             <div>
-              <label className="block text-xs font-bold text-slate-400 mb-1">Shift Type</label>
+              <label className="ds-label block text-xs font-bold   mb-1">Shift Type</label>
               <div className="flex gap-2">
                 {(["Morning", "Afternoon", "Night"] as const).map(shift => {
                   const ShiftIcon = shiftIcon[shift];
@@ -401,7 +401,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
             </div>
             {/* Status */}
             <div>
-              <label className="block text-xs font-bold text-slate-400 mb-1">Status</label>
+              <label className="ds-label block text-xs font-bold   mb-1">Status</label>
               <div className="flex gap-2 flex-wrap">
                 {(["Present", "Absent", "Leave", "Half Day"] as const).map(s => {
                   const cfg = statusConfig[s];
@@ -425,7 +425,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Check-in */}
             <div>
-              <label className="block text-xs font-bold text-slate-400 mb-1">Check-in Time</label>
+              <label className="ds-label block text-xs font-bold   mb-1">Check-in Time</label>
               <input
                 type="time"
                 value={formCheckIn}
@@ -435,7 +435,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
             </div>
             {/* Check-out */}
             <div>
-              <label className="block text-xs font-bold text-slate-400 mb-1">Check-out Time</label>
+              <label className="ds-label block text-xs font-bold   mb-1">Check-out Time</label>
               <input
                 type="time"
                 value={formCheckOut}
@@ -445,7 +445,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
             </div>
             {/* Notes */}
             <div>
-              <label className="block text-xs font-bold text-slate-400 mb-1">Notes</label>
+              <label className="ds-label block text-xs font-bold   mb-1">Notes</label>
               <input
                 type="text"
                 value={formNotes}
@@ -458,7 +458,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
           <div className="flex justify-end gap-2">
             <button
               onClick={() => { setShowForm(false); resetForm(); }}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold transition-all"
+              className="ds-button-secondary px-4 py-2     text-slate-300 rounded-lg text-xs font-bold transition-all"
             >
               Cancel
             </button>
@@ -488,19 +488,19 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
         </div>
       ) : (
         <div className="bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-slate-700/50 rounded-xl overflow-x-auto">
-          <table className="w-full min-w-[900px]">
+          <table className="ds-table w-full min-w-[900px]">
             <thead>
               <tr className="border-b border-slate-700/50">
-                <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Employee</th>
-                <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Role</th>
-                <th className="text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Shift</th>
-                <th className="text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Check-in</th>
-                <th className="text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Check-out</th>
-                <th className="text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Verif. Face</th>
-                <th className="text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Verif. GPS</th>
-                <th className="text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Status Badge</th>
-                <th className="text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Action</th>
+                <th className="ds-th text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Employee</th>
+                <th className="ds-th text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Role</th>
+                <th className="ds-th text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Shift</th>
+                <th className="ds-th text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                <th className="ds-th text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Check-in</th>
+                <th className="ds-th text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Check-out</th>
+                <th className="ds-th text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Verif. Face</th>
+                <th className="ds-th text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Verif. GPS</th>
+                <th className="ds-th text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Status Badge</th>
+                <th className="ds-th text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -520,9 +520,9 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
                 const hasOutGps = r.check_out_lat && r.check_out_lng;
 
                 return (
-                  <tr key={r.attendance_id} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                  <tr key={r.attendance_id} className="ds-table-row border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                     {/* Employee */}
-                    <td className="px-4 py-3">
+                    <td className="ds-td px-4 py-3">
                       <div className="flex items-center gap-2.5">
                         <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-[10px] font-bold text-white">
                           {(r.employee_name || "?").split(" ").map(n => n[0]).join("")}
@@ -532,10 +532,10 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
                     </td>
                     
                     {/* Role */}
-                    <td className="px-4 py-3 text-xs text-slate-400">{r.employee_role}</td>
+                    <td className="ds-td px-4 py-3 text-xs text-slate-400">{r.employee_role}</td>
                     
                     {/* Shift */}
-                    <td className="px-4 py-3 text-center">
+                    <td className="ds-td px-4 py-3 text-center">
                       <span className="inline-flex items-center gap-1 text-xs text-slate-400">
                         <ShiftIcon className="h-3 w-3" />
                         {r.shift_type}
@@ -543,7 +543,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
                     </td>
                     
                     {/* Status */}
-                    <td className="px-4 py-3 text-center">
+                    <td className="ds-td px-4 py-3 text-center">
                       <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold border ${sc.bg} ${sc.color}`}>
                         <StatusIcon className="h-3 w-3" />
                         {r.status}
@@ -551,17 +551,17 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
                     </td>
                     
                     {/* Check In */}
-                    <td className="px-4 py-3 text-center">
+                    <td className="ds-td px-4 py-3 text-center">
                       <span className="text-xs text-slate-300 font-mono">{r.check_in || "—"}</span>
                     </td>
                     
                     {/* Check Out */}
-                    <td className="px-4 py-3 text-center">
+                    <td className="ds-td px-4 py-3 text-center">
                       <span className="text-xs text-slate-300 font-mono">{r.check_out || "—"}</span>
                     </td>
 
                     {/* Face Biometric Match Photo & Score */}
-                    <td className="px-4 py-3 text-center">
+                    <td className="ds-td px-4 py-3 text-center">
                       <div className="flex justify-center gap-1">
                         {hasInPhoto && (
                           <div className="relative group cursor-pointer" onClick={() => setSelectedPhoto(r.face_photo_in || null)}>
@@ -594,7 +594,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
                     </td>
 
                     {/* GPS Map Pin */}
-                    <td className="px-4 py-3 text-center">
+                    <td className="ds-td px-4 py-3 text-center">
                       <div className="flex justify-center gap-2">
                         {hasInGps ? (
                           <a
@@ -626,9 +626,9 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
                     </td>
 
                     {/* Approved/Verification Status */}
-                    <td className="px-4 py-3 text-center">
+                    <td className="ds-td px-4 py-3 text-center">
                       {r.is_approved ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/25 uppercase">
+                        <span className="ds-button-success inline-flex items-center gap-1 text-[10px] font-black text-emerald-400  /10 px-2 py-0.5 rounded border border-emerald-500/25 uppercase">
                           <ShieldCheck className="h-3 w-3" />
                           Auto-Approved
                         </span>
@@ -643,11 +643,11 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
                     </td>
 
                     {/* Quick supervisor actions */}
-                    <td className="px-4 py-3 text-center">
+                    <td className="ds-td px-4 py-3 text-center">
                       {r.is_approved === false && canApprove && (
                         <button
                           onClick={() => handleApprove(r)}
-                          className="flex items-center gap-1.5 mx-auto px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-black uppercase tracking-wider transition-all"
+                          className="ds-button-success ds-button-success flex items-center gap-1.5 mx-auto px-2 py-1   hover:  text-white rounded text-[10px] font-black uppercase tracking-wider transition-all"
                         >
                           <ThumbsUp className="h-3 w-3" />
                           Approve
@@ -683,7 +683,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
             </div>
             <button
               onClick={() => setSelectedPhoto(null)}
-              className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-slate-800 text-white border border-slate-700 font-bold flex items-center justify-center hover:bg-slate-700 shadow-xl transition-all"
+              className="ds-button-secondary absolute -top-3 -right-3 w-8 h-8 rounded-full   text-white border border-slate-700 font-bold flex items-center justify-center   shadow-xl transition-all"
             >
               ✕
             </button>

@@ -372,7 +372,7 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
         </p>
         <button 
           onClick={onRefresh}
-          className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs uppercase tracking-wider rounded-lg transition-colors"
+          className="ds-button-danger mt-4 px-4 py-2   hover:bg-red-700 text-white font-bold text-xs uppercase tracking-wider rounded-lg transition-colors"
         >
           Reconnect Stream
         </button>
@@ -394,7 +394,7 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="ds-button-success flex h-2 w-2 rounded-full   animate-pulse" />
             <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">
               Operational Live Control Center ({userRole.toUpperCase()})
             </span>
@@ -498,7 +498,7 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
               ))}
             </div>
           ) : (
-            <div className="text-xs text-emerald-400 font-bold bg-emerald-500/5 p-3 rounded-xl border border-emerald-500/10 text-center">
+            <div className="ds-button-success text-xs text-emerald-400 font-bold  /5 p-3 rounded-xl border border-emerald-500/10 text-center">
               ✔ No imminent SLA breaches predicted.
             </div>
           )}
@@ -519,7 +519,7 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
                     <span className="text-amber-400">Delay: {p.expectedDelay}</span>
                   </div>
                   <div className="text-[10px] text-slate-500">Needed: {p.delayedPart}</div>
-                  <div className="text-[9px] text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10 inline-block">
+                  <div className="ds-button-success text-[9px] text-emerald-400  /5 px-2 py-0.5 rounded border border-emerald-500/10 inline-block">
                     Alt: {p.alternatePart}
                   </div>
                 </div>
@@ -661,7 +661,7 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
                   if (selectedTechId) await handleTechAllocation(selectedJobId, selectedTechId);
                   setShowAllocModal(false);
                 }}
-                className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
+                className="ds-button-success flex-1 py-2   hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
               >
                 Apply Allocations
               </button>

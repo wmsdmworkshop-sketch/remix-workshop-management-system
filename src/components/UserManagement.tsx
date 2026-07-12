@@ -548,11 +548,11 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
       
       {/* Header Banner */}
       <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-orange-500/10 rounded-full blur-3xl -translate-y-12 translate-x-12"></div>
+        <div className="ds-button-primary absolute top-0 right-0 w-64 h-64  /10 rounded-full blur-3xl -translate-y-12 translate-x-12"></div>
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative z-10">
           <div>
             <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-orange-500/20 text-orange-400 rounded-xl border border-orange-500/30">
+              <div className="ds-button-primary p-2.5  /20 text-orange-400 rounded-xl border border-orange-500/30">
                 <Users className="h-6 w-6" />
               </div>
               <div>
@@ -574,7 +574,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
             )}
             <button
               onClick={() => setShowAddForm(!showAddForm)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-orange-500/15 transition-all cursor-pointer"
+              className="ds-button-primary flex items-center gap-2 px-4 py-2.5   hover:bg-orange-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-orange-500/15 transition-all cursor-pointer"
             >
               <UserPlus className="h-4 w-4" />
               <span>{showAddForm ? "Cancel Form" : "Create Operator Account"}</span>
@@ -628,7 +628,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
       )}
 
       {success && (
-        <div className="rounded-xl bg-emerald-500/10 p-4 border border-emerald-500/20 flex items-start gap-3 text-emerald-400 text-xs animate-in slide-in-from-top-2 duration-200">
+        <div className="ds-button-success rounded-xl  /10 p-4 border border-emerald-500/20 flex items-start gap-3 text-emerald-400 text-xs animate-in slide-in-from-top-2 duration-200">
           <CheckCircle className="h-5 w-5 shrink-0" />
           <span>{success}</span>
         </div>
@@ -644,7 +644,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
 
           <form onSubmit={handleAddUser} className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+              <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
                 Full Name *
               </label>
               <input
@@ -658,7 +658,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+              <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
                 Username (Lower case) *
               </label>
               <input
@@ -672,7 +672,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+              <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
                 Password *
               </label>
               <input
@@ -686,7 +686,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+              <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
                 System Role *
               </label>
               <select
@@ -701,7 +701,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+              <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
                 Link to Employee ID (Optional)
               </label>
               <input
@@ -714,7 +714,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+              <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
                 Authorised Mobile No (for OTP)
               </label>
               <input
@@ -727,7 +727,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+              <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
                 Email (Optional)
               </label>
               <input
@@ -800,15 +800,15 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse block md:table">
-                <thead className="hidden md:table-header-group">
+              <table className="ds-table w-full text-left border-collapse block md:table">
+                <thead className="ds-th hidden md:table-header-group">
                   <tr className="border-b border-slate-100 bg-slate-50/50">
-                    <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">User Details</th>
-                    <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">System Authorization</th>
-                    <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Linked Employee</th>
-                    <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Last Activity</th>
-                    <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
-                    <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right">Actions</th>
+                    <th className="ds-th p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">User Details</th>
+                    <th className="ds-th p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">System Authorization</th>
+                    <th className="ds-th p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Linked Employee</th>
+                    <th className="ds-th p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Last Activity</th>
+                    <th className="ds-th p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                    <th className="ds-th p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 block md:table-row-group">
@@ -816,9 +816,9 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                     const isEditing = editingUserId === user.user_id;
 
                     return (
-                      <tr key={user.user_id} className="block md:table-row hover:bg-slate-50/50 transition-colors p-4 md:p-0 border-b border-slate-100 md:border-0 space-y-3 md:space-y-0">
+                      <tr key={user.user_id} className="ds-table-row block md:table-row hover:bg-slate-50/50 transition-colors p-4 md:p-0 border-b border-slate-100 md:border-0 space-y-3 md:space-y-0">
                         {/* Name Details */}
-                        <td className="block md:table-cell p-0 md:p-4">
+                        <td className="ds-td block md:table-cell p-0 md:p-4">
                           <span className="block md:hidden text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">User Details</span>
                           {isEditing ? (
                             <div className="space-y-2">
@@ -868,7 +868,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                         </td>
 
                         {/* Role Badge */}
-                        <td className="block md:table-cell p-0 md:p-4">
+                        <td className="ds-td block md:table-cell p-0 md:p-4">
                           <span className="block md:hidden text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">System Authorization</span>
                           {isEditing ? (
                             <select
@@ -888,7 +888,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                         </td>
 
                         {/* Linked Employee */}
-                        <td className="block md:table-cell p-0 md:p-4">
+                        <td className="ds-td block md:table-cell p-0 md:p-4">
                           <span className="block md:hidden text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Linked Employee</span>
                           {isEditing ? (
                             <input
@@ -906,7 +906,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                         </td>
 
                         {/* Last Activity */}
-                        <td className="block md:table-cell p-0 md:p-4 text-xs text-slate-500 font-mono">
+                        <td className="ds-td block md:table-cell p-0 md:p-4 text-xs text-slate-500 font-mono">
                           <span className="block md:hidden text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Last Activity</span>
                           {user.last_login 
                             ? new Date(user.last_login).toLocaleString()
@@ -915,7 +915,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                         </td>
 
                         {/* Toggle state */}
-                        <td className="block md:table-cell p-0 md:p-4">
+                        <td className="ds-td block md:table-cell p-0 md:p-4">
                           <span className="block md:hidden text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Status</span>
                           <button
                             onClick={() => handleToggleActive(user)}
@@ -938,14 +938,14 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                         </td>
 
                         {/* Actions */}
-                        <td className="block md:table-cell p-0 md:p-4 text-left md:text-right">
+                        <td className="ds-td block md:table-cell p-0 md:p-4 text-left md:text-right">
                           <span className="block md:hidden text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Actions</span>
                           {isEditing ? (
                             <div className="flex justify-start md:justify-end gap-2">
                               <button
                                 onClick={() => handleUpdateUser(user.user_id)}
                                 disabled={editLoading}
-                                className="px-2 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded font-bold text-[10px] uppercase shadow cursor-pointer"
+                                className="ds-button-success ds-button-success px-2 py-1.5   hover:  text-white rounded font-bold text-[10px] uppercase shadow cursor-pointer"
                               >
                                 Save
                               </button>
@@ -985,7 +985,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
             <button
               onClick={handleSavePermissions}
               disabled={saveLoading}
-              className="px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-bold transition shadow-md shadow-orange-500/10 cursor-pointer"
+              className="ds-button-primary px-6 py-2.5   hover:bg-orange-600 text-white rounded-xl text-xs font-bold transition shadow-md shadow-orange-500/10 cursor-pointer"
             >
               {saveLoading ? "Saving Changes..." : "Save Permission Matrix"}
             </button>
@@ -995,12 +995,12 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
             <FunnyLoader message="Loading permissions matrix..." />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[800px]">
+              <table className="ds-table w-full text-left border-collapse min-w-[800px]">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50">
-                    <th className="p-4 text-xs font-bold text-slate-700 w-44">Module Name</th>
+                    <th className="ds-th p-4 text-xs font-bold text-slate-700 w-44">Module Name</th>
                     {ROLES.map((role) => (
-                      <th key={role.key} className="p-4 text-center text-xs font-bold text-slate-700">
+                      <th key={role.key} className="ds-th p-4 text-center text-xs font-bold text-slate-700">
                         {role.label}
                       </th>
                     ))}
@@ -1008,8 +1008,8 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {MODULES.map((moduleName) => (
-                    <tr key={moduleName} className="hover:bg-slate-50/50 transition">
-                      <td className="p-4 text-xs font-bold text-slate-800">{moduleName}</td>
+                    <tr key={moduleName} className="ds-table-row hover:bg-slate-50/50 transition">
+                      <td className="ds-td p-4 text-xs font-bold text-slate-800">{moduleName}</td>
                       {ROLES.map((role) => {
                         const perm = permissionsList.find(p => p.module_name === moduleName && p.role_name === role.key) || {
                           can_view: 0,
@@ -1018,7 +1018,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                         };
 
                         return (
-                          <td key={role.key} className="p-4 text-center border-l border-slate-50">
+                          <td key={role.key} className="ds-td p-4 text-center border-l border-slate-50">
                             <div className="flex flex-col items-center gap-2 justify-center">
                               <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-600 cursor-pointer">
                                 <input
@@ -1093,14 +1093,14 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              <table className="ds-table w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                    <th className="pb-3 pr-4">Employee</th>
-                    <th className="pb-3 pr-4">Current Value</th>
-                    <th className="pb-3 pr-4">Requested Update</th>
-                    <th className="pb-3 pr-4">Request Log</th>
-                    <th className="pb-3 text-right">Actions</th>
+                    <th className="ds-th pb-3 pr-4">Employee</th>
+                    <th className="ds-th pb-3 pr-4">Current Value</th>
+                    <th className="ds-th pb-3 pr-4">Requested Update</th>
+                    <th className="ds-th pb-3 pr-4">Request Log</th>
+                    <th className="ds-th pb-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50 text-xs">
@@ -1111,30 +1111,30 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                     if (req.email !== req.current_email) changes.push({ name: "Email", old: req.current_email || "None", new: req.email });
 
                     return (
-                      <tr key={req.request_id} className="hover:bg-slate-50/50">
-                        <td className="py-4 pr-4">
+                      <tr key={req.request_id} className="ds-table-row hover:bg-slate-50/50">
+                        <td className="ds-td py-4 pr-4">
                           <div className="font-bold text-slate-800 uppercase">{req.full_name}</div>
                           <div className="text-[10px] text-slate-400 font-mono mt-0.5">{req.employee_code || `EMP0${req.employee_id}`}</div>
                         </td>
-                        <td className="py-4 pr-4">
+                        <td className="ds-td py-4 pr-4">
                           <div className="space-y-1 font-mono text-[10px] text-slate-400">
                             {changes.map((c, i) => (
                               <div key={i}><span className="font-bold">{c.name}:</span> {c.old}</div>
                             ))}
                           </div>
                         </td>
-                        <td className="py-4 pr-4">
+                        <td className="ds-td py-4 pr-4">
                           <div className="space-y-1 font-mono text-[10px] text-orange-600 font-bold">
                             {changes.map((c, i) => (
                               <div key={i}><span className="text-slate-400 font-normal">{c.name}:</span> {c.new}</div>
                             ))}
                           </div>
                         </td>
-                        <td className="py-4 pr-4 text-[10px] text-slate-400 space-y-0.5">
+                        <td className="ds-td py-4 pr-4 text-[10px] text-slate-400 space-y-0.5">
                           <div>📅 {new Date(req.created_at).toLocaleString()}</div>
                           <div className="font-mono text-[9px]">💻 {req.ip_address}</div>
                         </td>
-                        <td className="py-4 text-right flex justify-end gap-2 items-center">
+                        <td className="ds-td py-4 text-right flex justify-end gap-2 items-center">
                           <button
                             onClick={() => handleResolveRequest(req.request_id, "Approve")}
                             className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer"
@@ -1182,7 +1182,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
 
             <form onSubmit={handleAddRoleSubmit} className="space-y-4 text-xs font-semibold text-slate-700">
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Role Key Name *</label>
+                <label className="ds-label block text-[10px] font-bold   uppercase tracking-wider mb-1">Role Key Name *</label>
                 <input 
                   type="text"
                   required
@@ -1194,7 +1194,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Default Permission Level *</label>
+                <label className="ds-label block text-[10px] font-bold   uppercase tracking-wider mb-1">Default Permission Level *</label>
                 <select
                   value={newPermissionLevel}
                   onChange={(e) => setNewPermissionLevel(e.target.value)}

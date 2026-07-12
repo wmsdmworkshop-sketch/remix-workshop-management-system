@@ -316,7 +316,7 @@ export default function VehicleSearch({
                   <p className="text-xs text-slate-500">No active recall campaigns pending.</p>
                 ) : (
                   selectedVehicle.campaigns.map((c, i) => (
-                    <div key={i} className="text-xs p-2 bg-orange-500/10 border border-orange-500/20 text-orange-400 rounded">
+                    <div key={i} className="ds-button-primary text-xs p-2  /10 border border-orange-500/20 text-orange-400 rounded">
                       ⚠️ {c}
                     </div>
                   ))
