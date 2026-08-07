@@ -213,7 +213,7 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
           </div>
           <div>
             <h1 className="text-lg font-black tracking-tight text-white flex items-center gap-2">
-              DWIP ENTERPRISE <span className="text-xs px-2 py-0.5 rounded bg-orange-600/30 text-orange-400 font-bold border border-orange-500/30">V1.1.0-dev</span>
+              DWIP ENTERPRISE <span className="text-xs px-2 py-0.5 rounded bg-orange-600/30 text-orange-400 font-bold border border-orange-500/30">v1.1.0-rc.1</span>
             </h1>
             <p className="text-xs text-slate-400 font-medium">Enterprise Operations & Diagnostics Gateway</p>
           </div>
@@ -381,7 +381,7 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
               </div>
               <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 space-y-1">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cloud Run Revision</span>
-                <p className="text-xs font-black text-orange-400 font-mono truncate">{healthData?.buildInfo?.cloudRunRevision || 'dwip-enterprise-00041-9c4'}</p>
+                <p className="text-xs font-black text-orange-400 font-mono truncate">{healthData?.buildInfo?.cloudRunRevision || 'loading...'}</p>
               </div>
               <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 space-y-1">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Git Commit / Tag</span>
@@ -558,7 +558,7 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
           <span>Theme: <strong className="text-slate-400">{THEME_CONFIGS[currentTheme]?.name}</strong></span>
         </div>
         <div>
-          <span>Revision: <strong className="text-slate-400 font-mono">{healthData?.buildInfo?.cloudRunRevision || 'dwip-enterprise-00041-9c4'}</strong></span>
+          <span>Revision: <strong className="text-slate-400 font-mono">{healthData?.buildInfo?.cloudRunRevision || 'loading...'}</strong></span>
         </div>
       </footer>
 

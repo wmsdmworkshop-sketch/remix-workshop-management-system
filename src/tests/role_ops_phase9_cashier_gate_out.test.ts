@@ -6,6 +6,104 @@ import { VosEventEngine } from '../core/vos/VosEventEngine';
 
 const gateOutEngine = new GateOutEngine();
 
+
+async function ensureTestTables() {
+  const conn = await pool.getConnection();
+  try {
+    await conn.execute('SET FOREIGN_KEY_CHECKS=0');
+    
+    
+    // Fix tbl_evidence
+    await conn.execute('DROP TABLE IF EXISTS tbl_evidence');
+    await conn.execute(`
+      CREATE TABLE tbl_evidence (
+        evidence_id VARCHAR(50) PRIMARY KEY,
+        entity_type VARCHAR(50),
+        entity_id INT,
+        evidence_type VARCHAR(50),
+        storage_path VARCHAR(255),
+        file_path VARCHAR(255),
+        uploaded_by VARCHAR(50),
+        lifecycle_status VARCHAR(50),
+        is_locked TINYINT(1) DEFAULT 0,
+        workflow_type VARCHAR(50),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Fix tbl_payments
+    await conn.execute('DROP TABLE IF EXISTS tbl_payments');
+    await conn.execute(`
+      CREATE TABLE tbl_payments (
+        payment_id VARCHAR(50) PRIMARY KEY,
+        job_id INT,
+        branch_id INT,
+        amount DECIMAL(10,2),
+        payment_mode VARCHAR(50),
+        reference_number VARCHAR(100),
+        cashier_id VARCHAR(50),
+        status VARCHAR(50) DEFAULT 'COMPLETED',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    
+    // Fix tbl_gate_out
+    await conn.execute('DROP TABLE IF EXISTS tbl_gate_out');
+    await conn.execute(`
+      CREATE TABLE tbl_gate_out (
+        gate_out_id VARCHAR(100) PRIMARY KEY,
+        gate_pass_id VARCHAR(100),
+        job_id INT,
+        branch_id INT,
+        security_operator_id VARCHAR(100),
+        evidence_id VARCHAR(100),
+        capture_source VARCHAR(100),
+        expected_vrn VARCHAR(100),
+        detected_vrn VARCHAR(100),
+        verification_result VARCHAR(50),
+        gate_out_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        vrn VARCHAR(50),
+        verified_by VARCHAR(100),
+        remarks TEXT
+      )
+    `);
+
+    // Fix tbl_gate_pass
+    await conn.execute('DROP TABLE IF EXISTS tbl_gate_pass');
+    await conn.execute(`
+      CREATE TABLE tbl_gate_pass (
+        gate_pass_id VARCHAR(100) PRIMARY KEY,
+        job_id INT,
+        gate_pass_no VARCHAR(100),
+        status VARCHAR(50),
+        branch_id INT,
+        release_basis VARCHAR(100),
+        payment_id VARCHAR(100),
+        credit_request_id VARCHAR(100),
+        manual_gate_pass_request_id VARCHAR(100),
+        is_manual_exception TINYINT(1) DEFAULT 0,
+        issued_by VARCHAR(100),
+        issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        generated_by VARCHAR(100),
+        generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        revoked_by VARCHAR(100),
+        revoked_at TIMESTAMP NULL,
+        revoke_reason TEXT
+      )
+    `);
+
+    // Fix tbl_job_card reference in GateOutEngine
+    await conn.execute('DROP TABLE IF EXISTS tbl_job_card');
+    await conn.execute(`CREATE OR REPLACE VIEW tbl_job_card AS SELECT * FROM job_cards`);
+
+    await conn.execute('SET FOREIGN_KEY_CHECKS=1');
+  } finally {
+    conn.release();
+  }
+}
+
 async function resetDb() {
   const conn = await pool.getConnection();
   try {
@@ -77,6 +175,7 @@ async function addEvidence(evidenceId: string) {
 }
 
 test('Phase 9: Role Ops - Cashier & Gate Out (All Scenarios > 70 Assertions)', async (t) => {
+  await ensureTestTables();
   await resetDb();
 
   await t.test('Scenario 1: getCashierQueue & claimTask', async () => {

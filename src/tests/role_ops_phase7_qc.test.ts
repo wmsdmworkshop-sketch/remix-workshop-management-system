@@ -49,6 +49,8 @@ async function seedJob(tag: string): Promise<number> {
      VALUES (?, ?, 'Test Customer', '9999999999', 'Tata', 'Nexon', 2023, 15000, 'Test Phase 7 Job', 'QC_PENDING', 1, 'NORMAL', '2026-12-31', ?, NOW())`,
     [jcNo, vrn, VALID_EMPLOYEE_ID]
   );
+  await pool.execute(`INSERT IGNORE INTO backup_legacy_employees (employee_id, full_name, employee_code, role, employee_grade, basic_salary, mobile, is_active) VALUES (1, 'Test Tech', 'EMP001', 'TECH', 'A', 1000, '9999999999', 1)`);
+  await pool.execute(`INSERT IGNORE INTO backup_legacy_job_cards (job_id, job_card_no, vrn, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, km_reading, sr_type_id, job_description, priority, status, etd, created_by, created_at) VALUES (?, 'X', 'X', 'X', 'X', 'X', 'X', 2000, 0, 1, 'X', 'X', 'X', 'X', 1, 'X')`, [res.insertId]);
   return res.insertId;
 }
 
@@ -62,6 +64,8 @@ async function seedJobWithCardNo(tag: string): Promise<{ jobId: number; jobCardN
      VALUES (?, ?, 'Test Customer', '9999999999', 'Tata', 'Nexon', 2023, 15000, 'Test Phase 7 Job', 'QC_PENDING', 1, 'NORMAL', '2026-12-31', ?, NOW())`,
     [jcNo, vrn, VALID_EMPLOYEE_ID]
   );
+  await pool.execute(`INSERT IGNORE INTO backup_legacy_employees (employee_id, full_name, employee_code, role, employee_grade, basic_salary, mobile, is_active) VALUES (1, 'Test Tech', 'EMP001', 'TECH', 'A', 1000, '9999999999', 1)`);
+  await pool.execute(`INSERT IGNORE INTO backup_legacy_job_cards (job_id, job_card_no, vrn, customer_name, customer_mobile, vehicle_make, vehicle_model, vehicle_year, km_reading, sr_type_id, job_description, priority, status, etd, created_by, created_at) VALUES (?, 'X', 'X', 'X', 'X', 'X', 'X', 2000, 0, 1, 'X', 'X', 'X', 'X', 1, 'X')`, [res.insertId]);
   return { jobId: res.insertId, jobCardNo: jcNo };
 }
 

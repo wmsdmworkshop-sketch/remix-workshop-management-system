@@ -137,6 +137,42 @@ async function ensureUserWithRole(userId: number, role: string): Promise<void> {
 
 // â”€â”€â”€ ENSURE TABLES EXIST (idempotent) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function ensureTestTables(): Promise<void> {
+  await pool.execute('DROP TABLE IF EXISTS tbl_manual_gate_pass_request');
+  await pool.execute(`
+    CREATE TABLE tbl_manual_gate_pass_request (
+      mgp_id INT AUTO_INCREMENT PRIMARY KEY,
+      job_id INT,
+      job_card_no VARCHAR(100),
+      vrn VARCHAR(50),
+      customer_name VARCHAR(100),
+      branch_id INT,
+      pre_invoice_id INT,
+      requested_by_id INT,
+      requested_by_name VARCHAR(100),
+      requestor_role VARCHAR(50),
+      requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      reason_code VARCHAR(50),
+      justification TEXT,
+      crm_invoice_availability VARCHAR(50),
+      crm_gate_pass_availability VARCHAR(50),
+      expected_billing_resolution TEXT,
+      supporting_evidence_ref VARCHAR(255),
+      status VARCHAR(50) DEFAULT 'PENDING_GM_APPROVAL',
+      sla_status VARCHAR(50) DEFAULT 'OPEN',
+      approved_by_id INT,
+      approved_by_name VARCHAR(100),
+      approved_by_role VARCHAR(50),
+      approved_at DATETIME,
+      gm_remarks TEXT,
+      mgp_number VARCHAR(50),
+      eod_deadline DATETIME,
+      updated_at DATETIME,
+      crm_invoice_reconciled_at DATETIME,
+      crm_evidence_id INT,
+      billing_liability_assigned_to VARCHAR(100)
+    )
+  `);
+
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS rpt_qc_checklists (
       qc_checklist_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -193,8 +229,9 @@ async function ensureTestTables(): Promise<void> {
     )
   `);
   await pool.execute(`
-    CREATE TABLE IF NOT EXISTS tbl_evidence (
-      evidence_id VARCHAR(255) PRIMARY KEY, entity_type VARCHAR(50),
+    DROP TABLE IF EXISTS tbl_evidence`);
+  await pool.execute(`CREATE TABLE tbl_evidence (
+      evidence_id VARCHAR(255) PRIMARY KEY, entity_type VARCHAR(100),
       entity_id VARCHAR(100), storage_path TEXT, file_hash VARCHAR(255),
       ocr_results TEXT, ai_review_status VARCHAR(50),
       ai_classification VARCHAR(100), ai_confidence INT,
@@ -214,7 +251,9 @@ async function ensureTestTables(): Promise<void> {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // MAIN TEST RUNNER
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+import { verifyTestIsolation } from './destructive_test_guard.ts';
 async function runTests() {
+  await verifyTestIsolation();
   console.log("â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•");
   console.log("PHASE 8 BEHAVIORAL TEST SUITE â€” CRM BILLING EVIDENCE + MGP");
   console.log("â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n");

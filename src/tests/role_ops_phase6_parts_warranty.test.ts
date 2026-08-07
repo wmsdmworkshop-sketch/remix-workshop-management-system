@@ -61,6 +61,18 @@ async function runTests() {
       );
     } catch (e) { /* ignore duplicate */ }
 
+    // Seed warehouse and bin
+    await pool.query(
+      `INSERT INTO tbl_warehouse_master (warehouse_id, branch_id, warehouse_name)
+       VALUES ('WH-MAIN', 'BR-SEDAM', 'Main WH')
+       ON DUPLICATE KEY UPDATE warehouse_name = 'Main WH'`
+    );
+    await pool.query(
+      `INSERT INTO tbl_bin_master (bin_id, warehouse_id, bin_code)
+       VALUES ('BIN-01', 'WH-MAIN', 'B01')
+       ON DUPLICATE KEY UPDATE bin_code = 'B01'`
+    );
+
     // Seed stock
     await pool.query(
       `INSERT INTO tbl_inventory_stock (branch_id, warehouse_id, bin_id, part_number, available_quantity)
@@ -90,7 +102,16 @@ async function runTests() {
     // =========================================================================
     // SCENARIO 3: Stock Availability Check
     // =========================================================================
+    const [rowsDB] = await pool.query(`SELECT inv.*, wh.warehouse_name, bin.bin_code 
+       FROM tbl_inventory_stock inv
+       LEFT JOIN tbl_warehouse_master wh ON inv.warehouse_id = wh.warehouse_id
+       LEFT JOIN tbl_bin_master bin ON inv.bin_id = bin.bin_id
+       WHERE inv.part_number = 'P-TEST'`);
+    console.log('DEBUG DB ROWS for P-TEST:', rowsDB);
     const stockRes = await engine.checkStockAvailability('P-TEST', 'BR-SEDAM');
+    if (stockRes === null || Number(stockRes.available_quantity) < 2) {
+      console.log('DEBUG stockRes:', stockRes);
+    }
     assert(stockRes !== null && Number(stockRes.available_quantity) >= 2, "3. Stock availability check returns correct qty");
 
     // =========================================================================

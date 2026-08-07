@@ -26,7 +26,8 @@ export default defineConfig({
       'src/tests/role_ops_phase2_sa.test.ts',
       'src/tests/role_ops_phase3_pipeline.test.ts',
       'src/tests/role_ops_phase4_intake.test.ts',
-      'src/tests/role_ops_phase5_floor.test.ts'
+      'src/tests/role_ops_phase5_floor.test.ts',
+      'src/tests/role_ops_phase10_final_gaps.test.ts'
     ],
     exclude: [
       '**/node_modules/**',

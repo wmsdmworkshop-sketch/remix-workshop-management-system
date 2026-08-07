@@ -45,7 +45,7 @@ export const MobilePlatformWorkspace: React.FC<MobilePlatformWorkspaceProps> = R
               Single Role-Driven APK for Gate, Reception, Service Advisors, Technicians, Parts, Cashier & HR.
             </p>
             <div className="mt-3 p-2 bg-slate-950/60 rounded-lg border border-slate-800 text-[10px] space-y-1 font-mono text-slate-400">
-              <div className="flex justify-between"><span>Release Build:</span><span className="text-slate-200 font-bold">2026.07.26-b104</span></div>
+              <div className="flex justify-between"><span>Release Build:</span><span className="text-slate-200 font-bold">2026.08.07-b104</span></div>
               <div className="flex justify-between"><span>Target API:</span><span className="text-slate-200">Android 14 (API 34)</span></div>
               <div className="flex justify-between"><span>Play Protect:</span><span className="text-emerald-400 font-bold">Passed (V2/V3)</span></div>
             </div>
@@ -72,7 +72,7 @@ export const MobilePlatformWorkspace: React.FC<MobilePlatformWorkspaceProps> = R
               Live KPIs, Revenue Analytics, Bay Utilization, SLA Alerts & Executive Approvals for Directors & DP.
             </p>
             <div className="mt-3 p-2 bg-slate-950/60 rounded-lg border border-slate-800 text-[10px] space-y-1 font-mono text-slate-400">
-              <div className="flex justify-between"><span>Release Build:</span><span className="text-slate-200 font-bold">2026.07.26-b105</span></div>
+              <div className="flex justify-between"><span>Release Build:</span><span className="text-slate-200 font-bold">2026.08.07-b105</span></div>
               <div className="flex justify-between"><span>Target API:</span><span className="text-slate-200">Android 14 (API 34)</span></div>
               <div className="flex justify-between"><span>Play Protect:</span><span className="text-emerald-400 font-bold">Passed (V2/V3)</span></div>
             </div>
@@ -99,7 +99,7 @@ export const MobilePlatformWorkspace: React.FC<MobilePlatformWorkspaceProps> = R
               Vehicle Passport, Digital Vault, Estimate Approval, Payments, Warranty, AMC & Fleet Mode.
             </p>
             <div className="mt-3 p-2 bg-slate-950/60 rounded-lg border border-slate-800 text-[10px] space-y-1 font-mono text-slate-400">
-              <div className="flex justify-between"><span>Release Build:</span><span className="text-slate-200 font-bold">2026.07.26-p201</span></div>
+              <div className="flex justify-between"><span>Release Build:</span><span className="text-slate-200 font-bold">2026.08.07-p201</span></div>
               <div className="flex justify-between"><span>Platform:</span><span className="text-slate-200">Web / PWA / Native</span></div>
               <div className="flex justify-between"><span>Status:</span><span className="text-emerald-400 font-bold">Live Production</span></div>
             </div>
@@ -137,7 +137,7 @@ export const MobilePlatformWorkspace: React.FC<MobilePlatformWorkspaceProps> = R
               Daily Vehicle Inspection, Defect Reporting, Fuel & DEF Entry, Emergency SOS Breakdown.
             </p>
             <div className="mt-3 p-2 bg-slate-950/60 rounded-lg border border-slate-800 text-[10px] space-y-1 font-mono text-slate-400">
-              <div className="flex justify-between"><span>Release Build:</span><span className="text-slate-200 font-bold">2026.07.26-d302</span></div>
+              <div className="flex justify-between"><span>Release Build:</span><span className="text-slate-200 font-bold">2026.08.07-d302</span></div>
               <div className="flex justify-between"><span>Target API:</span><span className="text-slate-200">Android 14 (API 34)</span></div>
               <div className="flex justify-between"><span>Play Protect:</span><span className="text-emerald-400 font-bold">Passed (V2/V3)</span></div>
             </div>

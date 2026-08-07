@@ -1,0 +1,5 @@
+export const InsuranceClaimRules = {
+  AUTO_APPROVE_BELOW_AMOUNT: 500,
+  REQUIRE_POLICE_REPORT_FOR_THEFT: true,
+  MAX_DAYS_TO_FILE_CLAIM: 30
+};

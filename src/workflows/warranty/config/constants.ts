@@ -1,0 +1,64 @@
+export const WarrantyTypes = {
+  STANDARD: "STANDARD",
+  EXTENDED: "EXTENDED",
+  GOODWILL: "GOODWILL",
+  PARTS: "PARTS"
+} as const;
+
+export const ClaimTypes = {
+  NORMAL: "NORMAL",
+  CAMPAIGN: "CAMPAIGN",
+  FSB: "FSB"
+} as const;
+
+export const WarrantyCategories = {
+  ENGINE: "ENGINE",
+  TRANSMISSION: "TRANSMISSION",
+  ELECTRICAL: "ELECTRICAL",
+  BODY: "BODY"
+} as const;
+
+export const FailureCodes = {
+  WEAR_AND_TEAR: "F001",
+  MANUFACTURING_DEFECT: "F002",
+  CUSTOMER_ABUSE: "F003"
+} as const;
+
+export const ComplaintCodes = {
+  NOISE: "C001",
+  LEAKAGE: "C002",
+  PERFORMANCE: "C003"
+} as const;
+
+export const RepairCodes = {
+  REPLACE: "R001",
+  REPAIR: "R002",
+  ADJUST: "R003"
+} as const;
+
+export const ClaimStatus = {
+  DRAFT: "DRAFT",
+  AWAITING_EVIDENCE: "AWAITING_EVIDENCE",
+  AWAITING_APPROVAL: "AWAITING_APPROVAL",
+  READY_FOR_SUBMISSION: "READY_FOR_SUBMISSION",
+  SUBMITTED: "SUBMITTED",
+  CLARIFICATION_REQUESTED: "CLARIFICATION_REQUESTED",
+  APPROVED: "APPROVED",
+  REJECTED: "REJECTED",
+  SETTLED: "SETTLED"
+} as const;
+
+export const OemStatus = {
+  RECEIVED: "RECEIVED",
+  UNDER_REVIEW: "UNDER_REVIEW",
+  APPROVED: "APPROVED",
+  REJECTED: "REJECTED",
+  SETTLED: "SETTLED"
+} as const;
+
+export const ApprovalLevels = {
+  SERVICE_ADVISOR: "SERVICE_ADVISOR",
+  WORKSHOP_MANAGER: "WORKSHOP_MANAGER",
+  WARRANTY_MANAGER: "WARRANTY_MANAGER",
+  REGIONAL_MANAGER: "REGIONAL_MANAGER"
+} as const;

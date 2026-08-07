@@ -1003,7 +1003,13 @@ async function startServer() {
 
   // API: Get App Status / Health
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", time: new Date().toISOString() });
+    res.json({ 
+      status: "ok", 
+      time: new Date().toISOString(),
+      buildInfo: {
+        cloudRunRevision: process.env.K_REVISION || null
+      }
+    });
   });
 
 
@@ -1022,7 +1028,7 @@ async function startServer() {
       // Resolve user details dynamically from the database to ensure instant synchronization
       let userRole = decoded.role;
       let employeeId = decoded.employee_id;
-      let isActive = 1;
+      let isActive: any = 1;
       let fullName = decoded.full_name;
 
       try {
@@ -7307,6 +7313,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         console.error("Failed to publish WIP_STARTED event:", e);
       }
 
+
       saveDB(cachedDB);
       await syncSave(cachedDB);
 
@@ -8322,65 +8329,6 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         }
       }
 
-      try {
-        const correlationId = `CORR-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
-
-        // 1. Publish QC_SUBMITTED
-        await operationalEventService.publish({
-          job_id: jobId,
-          job_card_no: jobCard.job_card_no,
-          user: checked_by || "QC Inspector",
-          role: "QC Inspector",
-          workshop_id: jobCard.workshop_id || 1,
-          source: "MOBILE",
-          event_category: "Mobile",
-          event_type: "QC_SUBMITTED",
-          remarks: "QC verification submitted.",
-          correlation_id: correlationId,
-          source_system: "WMS-Core",
-          payload: { old_state: "WIP_START", new_state: "QC_PENDING", queue: "QC_QUEUE" }
-        });
-
-        if (qc_status === 'passed') {
-          // 2a. Publish FINAL_REVIEW_STARTED
-          await operationalEventService.publish({
-            job_id: jobId,
-            job_card_no: jobCard.job_card_no,
-            user: checked_by || "QC Inspector",
-            role: "QC Inspector",
-            workshop_id: jobCard.workshop_id || 1,
-            source: "MOBILE",
-            event_category: "Operational",
-            event_type: "FINAL_REVIEW_STARTED",
-            remarks: "QC passed. Vehicle ready for delivery.",
-            correlation_id: correlationId,
-            source_system: "WMS-Core",
-            payload: { old_state: "QC_PENDING", new_state: "FINAL_REVIEW", queue: "DELIVERY_QUEUE" }
-          });
-        } else {
-          // 2b. Publish QC_FAILED
-          await operationalEventService.publish({
-            job_id: jobId,
-            job_card_no: jobCard.job_card_no,
-            user: checked_by || "QC Inspector",
-            role: "QC Inspector",
-            workshop_id: jobCard.workshop_id || 1,
-            source: "MOBILE",
-            event_category: "Operational",
-            event_type: "QC_FAILED",
-            remarks: fail_reason || "QC check failed.",
-            correlation_id: correlationId,
-            source_system: "WMS-Core",
-            payload: { old_state: "QC_PENDING", new_state: "QC_FAILED", queue: "QC_QUEUE" }
-          });
-        }
-
-        // Synchronize in-memory cachedDB workflowHistory
-        const freshDB = await syncLoad();
-        cachedDB.workflowHistory = freshDB.workflowHistory;
-      } catch (e: any) {
-        console.error("Failed to publish QC events:", e);
-      }
 
       saveDB(cachedDB);
       await syncSave(cachedDB);
@@ -8440,6 +8388,66 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
           status: "Active",
           created_at: new Date().toISOString()
         });
+      }
+
+      try {
+        const correlationId = `CORR-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+
+        // 1. Publish QC_SUBMITTED
+        await operationalEventService.publish({
+          job_id: jobId,
+          job_card_no: jobCard.job_card_no,
+          user: checked_by || "QC Inspector",
+          role: "QC Inspector",
+          workshop_id: jobCard.workshop_id || 1,
+          source: "MOBILE",
+          event_category: "Mobile",
+          event_type: "QC_SUBMITTED",
+          remarks: "QC verification submitted.",
+          correlation_id: correlationId,
+          source_system: "WMS-Core",
+          payload: { old_state: "WIP_START", new_state: "QC_PENDING", queue: "QC_QUEUE" }
+        });
+
+        if (qc_status === 'passed') {
+          // 2a. Publish FINAL_REVIEW_STARTED
+          await operationalEventService.publish({
+            job_id: jobId,
+            job_card_no: jobCard.job_card_no,
+            user: checked_by || "QC Inspector",
+            role: "QC Inspector",
+            workshop_id: jobCard.workshop_id || 1,
+            source: "MOBILE",
+            event_category: "Operational",
+            event_type: "FINAL_REVIEW_STARTED",
+            remarks: "QC passed. Vehicle ready for delivery.",
+            correlation_id: correlationId,
+            source_system: "WMS-Core",
+            payload: { old_state: "QC_PENDING", new_state: "FINAL_REVIEW", queue: "DELIVERY_QUEUE" }
+          });
+        } else {
+          // 2b. Publish QC_FAILED
+          await operationalEventService.publish({
+            job_id: jobId,
+            job_card_no: jobCard.job_card_no,
+            user: checked_by || "QC Inspector",
+            role: "QC Inspector",
+            workshop_id: jobCard.workshop_id || 1,
+            source: "MOBILE",
+            event_category: "Operational",
+            event_type: "QC_FAILED",
+            remarks: fail_reason || "QC check failed.",
+            correlation_id: correlationId,
+            source_system: "WMS-Core",
+            payload: { old_state: "QC_PENDING", new_state: "QC_FAILED", queue: "QC_QUEUE" }
+          });
+        }
+
+        // Synchronize in-memory cachedDB workflowHistory
+        const freshDB = await syncLoad();
+        cachedDB.workflowHistory = freshDB.workflowHistory;
+      } catch (e: any) {
+        console.error("Failed to publish QC events:", e);
       }
 
       saveDB(cachedDB);

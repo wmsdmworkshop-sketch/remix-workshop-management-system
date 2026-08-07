@@ -1,3 +1,4 @@
+import { verifyTestIsolation } from './destructive_test_guard.ts';
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert";
 import { db } from "../db/index.ts";
@@ -11,9 +12,11 @@ describe("Phase 10 - Operations Command Control & SLA Evaluator", () => {
   const testVrn = `TEST-VRN-${Date.now()}`;
 
   before(async () => {
+    await verifyTestIsolation();
     // Drop existing mock tables to ensure clean schema
     await db.execute(`DROP TABLE IF EXISTS tbl_gate_entry`);
     await db.execute(`DROP TABLE IF EXISTS tbl_reception_intake`);
+    await db.execute(`DROP VIEW IF EXISTS tbl_job_card`);
     await db.execute(`DROP TABLE IF EXISTS tbl_job_card`);
     await db.execute(`DROP TABLE IF EXISTS tbl_manager_assignment`);
     await db.execute(`DROP TABLE IF EXISTS tbl_gate_pass`);
@@ -31,7 +34,8 @@ describe("Phase 10 - Operations Command Control & SLA Evaluator", () => {
     await db.execute(`CREATE TABLE IF NOT EXISTS tbl_reception_intake (
       intake_id VARCHAR(100) PRIMARY KEY,
       gate_entry_id VARCHAR(100),
-      status VARCHAR(50)
+      status VARCHAR(50),
+      branch_id VARCHAR(100)
     )`);
     await db.execute(`CREATE TABLE IF NOT EXISTS tbl_job_card (
       job_card_id VARCHAR(100) PRIMARY KEY,

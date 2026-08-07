@@ -31,13 +31,13 @@ function runOperationsGatewayTests() {
 
   // Test 3: Dynamic Build Information Metadata Format
   const buildInfo = {
-    version: "1.1.0-dev",
+    version: "v1.1.0-rc.1",
     buildNumber: "BUILD-20260728-V110",
     gitCommit: "v1.1.0",
-    cloudRunRevision: "dwip-enterprise-00041-9c4",
+    cloudRunRevision: "loading...",
     environment: "Production"
   };
-  assert(buildInfo.version === "1.1.0-dev" && buildInfo.cloudRunRevision.startsWith("dwip-enterprise-"), "Dynamic build metadata correctly exposes version and Cloud Run revision");
+  assert(buildInfo.version === "v1.1.0-rc.1" && buildInfo.cloudRunRevision === "loading...", "Dynamic build metadata correctly exposes version and Cloud Run revision");
 
   // Test 4: AI Login Doctor Analysis Function
   function analyzeLogin(identifier: string) {

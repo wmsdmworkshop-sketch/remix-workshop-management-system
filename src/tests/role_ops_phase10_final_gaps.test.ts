@@ -1,3 +1,4 @@
+import { verifyTestIsolation } from './destructive_test_guard.ts';
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert";
 import { db } from "../db/index.ts";
@@ -11,9 +12,11 @@ describe("Phase 10 - Final Gap Closure (Task A & B)", () => {
   const otherBranchId = '2';
   
   before(async () => {
+    await verifyTestIsolation();
     // Drop existing mock tables to ensure clean schema
     await db.execute(`DROP TABLE IF EXISTS tbl_gate_entry`);
     await db.execute(`DROP TABLE IF EXISTS tbl_reception_intake`);
+    await db.execute(`DROP VIEW IF EXISTS tbl_job_card`);
     await db.execute(`DROP TABLE IF EXISTS tbl_job_card`);
     await db.execute(`DROP TABLE IF EXISTS tbl_manager_assignment`);
     await db.execute(`DROP TABLE IF EXISTS tbl_gate_pass`);
@@ -30,7 +33,7 @@ describe("Phase 10 - Final Gap Closure (Task A & B)", () => {
       gate_entry_id VARCHAR(100) PRIMARY KEY, vin VARCHAR(100), odometer INT, status VARCHAR(50)
     )`);
     await db.execute(`CREATE TABLE IF NOT EXISTS tbl_reception_intake (
-      intake_id VARCHAR(100) PRIMARY KEY, gate_entry_id VARCHAR(100), status VARCHAR(50), branch_id VARCHAR(50)
+      intake_id VARCHAR(100) PRIMARY KEY, gate_entry_id VARCHAR(100), status VARCHAR(50), branch_id VARCHAR(100)
     )`);
     await db.execute(`CREATE TABLE IF NOT EXISTS tbl_job_card (
       job_card_id VARCHAR(100) PRIMARY KEY, gate_entry_id VARCHAR(100), service_type VARCHAR(100), advisor_id VARCHAR(100), customer_complaint VARCHAR(255), workflow_state VARCHAR(50), created_at TIMESTAMP, vrn VARCHAR(50), bay_id VARCHAR(50), job_id VARCHAR(50), customer_name VARCHAR(100), vehicle_model VARCHAR(100)
