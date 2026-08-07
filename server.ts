@@ -1002,7 +1002,7 @@ async function startServer() {
   };
 
   // API: Get App Status / Health
-  app.get("/api/health", (req, res) => {
+  app.get(["/api/health", "/api/system/health-gateway"], (req, res) => {
     res.json({ 
       status: "ok", 
       time: new Date().toISOString(),
