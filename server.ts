@@ -1125,6 +1125,7 @@ async function startServer() {
   // This fixes SEC-009: previously all data endpoints were open to unauthenticated access.
   const PUBLIC_API_PATHS = [
     "/api/health",
+    "/api/system/health-gateway",
     "/api/auth/login",
     "/api/auth/verify-otp",
     "/api/auth/reset-password-request",
