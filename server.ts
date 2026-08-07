@@ -3041,7 +3041,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     try {
       // 1. Query vehicle_master by registration or chassis
       const [vehicles] = await dbPool.query(
-        "SELECT * FROM vehicle_master WHERE REPLACE(REPLACE(chassis_number, '-', ''), ' ', '') = ? OR REPLACE(REPLACE(registration_no, '-', ''), ' ', '') = ?",
+        "SELECT * FROM vehicle_master WHERE REPLACE(REPLACE(chassis_no, '-', ''), ' ', '') = ? OR REPLACE(REPLACE(registration_no, '-', ''), ' ', '') = ?",
         [cleanSearch, cleanSearch]
       ) as any[];
 
@@ -3117,7 +3117,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
           const laborPrice = matchedInv ? parseCurrencyString(matchedInv.final_labour_amount) : 0;
           const partsPrice = matchedInv ? parseCurrencyString(matchedInv.final_spares_amount) : 0;
 
-          if (jobCardNo && String(jobCardNo).startsWith("JC-DevAus-")) {
+          if (jobCardNo) {
             historicalJobs.push({
               job_id: jobId,
               job_card_no: jobCardNo,
@@ -5421,7 +5421,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     const cleanSearch = query.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
     try {
       const [vehicles] = await dbPool.query(
-        "SELECT * FROM vehicle_master WHERE REPLACE(REPLACE(chassis_number, '-', ''), ' ', '') = ? OR REPLACE(REPLACE(registration_no, '-', ''), ' ', '') = ?",
+        "SELECT * FROM vehicle_master WHERE REPLACE(REPLACE(chassis_no, '-', ''), ' ', '') = ? OR REPLACE(REPLACE(registration_no, '-', ''), ' ', '') = ?",
         [cleanSearch, cleanSearch]
       ) as any[];
 
@@ -5530,12 +5530,12 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
           delete row.chassis_no;
         }
         if (!row.chassis_number) continue;
-        const [existing] = await dbPool.query("SELECT chassis_number FROM vehicle_master WHERE chassis_number = ?", [row.chassis_number]) as any[];
+        const [existing] = await dbPool.query("SELECT chassis_no FROM vehicle_master WHERE chassis_no = ?", [row.chassis_number]) as any[];
         if (existing.length > 0) {
           const keys = Object.keys(row).filter(k => k !== 'chassis_number');
           const setClause = keys.map(k => `\`${k}\` = ?`).join(', ');
           const values = keys.map(k => row[k]);
-          await dbPool.execute(`UPDATE vehicle_master SET ${setClause} WHERE chassis_number = ?`, [...values, row.chassis_number]);
+          await dbPool.execute(`UPDATE vehicle_master SET ${setClause} WHERE chassis_no = ?`, [...values, row.chassis_number]);
           updated++;
         } else {
           const keys = Object.keys(row);
@@ -5553,7 +5553,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   async function ensureVehicleExists(chassisNo: string, rowData: any) {
-    const [existing] = await dbPool.query("SELECT chassis_number FROM vehicle_master WHERE chassis_number = ?", [chassisNo]) as any[];
+    const [existing] = await dbPool.query("SELECT chassis_no FROM vehicle_master WHERE chassis_no = ?", [chassisNo]) as any[];
     if (existing.length === 0) {
       const registrationNo = rowData.registration_no || null;
       const ownerName = rowData.account || rowData.customer_name || 'Stub Customer';
