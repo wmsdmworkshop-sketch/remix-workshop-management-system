@@ -11,6 +11,7 @@ import { pool as db } from "../../db/index";
 import { QueueName } from "./queue-policy";
 import { PriorityFactors, QueuePriority } from "./queue-priority";
 import { IEventBus } from "../event-bus";
+import { makeSystemContext } from "../business-context";
 
 export interface QueueItem {
   itemId: string;
@@ -60,7 +61,7 @@ export class QueueEngine {
     await this.eventBus.publish(
       "QUEUE_ENQUEUED",
       { itemId, jobId, queueName, priorityScore, correlationId },
-      correlationId
+      makeSystemContext(correlationId)
     );
   }
 
@@ -90,7 +91,7 @@ export class QueueEngine {
     await this.eventBus.publish(
       "QUEUE_DEQUEUED",
       { itemId: item.itemId, jobId: item.jobId, queueName, assignedStaffId, correlationId },
-      correlationId
+      makeSystemContext(correlationId)
     );
 
     return item;
@@ -128,7 +129,7 @@ export class QueueEngine {
       await this.eventBus.publish(
         "QUEUE_TRANSFERRED",
         { itemId, sourceQueue, targetQueue, correlationId },
-        correlationId
+        makeSystemContext(correlationId)
       );
     }
   }
@@ -138,7 +139,7 @@ export class QueueEngine {
     if (item && item.status === "WAITING") {
       item.status = "SUSPENDED";
       await this.save(item);
-      await this.eventBus.publish("QUEUE_SUSPENDED", { itemId, correlationId }, correlationId);
+      await this.eventBus.publish("QUEUE_SUSPENDED", { itemId, correlationId }, makeSystemContext(correlationId));
     }
   }
 
@@ -147,7 +148,7 @@ export class QueueEngine {
     if (item && item.status === "SUSPENDED") {
       item.status = "WAITING";
       await this.save(item);
-      await this.eventBus.publish("QUEUE_RESUMED", { itemId, correlationId }, correlationId);
+      await this.eventBus.publish("QUEUE_RESUMED", { itemId, correlationId }, makeSystemContext(correlationId));
     }
   }
 
@@ -156,7 +157,7 @@ export class QueueEngine {
     if (item) {
       item.assignedStaffId = staffId;
       await this.save(item);
-      await this.eventBus.publish("QUEUE_REASSIGNED", { itemId, staffId, correlationId }, correlationId);
+      await this.eventBus.publish("QUEUE_REASSIGNED", { itemId, staffId, correlationId }, makeSystemContext(correlationId));
     }
   }
 

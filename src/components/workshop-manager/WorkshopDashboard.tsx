@@ -7,6 +7,7 @@ import { LiveQueueBoard } from "./LiveQueueBoard";
 import { SLACommandCenter } from "./SLACommandCenter";
 import { QueueHeatMap } from "./QueueHeatMap";
 import { WorkshopAIEngine } from "./aiEngine";
+import { AICopilotPanel } from "../AICopilotPanel";
 
 // Lazy-loaded subpanels for optimized loading performance
 const BayLayoutBoard = React.lazy(() =>
@@ -543,6 +544,17 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
         </div>
       </div>
       )}
+
+      {/* Workshop Manager Copilot Orchestrator */}
+      <AICopilotPanel 
+        role="Workshop Manager"
+        context={{
+          workshopName: selectedWorkshop,
+          openJobsCount: kpiMetrics.openJcs,
+          slaBreachesCount: kpiMetrics.slaBreaches,
+          utilizationRate: kpiMetrics.utilization
+        }}
+      />
 
       {/* Main Split Layout Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">

@@ -1,0 +1,5 @@
+export const FsbClaimRules = {
+  ALLOW_CLAIMS_FOR_EXPIRED_CAMPAIGN: false,
+  MAX_LABOUR_HOURS_OVERRIDE: 2.0,
+  REQUIRE_VIN_VALIDATION: true
+};

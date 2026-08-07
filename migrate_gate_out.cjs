@@ -6,8 +6,8 @@ const DATA_FILE = path.join(__dirname, 'workshop_db.json');
 
 // Connect to Railway MySQL database
 const conn = mysql.createConnection({
-  host: 'thomas.proxy.rlwy.net',
-  port: 50733,
+  host: '35.200.150.167',
+  port: 3306,
   user: 'root',
   password: 'mjzwCcYkEYSYRAADKjnyAiEZGGrtwAri',
   database: 'railway'

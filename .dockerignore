@@ -32,10 +32,27 @@ read_pdf_esm.js
 populate-productivity-data.ts
 fix-technician-maps-and-resplit.ts
 
-# Database dumps / CSV imports — business data should NOT be in image
+# Database dumps / CSV imports / large JSON — business data MUST NOT be in image
 *.sql
 *.csv
 railway_dump.sql
+workshop_db.json
+employee_master_backup.json
+employees_backup.json
+
+# Large Excel normalization reports
+*.xlsx
+*_Normalization_Report.xlsx
+Customer_Normalization_Report.xlsx
+Fleet_Normalization_Report.xlsx
+Vehicle_Normalization_Report.xlsx
+Employee_Normalization_Report.xlsx
+Master_Data_Validation.xlsx
+Operational_Defect_Register.xlsx
+Workflow_Coverage_Matrix.xlsx
+
+# Deployment scripts that don't need to be in the image
+deployment/*.sh
 
 # Backup files
 *.bak

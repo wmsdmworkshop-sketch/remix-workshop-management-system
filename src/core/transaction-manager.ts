@@ -16,6 +16,7 @@ export interface TransactionContext {
   validationRunId?: string;
   savepointDepth: number;
   compensations: (() => void | Promise<void>)[];
+  onCommitCallbacks: (() => void | Promise<void>)[];
 }
 
 export interface ITransactionManager {
@@ -49,6 +50,17 @@ export class TransactionManager implements ITransactionManager {
   }
 
   /**
+   * Registers a callback to be executed after a successful COMMIT.
+   * Used for post-commit side effects (cache updates, event publishing).
+   */
+  public onCommit(
+    tx: TransactionContext,
+    callback: () => void | Promise<void>
+  ): void {
+    tx.onCommitCallbacks.push(callback);
+  }
+
+  /**
    * Executes a block of database operations within an ACID transaction.
    * Seamlessly handles nested transactions using SQL SAVEPOINTS.
    */
@@ -62,6 +74,7 @@ export class TransactionManager implements ITransactionManager {
     let connection: any;
     let savepointDepth = 0;
     const compensations: (() => void | Promise<void>)[] = [];
+    const onCommitCallbacks: (() => void | Promise<void>)[] = [];
 
     if (parentContext) {
       connection = parentContext.connection;
@@ -76,6 +89,7 @@ export class TransactionManager implements ITransactionManager {
       validationRunId,
       savepointDepth,
       compensations,
+      onCommitCallbacks,
     };
 
     const savepointName = `SP_${txContext.savepointDepth}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
@@ -97,6 +111,15 @@ export class TransactionManager implements ITransactionManager {
       if (txContext.savepointDepth === 0) {
         await connection.query("COMMIT");
         await this.publishTransactionEvent("TX_COMMIT", txContext);
+
+        // 4a. Execute onCommit callbacks (post-commit side effects)
+        for (const cb of txContext.onCommitCallbacks) {
+          try {
+            await cb();
+          } catch (commitHookError) {
+            console.error("[TransactionManager] Post-commit callback failed (non-fatal):", commitHookError);
+          }
+        }
       } else {
         await connection.query(`RELEASE SAVEPOINT ${savepointName}`);
         await this.publishTransactionEvent("TX_SAVEPOINT_RELEASED", { ...txContext, savepointName });

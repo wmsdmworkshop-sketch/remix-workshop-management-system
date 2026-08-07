@@ -15,11 +15,7 @@ export const WorkshopSelector: React.FC<WorkshopSelectorProps> = React.memo(({
   hasError = false,
 }) => {
   const workshops = useMemo(() => [
-    { id: "Kalaburagi", name: "Kalaburagi Hub" },
-    { id: "Gulbarga", name: "Gulbarga Branch" },
-    { id: "Basavakalyan", name: "Basavakalyan EV Center" },
-    { id: "Shahapur", name: "Shahapur Support" },
-    { id: "Enterprise", name: "All Locations (Enterprise)" }
+    { id: "Main", name: "Devanand Automobiles Main Workshop" }
   ], []);
 
   if (hasError) {

@@ -1,11 +1,12 @@
-import { JobRevenueSplit, Employee, JobTechnicianMap } from "../types";
+import { EmployeeEligibilityService } from "../core/employee-eligibility-service.ts";
+import { Employee, JobRevenueSplit } from "../types";
 
 export function getRoleCategory(role: string): 'Mechanic' | 'Technician' | 'Electrician' | 'Additional Tech' {
   const r = (role || "").toLowerCase();
   if (r.includes("mechanic") || r.includes("mech")) return "Mechanic";
   if (r.includes("electrician") || r.includes("elec")) return "Electrician";
   if (r.includes("technician") || r.includes("tech")) return "Technician";
-  return "Additional Tech";
+  return "Technician";
 }
 
 export function calculateRevenueSplit(
@@ -20,14 +21,26 @@ export function calculateRevenueSplit(
   carryForwardAmount: number;
 } {
   const totalRevenue = laborAmount + sparesAmount;
-  const numTechs = assignedTo.length;
+
+  // Validate eligibility via EmployeeEligibilityService: Filter out ineligible staff (e.g. Drivers/BD Assistants)
+  const eligibleAssignedTo = assignedTo.filter(empId => {
+    const emp = dbCache.employees?.find((e: Employee) => e.employee_id === empId);
+    if (!emp) return false;
+    const isEligible = EmployeeEligibilityService.canAllocateLabourRevenue(emp);
+    if (!isEligible) {
+      console.warn(`[RevenueSplitEngine] REJECTED INELIGIBLE EMPLOYEE ${emp.employee_id} (${emp.full_name} - ${emp.role}) from revenue allocation.`);
+    }
+    return isEligible;
+  });
+
+  const numTechs = eligibleAssignedTo.length;
 
   if (numTechs === 0) {
     return { splits: [], carryForwardPct: 100, carryForwardAmount: totalRevenue };
   }
 
   // Fetch employee details
-  const techsEnriched = assignedTo.map(empId => {
+  const techsEnriched = eligibleAssignedTo.map(empId => {
     const emp = dbCache.employees.find((e: Employee) => e.employee_id === empId);
     return {
       employee_id: empId,

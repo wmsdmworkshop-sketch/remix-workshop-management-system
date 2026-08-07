@@ -1,42 +1,32 @@
 /**
  * =============================================================================
- * WOS Core Architecture: Transactional Outbox Service
- * Bounded Context: Core System / Notifications
- * Description: Ensures transactional alignment of notification dispatches.
- *              Notifications are staged in-transaction and processed post-commit.
+ * WOS Core Architecture: Transactional Outbox Service (Generic)
+ * Bounded Context: Core System / Event Integration
+ * Description: Ensures transactional alignment of domain events.
+ *              Events are staged in-transaction and processed post-commit.
  * =============================================================================
  */
 
-import { NotificationQueue } from "./notification-queue";
-import { HardenedEnvelope } from "./notification-metadata";
-import { NotificationEngine } from "./notification-engine";
-import { CircuitBreaker } from "./circuit-breaker";
-import { DeadLetterQueue } from "./dead-letter-queue";
+import { pool as db } from "../db/index.js";
+import { globalEventBus, DomainEventEnvelope } from "./event-bus.js";
 
 export class OutboxService {
   private processing = false;
 
-  constructor(
-    private readonly engine: NotificationEngine,
-    private readonly circuitBreaker: CircuitBreaker
-  ) {}
-
   /**
-   * Stages a notification inside the active database transaction scope.
+   * Stages an event inside the active database transaction scope.
    */
-  public async stageNotification(
-    envelope: HardenedEnvelope,
-    txConnection: any
+  public async stageEvent(
+    envelope: DomainEventEnvelope,
+    txConnection?: any
   ): Promise<void> {
-    // Check idempotency first within transaction
-    const exists = await NotificationQueue.exists(envelope.idempotencyKey, txConnection);
-    if (exists) {
-      console.warn(`[OutboxService] Duplicate notification rejected inside transaction: ${envelope.idempotencyKey}`);
-      throw new Error(`Duplicate notification idempotency block: ${envelope.idempotencyKey}`);
-    }
+    const conn = txConnection || db;
+    const serialized = JSON.stringify(envelope);
 
-    // Enqueue in db using transaction connection
-    await NotificationQueue.enqueue(envelope, txConnection);
+    await conn.execute(
+      `INSERT INTO tbl_event_outbox (event_id, topic, payload, status, retry_count) VALUES (?, ?, ?, ?, ?)`,
+      [envelope.eventId, envelope.topic, serialized, "PENDING", 0]
+    );
   }
 
   /**
@@ -47,55 +37,41 @@ export class OutboxService {
     this.processing = true;
 
     try {
-      const pendingJobs = await NotificationQueue.getPendingJobs();
+      // Fetch up to 50 pending events
+      const [rows] = await db.execute(
+        `SELECT event_id, topic, payload, retry_count FROM tbl_event_outbox WHERE status = 'PENDING' OR status = 'RETRYING' ORDER BY created_at ASC LIMIT 50`
+      ) as any[];
 
-      for (const job of pendingJobs) {
-        const { id, envelope } = job;
-        const provider = envelope.primaryChannel;
-
-        // 1. Check Circuit Breaker status
-        if (!this.circuitBreaker.canExecute(provider)) {
-          // Fail fast and route directly to DLQ
-          envelope.status = "DeadLetter";
-          await NotificationQueue.updateStatus(id, envelope);
-          await DeadLetterQueue.route(
-            envelope,
-            "Circuit Breaker open for provider",
-            "CIRCUIT_BREAKER_TRIPPED",
-            provider
-          );
+      for (const row of rows) {
+        const eventId = row.event_id;
+        const topic = row.topic;
+        const retryCount = row.retry_count;
+        
+        let envelope: DomainEventEnvelope;
+        try {
+          envelope = JSON.parse(row.payload);
+        } catch (err) {
+          console.error(`[OutboxService] Failed to parse payload for event ${eventId}`);
+          await this.updateStatus(eventId, "FAILED");
           continue;
         }
 
-        // 2. Update status to Processing
-        envelope.status = "Processing";
-        envelope.attempts += 1;
-        envelope.lastAttemptedAt = new Date().toISOString();
-        await NotificationQueue.updateStatus(id, envelope);
-
-        // 3. Dispatch via NotificationEngine
         try {
-          const success = await this.engine.sendNotification(
-            {
-              recipient: envelope.recipient,
-              templateCode: envelope.templateCode,
-              variables: envelope.variables,
-              priority: envelope.context.priority,
-              primaryChannel: envelope.primaryChannel,
-              escalationChannel: envelope.escalationChannel,
-            },
-            envelope.correlationId
-          );
-
-          if (success) {
-            envelope.status = "Delivered";
-            this.circuitBreaker.recordSuccess(provider);
-            await NotificationQueue.updateStatus(id, envelope);
-          } else {
-            await this.handleFailure(id, envelope, "Provider returned false", provider);
-          }
+          // Dispatch via EventBus directly using internal dispatch to handlers
+          // (assuming publish would recreate the envelope, we want to route directly)
+          await globalEventBus.dispatchEnvelope(envelope);
+          
+          await this.updateStatus(eventId, "PROCESSED");
         } catch (err: any) {
-          await this.handleFailure(id, envelope, err.message || "Execution exception", provider);
+          console.error(`[OutboxService] Error processing event ${eventId}:`, err.message);
+          if (retryCount >= 3) {
+            await this.updateStatus(eventId, "FAILED");
+          } else {
+            await db.execute(
+              `UPDATE tbl_event_outbox SET status = 'RETRYING', retry_count = retry_count + 1 WHERE event_id = ?`,
+              [eventId]
+            );
+          }
         }
       }
     } finally {
@@ -103,21 +79,12 @@ export class OutboxService {
     }
   }
 
-  private async handleFailure(
-    id: number,
-    envelope: HardenedEnvelope,
-    errorMsg: string,
-    provider: string
-  ): Promise<void> {
-    this.circuitBreaker.recordFailure(provider);
-
-    if (envelope.attempts >= envelope.maxAttempts) {
-      envelope.status = "DeadLetter";
-      await NotificationQueue.updateStatus(id, envelope);
-      await DeadLetterQueue.route(envelope, "Max retry attempts exceeded", errorMsg, provider);
-    } else {
-      envelope.status = "Failed"; // leaves it in queue for next poll retry
-      await NotificationQueue.updateStatus(id, envelope);
-    }
+  private async updateStatus(eventId: string, status: string): Promise<void> {
+    await db.execute(
+      `UPDATE tbl_event_outbox SET status = ?, processed_at = CURRENT_TIMESTAMP WHERE event_id = ?`,
+      [status, eventId]
+    );
   }
 }
+
+export const globalOutboxService = new OutboxService();

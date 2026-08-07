@@ -2,7 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { DollarSign, CheckCircle2, AlertCircle, FileText, Search, ShieldCheck } from 'lucide-react';
 import { JobCard } from '../types';
 
-export default function BillingExit() {
+interface BillingExitProps {
+  jobCards?: JobCard[];
+  onUpdateJob?: (id: number, updatedFields: Partial<JobCard>) => void;
+  onRefresh?: () => void;
+}
+
+export default function BillingExit({ jobCards: parentJobCards, onUpdateJob, onRefresh }: BillingExitProps) {
   const [jobCards, setJobCards] = useState<JobCard[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -15,8 +21,18 @@ export default function BillingExit() {
   const [successMsg, setSuccessMsg] = useState('');
 
   useEffect(() => {
-    fetchJobCards();
-  }, []);
+    if (parentJobCards && parentJobCards.length > 0) {
+      const filtered = parentJobCards.filter((jc: JobCard) => {
+        const isStillInWorkshop = jc.gate_out_time === null || jc.gate_out_time === undefined || jc.gate_out_time === '';
+        const isNotInvoiced = jc.billing_status !== 'Invoiced';
+        const isNotOldBilled = !(jc.invoice_no && jc.invoice_no.startsWith('IDEVAN2627'));
+        return isStillInWorkshop && isNotInvoiced && isNotOldBilled;
+      });
+      setJobCards(filtered);
+    } else {
+      fetchJobCards();
+    }
+  }, [parentJobCards]);
 
   const fetchJobCards = async () => {
     setLoading(true);
@@ -66,6 +82,7 @@ export default function BillingExit() {
         setSuccessMsg('Job card successfully marked as Billed!');
         setBillingJobId(null);
         setInvoiceNo('');
+        if (onRefresh) onRefresh();
         fetchJobCards();
         setTimeout(() => setSuccessMsg(''), 4000);
       } else {
@@ -78,12 +95,14 @@ export default function BillingExit() {
     }
   };
 
-  const filteredList = jobCards.filter(
-    (jc) =>
-      jc.job_card_no.toLowerCase().includes(search.toLowerCase()) ||
-      jc.vrn.toLowerCase().includes(search.toLowerCase()) ||
-      jc.customer_name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredList = React.useMemo(() => {
+    return jobCards.filter(
+      (jc) =>
+        jc.job_card_no.toLowerCase().includes(search.toLowerCase()) ||
+        jc.vrn.toLowerCase().includes(search.toLowerCase()) ||
+        jc.customer_name.toLowerCase().includes(search.toLowerCase())
+    );
+  }, [jobCards, search]);
 
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-8 bg-slate-50 min-h-screen">

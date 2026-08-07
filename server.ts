@@ -7025,6 +7025,100 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
+  // --- DEVOPS & CRON ENDPOINTS ---
+  app.post("/api/v1/devops/cron/sla-evaluator", async (req: any, res: any) => {
+    // CONTROL 2: SECURE CLOUD SCHEDULER EXECUTION
+    if (process.env.NODE_ENV !== 'development') {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({
+          success: false,
+          error: "MACHINE_AUTH_REQUIRED",
+          message: "Missing Bearer token."
+        });
+      }
+
+      const token = authHeader.split(' ')[1];
+      try {
+        const { OAuth2Client } = await import('google-auth-library');
+        const client = new OAuth2Client();
+        const audience = process.env.CLOUD_RUN_URL || process.env.WORKSHOP_API_URL || 'https://dwip-scheduler-audience';
+        
+        const ticket = await client.verifyIdToken({
+          idToken: token,
+          audience: audience
+        });
+        const payload = ticket.getPayload();
+        
+        // Must be a service account
+        if (!payload?.email?.endsWith('.gserviceaccount.com')) {
+          return res.status(403).json({ success: false, error: "INVALID_SERVICE_ACCOUNT" });
+        }
+
+        // Additional defense in depth
+        if (req.headers['x-cloudscheduler'] !== 'true') {
+          return res.status(403).json({ success: false, error: "MISSING_SCHEDULER_HEADER" });
+        }
+      } catch (err: any) {
+        return res.status(403).json({ success: false, error: "UNAUTHORIZED_INVOCATION", message: err.message });
+      }
+    }
+
+    try {
+      const branchId = req.body.branchId || req.query.branchId || 'BR-SEDAM'; // Default branch
+      const { RealtimeOwnershipPipeline } = await import('./src/core/workshop/realtime-ownership-pipeline.ts');
+      const result = await RealtimeOwnershipPipeline.evaluateHandoffSlaEscalations(branchId);
+      res.status(200).json(result);
+    } catch (error: any) {
+      console.error("SLA Evaluator Error:", error);
+      res.status(500).json({
+        success: false,
+        error: "EVALUATOR_FAILED",
+        message: error.message
+      });
+    }
+  });
+
+  // --- COMMAND CENTER ROUTES ---
+  app.get("/api/v1/command/operational-truth/:identifier", authenticateToken, async (req: any, res: any) => {
+    try {
+      const branchId = req.user?.branchId || req.user?.branch_id || 'BR-SEDAM';
+      const { OperationsCommandCenter } = await import('./src/core/workshop/operations-command-center.ts');
+      const truth = await OperationsCommandCenter.getOperationalTruth(req.params.identifier, branchId);
+      res.json(truth);
+    } catch (e: any) {
+      if (e.message?.includes('NOT_FOUND')) {
+        return res.status(404).json({ success: false, error: e.message });
+      }
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.get("/api/v1/command/exceptions", authenticateToken, async (req: any, res: any) => {
+    try {
+      const branchId = req.query.branchId || req.user?.branchId || req.user?.branch_id || 'BR-SEDAM';
+      const { OperationsCommandCenter } = await import('./src/core/workshop/operations-command-center.ts');
+      const exceptions = await OperationsCommandCenter.getExceptionQueues(branchId);
+      res.json({ success: true, data: exceptions });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post("/api/v1/command/override-stage", authenticateToken, async (req: any, res: any) => {
+    try {
+      const { jobId, targetStage, reason } = req.body;
+      const managerId = req.user?.userId || req.user?.employeeId || req.user?.id || 'MGR-SYSTEM';
+      const branchId = req.user?.branchId || req.user?.branch_id || 'BR-SEDAM';
+
+      const { OperationsCommandCenter } = await import('./src/core/workshop/operations-command-center.ts');
+      const result = await OperationsCommandCenter.overrideVehicleStage(jobId, targetStage, reason, managerId, branchId);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
   // --- VITE MIDDLEWARE SETUP ---
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

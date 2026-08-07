@@ -97,12 +97,12 @@ async function runTestSuite() {
 
   // Subscribe to timer events
   const eventsFired: string[] = [];
-  bus.subscribe("TIMER_STARTED", () => eventsFired.push("STARTED"));
-  bus.subscribe("TIMER_PAUSED", () => eventsFired.push("PAUSED"));
-  bus.subscribe("TIMER_RESUMED", () => eventsFired.push("RESUMED"));
-  bus.subscribe("TIMER_STOPPED", () => eventsFired.push("STOPPED"));
-  bus.subscribe("TIMER_EXPIRED", () => eventsFired.push("EXPIRED"));
-  bus.subscribe("TIMER_CANCELLED", () => eventsFired.push("CANCELLED"));
+  bus.subscribe("TIMER_STARTED", () => { eventsFired.push("STARTED"); });
+  bus.subscribe("TIMER_PAUSED", () => { eventsFired.push("PAUSED"); });
+  bus.subscribe("TIMER_RESUMED", () => { eventsFired.push("RESUMED"); });
+  bus.subscribe("TIMER_STOPPED", () => { eventsFired.push("STOPPED"); });
+  bus.subscribe("TIMER_EXPIRED", () => { eventsFired.push("EXPIRED"); });
+  bus.subscribe("TIMER_CANCELLED", () => { eventsFired.push("CANCELLED"); });
 
   const defaultPolicy = { businessHoursOnly: false, pausedOvernight: false, pausedOnHoliday: false };
   const bizPolicy = { businessHoursOnly: true, pausedOvernight: true, pausedOnHoliday: true };

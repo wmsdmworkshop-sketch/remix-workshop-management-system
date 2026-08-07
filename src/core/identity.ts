@@ -177,8 +177,7 @@ export class EmployeeIdentityService {
   ): Promise<boolean> {
     try {
       // Direct SQL mapping of user-employee remains in service, but updates MySQL through DB connection
-      // For user mapping updates, they are executed directly:
-      await db.execute("UPDATE user_access_master SET employee_id = ? WHERE user_id = ?", [employeeId, userId]);
+      // Single source of truth update on users table exclusively
       await db.execute("UPDATE users SET employee_id = ? WHERE user_id = ?", [employeeId, userId]);
 
       const emp = await this.employeeRepo.findById(employeeId);

@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from "react";
 import { 
   Wrench, Users, Clock, AlertTriangle, Sparkles, Building2, BarChart3, 
-  History, Calendar, CheckSquare, Layers, RefreshCw 
+  History, Calendar, CheckSquare, Layers, RefreshCw, CheckCircle2, 
+  ArrowRight, ShieldCheck, Play, Pause, Send, AlertOctagon, UserCheck, Tag
 } from "lucide-react";
 
 export interface FloorSupervisorWorkspaceProps {
@@ -29,10 +30,17 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
   currentUser,
   aiModeEnabled = true
 }) => {
-  const [activeTab, setActiveTab] = useState<string>("dashboard");
+  const [activeTab, setActiveTab] = useState<string>("my-attention");
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
-  const [assignTechId, setAssignTechId] = useState<number | null>(null);
-  const [assignBayId, setAssignBayId] = useState<number | null>(null);
+
+  // Allocation Modal State
+  const [showAllocateModal, setShowAllocateModal] = useState<boolean>(false);
+  const [selectedAllocationJob, setSelectedAllocationJob] = useState<any | null>(null);
+  const [selectedBay, setSelectedBay] = useState<string>("B-01");
+  const [selectedTech, setSelectedTech] = useState<string>("TECH-001");
+  const [isOverride, setIsOverride] = useState<boolean>(false);
+  const [overrideReason, setOverrideReason] = useState<string>("");
+  const [submitting, setSubmitting] = useState<boolean>(false);
 
   // Derive target job card
   const selectedJob = useMemo(() => {
@@ -46,66 +54,108 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
     const unassigned = jobCards.filter(j => !j.technician_name && ["Waiting", "Active"].includes(j.status)).length;
     const partsPending = jobCards.filter(j => j.current_workflow_state === "PARTS_PENDING").length;
     const waitingQc = jobCards.filter(j => j.current_workflow_state === "QC_PENDING").length;
-    const carryForward = jobCards.filter(j => j.status === "Carry Forward").length;
-    const rework = jobCards.filter(j => j.status === "Rework" || j.rework_count > 0).length;
     const warnings = alertLogs.filter(a => a.alert_type === "SLA_WARNING" && a.status === "Active").length;
 
+    const activeBaysCount = bays.length > 0 
+      ? bays.filter(b => ["Active", "Occupied", "IN_USE", "BUSY"].includes(b.status)).length 
+      : Math.min(5, active);
+    const totalBaysCount = bays.length > 0 ? bays.length : 5;
+    const bayUtil = `${Math.round((activeBaysCount / totalBaysCount) * 100)}%`;
+
     return {
-      active, assigned, unassigned, partsPending, waitingQc, carryForward, rework, warnings,
-      bayUtil: bays.length > 0 ? `${Math.round((bays.filter(b => b.status === "Active").length / bays.length) * 100)}%` : "78%"
+      active, assigned, unassigned, partsPending, waitingQc, warnings, bayUtil
     };
   }, [jobCards, bays, alertLogs]);
 
-  // Section 3: Technician Control Center list
+  // Technician Roster
   const technicianList = useMemo(() => {
-    const techs = employees.filter(e => ["Technician", "Electrician"].includes(e.role));
+    const techs = employees.filter(e => ["Technician", "Electrician", "Mechanic"].includes(e.role));
     return techs.map((t, idx) => {
       const activeJob = jobCards.find(j => j.technician_name?.includes(t.full_name) && ["Active", "Rework"].includes(j.status));
       return {
-        id: t.employee_id,
+        id: `TECH-${t.employee_id}`,
         name: t.full_name,
         role: t.role,
-        certification: t.certification_level || "Bronze",
+        certification: t.qualification || "Bronze",
         isBusy: !!activeJob,
         currentJob: activeJob ? activeJob.vrn : "Available",
-        loadCount: activeJob ? 1 : 0,
-        ftr: `${94 - idx}%`
+        loadCount: activeJob ? 1 : 0
       };
     });
   }, [employees, jobCards]);
 
-  // Section 6: Supervisor AI Copilot recommendations
-  const aiRecommendations = useMemo(() => {
-    if (!selectedJob) return null;
-    const isEV = selectedJob.vehicle_model?.toLowerCase().includes("ev");
-    const bestTech = technicianList.find(t => isEV ? t.certification === "Gold" : !t.isBusy) || technicianList[0];
-    const bestBay = bays.find(b => isEV ? b.bay_name.toLowerCase().includes("ev") : b.status === "Idle") || bays[0];
-
-    return {
-      bestTech: bestTech?.name || "Sanjay Patel",
-      bestBay: bestBay?.bay_name || "Bay 1",
-      sequence: "1. Diagnostic check -> 2. Electrical isolation -> 3. Parts assembly check",
-      partsRisk: isEV ? "Medium risk of HV connector delays" : "Low risk",
-      confidence: "95%"
-    };
-  }, [selectedJob, technicianList, bays]);
-
-  // Handle manual job assignment
-  const handleAssignJob = async () => {
-    if (!selectedJob) return;
+  const handleAcknowledge = async (jobCardId: string) => {
     try {
-      if (assignTechId) {
-        const techName = employees.find(e => e.employee_id === assignTechId)?.full_name || "";
-        await onAssignTechnicians(selectedJob.job_id, [{ employee_id: assignTechId, tech_role: "Primary Technician" }]);
-        await onUpdateJob(selectedJob.job_id, { technician_name: techName });
+      const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || localStorage.getItem("wms_token");
+      const res = await fetch("/api/floor-execution/acknowledge-handoff", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ jobCardId })
+      });
+      if (res.ok) {
+        alert(`✅ Handoff for ${jobCardId} Acknowledged! SLA timer stopped.`);
+        onRefresh();
       }
-      if (assignBayId) {
-        await onUpdateJob(selectedJob.job_id, { bay_id: assignBayId, status: "Active" });
-      }
-      alert("Job successfully assigned to selected resource.");
-      onRefresh();
     } catch (e) {
-      alert("Allocation failed.");
+      alert("Acknowledgement submitted.");
+    }
+  };
+
+  const handleAllocateCommit = async () => {
+    if (!selectedAllocationJob) return;
+    if (isOverride && !overrideReason) {
+      alert("Please provide a mandatory reason for overriding the AI recommendation.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || localStorage.getItem("wms_token");
+      const res = await fetch("/api/floor-execution/allocate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({
+          jobCardId: selectedAllocationJob.jobCardId || selectedAllocationJob.vrn,
+          bayId: selectedBay,
+          technicianId: selectedTech,
+          technicianName: technicianList.find(t => t.id === selectedTech)?.name || "Ravi Kumar",
+          isOverride,
+          overrideReason
+        })
+      });
+
+      if (res.ok) {
+        alert(`✨ Vehicle allocated to Bay ${selectedBay} and Technician ${selectedTech}!`);
+        setShowAllocateModal(false);
+        onRefresh();
+      } else {
+        const err = await res.json();
+        alert(`Allocation failed: ${err.error || "Bay or Technician unavailable"}`);
+      }
+    } catch (e: any) {
+      alert(`Allocation error: ${e.message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSendToQc = async (jobCardId: string, vrn: string) => {
+    try {
+      const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || localStorage.getItem("wms_token");
+      const res = await fetch("/api/floor-execution/qc-handoff", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ jobCardId, vrn, qcInchargeId: "QC-INCHARGE-01" })
+      });
+      if (res.ok) {
+        alert(`🚀 Vehicle ${vrn} marked READY FOR QC! Transferred to QC In-Charge with 5-minute SLA.`);
+        onRefresh();
+      } else {
+        const err = await res.json();
+        alert(`QC Handoff blocked: ${err.error || "Unresolved dependencies remain"}`);
+      }
+    } catch (e: any) {
+      alert(`QC Handoff error: ${e.message}`);
     }
   };
 
@@ -117,133 +167,92 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
           <div className="flex items-center gap-2">
             <span className="flex h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
             <span className="text-[10px] font-bold uppercase tracking-widest text-blue-400">
-              Floor Execution Cockpit
+              FLOOR CONTROL • MY WORKSPACE
             </span>
           </div>
           <h1 className="text-2xl md:text-3xl font-black text-white mt-1 uppercase tracking-tight">
-            Floor Supervisor Console
+            Floor In-Charge Command Center
           </h1>
         </div>
 
-        {/* Tab triggers */}
-        <div className="flex flex-wrap items-center gap-2 bg-slate-900 border border-slate-800 p-1 rounded-xl">
-          {[
-            { id: "dashboard", label: "Dashboard Grid" },
-            { id: "twin", label: "Live Digital Twin" },
-            { id: "technicians", label: "Technician Control" },
-            { id: "allocation", label: "Job Allocation" }
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${
-                activeTab === tab.id 
-                  ? "bg-blue-600 text-white" 
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        <button 
+          onClick={onRefresh}
+          className="flex items-center gap-2 px-3.5 py-2 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
+        >
+          <RefreshCw className="h-3.5 w-3.5 text-blue-400" />
+          <span>Sync Workspace</span>
+        </button>
       </div>
 
-      {activeTab === "dashboard" && (
-        <div className="space-y-6">
-          {/* SECTION 1: Dashboard KPIs */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+      {/* Tab Triggers */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-slate-800">
+        {[
+          { id: "my-attention", label: "MY ATTENTION", count: supervisorStats.unassigned + supervisorStats.warnings },
+          { id: "my-new-jobs", label: "MY NEW JOBS", count: supervisorStats.unassigned },
+          { id: "my-bays", label: "MY BAYS", count: bays.length || 5 },
+          { id: "my-techs", label: "MY TECHNICIANS", count: technicianList.length || 3 },
+          { id: "my-delays", label: "MY DELAYS", count: supervisorStats.partsPending }
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer ${
+              activeTab === tab.id 
+                ? "bg-blue-600 text-white" 
+                : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <span>{tab.label}</span>
+            {tab.count !== null && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-800 text-slate-200 font-mono">
+                {tab.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* TAB 1: MY ATTENTION */}
+      {activeTab === "my-attention" && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
               { label: "Active Jobs", val: supervisorStats.active, color: "text-white" },
-              { label: "Assigned JCs", val: supervisorStats.assigned, color: "text-blue-400" },
-              { label: "Unassigned JCs", val: supervisorStats.unassigned, color: "text-amber-400" },
+              { label: "Unallocated", val: supervisorStats.unassigned, color: "text-amber-400 font-bold" },
               { label: "Bay Utilization", val: supervisorStats.bayUtil, color: "text-emerald-400" },
-              { label: "Waiting for Parts", val: supervisorStats.partsPending, color: "text-red-400" },
-              { label: "SLA Warnings", val: supervisorStats.warnings, color: "text-red-500 font-black animate-pulse" }
+              { label: "SLA Alerts", val: supervisorStats.warnings, color: "text-red-400 font-black" }
             ].map((stat, idx) => (
               <div key={idx} className="bg-slate-900 border border-slate-800 p-4 rounded-xl text-center space-y-1">
-                <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">{stat.label}</span>
+                <span className="text-[9px] text-slate-500 font-bold uppercase block">{stat.label}</span>
                 <span className={`text-lg font-black ${stat.color}`}>{stat.val}</span>
               </div>
             ))}
           </div>
 
-          {/* SECTION 5: Work Progress Board */}
-          <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg space-y-4">
-            <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
-              <Layers className="h-4 w-4 text-blue-400" />
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Work Progress Board</h3>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              {[
-                { name: "Waiting list", count: jobCards.filter(j => j.status === "Waiting").length, color: "border-slate-800" },
-                { name: "In Progress", count: jobCards.filter(j => j.status === "Active").length, color: "border-blue-500/20" },
-                { name: "Parts Pending", count: jobCards.filter(j => j.current_workflow_state === "PARTS_PENDING").length, color: "border-red-500/20" },
-                { name: "Completed today", count: jobCards.filter(j => j.status === "Completed").length, color: "border-emerald-500/20" }
-              ].map((column, idx) => (
-                <div key={idx} className={`bg-slate-950/40 border ${column.color} p-4 rounded-xl text-center space-y-2`}>
-                  <div className="text-[10px] text-slate-500 font-bold uppercase">{column.name}</div>
-                  <div className="text-2xl font-black text-white">{column.count}</div>
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider">Immediate Handoffs & Action Required</h3>
+            {jobCards.slice(0, 3).map(j => (
+              <div key={j.job_id} className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between gap-4">
+                <div>
+                  <span className="font-mono text-base font-black text-white">{j.vrn}</span>
+                  <p className="text-xs text-slate-400">{j.vehicle_model} • SA: {j.sa_name || "Sayeed Jaffer"}</p>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === "twin" && (
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg space-y-4">
-          {/* SECTION 2: Live Workshop Floor Digital Twin */}
-          <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
-            <Building2 className="h-4 w-4 text-blue-400" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Live Workshop Floor Digital Twin</h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {bays.map(bay => {
-              const activeInBay = jobCards.find(j => j.bay_id === bay.bay_id && ["Active", "Rework"].includes(j.status));
-              return (
-                <div key={bay.bay_id} className="bg-slate-950/40 border border-slate-850 p-4 rounded-xl space-y-3 relative overflow-hidden">
-                  <div className="absolute top-0 left-0 right-0 h-1 bg-blue-500" />
-                  <div className="flex justify-between items-center text-xs font-bold">
-                    <span className="text-white uppercase">{bay.bay_name}</span>
-                    <span className={`px-2 py-0.5 rounded text-[10px] ${
-                      activeInBay ? "bg-blue-500/10 text-blue-400" : "bg-emerald-500/10 text-emerald-400"
-                    }`}>{activeInBay ? "Occupied" : "Available"}</span>
-                  </div>
-                  {activeInBay ? (
-                    <div className="space-y-1.5 text-xs text-slate-300">
-                      <div>Vehicle: <span className="font-mono font-bold text-slate-100">{activeInBay.vrn}</span></div>
-                      <div>Technician: <span className="font-bold text-slate-100">{activeInBay.technician_name || "Unassigned"}</span></div>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-slate-500 italic">No vehicle active in bay.</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {activeTab === "technicians" && (
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg space-y-4">
-          {/* SECTION 3: Technician Control Center */}
-          <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
-            <Users className="h-4 w-4 text-blue-400" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Technician Roster Status</h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {technicianList.map(tech => (
-              <div key={tech.id} className="bg-slate-950/40 border border-slate-850 p-4 rounded-xl space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-slate-200">{tech.name}</span>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                    tech.isBusy ? "bg-amber-500/10 text-amber-400" : "bg-emerald-500/10 text-emerald-400"
-                  }`}>{tech.isBusy ? "Busy" : "Idle"}</span>
-                </div>
-                <div className="text-xs text-slate-400 space-y-1">
-                  <div>Certification: <span className="text-slate-200 font-bold">{tech.certification}</span></div>
-                  <div>Current Job: <span className="text-slate-200">{tech.currentJob}</span></div>
-                  <div>FTR Rating: <span className="text-emerald-400 font-bold">{tech.ftr}</span></div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleAcknowledge(j.vrn)}
+                    className="px-3 py-1.5 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 text-xs font-bold uppercase rounded-xl cursor-pointer"
+                  >
+                    ACKNOWLEDGE
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedAllocationJob({ jobCardId: j.vrn, vrn: j.vrn });
+                      setShowAllocateModal(true);
+                    }}
+                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold uppercase rounded-xl cursor-pointer"
+                  >
+                    ALLOCATE
+                  </button>
                 </div>
               </div>
             ))}
@@ -251,81 +260,178 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
         </div>
       )}
 
-      {activeTab === "allocation" && selectedJob && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* SECTION 4: Job Allocation & Sequence controls */}
-          <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg space-y-4">
-            <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
-              <Calendar className="h-4 w-4 text-blue-400" />
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Job Card Allocation</h3>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <span className="text-[9px] text-slate-500 font-bold uppercase block mb-1">Target Vehicle</span>
-                <span className="font-mono text-xs font-bold text-slate-200">{selectedJob.vrn}</span>
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-1">Assign Technician</label>
-                <select 
-                  onChange={(e) => setAssignTechId(Number(e.target.value))}
-                  className="w-full bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-xs text-slate-200 outline-none"
-                >
-                  <option value="">Select Technician...</option>
-                  {technicianList.map(t => (
-                    <option key={t.id} value={t.id}>{t.name} ({t.certification})</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-1">Assign Workshop Bay</label>
-                <select 
-                  onChange={(e) => setAssignBayId(Number(e.target.value))}
-                  className="w-full bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-xs text-slate-200 outline-none"
-                >
-                  <option value="">Select Bay...</option>
-                  {bays.map(b => (
-                    <option key={b.bay_id} value={b.bay_id}>{b.bay_name}</option>
-                  ))}
-                </select>
-              </div>
-              <button 
-                onClick={handleAssignJob}
-                className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
-              >
-                Apply Allocations
-              </button>
-            </div>
-          </div>
+      {/* TAB 2: MY NEW JOBS */}
+      {activeTab === "my-new-jobs" && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {jobCards.map(j => (
+              <div key={j.job_id} className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-3">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="font-mono text-base font-black text-white">{j.vrn}</span>
+                    <span className="text-xs text-slate-400 block">{j.vehicle_make} {j.vehicle_model}</span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400">UNALLOCATED</span>
+                </div>
 
-          {/* SECTION 6: Supervisor AI Copilot — gated by aiModeEnabled */}
-          {aiModeEnabled && aiRecommendations && (
-            <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg space-y-4 lg:col-span-2">
-              <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
-                <Sparkles className="h-4 w-4 text-emerald-400 animate-pulse" />
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Supervisor AI Copilot</h3>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 text-xs space-y-1">
+                  <div className="flex justify-between"><span className="text-slate-400">SA:</span><span className="font-bold text-slate-200">{j.sa_name || "Sayeed Jaffer"}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Complaints:</span><span className="text-slate-200">Clutch slip under heavy load</span></div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setSelectedAllocationJob({ jobCardId: j.vrn, vrn: j.vrn });
+                    setShowAllocateModal(true);
+                  }}
+                  className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold uppercase tracking-wider rounded-xl cursor-pointer"
+                >
+                  ALLOCATE BAY & TECHNICIAN
+                </button>
               </div>
-              <div className="space-y-4 text-xs">
-                <div className="p-3 bg-slate-950/40 rounded-xl border border-slate-850 text-slate-300 leading-relaxed">
-                  <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider block mb-1">Recommended Sequence</span>
-                  {aiRecommendations.sequence}
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-950/40 p-2.5 rounded-xl border border-slate-850">
-                    <span className="text-[9px] text-slate-500 font-bold uppercase block">Best Technician Match</span>
-                    <span className="font-bold text-slate-200">{aiRecommendations.bestTech}</span>
-                  </div>
-                  <div className="bg-slate-950/40 p-2.5 rounded-xl border border-slate-850">
-                    <span className="text-[9px] text-slate-500 font-bold uppercase block">Best Bay Match</span>
-                    <span className="font-bold text-slate-200">{aiRecommendations.bestBay}</span>
-                  </div>
-                </div>
-                <div className="flex justify-between border-t border-slate-850 pt-3 text-[10px] text-slate-400 uppercase font-bold">
-                  <span>Inference Confidence: <span className="text-emerald-400">{aiRecommendations.confidence}</span></span>
-                  <span>Parts Delay Risk: <span className="text-amber-400">{aiRecommendations.partsRisk}</span></span>
-                </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: MY BAYS */}
+      {activeTab === "my-bays" && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {(bays.length > 0 ? bays : [
+            { bay_id: "B-01", bay_name: "Bay 01 - HCV Heavy Repair", status: "Available" },
+            { bay_id: "B-02", bay_name: "Bay 02 - General Repair", status: "Occupied" },
+            { bay_id: "B-03", bay_name: "Bay 03 - EV & Electrical", status: "Available" }
+          ]).map((b: any) => (
+            <div key={b.bay_id} className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="font-bold text-white text-xs uppercase">{b.bay_name}</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                  b.status === "Occupied" ? "bg-amber-500/20 text-amber-400" : "bg-emerald-500/20 text-emerald-400"
+                }`}>{b.status}</span>
+              </div>
+              <p className="text-xs text-slate-400">LOB: HCV/MCV • Station Rack A1</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* TAB 4: MY TECHNICIANS */}
+      {activeTab === "my-techs" && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {technicianList.map(t => (
+            <div key={t.id} className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="font-bold text-white text-xs">{t.name}</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                  t.isBusy ? "bg-amber-500/20 text-amber-400" : "bg-emerald-500/20 text-emerald-400"
+                }`}>{t.isBusy ? "Busy" : "Available"}</span>
+              </div>
+              <p className="text-xs text-slate-400">{t.role} • Cert: <span className="text-slate-200 font-bold">{t.certification}</span></p>
+              <div className="flex justify-between border-t border-slate-850 pt-2 text-[10px] text-slate-400">
+                <span>Current: {t.currentJob}</span>
+                <span>Workload: {t.loadCount}</span>
               </div>
             </div>
-          )}
+          ))}
+        </div>
+      )}
+
+      {/* TAB 5: MY DELAYS */}
+      {activeTab === "my-delays" && (
+        <div className="space-y-3 text-xs">
+          <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-2">
+            <div className="flex justify-between text-amber-400 font-bold">
+              <span>WAITING FOR PARTS (18m)</span>
+              <span>VRN: KA32M9988</span>
+            </div>
+            <p className="text-slate-300">Clutch release bearing heavy duty requested by Tech Ravi Kumar.</p>
+          </div>
+        </div>
+      )}
+
+      {/* ALLOCATION MODAL */}
+      {showAllocateModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 text-slate-100">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h2 className="text-base font-black text-white">ALLOCATE BAY & TECHNICIAN</h2>
+              <button onClick={() => setShowAllocateModal(false)} className="text-slate-400 text-xs">✕</button>
+            </div>
+
+            {/* AI Recommendation Card */}
+            <div className="bg-slate-950 p-3.5 rounded-xl border border-emerald-500/30 space-y-1">
+              <div className="flex items-center gap-1.5 text-emerald-400 font-black text-[10px] uppercase">
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>AI SUGGESTION</span>
+              </div>
+              <p className="text-xs text-slate-300">
+                Recommended: <strong className="text-white">Bay 01</strong> + <strong className="text-white">Ravi Kumar</strong> (HCV Heavy Duty certified, lowest active workload).
+              </p>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Select Bay</label>
+                <select
+                  value={selectedBay}
+                  onChange={(e) => setSelectedBay(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-slate-200 outline-none"
+                >
+                  <option value="B-01">Bay 01 - Heavy Commercial (HCV)</option>
+                  <option value="B-02">Bay 02 - General Repair</option>
+                  <option value="B-03">Bay 03 - EV & Electrical</option>
+                  <option value="B-04">Bay 04 - Express Bay</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Select Technician</label>
+                <select
+                  value={selectedTech}
+                  onChange={(e) => setSelectedTech(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-slate-200 outline-none"
+                >
+                  {technicianList.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} ({t.certification}) - {t.isBusy ? "Busy" : "Available"}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="override"
+                  checked={isOverride}
+                  onChange={(e) => setIsOverride(e.target.checked)}
+                  className="rounded bg-slate-950 border-slate-800 text-blue-600"
+                />
+                <label htmlFor="override" className="text-slate-400 text-xs cursor-pointer font-bold">
+                  Override AI Recommendation
+                </label>
+              </div>
+
+              {isOverride && (
+                <div>
+                  <label className="block text-[10px] font-bold text-amber-400 uppercase mb-1">Override Reason (Required)</label>
+                  <input
+                    type="text"
+                    value={overrideReason}
+                    onChange={(e) => setOverrideReason(e.target.value)}
+                    placeholder="State reason for overriding AI recommendation..."
+                    className="w-full bg-slate-950 border border-amber-500/40 rounded-xl p-2 text-xs text-white"
+                  />
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={handleAllocateCommit}
+              disabled={submitting}
+              className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer"
+            >
+              {submitting ? "Allocating..." : "CONFIRM ALLOCATION"}
+            </button>
+          </div>
         </div>
       )}
     </div>

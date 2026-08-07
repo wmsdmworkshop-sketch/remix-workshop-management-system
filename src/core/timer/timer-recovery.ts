@@ -8,6 +8,7 @@
 
 import { TimerStore } from "./timer-store";
 import { TimerEngine } from "./timer-engine";
+import { makeSystemContext } from "../business-context";
 
 export class TimerRecovery {
   constructor(private readonly engine: TimerEngine) {}
@@ -29,7 +30,7 @@ export class TimerRecovery {
         await this.engine.eventBus.publish(
           "TIMER_RECOVERED",
           { timerId: timer.timerId, jobId: timer.jobId, correlationId },
-          correlationId,
+          makeSystemContext(correlationId),
           timer.validationRunId
         );
       }

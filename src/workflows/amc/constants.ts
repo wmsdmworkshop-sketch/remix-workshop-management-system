@@ -1,0 +1,35 @@
+export const AmcPlanTypes = {
+  SILVER: "SILVER",
+  GOLD: "GOLD",
+  PLATINUM: "PLATINUM",
+  COMPREHENSIVE: "COMPREHENSIVE",
+  PREVENTIVE_MAINTENANCE: "PREVENTIVE_MAINTENANCE",
+  CUSTOM: "CUSTOM",
+  FLEET: "FLEET",
+  CORPORATE: "CORPORATE"
+} as const;
+
+export const AmcCoverageTypes = {
+  LABOUR: "LABOUR",
+  PARTS: "PARTS",
+  CONSUMABLES: "CONSUMABLES",
+  LUBRICANTS: "LUBRICANTS",
+  FLUIDS: "FLUIDS",
+  FILTERS: "FILTERS"
+} as const;
+
+export const AmcContractStatus = {
+  DRAFT: "DRAFT",
+  ACTIVE: "ACTIVE",
+  SUSPENDED: "SUSPENDED",
+  EXPIRED: "EXPIRED",
+  LAPSED: "LAPSED",
+  RENEWAL_PENDING: "RENEWAL_PENDING",
+  CANCELLED: "CANCELLED"
+} as const;
+
+export const AmcServiceTriggers = {
+  DATE: "DATE",
+  ODOMETER: "ODOMETER",
+  ENGINE_HOURS: "ENGINE_HOURS"
+} as const;

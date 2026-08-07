@@ -96,9 +96,9 @@ async function runTestSuite() {
 
   // Subscribe to queue events
   const eventsFired: string[] = [];
-  bus.subscribe("QUEUE_ENQUEUED", () => eventsFired.push("ENQUEUED"));
-  bus.subscribe("QUEUE_DEQUEUED", () => eventsFired.push("DEQUEUED"));
-  bus.subscribe("QUEUE_TRANSFERRED", () => eventsFired.push("TRANSFERRED"));
+  bus.subscribe("QUEUE_ENQUEUED", () => { eventsFired.push("ENQUEUED"); });
+  bus.subscribe("QUEUE_DEQUEUED", () => { eventsFired.push("DEQUEUED"); });
+  bus.subscribe("QUEUE_TRANSFERRED", () => { eventsFired.push("TRANSFERRED"); });
 
   // Helper factors
   const stdFactors = { entryTime: new Date().toISOString() };

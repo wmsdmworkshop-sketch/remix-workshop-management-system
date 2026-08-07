@@ -77,6 +77,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
   const [saving, setSaving] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const [activeSubTab, setActiveSubTab] = useState<"attendance" | "overtime" | "overtime-approvals">("attendance");
+  const isRc1 = import.meta.env.VITE_WORKFORCE_PROFILE === "rc1";
 
   // Form state
   const [formEmployeeId, setFormEmployeeId] = useState<number>(0);
@@ -215,19 +216,21 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
           <Calendar className="h-4 w-4" />
           <span>Attendance</span>
         </button>
-        <button
-          type="button"
-          onClick={() => setActiveSubTab("overtime")}
-          className={`pb-3 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 cursor-pointer ${
-            activeSubTab === "overtime" 
-              ? "border-[#06B6D4] text-[#06B6D4]" 
-              : "border-transparent text-slate-400 hover:text-slate-200"
-          }`}
-        >
-          <Clock className="h-4 w-4" />
-          <span>Overtime</span>
-        </button>
-        {canApprove && (
+        {!isRc1 && (
+          <button
+            type="button"
+            onClick={() => setActiveSubTab("overtime")}
+            className={`pb-3 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 cursor-pointer ${
+              activeSubTab === "overtime" 
+                ? "border-[#06B6D4] text-[#06B6D4]" 
+                : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <Clock className="h-4 w-4" />
+            <span>Overtime</span>
+          </button>
+        )}
+        {!isRc1 && canApprove && (
           <button
             type="button"
             onClick={() => setActiveSubTab("overtime-approvals")}
@@ -243,11 +246,11 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
         )}
       </div>
 
-      {activeSubTab === "overtime" && (
+      {!isRc1 && activeSubTab === "overtime" && (
         <OvertimeEmployeeDashboard currentUser={currentUser} token={token} employees={employees} jobCards={jobCards} />
       )}
 
-      {activeSubTab === "overtime-approvals" && canApprove && (
+      {!isRc1 && activeSubTab === "overtime-approvals" && canApprove && (
         <OvertimeApprovalPortal currentUser={currentUser} token={token} employees={employees} jobCards={jobCards} />
       )}
 

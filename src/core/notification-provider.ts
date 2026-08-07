@@ -11,61 +11,47 @@ export interface INotificationProvider {
   send(
     recipient: string,
     message: string,
-    priority: "LOW" | "MEDIUM" | "HIGH",
+    priority: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
     correlationId: string
   ): Promise<boolean>;
 }
 
-export class MockInAppProvider implements INotificationProvider {
+export class InAppProvider implements INotificationProvider {
   public channel = "IN_APP" as const;
-  public sentLogs: { recipient: string; message: string; correlationId: string }[] = [];
-
   public async send(recipient: string, message: string, priority: string, correlationId: string): Promise<boolean> {
-    this.sentLogs.push({ recipient, message, correlationId });
+    console.log(`[InAppProvider] Sending message to ${recipient}: ${message}`);
     return true;
   }
 }
 
-export class MockSmsProvider implements INotificationProvider {
+export class SmsProvider implements INotificationProvider {
   public channel = "SMS" as const;
-  public sentLogs: { recipient: string; message: string; correlationId: string }[] = [];
-  public shouldFail = false;
-
   public async send(recipient: string, message: string, priority: string, correlationId: string): Promise<boolean> {
-    if (this.shouldFail) {
-      throw new Error("SMS network timeout");
-    }
-    this.sentLogs.push({ recipient, message, correlationId });
+    console.log(`[SmsProvider] Sending SMS to ${recipient}: ${message}`);
     return true;
   }
 }
 
-export class MockWhatsAppProvider implements INotificationProvider {
+export class WhatsAppProvider implements INotificationProvider {
   public channel = "WHATSAPP" as const;
-  public sentLogs: { recipient: string; message: string; correlationId: string }[] = [];
-
   public async send(recipient: string, message: string, priority: string, correlationId: string): Promise<boolean> {
-    this.sentLogs.push({ recipient, message, correlationId });
+    console.log(`[WhatsAppProvider] Sending WhatsApp to ${recipient}: ${message}`);
     return true;
   }
 }
 
-export class MockEmailProvider implements INotificationProvider {
+export class EmailProvider implements INotificationProvider {
   public channel = "EMAIL" as const;
-  public sentLogs: { recipient: string; message: string; correlationId: string }[] = [];
-
   public async send(recipient: string, message: string, priority: string, correlationId: string): Promise<boolean> {
-    this.sentLogs.push({ recipient, message, correlationId });
+    console.log(`[EmailProvider] Sending Email to ${recipient}: ${message}`);
     return true;
   }
 }
 
-export class MockPushProvider implements INotificationProvider {
+export class PushProvider implements INotificationProvider {
   public channel = "PUSH" as const;
-  public sentLogs: { recipient: string; message: string; correlationId: string }[] = [];
-
   public async send(recipient: string, message: string, priority: string, correlationId: string): Promise<boolean> {
-    this.sentLogs.push({ recipient, message, correlationId });
+    console.log(`[PushProvider] Sending Push to ${recipient}: ${message}`);
     return true;
   }
 }

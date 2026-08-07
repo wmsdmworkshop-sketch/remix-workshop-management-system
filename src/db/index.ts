@@ -1,7 +1,22 @@
 import mysql from "mysql2/promise";
 import { envConfig } from "../config/env.ts";
+import { TelemetryService, DbHealthMetrics } from "./telemetry-service.ts";
+import { HealthMonitor } from "./health-monitor.ts";
+import { RetryExecutor } from "./retry-executor.ts";
 
-// Function to create a new MySQL connection pool.
+/**
+ * =============================================================================
+ * DWIP Enterprise Platform — Database Persistence & Resilience Layer (WP-05)
+ * Bounded Context: Persistence / Connection Pool & Telemetry
+ * Description: Composable database resilience infrastructure delegating to
+ *              TelemetryService, HealthMonitor, and RetryExecutor while
+ *              maintaining 100% backward compatibility for all pool exports.
+ * =============================================================================
+ */
+
+export type { DbHealthMetrics };
+
+// Connection Pool Factory
 export const createPool = () => {
   const host = envConfig.DB_HOST;
   const port = envConfig.DB_PORT;
@@ -24,7 +39,7 @@ export const createPool = () => {
     waitForConnections: true,
     queueLimit: 0,
     dateStrings: true, // Return dates as strings to avoid automatic timezone conversions
-    connectTimeout: 10000,
+    connectTimeout: 2000,
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000,
   };
@@ -32,6 +47,89 @@ export const createPool = () => {
   return mysql.createPool(config);
 };
 
-// Create the pool instance.
-export const pool = createPool();
-export const db = pool; // Alias db to pool for easy migration
+// Instantiated Composable Services
+export const telemetryService = new TelemetryService();
+export const healthMonitor = new HealthMonitor(telemetryService);
+export const retryExecutor = new RetryExecutor();
+
+// Instantiate Raw MySQL Connection Pool
+const rawPool = createPool();
+const originalGetConnection = rawPool.getConnection;
+const originalQuery = rawPool.query;
+const originalExecute = rawPool.execute;
+
+// Background Health Probe Initialization (10s default)
+healthMonitor.startHealthProbe(rawPool, envConfig.DB_HEALTH_PROBE_INTERVAL);
+
+// Exposed Helper Functions
+export async function checkDbHealthNow(): Promise<boolean> {
+  return healthMonitor.checkHealthNow(rawPool);
+}
+
+export function startHealthProbe(intervalMs?: number): void {
+  healthMonitor.startHealthProbe(rawPool, intervalMs);
+}
+
+export function stopHealthProbe(): void {
+  healthMonitor.stopHealthProbe();
+}
+
+export function setDbOfflineState(offline: boolean): void {
+  healthMonitor.setOfflineState(offline);
+}
+
+export function getDbHealthMetrics(): DbHealthMetrics {
+  return telemetryService.getMetrics(healthMonitor.isOffline());
+}
+
+export function resetDbMetrics(): void {
+  telemetryService.resetMetrics();
+}
+
+/**
+ * Checks if a unit test has attached a mock implementation to the pool proxy target.
+ */
+function isTargetMocked(target: any): boolean {
+  return (
+    target.getConnection !== originalGetConnection ||
+    target.query !== originalQuery ||
+    target.execute !== originalExecute
+  );
+}
+
+// Proxy Wrapper for Backward Compatibility
+export const pool = new Proxy(rawPool, {
+  get(target, prop, receiver) {
+    if (prop === "_rawPool") {
+      return rawPool;
+    }
+    if (prop === "isMocked") {
+      return isTargetMocked(target);
+    }
+    if (prop === "execute" || prop === "query") {
+      const orig = Reflect.get(target, prop, receiver);
+      return async function(...args: any[]) {
+        return retryExecutor.executeWithRetry(target, orig.bind(target), args, healthMonitor, telemetryService);
+      };
+    }
+    if (prop === "getConnection") {
+      const orig = Reflect.get(target, prop, receiver);
+      return async function(...args: any[]) {
+        telemetryService.recordConnectionAcquired();
+        return orig.apply(target, args);
+      };
+    }
+    if (prop === "end") {
+      const orig = Reflect.get(target, prop, receiver);
+      return async function(...args: any[]) {
+        healthMonitor.stopHealthProbe();
+        telemetryService.printTelemetrySummary();
+        return orig.apply(target, args);
+      };
+    }
+    return Reflect.get(target, prop, receiver);
+  }
+}) as any;
+
+export const db = pool;
+export default pool;

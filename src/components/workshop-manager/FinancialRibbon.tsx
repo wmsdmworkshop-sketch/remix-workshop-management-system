@@ -21,13 +21,13 @@ export const FinancialRibbon: React.FC<FinancialRibbonProps> = React.memo(({
   hasError = false,
 }) => {
   const values = useMemo(() => {
-    const today = todayRevenue ?? 428500;
+    const today = todayRevenue ?? 0;
     const target = targetRevenue ?? 500000;
     const remaining = Math.max(0, target - today);
     const achievement = today > 0 && target > 0 ? Math.round((today / target) * 100) : 0;
-    const labour = labourRevenue ?? 185000;
-    const parts = partsRevenue ?? 243500;
-    const avgJc = avgJobCardVal ?? 8570;
+    const labour = labourRevenue ?? 0;
+    const parts = partsRevenue ?? 0;
+    const avgJc = avgJobCardVal ?? 0;
 
     return { today, target, remaining, achievement, labour, parts, avgJc };
   }, [todayRevenue, targetRevenue, labourRevenue, partsRevenue, avgJobCardVal]);

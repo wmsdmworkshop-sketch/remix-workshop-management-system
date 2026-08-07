@@ -29,7 +29,7 @@ async function runTestSuite() {
   // CONNECTION MOCK EMULATOR
   // ═══════════════════════════════════════════════════════════════════
   const queriesExecuted: string[] = [];
-  let connectionReleased = false;
+  let connectionReleased: boolean = false;
 
   const mockConnection = {
     query: async (sql: string) => {
@@ -76,7 +76,7 @@ async function runTestSuite() {
   assert(result1 === "SUCCESS_VAL", "Root transaction block returned expected value");
   assert(queriesExecuted[0] === "START TRANSACTION", "Root transaction sent START TRANSACTION");
   assert(queriesExecuted[1] === "COMMIT", "Root transaction sent COMMIT");
-  assert(connectionReleased === true, "Connection released at root completion");
+  assert(Boolean(connectionReleased), "Connection released at root completion");
 
   // Verify events propagated
   assert(
@@ -112,7 +112,7 @@ async function runTestSuite() {
 
   assert(queriesExecuted[0] === "START TRANSACTION", "Root transaction started on failure path");
   assert(queriesExecuted[1] === "ROLLBACK", "Root transaction rolled back on exception");
-  assert(connectionReleased === true, "Connection released on rollback path");
+  assert(Boolean(connectionReleased), "Connection released on rollback path");
   assert(
     compensationsRun[0] === "SECOND_COMPENSATION" && compensationsRun[1] === "FIRST_COMPENSATION",
     "Compensation callbacks executed in correct LIFO (last-in, first-out) order"
@@ -153,7 +153,7 @@ async function runTestSuite() {
   // Test 4: Nested Transaction Savepoint Rollback
   queriesExecuted.length = 0;
   eventsCaptured.length = 0;
-  let childCompensationsRun = false;
+  let childCompensationsRun: boolean = false;
 
   await tm.runInTransaction(
     async (parentTx) => {
@@ -180,7 +180,7 @@ async function runTestSuite() {
   assert(queriesExecuted[1].startsWith("SAVEPOINT SP_1_"), "Child created savepoint");
   assert(queriesExecuted[2].startsWith("ROLLBACK TO SAVEPOINT SP_1_"), "Child rolled back to savepoint on fail");
   assert(queriesExecuted[3] === "COMMIT", "Parent committed successfully after nested rollback");
-  assert(childCompensationsRun === true, "Child compensation callbacks executed after nested rollback");
+  assert(Boolean(childCompensationsRun), "Child compensation callbacks executed after nested rollback");
 
   console.log("=============================================================================");
   console.log(`TEST SUITE RESULTS: ${passed} passed, ${failed} failed`);

@@ -6,7 +6,30 @@ const tests = [
   "workflow-engine.test.ts",
   "timeline-platform.test.ts",
   "workflow-reception-integration.test.ts",
-  "security-module.test.ts"
+  "security-module.test.ts",
+  "identity-architecture.test.ts",
+  "workshop-visit.test.ts",
+  "operational-execution.test.ts",
+  "orchestration.test.ts",
+  "commercial.test.ts",
+  "migration-engine.test.ts",
+  "spcce-engine.test.ts",
+  "kip-engine.test.ts",
+  "keie-engine.test.ts",
+  "vehicle-reception.test.ts",
+  "technician-workbench.test.ts",
+  "qc-verification.test.ts",
+  "command-center.test.ts",
+  "executive-intelligence.test.ts",
+  "dre-rules-engine.test.ts",
+  "human-capital.test.ts",
+  "wice-engine.test.ts",
+  "cxo-platform.test.ts",
+  "cxo-platform-v1-v2.test.ts",
+  "fleet-platform.test.ts",
+  "ekg-platform.test.ts",
+  "ai-hardening.test.ts",
+  "pilot-platform.test.ts"
 ];
 
 (async () => {

@@ -9,6 +9,7 @@ import { WorkflowValidator } from "./validator";
 import { SlaEngine } from "./sla";
 import { WorkflowEventPublisher } from "./event-publisher";
 import { WorkflowLogger } from "./logger";
+import { PermissionEngine } from "../../core/permission-engine";
 
 export interface TransitionPayload {
   jobId: number;
@@ -46,11 +47,12 @@ export class WorkflowEngine {
       const oldState = job.current_workflow_state || "GATE_IN";
 
       // 2. Execute Validation Pipeline
-      const validation = WorkflowValidator.validate(oldState, payload.newState, payload.actorRole, logContext);
+      const validation = await WorkflowValidator.validate(oldState, payload.newState, payload.actorRole, logContext);
       
       if (!validation.isValid) {
+        const hasOverridePerm = await PermissionEngine.can(payload.actorRole, 'WORKFLOW_TRANSITION_OVERRIDE');
         const isOverridePermitted = payload.overrideFlag && 
-                                    (payload.actorRole === "Supervisor" || payload.actorRole === "Admin") && 
+                                    hasOverridePerm && 
                                     FEATURE_FLAGS.enableDecisionOverrides;
 
         if (!isOverridePermitted) {

@@ -21,7 +21,7 @@ const commitHash = process.env.VITE_GIT_COMMIT || process.env.COMMIT_SHA || vers
     return '3a1dcd941b8fda890ffae46700f46d4ea597d2c8';
   }
 })();
-const buildTime = process.env.BUILD_TIME || versionData.buildTime || new Date().toISOString();
+const buildTime = process.env.BUILD_TIME || new Date().toISOString();
 
 export default defineConfig(() => {
   return {

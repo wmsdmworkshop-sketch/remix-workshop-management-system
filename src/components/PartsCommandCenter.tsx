@@ -3,6 +3,7 @@ import {
   Package, Search, Sparkles, Send, CheckCircle2, AlertTriangle, 
   TrendingUp, BarChart3, LayoutGrid, Calendar, Truck 
 } from "lucide-react";
+import { AICopilotPanel } from "./AICopilotPanel";
 
 export interface PartsCommandCenterProps {
   jobCards: any[];
@@ -34,7 +35,26 @@ export const PartsCommandCenter: React.FC<PartsCommandCenterProps> = React.memo(
       item.partNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.desc.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [searchQuery]);
+  }, [searchQuery, inventoryItems]);
+  // Dynamic Spares KPIs Calculation
+  const sparesKpis = useMemo(() => {
+    const totalValuation = inventoryItems.reduce((sum, item) => sum + (item.stock * item.price), 0);
+    const fastMoving = inventoryItems.filter(item => item.stock > 10).length;
+    const deadStock = inventoryItems.filter(item => item.stock <= 2).length;
+    const pendingPartsRequests = jobCards.filter(j => j.current_workflow_state === "PARTS_PENDING").length;
+    const fillRate = jobCards.length > 0 
+      ? `${Math.max(0, Math.round(((jobCards.length - pendingPartsRequests) / jobCards.length) * 100))}%` 
+      : "100%";
+
+    return {
+      fillRate,
+      valuation: totalValuation >= 100000 
+        ? `₹${(totalValuation / 100000).toFixed(2)} Lakhs` 
+        : `₹${totalValuation.toLocaleString()}`,
+      fastMoving: `${fastMoving} SKUs`,
+      deadStock: `${deadStock} SKUs`
+    };
+  }, [inventoryItems, jobCards]);
 
   return (
     <div className="space-y-6 bg-[#0B1220] text-slate-100 min-h-screen p-4 md:p-6" lang="en">
@@ -114,19 +134,19 @@ export const PartsCommandCenter: React.FC<PartsCommandCenterProps> = React.memo(
               <div className="space-y-3 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-500">Fill Rate</span>
-                  <span className="font-bold text-emerald-400">96.5%</span>
+                  <span className="font-bold text-emerald-400">{sparesKpis.fillRate}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Inventory Valuation</span>
-                  <span className="font-bold text-slate-200">₹45.2 Lakhs</span>
+                  <span className="font-bold text-slate-200">{sparesKpis.valuation}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Fast Moving Items</span>
-                  <span className="font-bold text-blue-400">188 SKUs</span>
+                  <span className="font-bold text-blue-400">{sparesKpis.fastMoving}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Dead Stock SKUs</span>
-                  <span className="font-bold text-red-400">12 SKUs</span>
+                  <span className="font-bold text-red-400">{sparesKpis.deadStock}</span>
                 </div>
               </div>
             </div>
@@ -135,34 +155,13 @@ export const PartsCommandCenter: React.FC<PartsCommandCenterProps> = React.memo(
       )}
 
       {activeTab === "copilot" && (
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
-            <Sparkles className="h-4 w-4 text-emerald-400 animate-pulse" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">AI Parts Prediction Copilot</h3>
-          </div>
-          {aiModeEnabled ? (
-          <div className="space-y-4 text-xs">
-            <div className="p-3 bg-slate-950/40 border border-slate-800 rounded-xl leading-relaxed text-slate-300">
-              <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider block mb-1">Gemma Stockout Forecast</span>
-              Critical risk of Nexon EV Isolation Relays stockout within 5 days based on high diagnostics failure rate trends. Recommended PO order: 15 Units.
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-850">
-                <span className="text-[9px] text-slate-500 font-bold uppercase block mb-1">Suggested PO Orders</span>
-                <span className="font-bold text-slate-200">EV Relays (₹8,500/unit) from Supplier Tata Components</span>
-              </div>
-              <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-850">
-                <span className="text-[9px] text-slate-500 font-bold uppercase block mb-1">Alternative Parts Mapped</span>
-                <span className="font-bold text-slate-200">Nexon EV Relay Alt: TATA-8872-B3-V2 (100% compatible)</span>
-              </div>
-            </div>
-          </div>
-          ) : (
-          <div className="p-4 bg-slate-950/40 border border-slate-800 rounded-xl text-center">
-            <p className="text-xs text-slate-500">AI Mode is disabled. Enable AI Mode to view Gemma stockout forecasts, PO suggestions, and parts recommendations.</p>
-          </div>
-          )}
-        </div>
+        <AICopilotPanel 
+          role="Parts Manager"
+          context={{
+            inventoryCount: inventoryItems.length,
+            criticalStockList: inventoryItems.filter(i => i.demand === "Critical")
+          }}
+        />
       )}
 
       {activeTab === "orders" && (

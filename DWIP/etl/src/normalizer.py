@@ -157,11 +157,12 @@ class Normalizer(ETLStep):
     def amount(raw: Optional[str]) -> Optional[float]:
         """
         Parse a currency string to float.
-        Strips ₹, commas, spaces. Returns None if blank.
+        Strips ₹, Rs., Rs, commas, spaces. Returns None if blank.
         """
         if not raw or str(raw).strip().lower() in ("nan", "none", ""):
             return None
-        cleaned = re.sub(r"[₹,\s]", "", str(raw).strip())
+        cleaned = re.sub(r"(?i)Rs\.?", "", str(raw).strip())
+        cleaned = re.sub(r"[₹,\s]", "", cleaned)
         try:
             return float(cleaned)
         except ValueError:

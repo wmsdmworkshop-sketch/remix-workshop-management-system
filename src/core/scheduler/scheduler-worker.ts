@@ -11,6 +11,7 @@ import { SchedulerStore, ScheduledJobRecord } from "./scheduler-store";
 import { SchedulerLock } from "./scheduler-lock";
 import { SchedulerPolicy } from "./scheduler-policy";
 import { IEventBus } from "../event-bus";
+import { makeSystemContext } from "../business-context";
 
 export class SchedulerWorker {
   private processing = false;
@@ -65,7 +66,7 @@ export class SchedulerWorker {
             await this.eventBus.publish(
               "SCHEDULER_JOB_COMPLETED",
               { jobId: job.jobId, name: job.name },
-              job.correlationId
+              makeSystemContext(job.correlationId)
             );
           } else {
             await this.handleFailure(job, "Executor returned false");
@@ -90,7 +91,7 @@ export class SchedulerWorker {
       await this.eventBus.publish(
         "SCHEDULER_JOB_DEAD_LETTER",
         { jobId: job.jobId, name: job.name, reason: errorMsg },
-        job.correlationId
+        makeSystemContext(job.correlationId)
       );
     } else {
       job.status = "FAILED";

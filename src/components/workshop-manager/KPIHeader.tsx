@@ -27,15 +27,15 @@ export const KPIHeader: React.FC<KPIHeaderProps> = React.memo(({
   const activeMetrics = useMemo<KPIMetrics>(() => {
     if (metrics) return metrics;
     return {
-      received: 42,
-      delivered: 28,
-      openJcs: 14,
-      utilization: 84,
-      productivity: 92,
-      ftr: 96,
-      csi: 4.8,
-      avgTatMinutes: 135,
-      slaBreaches: 2
+      received: 0,
+      delivered: 0,
+      openJcs: 0,
+      utilization: 0,
+      productivity: 0,
+      ftr: 100,
+      csi: 5.0,
+      avgTatMinutes: 0,
+      slaBreaches: 0
     };
   }, [metrics]);
 

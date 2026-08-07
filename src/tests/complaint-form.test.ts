@@ -45,7 +45,7 @@ async function runTests() {
     voiceBlobUrl = "blob:http://localhost:3000/voice-memo.wav";
   };
   startRecord();
-  assert(recordingState === true, "Enters recording mode on voice memo start trigger");
+  assert((recordingState as any) === true, "Enters recording mode on voice memo start trigger");
   stopRecord();
   assert(voiceBlobUrl !== null && recordingState === false, "Generates simulated audio url and leaves recording mode on stop");
 

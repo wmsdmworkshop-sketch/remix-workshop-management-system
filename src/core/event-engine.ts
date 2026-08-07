@@ -6,6 +6,7 @@
  */
 
 import { IEventBus } from "./event-bus";
+import { makeSystemContext } from "./business-context";
 
 // Allowed event sources
 export const ALLOWED_SOURCES = [
@@ -222,7 +223,7 @@ export class OperationalEventService {
     await this.repository.append(event);
 
     // 6. Publish to EventBus
-    await this.eventBus.publish(event.event_type, event, event.correlation_id);
+    await this.eventBus.publish(event.event_type, event, makeSystemContext(event.correlation_id));
 
     return event;
   }

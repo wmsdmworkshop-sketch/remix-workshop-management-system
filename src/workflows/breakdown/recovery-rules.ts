@@ -1,0 +1,5 @@
+export const RecoveryRules = {
+  AUTO_ASSIGN_TOW_ON_ACCIDENT: true,
+  AUTO_ASSIGN_TOW_ON_ENGINE_FAILURE: true,
+  TOW_REQUIRED_IF_REPAIR_FAILS_ONSITE: true
+};

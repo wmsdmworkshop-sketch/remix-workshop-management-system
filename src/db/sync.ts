@@ -186,6 +186,45 @@ export async function ensureTablesExist(): Promise<void> {
     // Table might not exist yet during initial boot, ignore
   }
 
+  // tbl_evidence
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS \`tbl_evidence\` (
+      \`evidence_id\` VARCHAR(255) NOT NULL,
+      \`entity_type\` VARCHAR(255) NOT NULL,
+      \`entity_id\` VARCHAR(255) NOT NULL,
+      \`workflow_type\` VARCHAR(255) NOT NULL,
+      \`evidence_type\` VARCHAR(255) NOT NULL,
+      \`storage_provider\` VARCHAR(255) NOT NULL,
+      \`storage_path\` VARCHAR(1000) NOT NULL,
+      \`mime_type\` VARCHAR(100) NOT NULL,
+      \`file_hash\` VARCHAR(255) DEFAULT NULL,
+      \`file_size\` INT DEFAULT NULL,
+      \`version\` INT NOT NULL DEFAULT 1,
+      \`parent_version_id\` VARCHAR(255) DEFAULT NULL,
+      \`revision_reason\` TEXT DEFAULT NULL,
+      \`uploaded_by\` VARCHAR(255) NOT NULL,
+      \`uploaded_at\` VARCHAR(100) NOT NULL,
+      \`validation_status\` VARCHAR(50) NOT NULL,
+      \`lifecycle_status\` VARCHAR(50) NOT NULL,
+      \`correlation_id\` VARCHAR(255) NOT NULL,
+      \`is_locked\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`retention_policy\` VARCHAR(255) DEFAULT NULL,
+      \`ai_review_status\` VARCHAR(255) DEFAULT NULL,
+      \`ai_classification\` VARCHAR(255) DEFAULT NULL,
+      \`ai_confidence\` INT DEFAULT NULL,
+      \`duplicate_detected\` TINYINT(1) DEFAULT 0,
+      \`blurry_detected\` TINYINT(1) DEFAULT 0,
+      \`ocr_results\` TEXT DEFAULT NULL,
+      \`gps_latitude\` VARCHAR(100) DEFAULT NULL,
+      \`gps_longitude\` VARCHAR(100) DEFAULT NULL,
+      \`device\` VARCHAR(255) DEFAULT NULL,
+      \`camera_source\` VARCHAR(255) DEFAULT NULL,
+      \`branch\` VARCHAR(255) DEFAULT NULL,
+      \`workshop\` VARCHAR(255) DEFAULT NULL,
+      PRIMARY KEY (\`evidence_id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  `);
+
   // 1. employees
   await db.execute(`
     CREATE TABLE IF NOT EXISTS \`employees\` (
@@ -1160,8 +1199,8 @@ export async function ensureTablesExist(): Promise<void> {
 
 export async function syncLoad(): Promise<any> {
   // Retry database connection on startup to handle cases where Cloud SQL proxy is not fully ready (e.g. on Cloud Run boot)
-  let retries = 5;
-  const delayMs = 2000;
+  let retries = 1;
+  const delayMs = 0;
   while (retries > 0) {
     try {
       await db.query("SELECT 1");
@@ -1169,12 +1208,7 @@ export async function syncLoad(): Promise<any> {
       break;
     } catch (err: any) {
       retries--;
-      console.warn(`Database connection not ready yet. Retrying in ${delayMs}ms... (${retries} retries left). Error: ${err.message}`);
-      if (retries === 0) {
-        console.error("Max database connection retries reached. Proceeding with fallback/error path.");
-      } else {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
+      console.warn(`Database connection offline. Switching to Golden Source local mode. Error: ${err.message}`);
     }
   }
 
@@ -1568,14 +1602,45 @@ export async function syncLoad(): Promise<any> {
       qrtTeams: mapBooleans(qrtTeams || [], ["availability"]),
       breakdownAttachments: breakdownAttachments || [],
       breakdownCommunications: breakdownCommunications || [],
-      workflowHistory: workflowHistory || []
+      workflowHistory: workflowHistory || [],
+      evidence: []
     };
   } catch (error) {
     console.error("Database sync load failed, falling back to local file:", error);
     if (fs.existsSync(DATA_FILE)) {
       return JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
     }
-    throw error;
+    console.warn("Local workshop_db.json not found. Proceeding with default empty dataset.");
+    return {
+      employees: [],
+      bays: [],
+      srTypes: [],
+      revenueSplits: [],
+      alertConfigs: [],
+      jobCards: [],
+      jobTechnicianMaps: [],
+      jobRevenues: [],
+      jobRevenueSplitDetails: [],
+      carryForwardLogs: [],
+      reworkLogs: [],
+      alertLogs: [],
+      dmsImportBatches: [],
+      dmsImportRows: [],
+      workshops: [],
+      shifts: [],
+      approvalMatrices: [],
+      overtimeRequests: [],
+      overtimeAttachments: [],
+      overtimeWorkflowHistory: [],
+      overtimeApiLogs: [],
+      overtimeAuditLogs: [],
+      breakdowns: [],
+      qrtTeams: [],
+      breakdownAttachments: [],
+      breakdownCommunications: [],
+      workflowHistory: [],
+      evidence: []
+    };
   }
 }
 
@@ -1642,7 +1707,13 @@ export async function syncSave(data: any): Promise<void> {
     await upsertRows("breakdown_communications", data.breakdownCommunications || [], "communication_id");
 
     // Workflow history / Event Store sync save
-    await upsertRows("tbl_workflow_history", data.workflowHistory || [], "history_id");
+    const sanitizedWorkflowHistory = (data.workflowHistory || []).map((h: any) => {
+      const { job_card_no, ...rest } = h;
+      return rest;
+    });
+    await upsertRows("tbl_workflow_history", sanitizedWorkflowHistory, "history_id");
+
+    await upsertRows("tbl_evidence", data.evidence || [], "evidence_id");
 
     console.log("MySQL DB sync save completed successfully!");
   } catch (error) {

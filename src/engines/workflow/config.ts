@@ -5,7 +5,7 @@
 
 export interface StateConfig {
   allowedTransitions: string[];
-  allowedRoles: string[];
+  requiredPermission: string;
   targetQueue: string;
   slaLimitMinutes: number;
 }
@@ -13,73 +13,73 @@ export interface StateConfig {
 export const WORKFLOW_CONFIG: Record<string, StateConfig> = {
   GATE_IN: {
     allowedTransitions: ["INTAKE_PENDING"],
-    allowedRoles: ["Security", "Service Advisor", "Supervisor", "Admin"],
+    requiredPermission: "WORKFLOW_TRANSITION_GATE_IN",
     targetQueue: "INTAKE_QUEUE",
     slaLimitMinutes: 15,
   },
   INTAKE_PENDING: {
     allowedTransitions: ["DIAGNOSTIC_WIP"],
-    allowedRoles: ["Service Advisor", "Supervisor", "Admin"],
+    requiredPermission: "WORKFLOW_TRANSITION_INTAKE_PENDING",
     targetQueue: "INTAKE_QUEUE",
     slaLimitMinutes: 30,
   },
   DIAGNOSTIC_WIP: {
     allowedTransitions: ["ESTIMATE_PENDING"],
-    allowedRoles: ["Technician", "Foreman", "Supervisor", "Admin"],
+    requiredPermission: "WORKFLOW_TRANSITION_DIAGNOSTIC_WIP",
     targetQueue: "DIAGNOSTIC_QUEUE",
     slaLimitMinutes: 60,
   },
   ESTIMATE_PENDING: {
     allowedTransitions: ["ESTIMATE_APPROVED", "GATE_OUT"],
-    allowedRoles: ["Service Advisor", "Supervisor", "Admin"],
+    requiredPermission: "WORKFLOW_TRANSITION_ESTIMATE_PENDING",
     targetQueue: "WIP_QUEUE",
     slaLimitMinutes: 120, // Approval limit
   },
   ESTIMATE_APPROVED: {
     allowedTransitions: ["PARTS_PENDING", "WIP_START"],
-    allowedRoles: ["Service Advisor", "Supervisor", "Admin"],
+    requiredPermission: "WORKFLOW_TRANSITION_ESTIMATE_APPROVED",
     targetQueue: "WIP_QUEUE",
     slaLimitMinutes: 30,
   },
   PARTS_PENDING: {
     allowedTransitions: ["WIP_START"],
-    allowedRoles: ["Technician", "Foreman", "Supervisor", "Admin"],
+    requiredPermission: "WORKFLOW_TRANSITION_PARTS_PENDING",
     targetQueue: "WIP_QUEUE",
     slaLimitMinutes: 240, // Parts procurement wait limit
   },
   WIP_START: {
     allowedTransitions: ["QC_PENDING"],
-    allowedRoles: ["Technician", "Foreman", "Supervisor", "Admin"],
+    requiredPermission: "WORKFLOW_TRANSITION_WIP_START",
     targetQueue: "WIP_QUEUE",
     slaLimitMinutes: 180, // Average service time limit
   },
   QC_PENDING: {
     allowedTransitions: ["QC_FAILED", "FINAL_REVIEW"],
-    allowedRoles: ["QC Inspector", "Foreman", "Supervisor", "Admin"],
+    requiredPermission: "WORKFLOW_TRANSITION_QC_PENDING",
     targetQueue: "QC_QUEUE",
     slaLimitMinutes: 45,
   },
   QC_FAILED: {
     allowedTransitions: ["WIP_START"],
-    allowedRoles: ["QC Inspector", "Foreman", "Supervisor", "Admin"],
+    requiredPermission: "WORKFLOW_TRANSITION_QC_FAILED",
     targetQueue: "QC_QUEUE",
     slaLimitMinutes: 30,
   },
   FINAL_REVIEW: {
     allowedTransitions: ["INVOICED"],
-    allowedRoles: ["Cashier", "Service Advisor", "Supervisor", "Admin"],
+    requiredPermission: "WORKFLOW_TRANSITION_FINAL_REVIEW",
     targetQueue: "DELIVERY_QUEUE",
     slaLimitMinutes: 30,
   },
   INVOICED: {
     allowedTransitions: ["GATE_OUT"],
-    allowedRoles: ["Cashier", "Service Advisor", "Supervisor", "Admin"],
+    requiredPermission: "WORKFLOW_TRANSITION_INVOICED",
     targetQueue: "DELIVERY_QUEUE",
     slaLimitMinutes: 15,
   },
   GATE_OUT: {
     allowedTransitions: [], // Terminal State
-    allowedRoles: ["Security", "Service Advisor", "Supervisor", "Admin"],
+    requiredPermission: "WORKFLOW_TRANSITION_GATE_OUT",
     targetQueue: "DELIVERY_QUEUE",
     slaLimitMinutes: 0,
   },

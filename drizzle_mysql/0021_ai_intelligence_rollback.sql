@@ -1,0 +1,11 @@
+DROP TABLE `tbl_ai_decision_log`;
+DROP TABLE `tbl_ai_knowledge`;
+DROP TABLE `tbl_ai_feedback`;
+DROP TABLE `tbl_ai_conversation`;
+DROP TABLE `tbl_ai_forecast`;
+DROP TABLE `tbl_ai_root_cause`;
+DROP TABLE `tbl_ai_anomaly`;
+DROP TABLE `tbl_ai_recommendation`;
+DROP TABLE `tbl_ai_prediction`;
+DROP TABLE `tbl_ai_feature_store`;
+DROP TABLE `tbl_ai_model`;

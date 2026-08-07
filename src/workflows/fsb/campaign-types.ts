@@ -1,0 +1,8 @@
+export const FsbCampaignTypes = [
+  "SAFETY_RECALL",
+  "EMISSIONS_RECALL",
+  "SERVICE_CAMPAIGN",
+  "QUALITY_UPDATE",
+  "CUSTOMER_SATISFACTION",
+  "SOFTWARE_UPDATE"
+] as const;

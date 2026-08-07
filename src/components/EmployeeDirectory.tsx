@@ -151,48 +151,44 @@ export default function EmployeeDirectory({
   // Bulk CSV import states
   const [showBulkPanel, setShowBulkPanel] = useState(false);
   const [csvText, setCsvText] = useState(
-    `ABDUL GANI SHEK,BD ASSISTANT/ DRIVER,18000\n` +
-    `ABDUL QADEER,BILLER,20000\n` +
-    `ALTAF HUSSAIN,ASST TECHNICIAN,18000\n` +
-    `ASHFAQ HUSSAIN,TECHNICIAN,20000\n` +
-    `ASIF,ASST ELECTRICIAN,15000\n` +
-    `FAKIRAAPA,ELECTRICIAN,25000\n` +
-    `HAMEED PATEL,WHEEL ALIGNMENT,18000\n` +
-    `HANNAMANTHRAYA,ASST TECHNICIAN,13000\n` +
-    `HUNCHIRAY,ASST TECHNICIAN,14000\n` +
-    `JAGADISH,DRIVER,18000\n` +
-    `LOKU,TECHNICIAN,25000\n` +
-    `MAHMED ALTAF AHMED,ASST ELECTRICIAN,15000\n` +
-    `MALLINATH,TECHNICIAN,25000\n` +
-    `MANJUNATH,WARRANTY ASSISTANT,14000\n` +
-    `MD ABDUL KHADEER,ASST ELECTRICIAN,15000\n` +
-    `MD GOUSE,ASST TECHNICIAN,17500\n` +
-    `MD JAVEED,TECHNICIAN,25000\n` +
-    `MEHMOOD,MECHANICAL HELPER,12000\n` +
-    `MOHAMMED SHOAIB,TECHNICIAN,18000\n` +
-    `MOHAMMED ZAKI,ASST TECHNICIAN,16000\n` +
-    `MOHSIN NAWAZ,ASST ELECTRICIAN,17000\n` +
-    `MUSTAFA,SA,13000\n` +
-    `MUZAMILL,ASST ELECTRICIAN,12000\n` +
-    `NAGESH,ASST TECHNICIAN,18000\n` +
-    `PRAHLAD KULKARNI,SUPERVISOR,25000\n` +
-    `RAGHAVENDRA KULKARNI,FLOOR INCHARGE,20000\n` +
-    `RAJKUMAR AMABARAYA MENTE,TECHNICIAN,25000\n` +
-    `SANGAPPA,TECHNICIAN,25000\n` +
-    `SHASHIKUMAR,SA,18000\n` +
-    `SIRAJ AHMED,TECHNICIAN,20000\n` +
-    `SRINATH M. N,ASST TECHNICIAN,17000\n` +
-    `UMAKANTA,ASST TECHNICIAN,18000\n` +
-    `YUNUS ALI,ELECTRICIAN,25000\n` +
-    `REVANSIDAPPA,OIL INCHARGE,10000\n` +
-    `KHASIM,TOOLS INCHARGE,10000\n` +
-    `ASLAM,MECHANICAL HELPER,10000\n` +
-    `JAVEED PASHA,MECHANICAL HELPER,13000\n` +
-    `AZHAR,ASST ELECTRICIAN,13000\n` +
-    `AFROZ,BAY REPORTER,10000\n` +
-    `AHMED HUSSAIN,SUPERVISOR,30000\n` +
-    `RAHUL,SERVICE ENGINEER,16000\n` +
-    `MUBEEN,MECHANICAL HELPER,13000`
+    `ABDUL GANI SHEK,Break down Co-ordinator,18080\n` +
+    `ALTAF HUSSAIN,Jr. technician,16480\n` +
+    `ASHFAQ HUSSAIN,Jr. technician,18000\n` +
+    `ASIF,electrician,15040\n` +
+    `FAKIRAAPA,Sr. Electrician,25000\n` +
+    `HAMEED PATEL,Alignment Technician,18000\n` +
+    `HANUMATH RAYA,Jr. technician,12960\n` +
+    `JAGADISH,Break down assistant,18000\n` +
+    `LOKU,Sr. Technician,25000\n` +
+    `MALLINATH,Sr. Technician,25000\n` +
+    `MANJUNATH,Warranty assistant,14080\n` +
+    `MD GOUSE,Jr. technician,18000\n` +
+    `MD JAVEED,Sr. Technician,25000\n` +
+    `Afroz,Bay reporter,12000\n` +
+    `MEHMOOD,Helper,10080\n` +
+    `MOHAMMED SHOAIB,Sr. Technician,18080\n` +
+    `MOHSIN NAWAZ,Jr. elecrician,16000\n` +
+    `MUSTAFA,Service Advisor,12000\n` +
+    `MUZAMILL,Electrician Trainee,12000\n` +
+    `NAGESH,Jr. technician,15040\n` +
+    `PRABHULING,Parts,16000\n` +
+    `RAGHUVENDRA KULKARNI,Floor Supervisor,20000\n` +
+    `RAJKUMAR AMABARAYA MENTE,Sr. Technician,25000\n` +
+    `REVANSIDAPPA,Oil Room Incharge,10080\n` +
+    `SANGAPPA,Sr. Technician,24160\n` +
+    `SHARNBASAPPA,Jr. technician,15040\n` +
+    `SHASHIKUMAR,Service Advisor,17440\n` +
+    `SIRAJ AHMED,Sr. Technician,21000\n` +
+    `SRINATH M. N,Jr. technician,15040\n` +
+    `SURESH SHIVAJI NATIKAR,Parts Helper,16960\n` +
+    `UMAKANTA,Helper,15040\n` +
+    `YUNUS ALI,Sr. Electrician,25000\n` +
+    `Ahmed hussain,Managenent Trainee,30000\n` +
+    `Azhar,Electrician trainee,12000\n` +
+    `Danish,Electrician trainee,12000\n` +
+    `Md jaffer,Electrician trainee,12000\n` +
+    `Md saleem,Jr. technician,12000\n` +
+    `Md Mubeen,Jr. technician,12000`
   );
 
   // Master console tabs
@@ -589,47 +585,47 @@ export default function EmployeeDirectory({
 
       {/* Stats Summary Panel */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-3xs flex items-center gap-3">
-          <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex items-center gap-3">
+          <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-lg">
             <Users className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Total Registered Staff</p>
-            <p className="text-lg font-black text-slate-800">{totalCount}</p>
+            <p className="text-[10px] text-slate-600 font-extrabold uppercase tracking-wider">Total Registered Staff</p>
+            <p className="text-xl font-black text-slate-900">{totalCount}</p>
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-3xs flex items-center gap-3">
-          <div className="p-2.5 bg-green-50 text-green-600 rounded">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex items-center gap-3">
+          <div className="p-2.5 bg-green-50 text-green-600 rounded-lg">
             <UserCheck className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Active Staff Members</p>
-            <p className="text-lg font-black text-slate-800">{activeCount}</p>
+            <p className="text-[10px] text-slate-600 font-extrabold uppercase tracking-wider">Active Staff Members</p>
+            <p className="text-xl font-black text-slate-900">{activeCount}</p>
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-3xs flex items-center gap-3">
-          <div className="p-2.5 bg-orange-50 text-orange-600 rounded">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex items-center gap-3">
+          <div className="p-2.5 bg-orange-50 text-orange-600 rounded-lg">
             <Briefcase className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Active Core Technicians</p>
-            <p className="text-lg font-black text-slate-800">{activeSpecialists}</p>
+            <p className="text-[10px] text-slate-600 font-extrabold uppercase tracking-wider">Active Core Technicians</p>
+            <p className="text-xl font-black text-slate-900">{activeSpecialists}</p>
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-3xs flex items-center gap-3">
-          <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex items-center gap-3">
+          <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-lg">
             <DollarSign className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Active Roster Base Payroll</p>
+            <p className="text-[10px] text-slate-600 font-extrabold uppercase tracking-wider">Active Roster Base Payroll</p>
             {isAdmin ? (
-              <p className="text-lg font-black text-slate-800">₹{activeMonthlyPayroll.toLocaleString()}</p>
+              <p className="text-xl font-black text-slate-900">₹{activeMonthlyPayroll.toLocaleString()}</p>
             ) : (
-              <p className="text-xs font-bold text-slate-400 flex items-center gap-1 mt-0.5">
-                <Lock className="h-3 w-3 inline text-slate-400" /> ₹•••••• <span className="text-[9px] font-bold text-slate-300 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">Admin Only</span>
+              <p className="text-xs font-bold text-slate-500 flex items-center gap-1 mt-0.5">
+                <Lock className="h-3 w-3 inline text-slate-400" /> ₹•••••• <span className="text-[9px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">Admin Only</span>
               </p>
             )}
           </div>
@@ -641,16 +637,16 @@ export default function EmployeeDirectory({
         <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-4 shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <div>
-              <h2 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
                 <FileSpreadsheet className="h-4.5 w-4.5 text-emerald-600" />
                 Bulk CSV Employees Sheet Import
               </h2>
-              <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">Parse dynamic comma-separated rows. Formats: Name, Role, Basic Salary</p>
+              <p className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">Parse dynamic comma-separated rows. Formats: Name, Role, Basic Salary</p>
             </div>
             <button 
               type="button" 
               onClick={() => setShowBulkPanel(false)} 
-              className="text-slate-400 hover:text-slate-600"
+              className="text-slate-400 hover:text-slate-600 cursor-pointer"
             >
               <X className="h-4 w-4" />
             </button>
@@ -658,30 +654,30 @@ export default function EmployeeDirectory({
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <div className="md:col-span-2 space-y-2">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Paste Employee Sheet Rows Below</label>
+              <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider">Paste Employee Sheet Rows Below</label>
               <textarea 
                 rows={10}
                 value={csvText}
                 onChange={(e) => setCsvText(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded p-3 font-mono text-xs focus:ring-1 focus:ring-orange-500 focus:outline-hidden leading-normal"
+                className="w-full bg-slate-900 border border-slate-700 text-slate-100 rounded-xl p-3 font-mono text-xs focus:ring-2 focus:ring-orange-500 focus:outline-none leading-relaxed shadow-inner"
                 placeholder="Name, Role, MonthlySalary"
               />
             </div>
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 text-xs leading-relaxed font-semibold text-slate-600">
-              <h4 className="text-[10px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-1">
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 text-xs leading-relaxed font-semibold text-slate-700">
+              <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-wider flex items-center gap-1">
                 <HelpCircle className="h-3.5 w-3.5 text-orange-500" />
                 How to Import
               </h4>
-              <p>We've prefilled your exact parsed employee list! Simply click **Parse & Bulk Save** below to commit all 42 employees to the database in one single sweep!</p>
-              <ul className="list-disc pl-4 space-y-1 mt-2 text-[11px] text-slate-500">
-                <li>Sequential code identifiers (**EMP00x**) will be auto-generated.</li>
-                <li>Salary of **₹20,000+** automatically upgrades staff to **Senior Grade**.</li>
+              <p className="text-slate-700">We've prefilled your exact parsed employee list! Simply click <strong className="text-slate-900 font-black">Parse & Bulk Save</strong> below to commit all 42 employees to the database in one single sweep!</p>
+              <ul className="list-disc pl-4 space-y-1 mt-2 text-[11px] text-slate-600 font-medium">
+                <li>Sequential code identifiers (<strong className="text-slate-800">EMP00x</strong>) will be auto-generated.</li>
+                <li>Salary of <strong className="text-slate-800">₹20,000+</strong> automatically upgrades staff to <strong className="text-slate-800">Senior Grade</strong>.</li>
                 <li>Saves instantly into the persistent JSON database.</li>
               </ul>
               <div className="pt-2 border-t border-slate-200 mt-4 flex">
                 <button 
                   onClick={handleParseAndImport}
-                  className="ds-button-success w-full   hover:bg-emerald-700 text-white font-extrabold text-xs py-2 px-4 rounded shadow-sm transition-all cursor-pointer text-center uppercase tracking-wider"
+                  className="ds-button-success w-full hover:bg-emerald-700 text-white font-extrabold text-xs py-2 px-4 rounded-xl shadow-sm transition-all cursor-pointer text-center uppercase tracking-wider"
                 >
                   Parse & Bulk Save Roster
                 </button>

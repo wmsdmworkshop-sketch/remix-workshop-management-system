@@ -3,6 +3,7 @@ import {
   ShieldAlert, Sparkles, BarChart3, TrendingUp, RefreshCw, 
   DollarSign, FileSpreadsheet, Building, Users 
 } from "lucide-react";
+import { AICopilotPanel } from "./AICopilotPanel";
 
 export interface DealerPrincipalCommandCenterProps {
   jobCards: any[];
@@ -19,9 +20,9 @@ export const DealerPrincipalCommandCenter: React.FC<DealerPrincipalCommandCenter
 
   // Calculations for financial dashboard
   const financials = useMemo(() => {
-    const grossTotal = jobCards.reduce((sum, j) => sum + (j.labor_price || 0) + (j.parts_price || 0), 0) || 185000;
-    const profitMargin = Math.round(grossTotal * 0.22); // Simulated 22% net margin
-    const outstanding = jobCards.reduce((sum, j) => sum + (j.outstanding_balance || 0), 0) || 4500;
+    const grossTotal = jobCards.reduce((sum, j) => sum + Number(j.labor_price || 0) + Number(j.parts_price || 0), 0);
+    const profitMargin = Math.round(grossTotal * 0.22);
+    const outstanding = jobCards.reduce((sum, j) => sum + Number(j.outstanding_balance || 0), 0);
 
     return { grossTotal, profitMargin, outstanding };
   }, [jobCards]);
@@ -111,21 +112,14 @@ export const DealerPrincipalCommandCenter: React.FC<DealerPrincipalCommandCenter
       )}
 
       {activeTab === "copilot" && (
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-4 shadow-lg">
-          <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
-            <Sparkles className="h-4 w-4 text-emerald-400 animate-pulse" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Gemma Executive Profitability Copilot</h3>
-          </div>
-          {aiModeEnabled ? (
-          <div className="p-3 bg-slate-950/40 border border-slate-800 rounded-xl leading-relaxed text-slate-300 text-xs">
-            Net dealer margins have increased 2.4% following the migration from manual scheduler allocation to automated AI routing models. Carry-forward counts dropped 18%, accelerating invoicing turnaround speeds.
-          </div>
-          ) : (
-          <div className="p-4 bg-slate-950/40 border border-slate-800 rounded-xl text-center">
-            <p className="text-xs text-slate-500">AI Mode is disabled. Enable AI Mode to view Gemma Profitability insights and executive AI recommendations.</p>
-          </div>
-          )}
-        </div>
+        <AICopilotPanel 
+          role="Dealer Principal"
+          context={{
+            grossRevenue: financials.grossTotal,
+            netProfit: financials.profitMargin,
+            outstanding: financials.outstanding
+          }}
+        />
       )}
     </div>
   );

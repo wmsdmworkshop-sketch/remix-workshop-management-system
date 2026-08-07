@@ -9,6 +9,7 @@
 import { SchedulerStore, ScheduledJobRecord } from "./scheduler-store";
 import { SchedulerCalendar } from "./scheduler-calendar";
 import { IEventBus } from "../event-bus";
+import { makeSystemContext } from "../business-context";
 
 export class SchedulerEngine {
   constructor(private readonly eventBus: IEventBus) {}
@@ -45,7 +46,7 @@ export class SchedulerEngine {
     await this.eventBus.publish(
       "SCHEDULER_JOB_SCHEDULED",
       { jobId, name, type, nextExecutionTime: nextTime, correlationId },
-      correlationId
+      makeSystemContext(correlationId)
     );
   }
 
@@ -54,7 +55,7 @@ export class SchedulerEngine {
     if (job && job.status !== "PAUSED") {
       job.status = "PAUSED";
       await SchedulerStore.saveJob(job);
-      await this.eventBus.publish("SCHEDULER_JOB_PAUSED", { jobId, correlationId }, correlationId);
+      await this.eventBus.publish("SCHEDULER_JOB_PAUSED", { jobId, correlationId }, makeSystemContext(correlationId));
     }
   }
 
@@ -64,7 +65,7 @@ export class SchedulerEngine {
       job.status = "PENDING";
       job.nextExecutionTime = new Date().toISOString(); // run immediately on resume
       await SchedulerStore.saveJob(job);
-      await this.eventBus.publish("SCHEDULER_JOB_RESUMED", { jobId, correlationId }, correlationId);
+      await this.eventBus.publish("SCHEDULER_JOB_RESUMED", { jobId, correlationId }, makeSystemContext(correlationId));
     }
   }
 
@@ -73,7 +74,7 @@ export class SchedulerEngine {
     if (job && job.status !== "COMPLETED") {
       job.status = "COMPLETED"; // mark as completed to take out of scan
       await SchedulerStore.saveJob(job);
-      await this.eventBus.publish("SCHEDULER_JOB_CANCELLED", { jobId, correlationId }, correlationId);
+      await this.eventBus.publish("SCHEDULER_JOB_CANCELLED", { jobId, correlationId }, makeSystemContext(correlationId));
     }
   }
 
@@ -84,7 +85,7 @@ export class SchedulerEngine {
       job.retryCount = 0;
       job.nextExecutionTime = new Date().toISOString();
       await SchedulerStore.saveJob(job);
-      await this.eventBus.publish("SCHEDULER_JOB_RESTARTED", { jobId, correlationId }, correlationId);
+      await this.eventBus.publish("SCHEDULER_JOB_RESTARTED", { jobId, correlationId }, makeSystemContext(correlationId));
     }
   }
 }

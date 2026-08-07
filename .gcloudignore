@@ -1,0 +1,33 @@
+# Ignore Git
+.git/
+.gitignore
+
+# Ignore dependencies and build artifacts
+node_modules/
+dist/
+
+# Ignore mobile projects to prevent path limit issues or large uploads
+wms-workshop/
+Project/
+
+# Ignore environments
+.env
+.env.*
+!.env.example
+
+# Ignore OS-specific files
+.DS_Store
+
+# Ignore large documents and databases
+*.xlsx
+*.csv
+*.sql
+*.png
+workshop_db.json
+employees_backup.json
+employee_master_backup.json
+railway_dump.sql
+
+# Ignore local configs
+.idea/
+.vscode/

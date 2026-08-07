@@ -23,13 +23,13 @@ export const LiveQueueBoard: React.FC<LiveQueueBoardProps> = React.memo(({
   const activeCols = useMemo<QueueColumn[]>(() => {
     if (columns.length > 0) return columns;
     return [
-      { id: "gate", name: "Gate Entry", count: 3, avgWaitMinutes: 5, criticalCount: 0 },
-      { id: "reception", name: "Reception", count: 5, avgWaitMinutes: 12, criticalCount: 1 },
-      { id: "advisor", name: "Advisor", count: 8, avgWaitMinutes: 20, criticalCount: 2 },
-      { id: "workshop", name: "Workshop", count: 14, avgWaitMinutes: 45, criticalCount: 3 },
-      { id: "qc", name: "Quality Check", count: 2, avgWaitMinutes: 15, criticalCount: 0 },
-      { id: "parts", name: "Parts Pending", count: 6, avgWaitMinutes: 30, criticalCount: 1 },
-      { id: "billing", name: "Billing / Cashier", count: 4, avgWaitMinutes: 10, criticalCount: 0 }
+      { id: "gate", name: "Gate Entry", count: 0, avgWaitMinutes: 0, criticalCount: 0 },
+      { id: "reception", name: "Reception", count: 0, avgWaitMinutes: 0, criticalCount: 0 },
+      { id: "advisor", name: "Advisor", count: 0, avgWaitMinutes: 0, criticalCount: 0 },
+      { id: "workshop", name: "Workshop", count: 0, avgWaitMinutes: 0, criticalCount: 0 },
+      { id: "qc", name: "Quality Check", count: 0, avgWaitMinutes: 0, criticalCount: 0 },
+      { id: "parts", name: "Parts Pending", count: 0, avgWaitMinutes: 0, criticalCount: 0 },
+      { id: "billing", name: "Billing / Cashier", count: 0, avgWaitMinutes: 0, criticalCount: 0 }
     ];
   }, [columns]);
 

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AiVaahan DWIP</string>
+    <string name="title_activity_main">AiVaahan DWIP</string>
+    <string name="package_name">com.aivaahan.dwip</string>
+    <string name="custom_url_scheme">com.aivaahan.dwip</string>
+</resources>

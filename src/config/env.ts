@@ -21,7 +21,24 @@ export const envConfig = {
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
   REDIS_URL: process.env.REDIS_URL || process.env.REDIS_PRIVATE_URL,
   ADDITIONAL_CORS_ORIGINS: process.env.ADDITIONAL_CORS_ORIGINS ? process.env.ADDITIONAL_CORS_ORIGINS.split(",") : [],
-  DISABLE_HMR: process.env.DISABLE_HMR === "true"
+  DISABLE_HMR: process.env.DISABLE_HMR === "true",
+
+  // DB Resilience Configuration (WP-05)
+  DB_HEALTH_PROBE_INTERVAL: process.env.DB_HEALTH_PROBE_INTERVAL ? parseInt(process.env.DB_HEALTH_PROBE_INTERVAL, 10) : 10000,
+  DB_HEALTH_TIMEOUT: process.env.DB_HEALTH_TIMEOUT ? parseInt(process.env.DB_HEALTH_TIMEOUT, 10) : 1500,
+  DB_MAX_RETRIES: process.env.DB_MAX_RETRIES ? parseInt(process.env.DB_MAX_RETRIES, 10) : 2,
+  DB_RETRY_DELAY: process.env.DB_RETRY_DELAY ? parseInt(process.env.DB_RETRY_DELAY, 10) : 500,
+
+  // Auth & RBAC Hardening Configuration (WP-02)
+  AUTH_CACHE_TTL_MS: process.env.AUTH_CACHE_TTL_MS ? parseInt(process.env.AUTH_CACHE_TTL_MS, 10) : 300000,
+  JWT_ISSUER: process.env.JWT_ISSUER || "dwip-enterprise",
+  JWT_AUDIENCE: process.env.JWT_AUDIENCE || "dwip-api",
+
+  // Redis Distributed Cache Infrastructure (WP-07)
+  REDIS_HOST: process.env.REDIS_HOST || "localhost",
+  REDIS_PORT: process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT, 10) : 6379,
+  REDIS_PASSWORD: process.env.REDIS_PASSWORD || "",
+  REDIS_ENABLED: process.env.REDIS_ENABLED === "true"
 };
 
 export function validateEnvironment(): void {
@@ -47,7 +64,10 @@ export function validateEnvironment(): void {
     // We check the original process.env or our fallback config logic
     // We already applied default fallbacks for NODE_ENV and DB_DATABASE in envConfig.
     // We'll treat envConfig values as the source of truth for presence.
-    if (!envConfig[key as keyof typeof envConfig]) {
+    // If DB_SOCKET_PATH is provided, DB_HOST is not required
+    if (key === "DB_HOST" && envConfig.DB_SOCKET_PATH) {
+      report.push(`${key.padEnd(20)} OK (Socket path provided)`);
+    } else if (!envConfig[key as keyof typeof envConfig]) {
       report.push(`${key.padEnd(20)} MISSING (Required)`);
       hasErrors = true;
     } else {

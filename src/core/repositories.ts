@@ -38,9 +38,7 @@ export class EmployeeRepository implements IEmployeeRepository {
 
   public async findAll(includeLegacy: boolean): Promise<EmployeeProfile[]> {
     let query = "SELECT * FROM employees";
-    if (!includeLegacy) {
-      query += " WHERE record_status = 'CANONICAL' OR record_status IS NULL";
-    }
+    // No record_status column exists in the current schema
     query += " ORDER BY employee_id";
     const [rows] = await this.db.query(query);
     return rows as EmployeeProfile[];
@@ -97,17 +95,41 @@ export class PermissionRepository implements IPermissionRepository {
 
   public async findByRole(roleName: string): Promise<PermissionRow[]> {
     const [rows] = await this.db.query(
-      "SELECT permission_id, role_name, module_name, can_view, can_edit, can_comment FROM role_permissions WHERE role_name = ?",
+      `SELECT rp.*, r.role_name, m.module_name 
+       FROM role_permissions rp
+       JOIN roles r ON r.role_id = rp.role_id
+       JOIN modules m ON m.module_id = rp.module_id
+       WHERE r.role_name = ?`,
       [roleName]
     );
     return rows as PermissionRow[];
   }
 
   public async findByRoleAndModule(roleName: string, moduleName: string): Promise<PermissionRow | null> {
+    const normalizedRole = (roleName || "").trim().toLowerCase();
+    const normalizedModule = (moduleName || "").trim().toLowerCase();
+    
+    let canonicalModule = moduleName;
+    if (normalizedModule === "job_card" || normalizedModule === "job_cards" || normalizedModule === "job cards") {
+      canonicalModule = "Job Cards";
+    } else if (normalizedModule === "user management" || normalizedModule === "users" || normalizedModule === "user_management") {
+      canonicalModule = "User Management";
+    } else if (normalizedModule === "breakdowns" || normalizedModule === "breakdown") {
+      canonicalModule = "Breakdowns";
+    }
+
     const [rows] = await this.db.query(
-      "SELECT permission_id, role_name, module_name, can_view, can_edit, can_comment FROM role_permissions WHERE role_name = ? AND module_name = ?",
-      [roleName, moduleName]
+      `SELECT rp.*, 
+              COALESCE(r.role_name, rp.role_name) AS role_name, 
+              COALESCE(m.module_name, rp.module_name) AS module_name 
+       FROM role_permissions rp
+       LEFT JOIN roles r ON r.role_id = rp.role_id
+       LEFT JOIN modules m ON m.module_id = rp.module_id
+       WHERE (LOWER(COALESCE(r.role_name, rp.role_name)) = ?)
+         AND (LOWER(COALESCE(m.module_name, rp.module_name)) = ? OR LOWER(COALESCE(m.module_name, rp.module_name)) = ?)`,
+      [normalizedRole, normalizedModule, canonicalModule.toLowerCase()]
     ) as any[];
+
     if (rows && rows.length > 0) {
       return rows[0] as PermissionRow;
     }
@@ -125,9 +147,28 @@ export class PermissionRepository implements IPermissionRepository {
   }
 
   public async create(data: PermissionRow): Promise<number> {
+    const [rRows] = await this.db.query("SELECT role_id FROM roles WHERE role_name = ?", [data.role_name]) as any[];
+    const [mRows] = await this.db.query("SELECT module_id FROM modules WHERE module_name = ?", [data.module_name]) as any[];
+    if (!rRows || rRows.length === 0 || !mRows || mRows.length === 0) {
+      throw new Error(`Invalid role_name (${data.role_name}) or module_name (${data.module_name})`);
+    }
+    const keys = ["role_id", "module_id"];
+    const values: any[] = [rRows[0].role_id, mRows[0].module_id];
+    
+    // Dynamically insert all granular flags present in data
+    const booleanFlags = ["can_view", "can_create", "can_edit", "can_delete", "can_approve", "can_reject", "can_print", "can_export", "can_import", "can_assign", "can_close", "can_reopen", "can_admin", "can_configure"];
+    
+    for (const flag of booleanFlags) {
+      if (data[flag] !== undefined) {
+        keys.push(flag);
+        values.push(data[flag] ? 1 : 0);
+      }
+    }
+    
+    const placeholders = keys.map(() => '?').join(', ');
     const [result] = await this.db.execute(
-      "INSERT INTO role_permissions (role_name, module_name, can_view, can_edit, can_comment) VALUES (?, ?, ?, ?, ?)",
-      [data.role_name, data.module_name, data.can_view ? 1 : 0, data.can_edit ? 1 : 0, data.can_comment ? 1 : 0]
+      `INSERT INTO role_permissions (${keys.join(', ')}) VALUES (${placeholders})`,
+      values
     );
     return result.insertId;
   }

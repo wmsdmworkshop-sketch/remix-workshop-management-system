@@ -1,0 +1,9 @@
+DROP TABLE `tbl_exception_register`;
+DROP TABLE `tbl_alert_history`;
+DROP TABLE `tbl_alert_rule`;
+DROP TABLE `tbl_report_history`;
+DROP TABLE `tbl_report_definition`;
+DROP TABLE `tbl_kpi_snapshot`;
+DROP TABLE `tbl_kpi_catalog`;
+DROP TABLE `tbl_dashboard_widget`;
+DROP TABLE `tbl_dashboard`;

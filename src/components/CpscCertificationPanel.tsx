@@ -61,14 +61,28 @@ export default function CpscCertificationPanel() {
   const fetchData = async () => {
     setLoading(true);
     try {
+      const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || "";
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
       const [statsRes, alertsRes] = await Promise.all([
-        fetch("/api/workforce/certification-stats"),
-        fetch("/api/workforce/cpsc-alerts")
+        fetch("/api/workforce/certification-stats", { headers }),
+        fetch("/api/workforce/cpsc-alerts", { headers })
       ]);
-      const statsData = await statsRes.json();
-      const alertsData = await alertsRes.json();
-      setStats(statsData);
-      setAlerts(alertsData.alerts || []);
+
+      if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        if (statsData && !statsData.error) {
+          setStats(statsData);
+        }
+      }
+
+      if (alertsRes.ok) {
+        const alertsData = await alertsRes.json();
+        if (alertsData && Array.isArray(alertsData.alerts)) {
+          setAlerts(alertsData.alerts);
+        }
+      }
     } catch (err) {
       console.error("Failed to fetch certification data:", err);
     } finally {
@@ -81,9 +95,13 @@ export default function CpscCertificationPanel() {
   const handleUpgrade = async (employeeId: number) => {
     setUpgradeLoading(employeeId);
     try {
+      const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || "";
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
       const res = await fetch(`/api/employees/${employeeId}/certification`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ certification_level: "Gold", certification_date: new Date().toISOString().split("T")[0] })
       });
       if (res.ok) {
@@ -99,13 +117,21 @@ export default function CpscCertificationPanel() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <FunnySpinner className="h-6 w-6  text-amber-400" />
+        <FunnySpinner className="h-6 w-6 text-amber-400" />
         <span className="ml-2 text-slate-400 text-sm">Loading CPSC L2 data...</span>
       </div>
     );
   }
 
-  if (!stats) return null;
+  if (!stats) {
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center text-slate-400">
+        <Shield className="h-10 w-10 mx-auto text-amber-500/50 mb-3" />
+        <p className="text-sm font-semibold text-slate-300">Unable to load CPSC L2 certification metrics.</p>
+        <button onClick={fetchData} className="mt-4 ds-button-secondary px-4 py-1.5 text-xs">Retry Loading</button>
+      </div>
+    );
+  }
 
   const gaugeAngle = (stats.gold_pct / 100) * 180;
   const targetAngle = (stats.target_gold_pct / 100) * 180;
@@ -283,7 +309,7 @@ export default function CpscCertificationPanel() {
       </div>
 
       {/* Silver Upgrade Candidates */}
-      {stats.silver_upgrade_candidates.length > 0 && (
+      {Array.isArray(stats?.silver_upgrade_candidates) && stats.silver_upgrade_candidates.length > 0 && (
         <div className="bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-slate-700/50 rounded-xl p-5">
           <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2">
             <ArrowUpCircle className="h-4 w-4 text-emerald-400" />

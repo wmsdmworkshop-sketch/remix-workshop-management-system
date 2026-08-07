@@ -1,0 +1,20 @@
+export const BreakdownIncidentStatus = {
+  OPEN: "OPEN",
+  ASSIGNED: "ASSIGNED",
+  IN_TRANSIT: "IN_TRANSIT",
+  ON_SITE: "ON_SITE",
+  REPAIRING: "REPAIRING",
+  TOWING: "TOWING",
+  AT_WORKSHOP: "AT_WORKSHOP",
+  CLOSED: "CLOSED",
+  CANCELLED: "CANCELLED"
+} as const;
+
+export const QrtStatus = {
+  AVAILABLE: "AVAILABLE",
+  DISPATCHED: "DISPATCHED",
+  EN_ROUTE: "EN_ROUTE",
+  ON_SITE: "ON_SITE",
+  RETURNING: "RETURNING",
+  OFF_DUTY: "OFF_DUTY"
+} as const;

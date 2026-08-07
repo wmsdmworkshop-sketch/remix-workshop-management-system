@@ -2,22 +2,37 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Devanand Workforce v1.1 — DWIP Beta</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DWIP Enterprise</title>
     
+    <!-- Google Fonts typography (Plus Jakarta Sans, Outfit, Inter, JetBrains Mono) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
+
     <!-- PWA Manifest & Colors -->
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#1e293b" />
+    <meta name="theme-color" content="#1e293b" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     
     <!-- iOS / Safari Web App Meta Tags -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Workforce v1" />
+    <meta name="apple-mobile-web-app-title" content="DWIP Enterprise" />
     <link rel="apple-touch-icon" href="/logo.png" />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('PWA Service Worker registered:', reg.scope))
+            .catch(err => console.log('PWA Service Worker registration failed:', err));
+        });
+      }
+    </script>
   </body>
 </html>
 

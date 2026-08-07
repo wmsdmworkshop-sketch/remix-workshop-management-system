@@ -1,0 +1,74 @@
+[33mcommit 3a1dcd941b8fda890ffae46700f46d4ea597d2c8[m[33m ([m[1;33mtag: [m[1;33mv1.0.1-ui-polish[m[33m)[m
+Author: wm sdm <wmsdmworkshop@gmail.com>
+Date:   Sun Jul 12 09:50:16 2026 +0530
+
+    chore: DWIP v1.0.1 UI Polish and Stabilization
+
+ DWIP_Event_Catalog_v1.0.md                         | 152 [32m++++++++[m
+ Deployment_Readiness_Report.md                     |  60 [32m+++[m
+ Event_Implementation_Report.md                     |  95 [32m+++++[m
+ UI_Consistency_Report.md                           |  82 [32m++++[m
+ UI_Smoke_Test_Report.md                            |  36 [32m++[m
+ scratch/apply-design-system.js                     | 126 [32m+++++++[m
+ server.ts                                          | 324 [32m+++++++++++++++[m[31m-[m
+ src/components/ActiveBayTatMonitor.tsx             | 110 [32m+++[m[31m---[m
+ src/components/AttendanceShiftLog.tsx              |  66 [32m++[m[31m--[m
+ src/components/AuthScreen.tsx                      |  58 [32m+[m[31m--[m
+ src/components/BillingWorkspace.tsx                |   4 [32m+[m[31m-[m
+ src/components/BreakdownManagement.tsx             |  86 [32m++[m[31m---[m
+ src/components/CashierManager.tsx                  |  10 [32m+[m[31m-[m
+ src/components/CashierWorkspace.tsx                |   6 [32m+[m[31m-[m
+ src/components/CpscCertificationPanel.tsx          |   4 [32m+[m[31m-[m
+ src/components/CustomerExperiencePlatform.tsx      |   4 [32m+[m[31m-[m
+ src/components/Dashboard.tsx                       |  24 [32m+[m[31m-[m
+ src/components/DmsImporter.tsx                     |  34 [32m+[m[31m-[m
+ src/components/ETDEscalationBanner.tsx             |   2 [32m+[m[31m-[m
+ src/components/EmployeeDirectory.tsx               |  72 [32m++[m[31m--[m
+ src/components/EstimateApprovalPanel.tsx           |  10 [32m+[m[31m-[m
+ src/components/ExceptionReport.tsx                 |  28 [32m+[m[31m-[m
+ src/components/GateEntryManager.tsx                |  66 [32m++[m[31m--[m
+ src/components/GeminiAssistant.tsx                 |  30 [32m+[m[31m-[m
+ src/components/GoogleIntegration.tsx               |   2 [32m+[m[31m-[m
+ src/components/JobCardManager.tsx                  |  62 [32m++[m[31m--[m
+ src/components/OvertimeApprovalPortal.tsx          |  72 [32m++[m[31m--[m
+ src/components/OvertimeEmployeeDashboard.tsx       | 108 [32m+++[m[31m---[m
+ src/components/PartsWarrantyManager.tsx            |  96 [32m++[m[31m---[m
+ src/components/PreInvoicePanel.tsx                 |  10 [32m+[m[31m-[m
+ src/components/ProductivityCalculator.tsx          |  50 [32m+[m[31m--[m
+ src/components/ProductivityDashboard.tsx           |  58 [32m+[m[31m--[m
+ src/components/QCInspectorWorkspace.tsx            |   2 [32m+[m[31m-[m
+ src/components/RoleSpecialPanels.tsx               |  46 [32m+[m[31m--[m
+ src/components/SelfServiceAttendance.tsx           |  10 [32m+[m[31m-[m
+ src/components/ServiceAdvisorWorkspace.tsx         |   4 [32m+[m[31m-[m
+ src/components/TechnicianWorkspace.tsx             |   8 [32m+[m[31m-[m
+ src/components/UserManagement.tsx                  |  96 [32m++[m[31m---[m
+ src/components/VehicleDeliveryWorkspace.tsx        |   2 [32m+[m[31m-[m
+ src/components/VehicleLookup.tsx                   |   6 [32m+[m[31m-[m
+ src/components/billing-exit.tsx                    |  36 [32m+[m[31m-[m
+ src/components/fsb.tsx                             |  24 [32m+[m[31m-[m
+ src/components/query.tsx                           |   6 [32m+[m[31m-[m
+ src/components/reception/AccessoriesChecklist.tsx  |   6 [32m+[m[31m-[m
+ src/components/reception/ComplaintForm.tsx         |   8 [32m+[m[31m-[m
+ src/components/reception/CustomerSearch.tsx        |   2 [32m+[m[31m-[m
+ src/components/reception/InspectionChecklist.tsx   |   6 [32m+[m[31m-[m
+ src/components/reception/JobCardPreview.tsx        |   8 [32m+[m[31m-[m
+ src/components/reception/ReceptionQueue.tsx        |   2 [32m+[m[31m-[m
+ src/components/reception/VehicleSearch.tsx         |   2 [32m+[m[31m-[m
+ .../workshop-manager/AIRecommendationPanel.tsx     |   4 [32m+[m[31m-[m
+ .../workshop-manager/CarryForwardPanel.tsx         |   2 [32m+[m[31m-[m
+ .../workshop-manager/ExecutiveDashboard.tsx        |  16 [32m+[m[31m-[m
+ .../workshop-manager/FinancialRibbon.tsx           |   8 [32m+[m[31m-[m
+ src/components/workshop-manager/KPIHeader.tsx      |  10 [32m+[m[31m-[m
+ src/components/workshop-manager/QueueHeatMap.tsx   |   2 [32m+[m[31m-[m
+ .../workshop-manager/SLACommandCenter.tsx          |   2 [32m+[m[31m-[m
+ .../workshop-manager/WorkshopDashboard.tsx         |  10 [32m+[m[31m-[m
+ src/core/event-engine.ts                           | 413 [32m+++++++++++++++++++++[m
+ src/db/schema.ts                                   |  16 [32m+[m
+ src/db/sync.ts                                     |  50 [32m++[m[31m-[m
+ src/engines/workflow/engine.ts                     |  56 [32m++[m[31m-[m
+ src/index.css                                      |  74 [32m++++[m
+ src/tests/cr002-event-engine.test.ts               | 214 [32m+++++++++++[m
+ src/tests/run_all_tests.ts                         |  49 [32m+++[m
+ src/tests/validate-20-job-cards.ts                 | 199 [32m++++++++++[m
+ workshop_db.json                                   |   3 [32m+[m[31m-[m
+ 67 files changed, 2641 insertions(+), 708 deletions(-)

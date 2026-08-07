@@ -1,0 +1,392 @@
+import React from "react";
+import { 
+  LayoutDashboard, Truck, Wrench, Package, Users, TrendingUp, Settings, 
+  HelpCircle, User, LogOut, ChevronRight, Bell, Search, Activity, Sparkles, Building,
+  Menu, X
+} from "lucide-react";
+
+export interface TabItem {
+  id: string;
+  label: string;
+  icon: any;
+}
+
+export const WORKSPACE_MAPPING: Record<string, string> = {
+  dashboard: "dashboard",
+  "workshop-cockpit": "executive",
+  "executive-cockpit": "executive",
+  "dealer-principal-cockpit": "executive",
+  jobs: "workshop",
+  "gate-entry": "workshop",
+  "bay-tat": "workshop",
+  "delivery-workspace": "workshop",
+  "billing-exit": "workshop",
+  "advisor-workspace": "service",
+  "supervisor-workspace": "service",
+  "technician-workspace": "service",
+  "qc-workspace": "service",
+  breakdown: "service",
+  "vehicle-lookup": "service",
+  "parts-command": "parts",
+  "parts-warranty": "parts",
+  employees: "workforce",
+  attendance: "workforce",
+  productivity: "workforce",
+  certification: "workforce",
+  "gm-command": "executive",
+  "powerbi-analytics": "executive",
+  "roi-tracker": "executive",
+  users: "admin",
+  google: "admin",
+  assistant: "admin",
+  "setup-wizard": "admin",
+  "pilot-control-room": "admin",
+  "live-support": "admin",
+  "devops-dashboard": "admin",
+  "operations-console": "admin",
+  "system-hardening": "admin",
+  "exception-report": "admin",
+  query: "admin",
+  "dms-import": "admin",
+  "master-data-hub": "admin",
+  "mobile-platform": "admin",
+  "integration-monitor": "admin",
+  "external-systems": "admin",
+  "sync-queue": "admin",
+  "api-logs": "admin",
+  "health-dashboard": "admin",
+  "integration-config": "admin",
+};
+
+export const WORKSPACES = [
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "workshop", label: "Workshop Operations", icon: Truck },
+  { id: "service", label: "Service Operations", icon: Wrench },
+  { id: "parts", label: "Parts & Warranty", icon: Package },
+  { id: "workforce", label: "Workforce", icon: Users },
+  { id: "executive", label: "Executive", icon: TrendingUp },
+  { id: "admin", label: "Administration", icon: Settings },
+];
+
+interface AppShellProps {
+  user: any;
+  activeTab: string;
+  permittedTabs: TabItem[];
+  setActiveTab: (tabId: string) => void;
+  handleLogout: () => void;
+  aiModeEnabled?: boolean;
+  onToggleAiMode?: () => void;
+  children: React.ReactNode;
+}
+
+export default function AppShell({
+  user,
+  activeTab,
+  permittedTabs,
+  setActiveTab,
+  handleLogout,
+  aiModeEnabled = true,
+  onToggleAiMode,
+  children
+}: AppShellProps) {
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+
+  // Determine current active workspace
+  const activeWorkspace = WORKSPACE_MAPPING[activeTab] || "dashboard";
+
+  // Filter sub-tabs that are permitted for the user and belong to the active workspace
+  const workspaceSubTabs = (permittedTabs || []).filter(
+    t => WORKSPACE_MAPPING[t.id] === activeWorkspace && t.id !== "logout-deep-link"
+  );
+
+  const handleWorkspaceClick = (workspaceId: string) => {
+    // Find first permitted sub-tab in this workspace
+    const firstSubTab = (permittedTabs || []).find(t => WORKSPACE_MAPPING[t.id] === workspaceId);
+    if (firstSubTab) {
+      setActiveTab(firstSubTab.id);
+    }
+    setMobileMenuOpen(false);
+  };
+
+  const getWorkspaceTitle = () => {
+    const ws = WORKSPACES.find(w => w.id === activeWorkspace);
+    return ws ? ws.label : "Dashboard";
+  };
+
+  const getWorkspaceIcon = () => {
+    const ws = WORKSPACES.find(w => w.id === activeWorkspace);
+    const IconComponent = ws ? ws.icon : LayoutDashboard;
+    return <IconComponent className="h-5 w-5 text-orange-500" />;
+  };
+
+  // Find active sub-tab label
+  const activeSubTab = (permittedTabs || []).find(t => t.id === activeTab);
+
+  return (
+    <div className="h-screen w-screen overflow-hidden bg-black flex font-sans text-zinc-100">
+      
+      {/* MOBILE DRAWER BACKDROP & OVERLAY (Shown when mobileMenuOpen is true) */}
+      {mobileMenuOpen && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm md:hidden flex"
+          onClick={() => setMobileMenuOpen(false)}
+        >
+          <div 
+            className="w-72 h-full bg-zinc-950 border-r border-zinc-800 p-5 flex flex-col justify-between overflow-y-auto animate-in slide-in-from-left duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-col space-y-6">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-gradient-to-br from-orange-600 to-amber-600 rounded-lg flex items-center justify-center font-black text-xl text-white shadow-lg">
+                    W
+                  </div>
+                  <div>
+                    <h2 className="font-extrabold text-white text-xs tracking-wide uppercase">DWIP Enterprise</h2>
+                    <p className="text-[8px] text-orange-400 font-bold uppercase tracking-wider mt-0.5 leading-none">
+                      Workshop Intelligence
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-1 rounded-lg text-zinc-400 hover:text-white"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <nav className="space-y-1">
+                {WORKSPACES.map(ws => {
+                  const Icon = ws.icon;
+                  const isSelected = activeWorkspace === ws.id;
+                  const hasAccess = permittedTabs.some(t => WORKSPACE_MAPPING[t.id] === ws.id);
+                  if (!hasAccess) return null;
+
+                  return (
+                    <button
+                      key={ws.id}
+                      onClick={() => handleWorkspaceClick(ws.id)}
+                      className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-bold transition-all border ${
+                        isSelected
+                          ? "bg-gradient-to-r from-orange-600/20 to-amber-600/10 text-white border-orange-500/40 shadow-lg"
+                          : "bg-transparent border-transparent text-zinc-400 hover:bg-zinc-900 hover:text-white"
+                      }`}
+                    >
+                      <Icon className="h-4.5 w-4.5" />
+                      <span>{ws.label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+
+            <div className="pt-4 border-t border-zinc-800 space-y-1">
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-rose-400 hover:bg-rose-500/10"
+              >
+                <LogOut className="h-4 w-4" />
+                <span>Logout</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 1. DESKTOP LEFT SIDEBAR (Hidden on Mobile <768px, Visible on Desktop md:flex) */}
+      <aside className="hidden md:flex w-64 h-screen bg-zinc-950/90 border-r border-zinc-800/80 backdrop-blur-md flex-col justify-between p-5 shrink-0 z-40 shadow-2xl overflow-y-auto">
+        <div className="flex flex-col space-y-6">
+          
+          {/* Logo Brand Header */}
+          <div className="flex items-center gap-3 border-b border-zinc-800/80 pb-4">
+            <div className="w-8 h-8 bg-gradient-to-br from-orange-600 to-amber-600 rounded-lg flex items-center justify-center font-black text-xl text-white shadow-lg">
+              W
+            </div>
+            <div>
+              <h2 className="font-extrabold text-white text-xs tracking-wide uppercase">DWIP Enterprise</h2>
+              <p className="text-[8px] text-orange-400 font-bold uppercase tracking-wider mt-0.5 leading-none">
+                Devanand Workshop Intelligence
+              </p>
+            </div>
+          </div>
+
+          {/* Navigation Workspaces */}
+          <nav className="space-y-1">
+            {WORKSPACES.map(ws => {
+              const Icon = ws.icon;
+              const isSelected = activeWorkspace === ws.id;
+              const hasAccess = permittedTabs.some(t => WORKSPACE_MAPPING[t.id] === ws.id);
+              if (!hasAccess) return null;
+
+              return (
+                <button
+                  key={ws.id}
+                  onClick={() => handleWorkspaceClick(ws.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all border ${
+                    isSelected
+                      ? "bg-gradient-to-r from-orange-600/20 to-amber-600/10 text-white border-orange-500/40 shadow-lg"
+                      : "bg-transparent border-transparent hover:bg-zinc-900 hover:text-white text-zinc-400"
+                  }`}
+                >
+                  <Icon className="h-4.5 w-4.5" />
+                  <span>{ws.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Bottom Workspace settings */}
+        <div className="pt-4 border-t border-zinc-800/80 space-y-1">
+          <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold text-zinc-400 hover:bg-zinc-900 hover:text-white">
+            <Settings className="h-4 w-4" />
+            <span>Settings</span>
+          </button>
+          <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold text-zinc-400 hover:bg-zinc-900 hover:text-white">
+            <HelpCircle className="h-4 w-4" />
+            <span>Help</span>
+          </button>
+          <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold text-zinc-400 hover:bg-zinc-900 hover:text-white">
+            <User className="h-4 w-4" />
+            <span>Profile</span>
+          </button>
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold text-rose-400 hover:bg-rose-500/10"
+          >
+            <LogOut className="h-4 w-4" />
+            <span>Logout</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Right Area (Fixed Viewport, Scrollable Content) */}
+      <div className="flex-1 flex flex-col h-screen overflow-hidden min-w-0">
+        
+        {/* 2. TOP HEADER */}
+        <header className="h-14 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between z-30 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
+            {/* Mobile Hamburger Button */}
+            <button 
+              onClick={() => setMobileMenuOpen(true)}
+              className="md:hidden p-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:border-orange-500/40 shrink-0"
+              title="Open Navigation Menu"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+
+            <div className="relative w-40 sm:w-64">
+              <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-zinc-500" />
+              <input 
+                type="text"
+                placeholder="Search..."
+                className="w-full bg-black border border-zinc-800 rounded-lg py-1.5 pl-9 pr-3 text-xs text-white focus:outline-none focus:border-orange-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-4 text-zinc-400 shrink-0">
+            {/* AI Mode ON / OFF Toggle Switch */}
+            {onToggleAiMode && (
+              <button
+                onClick={onToggleAiMode}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border cursor-pointer ${
+                  aiModeEnabled 
+                    ? "bg-purple-600/20 text-purple-300 border-purple-500/50 shadow-lg" 
+                    : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200"
+                }`}
+                title={aiModeEnabled ? "AI Copilot ENABLED" : "AI Copilot DISABLED"}
+              >
+                <Sparkles className={`h-3.5 w-3.5 ${aiModeEnabled ? "text-purple-400 animate-pulse" : "text-zinc-500"}`} />
+                <span className="hidden sm:inline">AI Mode</span>
+                <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-black tracking-wider ${
+                  aiModeEnabled ? "bg-purple-500 text-white" : "bg-zinc-800 text-zinc-400"
+                }`}>
+                  {aiModeEnabled ? "ON" : "OFF"}
+                </span>
+              </button>
+            )}
+
+            <button className="relative p-1 hover:text-white">
+              <Bell className="h-4 w-4" />
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-orange-500 rounded-full"></span>
+            </button>
+            
+            <div className="h-4 w-[1px] bg-zinc-800 hidden sm:block"></div>
+
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-xs text-zinc-300 border border-zinc-700">
+                {(user?.username || user?.full_name || "User")[0].toUpperCase()}
+              </div>
+              <span className="text-xs font-semibold text-zinc-200 hidden sm:inline">{user?.username || user?.full_name || "User"}</span>
+            </div>
+          </div>
+        </header>
+
+        {/* 3. WORKSPACE HEADER */}
+        <div className="bg-[#111827]/20 border-b border-slate-800/60 p-4 px-6 flex flex-col gap-3 shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+              <span>DWIP ERP</span>
+              <ChevronRight className="h-3 w-3" />
+              <span className="text-slate-300">{getWorkspaceTitle()}</span>
+              {activeSubTab && (
+                <>
+                  <ChevronRight className="h-3 w-3" />
+                  <span className="text-[#06B6D4]">{activeSubTab.label}</span>
+                </>
+              )}
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <span className="px-2.5 py-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-extrabold text-[9px] rounded-lg tracking-wider">
+                LIVE PILOT
+              </span>
+              <span className="text-[10px] text-slate-400 bg-slate-900 border border-slate-850 px-2 py-0.5 rounded font-medium">
+                Devanand Automobiles
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              {getWorkspaceIcon()}
+              <h2 className="text-lg font-extrabold text-white leading-none">{getWorkspaceTitle()} Workspace</h2>
+            </div>
+
+            {/* 4. WORKSPACE NAVIGATION */}
+            {workspaceSubTabs.length > 1 && (
+              <div className="flex items-center gap-1 bg-slate-900/60 p-1 rounded-xl border border-slate-850/60 overflow-x-auto max-w-full scrollbar-none">
+                {workspaceSubTabs.map(tab => {
+                  const isTabActive = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 transition-all ${
+                        isTabActive 
+                          ? "bg-slate-800 text-[#06B6D4] shadow-md border border-slate-700/50" 
+                          : "text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 5. PAGE CONTENT CONTAINER */}
+        <main className="flex-1 overflow-y-auto p-6 bg-[#0B1220]">
+          <div className="max-w-7xl mx-auto w-full">
+            {children}
+          </div>
+        </main>
+      </div>
+
+    </div>
+  );
+}

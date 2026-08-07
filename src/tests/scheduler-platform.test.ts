@@ -110,9 +110,9 @@ async function runTestSuite() {
   const recovery = new SchedulerRecovery();
 
   const eventsFired: string[] = [];
-  bus.subscribe("SCHEDULER_JOB_SCHEDULED", () => eventsFired.push("SCHEDULED"));
-  bus.subscribe("SCHEDULER_JOB_COMPLETED", () => eventsFired.push("COMPLETED"));
-  bus.subscribe("SCHEDULER_JOB_DEAD_LETTER", () => eventsFired.push("DEAD_LETTER"));
+  bus.subscribe("SCHEDULER_JOB_SCHEDULED", () => { eventsFired.push("SCHEDULED"); });
+  bus.subscribe("SCHEDULER_JOB_COMPLETED", () => { eventsFired.push("COMPLETED"); });
+  bus.subscribe("SCHEDULER_JOB_DEAD_LETTER", () => { eventsFired.push("DEAD_LETTER"); });
 
   // ═══════════════════════════════════════════════════════════════════
   // 1. SCHEDULER CONTROLS & STATE TRANSITIONS (UNIT TESTS)

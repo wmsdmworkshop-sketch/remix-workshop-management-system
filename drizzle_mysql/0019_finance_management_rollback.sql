@@ -1,0 +1,15 @@
+DROP TABLE `tbl_financial_journal_line`;
+DROP TABLE `tbl_financial_journal`;
+DROP TABLE `tbl_tax_transaction`;
+DROP TABLE `tbl_vendor_ledger`;
+DROP TABLE `tbl_customer_ledger`;
+DROP TABLE `tbl_payment_allocation`;
+DROP TABLE `tbl_receipt`;
+DROP TABLE `tbl_debit_note`;
+DROP TABLE `tbl_credit_note`;
+DROP TABLE `tbl_invoice_revision`;
+DROP TABLE `tbl_invoice_line`;
+DROP TABLE `tbl_invoice`;
+DROP TABLE `tbl_invoice_sequence`;
+DROP TABLE `tbl_financial_period`;
+DROP TABLE `tbl_chart_of_accounts`;

@@ -104,8 +104,8 @@ async function run() {
     
     // Connect to MySQL
     connection = await mysql.createConnection({
-      host: 'thomas.proxy.rlwy.net',
-      port: 50733,
+      host: '35.200.150.167',
+      port: 3306,
       user: 'root',
       password: 'mjzwCcYkEYSYRAADKjnyAiEZGGrtwAri',
       database: 'railway'

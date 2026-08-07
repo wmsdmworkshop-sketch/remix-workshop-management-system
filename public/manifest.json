@@ -1,16 +1,28 @@
 {
-  "short_name": "Workforce v1",
-  "name": "Devanand Workforce v1",
+  "name": "AiVaahan DWIP Enterprise Platform",
+  "short_name": "AiVaahan DWIP",
+  "description": "Enterprise Workshop Management & Vehicle Operational System (VOS)",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1e1e2d",
+  "theme_color": "#1e1e2d",
+  "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/logo.png",
+      "src": "/assets/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/assets/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    },
+    {
+      "src": "/assets/icon-maskable-512.png",
+      "type": "image/png",
       "sizes": "512x512",
-      "type": "image/png"
+      "purpose": "maskable"
     }
-  ],
-  "start_url": "/",
-  "background_color": "#0f172a",
-  "theme_color": "#1e293b",
-  "display": "standalone",
-  "orientation": "portrait"
+  ]
 }

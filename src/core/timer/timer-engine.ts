@@ -8,6 +8,7 @@
 
 import { TimerStore, EnterpriseTimerRecord, TimerType, TimerPolicy } from "./timer-store";
 import { IEventBus } from "../event-bus";
+import { makeSystemContext } from "../business-context";
 
 export class TimerEngine {
   constructor(public readonly eventBus: IEventBus) {}
@@ -41,7 +42,7 @@ export class TimerEngine {
     await this.eventBus.publish(
       "TIMER_STARTED",
       { timerId, jobId, timerType, limitMinutes, correlationId },
-      correlationId,
+      makeSystemContext(correlationId),
       validationRunId
     );
   }
@@ -56,7 +57,7 @@ export class TimerEngine {
       await this.eventBus.publish(
         "TIMER_PAUSED",
         { timerId, jobId: timer.jobId, correlationId },
-        correlationId,
+        makeSystemContext(correlationId),
         timer.validationRunId
       );
     }
@@ -74,7 +75,7 @@ export class TimerEngine {
       await this.eventBus.publish(
         "TIMER_RESUMED",
         { timerId, jobId: timer.jobId, correlationId },
-        correlationId,
+        makeSystemContext(correlationId),
         timer.validationRunId
       );
     }
@@ -89,7 +90,7 @@ export class TimerEngine {
       await this.eventBus.publish(
         "TIMER_STOPPED",
         { timerId, jobId: timer.jobId, correlationId },
-        correlationId,
+        makeSystemContext(correlationId),
         timer.validationRunId
       );
     }
@@ -108,7 +109,7 @@ export class TimerEngine {
       await this.eventBus.publish(
         "TIMER_RESTARTED",
         { timerId, jobId: timer.jobId, limitMinutes, correlationId },
-        correlationId,
+        makeSystemContext(correlationId),
         timer.validationRunId
       );
     }
@@ -123,7 +124,7 @@ export class TimerEngine {
       await this.eventBus.publish(
         "TIMER_SUSPENDED",
         { timerId, jobId: timer.jobId, correlationId },
-        correlationId,
+        makeSystemContext(correlationId),
         timer.validationRunId
       );
     }
@@ -138,7 +139,7 @@ export class TimerEngine {
       await this.eventBus.publish(
         "TIMER_EXPIRED",
         { timerId, jobId: timer.jobId, timerType: timer.timerType, correlationId },
-        correlationId,
+        makeSystemContext(correlationId),
         timer.validationRunId
       );
     }
@@ -153,7 +154,7 @@ export class TimerEngine {
       await this.eventBus.publish(
         "TIMER_CANCELLED",
         { timerId, jobId: timer.jobId, correlationId },
-        correlationId,
+        makeSystemContext(correlationId),
         timer.validationRunId
       );
     }

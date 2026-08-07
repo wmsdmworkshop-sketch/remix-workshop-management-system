@@ -10,7 +10,10 @@ import {
   EmployeeRepository,
   RoleRepository,
   PermissionRepository,
-  AuditRepository
+  AuditRepository,
+  IEmployeeRepository,
+  IAuditRepository,
+  IPermissionRepository
 } from "../core/repositories";
 import {
   EmployeeIdentityService,
@@ -70,7 +73,7 @@ test("EmployeeRepository.findAll constructs correct query", async () => {
   const result = await repo.findAll(false);
 
   assertEquals(db.queries.length, 1);
-  assert(db.queries[0].sql.includes("WHERE record_status = 'CANONICAL' OR record_status IS NULL"));
+  assert(db.queries[0].sql.includes("ORDER BY employee_id"));
   assertEquals(result.length, 1);
   assertEquals(result[0].full_name, "John Doe");
 });
@@ -101,7 +104,7 @@ test("PermissionRepository.findByRoleAndModule constructs correct query", async 
   const result = await repo.findByRoleAndModule("admin", "User Management");
 
   assertEquals(db.queries.length, 1);
-  assert(db.queries[0].sql.includes("WHERE role_name = ? AND module_name = ?"));
+  assert(db.queries[0].sql.includes("WHERE r.role_name = ? AND m.module_name = ?"));
   assertEquals(db.queries[0].params[0], "admin");
   assertEquals(db.queries[0].params[1], "User Management");
   assert(result !== null);

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { AICopilotPanel } from "./AICopilotPanel";
 import { 
   ShieldCheck, 
   Search, 
@@ -416,15 +417,34 @@ export default function PartsWarrantyManager({
   };
 
   const filteredSelectorVehicles = useMemo(() => {
+    const rawSearch = vehicleSearchQuery.trim().toLowerCase();
+    const cleanSearch = rawSearch.replace(/[^a-z0-9]/g, "");
+
     return jobCards.filter(jc => {
-      const matchesSearch = 
-        (jc.vrn || "").toLowerCase().includes(vehicleSearchQuery.toLowerCase()) ||
-        (jc.job_card_no || "").toLowerCase().includes(vehicleSearchQuery.toLowerCase()) ||
-        (jc.vehicle_model || "").toLowerCase().includes(vehicleSearchQuery.toLowerCase());
+      const vrnRaw = (jc.vrn || "").toLowerCase();
+      const vrnClean = vrnRaw.replace(/[^a-z0-9]/g, "");
+      const jcNoRaw = (jc.job_card_no || "").toLowerCase();
+      const jcNoClean = jcNoRaw.replace(/[^a-z0-9]/g, "");
+      const chassisRaw = (jc.chassis_number || jc.chassis_no || "").toLowerCase();
+      const chassisClean = chassisRaw.replace(/[^a-z0-9]/g, "");
+      const customerRaw = (jc.customer_name || "").toLowerCase();
+
+      const matchesSearch = !rawSearch ||
+        vrnRaw.includes(rawSearch) ||
+        (cleanSearch.length > 0 && vrnClean.includes(cleanSearch)) ||
+        jcNoRaw.includes(rawSearch) ||
+        (cleanSearch.length > 0 && jcNoClean.includes(cleanSearch)) ||
+        chassisRaw.includes(rawSearch) ||
+        (cleanSearch.length > 0 && chassisClean.includes(cleanSearch)) ||
+        customerRaw.includes(rawSearch) ||
+        (jc.vehicle_model || "").toLowerCase().includes(rawSearch);
       
       const isInWorkshop = jc.status !== "Completed" && jc.status !== "Invoiced";
       
-      if (onlyInWorkshop) {
+      if (onlyInWorkshop && rawSearch.length > 0) {
+        // If user typed a search query, search all vehicles matching the query
+        return matchesSearch;
+      } else if (onlyInWorkshop) {
         return matchesSearch && isInWorkshop;
       }
       return matchesSearch;
@@ -549,7 +569,29 @@ export default function PartsWarrantyManager({
           <FileText className="h-4 w-4" />
           <span>Service Circulars Reference</span>
         </button>
+
+        <button
+          onClick={() => setActiveTab("copilot")}
+          className={`px-5 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === "copilot" ? "border-orange-500 text-orange-600 font-extrabold" : "border-transparent text-slate-400 hover:text-slate-600"
+          }`}
+        >
+          <Cpu className="h-4 w-4" />
+          <span>AI Warranty Copilot</span>
+        </button>
       </div>
+
+      {activeTab === "copilot" && (
+        <div className="space-y-6">
+          <AICopilotPanel 
+            role="Warranty Executive"
+            context={{
+              claimsCount: warrantyClaims.length,
+              totalAmount: warrantyClaims.reduce((sum, c) => sum + c.claimAmount, 0)
+            }}
+          />
+        </div>
+      )}
 
       {activeTab === "inventory" && (
         <div className="space-y-6">

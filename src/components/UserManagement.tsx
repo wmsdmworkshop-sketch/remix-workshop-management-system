@@ -299,6 +299,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
   // Edit User State
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [editFullName, setEditFullName] = useState("");
+  const [editUsername, setEditUsername] = useState("");
   const [editRole, setEditRole] = useState<User["role"]>("reception");
   const [editEmployeeId, setEditEmployeeId] = useState<string>("");
   const [editPassword, setEditPassword] = useState("");
@@ -370,8 +371,24 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
         throw new Error(data.error || "Failed to create user.");
       }
 
-      setSuccess(`User "${fullName}" created successfully!`);
+      const createdUser: User = data.user || {
+        user_id: data.user_id || Date.now(),
+        full_name: fullName.trim(),
+        username: username.trim().toLowerCase(),
+        role: role,
+        employee_id: employeeId ? Number(employeeId) : null,
+        is_active: 1,
+        created_at: new Date().toISOString(),
+        mobile_no: mobileNo.trim() || undefined,
+        email: email.trim() || undefined
+      };
+
+      setSuccess(`User "${fullName}" (${username.trim().toLowerCase()}) created successfully with Auto-RBAC privileges!`);
       setShowAddForm(false);
+      
+      // Instantly prepend new user to top of state list so it displays at Row #1
+      setUsers(prev => [createdUser, ...prev.filter(u => u.username !== createdUser.username)]);
+
       // Reset form
       setFullName("");
       setUsername("");
@@ -381,8 +398,11 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
       setMobileNo("");
       setEmail("");
       
-      // Refresh list
+      // Refresh list from server to sync backend state
       await fetchUsers();
+      if (activeTab === 'permissions') {
+        fetchPermissions();
+      }
     } catch (err: any) {
       setError(err.message || "Failed to create user.");
     } finally {
@@ -438,6 +458,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
         },
         body: JSON.stringify({
           full_name: editFullName.trim(),
+          username: editUsername.trim().toLowerCase(),
           role: editRole,
           employee_id: editEmployeeId ? Number(editEmployeeId) : null,
           password: editPassword ? editPassword : undefined,
@@ -457,6 +478,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
       setEditPassword("");
       setEditMobileNo("");
       setEditEmail("");
+      setEditUsername("");
       await fetchUsers();
     } catch (err: any) {
       setError(err.message || "Failed to update user.");
@@ -497,6 +519,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
   const startEdit = (user: User) => {
     setEditingUserId(user.user_id);
     setEditFullName(user.full_name);
+    setEditUsername(user.username || "");
     setEditRole(user.role);
     setEditEmployeeId(user.employee_id ? String(user.employee_id) : "");
     setEditPassword("");
@@ -504,15 +527,20 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
     setEditEmail(user.email || "");
   };
 
-  const filteredUsers = users.filter(user => {
-    const matchesSearch = 
-      user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.username.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesRole = roleFilter === "All" || user.role === roleFilter;
+  const filteredUsers = useMemo(() => {
+    const list = users.filter(user => {
+      const matchesSearch = 
+        user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.username.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesRole = roleFilter === "All" || user.role === roleFilter;
 
-    return matchesSearch && matchesRole;
-  });
+      return matchesSearch && matchesRole;
+    });
+
+    // Always sort newest created user first (user_id DESC)
+    return list.sort((a, b) => Number(b.user_id || 0) - Number(a.user_id || 0));
+  }, [users, searchTerm, roleFilter]);
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
@@ -761,27 +789,27 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
 
       {/* Directory & Filter Controls */}
       {activeTab === 'directory' && (
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+        <div className="bg-zinc-950/90 rounded-2xl border border-zinc-800 overflow-hidden shadow-2xl backdrop-blur-md">
           
           {/* Controls Panel */}
-          <div className="p-4 bg-slate-50 border-b border-slate-100 flex flex-col md:flex-row gap-3 justify-between items-center">
+          <div className="p-4 bg-zinc-900/90 border-b border-zinc-800 flex flex-col md:flex-row gap-3 justify-between items-center">
             <div className="relative w-full md:w-72">
-              <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
+              <Search className="absolute left-3.5 top-3 h-4 w-4 text-zinc-500" />
               <input
                 type="text"
                 placeholder="Search user, name, full name..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                className="w-full pl-10 pr-4 py-2 bg-black border border-zinc-800 rounded-xl text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 transition-all"
               />
             </div>
 
             <div className="flex items-center gap-2 w-full md:w-auto">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest shrink-0">Filter:</span>
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest shrink-0">Filter:</span>
               <select
                 value={roleFilter}
                 onChange={(e) => setRoleFilter(e.target.value)}
-                className="w-full md:w-44 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-semibold text-slate-700"
+                className="w-full md:w-44 px-3 py-2 bg-black border border-zinc-800 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 transition-all font-semibold text-zinc-100"
               >
                 <option value="All">All Roles</option>
                 {allRoles.map((r) => (
@@ -795,65 +823,87 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
           {loading ? (
             <FunnyLoader message="Loading system users..." />
           ) : filteredUsers.length === 0 ? (
-            <div className="p-12 text-center text-slate-400">
+            <div className="p-12 text-center text-zinc-500">
               <p className="text-xs font-medium">No users found matching filters.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="ds-table w-full text-left border-collapse block md:table">
                 <thead className="ds-th hidden md:table-header-group">
-                  <tr className="border-b border-slate-100 bg-slate-50/50">
-                    <th className="ds-th p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">User Details</th>
-                    <th className="ds-th p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">System Authorization</th>
-                    <th className="ds-th p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Linked Employee</th>
-                    <th className="ds-th p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Last Activity</th>
-                    <th className="ds-th p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
-                    <th className="ds-th p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right">Actions</th>
+                  <tr className="border-b border-zinc-800 bg-zinc-900/90">
+                    <th className="ds-th p-4 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">User Details</th>
+                    <th className="ds-th p-4 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">System Authorization</th>
+                    <th className="ds-th p-4 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Linked Employee</th>
+                    <th className="ds-th p-4 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Last Activity</th>
+                    <th className="ds-th p-4 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Status</th>
+                    <th className="ds-th p-4 text-[10px] font-bold text-zinc-400 uppercase tracking-wider text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 block md:table-row-group">
+                <tbody className="divide-y divide-zinc-800/80 block md:table-row-group">
                   {filteredUsers.map((user) => {
                     const isEditing = editingUserId === user.user_id;
 
                     return (
-                      <tr key={user.user_id} className="ds-table-row block md:table-row hover:bg-slate-50/50 transition-colors p-4 md:p-0 border-b border-slate-100 md:border-0 space-y-3 md:space-y-0">
+                      <tr key={user.user_id} className="ds-table-row block md:table-row hover:bg-zinc-900/60 transition-colors p-4 md:p-0 border-b border-zinc-800/80 md:border-0 space-y-3 md:space-y-0">
                         {/* Name Details */}
                         <td className="ds-td block md:table-cell p-0 md:p-4">
-                          <span className="block md:hidden text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">User Details</span>
+                          <span className="block md:hidden text-[9px] font-bold text-zinc-400 uppercase tracking-wider mb-1">User Details</span>
                           {isEditing ? (
                             <div className="space-y-2">
-                              <input
-                                type="text"
-                                value={editFullName}
-                                onChange={(e) => setEditFullName(e.target.value)}
-                                className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none block w-full font-semibold text-slate-700"
-                                placeholder="Full Name"
-                              />
-                              <input
-                                type="text"
-                                value={editMobileNo}
-                                onChange={(e) => setEditMobileNo(e.target.value)}
-                                className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none block w-full font-semibold text-slate-700"
-                                placeholder="Mobile"
-                              />
-                              <input
-                                type="email"
-                                value={editEmail}
-                                onChange={(e) => setEditEmail(e.target.value)}
-                                className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none block w-full font-semibold text-slate-700"
-                                placeholder="Email"
-                              />
-                              <input
-                                type="password"
-                                value={editPassword}
-                                onChange={(e) => setEditPassword(e.target.value)}
-                                className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none block w-full font-semibold text-slate-700"
-                                placeholder="New Password (blank to keep)"
-                              />
-                            </div>
+                               <div>
+                                 <label className="text-[9px] font-bold text-orange-400 uppercase tracking-wider block mb-0.5">Full Name</label>
+                                 <input
+                                   type="text"
+                                   value={editFullName}
+                                   onChange={(e) => setEditFullName(e.target.value)}
+                                   className="px-2.5 py-1.5 bg-black border border-zinc-700 rounded-lg text-xs font-semibold text-zinc-100 placeholder-zinc-500 focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 focus:outline-none block w-full"
+                                   placeholder="Full Name"
+                                 />
+                               </div>
+                               <div>
+                                 <label className="text-[9px] font-bold text-orange-400 uppercase tracking-wider block mb-0.5">Username / Login Handle</label>
+                                 <input
+                                   type="text"
+                                   value={editUsername}
+                                   onChange={(e) => setEditUsername(e.target.value)}
+                                   className="px-2.5 py-1.5 bg-black border border-zinc-700 rounded-lg text-xs font-semibold text-zinc-100 placeholder-zinc-500 focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 focus:outline-none block w-full"
+                                   placeholder="Username (Login Handle)"
+                                 />
+                               </div>
+                               <div>
+                                 <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block mb-0.5">Mobile Number</label>
+                                 <input
+                                   type="text"
+                                   value={editMobileNo}
+                                   onChange={(e) => setEditMobileNo(e.target.value)}
+                                   className="px-2.5 py-1.5 bg-black border border-zinc-700 rounded-lg text-xs font-semibold text-zinc-100 placeholder-zinc-500 focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 focus:outline-none block w-full"
+                                   placeholder="Mobile Number"
+                                 />
+                               </div>
+                               <div>
+                                 <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block mb-0.5">Email Address</label>
+                                 <input
+                                   type="email"
+                                   value={editEmail}
+                                   onChange={(e) => setEditEmail(e.target.value)}
+                                   className="px-2.5 py-1.5 bg-black border border-zinc-700 rounded-lg text-xs font-semibold text-zinc-100 placeholder-zinc-500 focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 focus:outline-none block w-full"
+                                   placeholder="Email Address"
+                                 />
+                               </div>
+                               <div>
+                                 <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block mb-0.5">New Password</label>
+                                 <input
+                                   type="password"
+                                   value={editPassword}
+                                   onChange={(e) => setEditPassword(e.target.value)}
+                                   className="px-2.5 py-1.5 bg-black border border-zinc-700 rounded-lg text-xs font-semibold text-zinc-100 placeholder-zinc-500 focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 focus:outline-none block w-full"
+                                   placeholder="New Password (blank to keep)"
+                                 />
+                               </div>
+                             </div>
                           ) : (
                             <div>
-                              <h3 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                              <h3 className="font-bold text-zinc-100 text-xs flex items-center gap-1.5">
                                 {user.full_name}
                               </h3>
                               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">👤 {user.username}</p>
@@ -874,7 +924,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                             <select
                               value={editRole}
                               onChange={(e) => setEditRole(e.target.value as any)}
-                              className="px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none font-semibold text-slate-700"
+                              className="px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs font-semibold text-slate-100 focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 focus:outline-none block w-full"
                             >
                               {allRoles.map((r) => (
                                 <option key={r.key} value={r.key}>{r.label}</option>
@@ -895,7 +945,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                               type="number"
                               value={editEmployeeId}
                               onChange={(e) => setEditEmployeeId(e.target.value)}
-                              className="w-16 px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none font-semibold text-slate-700"
+                              className="w-20 px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs font-semibold text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 focus:outline-none block"
                               placeholder="Emp ID"
                             />
                           ) : (
@@ -976,16 +1026,16 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
       )}
 
       {activeTab === 'permissions' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-6 space-y-6">
-          <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+        <div className="bg-zinc-950/90 rounded-2xl border border-zinc-800 shadow-2xl p-6 space-y-6 backdrop-blur-md">
+          <div className="flex justify-between items-center border-b border-zinc-800 pb-4 flex-wrap gap-4">
             <div>
-              <h2 className="text-lg font-bold text-slate-800">Role Permissions Matrix</h2>
-              <p className="text-xs text-slate-500 mt-1">Configure view, edit, and comment access rights for each module per role.</p>
+              <h2 className="text-lg font-bold text-zinc-100">Role Permissions Matrix</h2>
+              <p className="text-xs text-zinc-400 mt-1">Configure view, edit, and comment access rights for each module per role.</p>
             </div>
             <button
               onClick={handleSavePermissions}
               disabled={saveLoading}
-              className="ds-button-primary px-6 py-2.5   hover:bg-orange-600 text-white rounded-xl text-xs font-bold transition shadow-md shadow-orange-500/10 cursor-pointer"
+              className="ds-button-primary px-6 py-2.5 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-orange-950/40 cursor-pointer"
             >
               {saveLoading ? "Saving Changes..." : "Save Permission Matrix"}
             </button>
@@ -994,22 +1044,26 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
           {permissionsLoading ? (
             <FunnyLoader message="Loading permissions matrix..." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="ds-table w-full text-left border-collapse min-w-[800px]">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50">
-                    <th className="ds-th p-4 text-xs font-bold text-slate-700 w-44">Module Name</th>
+            <div className="overflow-auto max-h-[65vh] border border-zinc-800 rounded-xl relative">
+              <table className="ds-table w-full text-left border-collapse min-w-[900px]">
+                <thead className="sticky top-0 z-20 bg-zinc-900 shadow-md">
+                  <tr className="border-b border-zinc-800 bg-zinc-900">
+                    <th className="ds-th p-4 text-xs font-bold text-orange-400 w-48 sticky left-0 z-30 bg-zinc-900 border-r border-zinc-800">
+                      Module Name
+                    </th>
                     {ROLES.map((role) => (
-                      <th key={role.key} className="ds-th p-4 text-center text-xs font-bold text-slate-700">
+                      <th key={role.key} className="ds-th p-4 text-center text-xs font-bold text-zinc-200 bg-zinc-900">
                         {role.label}
                       </th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-zinc-800/80 bg-black">
                   {MODULES.map((moduleName) => (
-                    <tr key={moduleName} className="ds-table-row hover:bg-slate-50/50 transition">
-                      <td className="ds-td p-4 text-xs font-bold text-slate-800">{moduleName}</td>
+                    <tr key={moduleName} className="ds-table-row hover:bg-zinc-900/70 transition">
+                      <td className="ds-td p-4 text-xs font-bold text-zinc-100 sticky left-0 z-10 bg-zinc-950 border-r border-zinc-800 shadow-r">
+                        {moduleName}
+                      </td>
                       {ROLES.map((role) => {
                         const perm = permissionsList.find(p => p.module_name === moduleName && p.role_name === role.key) || {
                           can_view: 0,
@@ -1018,32 +1072,32 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                         };
 
                         return (
-                          <td key={role.key} className="ds-td p-4 text-center border-l border-slate-50">
+                          <td key={role.key} className="ds-td p-4 text-center border-l border-zinc-800/50">
                             <div className="flex flex-col items-center gap-2 justify-center">
-                              <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-600 cursor-pointer">
+                              <label className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-300 hover:text-white cursor-pointer select-none">
                                 <input
                                   type="checkbox"
                                   checked={perm.can_view === 1 || perm.can_view === true}
                                   onChange={(e) => handleCheckboxChange(moduleName, role.key, 'can_view', e.target.checked)}
-                                  className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                  className="h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-900 text-orange-500 focus:ring-orange-500/30 accent-orange-500"
                                 />
                                 View
                               </label>
-                              <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-600 cursor-pointer">
+                              <label className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-300 hover:text-white cursor-pointer select-none">
                                 <input
                                   type="checkbox"
                                   checked={perm.can_edit === 1 || perm.can_edit === true}
                                   onChange={(e) => handleCheckboxChange(moduleName, role.key, 'can_edit', e.target.checked)}
-                                  className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                  className="h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-900 text-orange-500 focus:ring-orange-500/30 accent-orange-500"
                                 />
                                 Edit
                               </label>
-                              <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-600 cursor-pointer">
+                              <label className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-300 hover:text-white cursor-pointer select-none">
                                 <input
                                   type="checkbox"
                                   checked={perm.can_comment === 1 || perm.can_comment === true}
                                   onChange={(e) => handleCheckboxChange(moduleName, role.key, 'can_comment', e.target.checked)}
-                                  className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                  className="h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-900 text-orange-500 focus:ring-orange-500/30 accent-orange-500"
                                 />
                                 Comment
                               </label>

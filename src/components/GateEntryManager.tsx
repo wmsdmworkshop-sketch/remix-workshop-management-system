@@ -50,7 +50,7 @@ export default function GateEntryManager({
   const [customerName, setCustomerName] = useState("");
   const [customerMobile, setCustomerMobile] = useState("");
   const [make, setMake] = useState("TATA"); // vehicle make is TATA only
-  const [model, setModel] = useState("Nexon");
+  const [model, setModel] = useState("Tata Commercial Heavy Vehicle");
   const [odometer, setOdometer] = useState("");
   const [fuelLevel, setFuelLevel] = useState("50%");
   const [fuelPercentage, setFuelPercentage] = useState(50);
@@ -94,6 +94,54 @@ export default function GateEntryManager({
   useEscapeKey(() => setShowFuelModal(false), showFuelModal);
   const [fuelScanning, setFuelScanning] = useState(false);
   const [fuelCapturedText, setFuelCapturedText] = useState<string | null>(null);
+  const [autoFetchNotice, setAutoFetchNotice] = useState<string | null>(null);
+
+  // Auto-Fetch Previous Visit & Customer Details on VRN Entry or Field Blur/Tab
+  const handleAutoFetchVehicle = async (targetVrn: string) => {
+    const cleanVrn = targetVrn.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (cleanVrn.length < 4) return;
+
+    // 1. Search local jobCards memory for most recent visit
+    const latestVisit = [...jobCards]
+      .reverse()
+      .filter(j => j && j.status !== "Cancelled")
+      .find(j => (j.vrn || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "") === cleanVrn);
+
+    if (latestVisit) {
+      if (latestVisit.customer_name) setCustomerName(latestVisit.customer_name);
+      if (latestVisit.customer_mobile) setCustomerMobile(latestVisit.customer_mobile);
+      if (latestVisit.vehicle_model) setModel(latestVisit.vehicle_model);
+      if (latestVisit.vehicle_make) setMake(latestVisit.vehicle_make);
+      if (latestVisit.chassis_no) setChassisNumber(latestVisit.chassis_no);
+      if (latestVisit.odometer_reading) setOdometer(String(latestVisit.odometer_reading));
+      
+      setAutoFetchNotice(`✨ Auto-fetched previous visit records for ${latestVisit.vrn} (Customer: ${latestVisit.customer_name}). All fields remain 100% editable.`);
+      return;
+    }
+
+    // 2. Query backend database lookup endpoint
+    try {
+      const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || localStorage.getItem("wms_token");
+      const res = await fetch(`/api/vehicles/lookup/${cleanVrn}`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.vehicle) {
+          const v = data.vehicle;
+          if (v.customer_name) setCustomerName(v.customer_name);
+          if (v.customer_mobile) setCustomerMobile(v.customer_mobile);
+          if (v.model) setModel(v.model);
+          if (v.make) setMake(v.make);
+          if (v.chassis_no) setChassisNumber(v.chassis_no);
+          if (v.odometer_reading) setOdometer(String(v.odometer_reading));
+          setAutoFetchNotice(`✨ Retrieved records from Vehicle Registry for ${cleanVrn}. All fields auto-filled & 100% editable.`);
+        }
+      }
+    } catch (err) {
+      // Quiet fail on network error
+    }
+  };
 
   // Escape key listener to close modals
   useEffect(() => {
@@ -194,28 +242,32 @@ export default function GateEntryManager({
       customer_name: customerName.trim(),
       customer_mobile: customerMobile.trim(),
       vehicle_make: "TATA", // vehicle make is TATA only in all menus
-      vehicle_model: model || "Nexon",
+      vehicle_model: model || "Tata Commercial Heavy Vehicle",
       status: "Waiting",
+      current_workflow_state: "GATE_IN",
+      current_queue: "Reception & Service Advisor Queue",
+      is_virtual: 1,
       bay_id: null,
       created_at: new Date().toISOString(),
-      remarks: `Registered at Gate Security Gate In. Fuel: ${fuelLevel}${anprFailed ? ` | Chassis Scanned: ${chassisNumber}` : ''}`,
+      remarks: `Virtual Job Card generated at Gate Inward Security. Fuel: ${fuelLevel} | Odometer: ${odometer || 0} KM${anprFailed ? ` | Chassis Scanned: ${chassisNumber}` : ''}`,
       km_reading: odometer ? parseInt(odometer) : 0
     });
 
-    setSuccess(`Vehicle ${anprFailed ? chassisNumber.toUpperCase() : vrn.toUpperCase()} registered successfully! Job card ${newJobNo} issued.`);
+    setSuccess(`✨ Virtual Job Card ${newJobNo} created for ${anprFailed ? chassisNumber.toUpperCase() : vrn.toUpperCase()}! Full vehicle history auto-populated and routed to Receptionist, Service Advisor & Service Manager sequential queues.`);
     setVrn("");
     setChassisNumber("");
+    setAutoFetchNotice(null);
     setAnprFailed(false);
     setCustomerName("");
     setCustomerMobile("");
     setMake("TATA");
-    setModel("Nexon");
+    setModel("Tata Commercial Heavy Vehicle");
     setOdometer("");
     setFuelLevel("50%");
     setFuelPercentage(50);
 
     setMobileActiveView("ledger");
-    setTimeout(() => setSuccess(null), 5000);
+    setTimeout(() => setSuccess(null), 6000);
   };
 
   const handleGateOut = (jobId: number) => {
@@ -486,21 +538,10 @@ export default function GateEntryManager({
                         onChange={(e) => {
                           const val = e.target.value;
                           setVrn(val);
-                          const cleanVrn = val.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-                          if (cleanVrn.length >= 4) {
-                            const latestVisit = [...jobCards]
-                              .reverse()
-                              .filter(j => j && j.status !== "Cancelled")
-                              .find(j => (j.vrn || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "") === cleanVrn);
-                            if (latestVisit) {
-                              setCustomerName(latestVisit.customer_name);
-                              setCustomerMobile(latestVisit.customer_mobile);
-                              if (latestVisit.vehicle_model) setModel(latestVisit.vehicle_model);
-                              if (latestVisit.vehicle_make) setMake(latestVisit.vehicle_make);
-                              setSuccess(`✨ Found previous visit history for ${latestVisit.vrn}! Customer details and vehicle model (${latestVisit.vehicle_model}) auto-populated.`);
-                              setTimeout(() => setSuccess(null), 4000);
-                            }
-                          }
+                          handleAutoFetchVehicle(val);
+                        }}
+                        onBlur={() => {
+                          handleAutoFetchVehicle(vrn);
                         }}
                         className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none uppercase font-semibold text-slate-800"
                       />
@@ -515,10 +556,17 @@ export default function GateEntryManager({
                       <span>ANPR</span>
                     </button>
                   </div>
+
+                  {autoFetchNotice && (
+                    <div className="mt-1.5 p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-center justify-between text-[10px] text-emerald-600 font-bold">
+                      <span>{autoFetchNotice}</span>
+                      <button type="button" onClick={() => setAutoFetchNotice(null)} className="text-slate-400 hover:text-slate-600 ml-2 font-bold cursor-pointer">✕</button>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* Customer Mobile */}
+              {/* Customer Mobile (Editable & Auto-Lookup on Blur) */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                   Customer Mobile *
@@ -531,12 +579,24 @@ export default function GateEntryManager({
                     placeholder="e.g. 9876543210"
                     value={customerMobile}
                     onChange={(e) => setCustomerMobile(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none text-slate-800"
+                    onBlur={() => {
+                      if (customerMobile.trim().length >= 10 && !customerName) {
+                        const match = jobCards.find(j => (j.customer_mobile || "").includes(customerMobile.trim()));
+                        if (match) {
+                          setCustomerName(match.customer_name);
+                          if (match.vrn && !vrn) {
+                            setVrn(match.vrn);
+                            handleAutoFetchVehicle(match.vrn);
+                          }
+                        }
+                      }
+                    }}
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none text-slate-800 font-medium"
                   />
                 </div>
               </div>
 
-              {/* Customer Name */}
+              {/* Customer Name (Editable) */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                   Customer Name *
@@ -549,7 +609,7 @@ export default function GateEntryManager({
                     placeholder="e.g. Robert Downey"
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none text-slate-800"
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none text-slate-800 font-medium"
                   />
                 </div>
               </div>
@@ -816,14 +876,20 @@ export default function GateEntryManager({
                   <td className="ds-td py-3.5 px-5 font-mono">
                     <div className="text-slate-700 flex items-center gap-1">
                       <Gauge className="h-3 w-3 text-slate-400" />
-                      <span>{job.km_reading || "0"} KM</span>
+                      <span>{(() => {
+                        const odoVal = job.km_reading || job.odometer_reading || (job.remarks?.match(/Odometer:\s*(\d+)/i)?.[1]);
+                        return odoVal && Number(odoVal) > 0 ? `${Number(odoVal).toLocaleString()} KM` : "—";
+                      })()}</span>
                     </div>
                     <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
                       <Fuel className="h-3 w-3 text-slate-400" />
                       <span>{(() => {
-                        if (!job.remarks) return "50% Tank";
-                        const match = job.remarks.match(/Fuel:\s*([^\n\r]+)/i);
-                        return match ? match[1] : "50% Tank";
+                        if (job.remarks) {
+                          const match = job.remarks.match(/Fuel:\s*([^|\n\r]+)/i);
+                          if (match && match[1].trim()) return match[1].trim();
+                        }
+                        if ((job as any).fuel_level) return (job as any).fuel_level;
+                        return "—";
                       })()}</span>
                     </div>
                   </td>

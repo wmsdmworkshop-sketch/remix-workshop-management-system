@@ -3,6 +3,7 @@ import {
   Wrench, Play, Pause, Square, Sparkles, ClipboardCheck, Package, 
   Camera, BarChart3, Clock, AlertTriangle, FileText, CheckCircle2 
 } from "lucide-react";
+import { AICopilotPanel } from "./AICopilotPanel";
 
 export interface TechnicianWorkspaceProps {
   jobCards: any[];
@@ -41,17 +42,26 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
 
   // Section 1: Dashboard KPIs
   const dashboardStats = useMemo(() => {
-    const techName = currentUser?.full_name || "Sanjay Patel";
-    const assigned = jobCards.filter(j => j.technician_name?.includes(techName) && j.status !== "Completed");
-    const completed = jobCards.filter(j => j.technician_name?.includes(techName) && j.status === "Completed").length;
+    const techName = currentUser?.full_name;
+    const assigned = jobCards.filter(j => 
+      (!techName || !j.technician_name || j.technician_name.includes(techName)) && j.status !== "Completed"
+    );
+    const completed = jobCards.filter(j => 
+      (!techName || !j.technician_name || j.technician_name.includes(techName)) && j.status === "Completed"
+    ).length;
+    const reworkCount = jobCards.filter(j => j.status === "Rework" || (j.rework_count && j.rework_count > 0)).length;
+    const totalCount = completed + assigned.length;
+    const ftrVal = totalCount > 0 
+      ? `${Math.round(((totalCount - reworkCount) / totalCount) * 100)}%` 
+      : "100%";
 
     return {
       assignedCount: assigned.length,
       currentJob: assigned[0]?.vrn || "No active assignment",
       completedToday: completed,
-      productivity: "92%",
-      ftr: "96%",
-      rework: "0%"
+      productivity: totalCount > 0 ? "100%" : "0%",
+      ftr: ftrVal,
+      rework: `${reworkCount}`
     };
   }, [jobCards, currentUser]);
 
@@ -129,7 +139,8 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
             { id: "dashboard", label: "My Dashboard" },
             { id: "tasks", label: "Repair Checklist" },
             { id: "parts", label: "Parts Desk" },
-            { id: "evidence", label: "Evidence Capture" }
+            { id: "evidence", label: "Evidence Capture" },
+            { id: "copilot", label: "Technician AI Copilot" }
           ].map(tab => (
             <button
               key={tab.id}
@@ -145,6 +156,19 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
           ))}
         </div>
       </div>
+
+      {activeTab === "copilot" && (
+        <div className="space-y-6">
+          <AICopilotPanel 
+            role="Technician"
+            context={{
+              selectedJobId: selectedJob?.job_id,
+              vin: selectedJob?.vin,
+              makeModel: `${selectedJob?.vehicle_make || ""} ${selectedJob?.vehicle_model || ""}`
+            }}
+          />
+        </div>
+      )}
 
       {activeTab === "dashboard" && (
         <div className="space-y-6">
@@ -171,20 +195,27 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Active Queue Roster</h3>
               </div>
               <div className="space-y-3">
-                {jobCards.filter(j => j.technician_name?.includes(currentUser?.full_name || "Sanjay Patel") && j.status !== "Completed").map(job => (
-                  <button
-                    key={job.job_id}
-                    onClick={() => setSelectedJobId(job.job_id)}
-                    className={`w-full text-left p-3 rounded-xl border transition-all ${
-                      selectedJobId === job.job_id 
-                        ? "bg-blue-600/10 border-blue-600/30 text-white" 
-                        : "bg-slate-950/40 border-slate-850 text-slate-300 hover:border-slate-800"
-                    }`}
-                  >
-                    <div className="font-mono text-xs font-bold">{job.vrn}</div>
-                    <div className="text-[10px] text-slate-400 mt-1">{job.vehicle_make} {job.vehicle_model} • {job.status}</div>
-                  </button>
-                ))}
+                {(() => {
+                  const techName = currentUser?.full_name;
+                  const queueJobs = jobCards.filter(j => (!techName || !j.technician_name || j.technician_name.includes(techName)) && j.status !== "Completed");
+                  if (queueJobs.length === 0) {
+                    return <p className="text-xs text-slate-400 text-center py-6">No jobs currently assigned in active queue roster.</p>;
+                  }
+                  return queueJobs.map(job => (
+                    <button
+                      key={job.job_id}
+                      onClick={() => setSelectedJobId(job.job_id)}
+                      className={`w-full text-left p-3 rounded-xl border transition-all ${
+                        selectedJobId === job.job_id 
+                          ? "bg-blue-600/10 border-blue-600/30 text-white" 
+                          : "bg-slate-950/40 border-slate-850 text-slate-300 hover:border-slate-800"
+                      }`}
+                    >
+                      <div className="font-mono text-xs font-bold">{job.vrn}</div>
+                      <div className="text-[10px] text-slate-400 mt-1">{job.vehicle_make} {job.vehicle_model} • {job.status}</div>
+                    </button>
+                  ));
+                })()}
               </div>
             </div>
 

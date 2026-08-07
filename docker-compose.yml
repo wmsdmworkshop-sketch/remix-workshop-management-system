@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: dwip-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootsecurepassword
+      MYSQL_DATABASE: railway
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dwip-server
+    restart: always
+    environment:
+      - PORT=3001
+      - NODE_ENV=production
+      - DB_HOST=mysql
+      - DB_USER=root
+      - DB_PASSWORD=rootsecurepassword
+      - DB_DATABASE=railway
+      - JWT_SECRET=supersecurejwtsecretkey
+      - CUSTOMER_JWT_SECRET=supersecurecustomerjwtkey
+    ports:
+      - "3001:3001"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  mysql_data:

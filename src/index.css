@@ -1,66 +1,101 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&display=swap');
 @import "tailwindcss";
+
+/* ── DWIP Enterprise Font Fallback & Theme System ── */
+:root {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-display: swap;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Theme Engine Variable Classes */
+html.theme-enterprise-dark {
+  color-scheme: dark;
+  background-color: #020617;
+  color: #f8fafc;
+}
+
+html.theme-enterprise-light {
+  color-scheme: light;
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html.theme-tata-theme {
+  color-scheme: dark;
+  background-color: #030712;
+  color: #f0f9ff;
+}
+
+html.theme-high-contrast {
+  color-scheme: dark;
+  background-color: #000000;
+  color: #facc15;
+}
 
 @theme {
   --color-brand: var(--brand-color, #ff5500);
-  --color-brand-hover: var(--brand-color-hover, #e05300);
-  --color-slate-850: #182235;
-  --color-slate-750: #273549;
+  --color-brand-hover: var(--brand-color-hover, #e04400);
+  --color-slate-850: #121824;
+  --color-slate-750: #1e293b;
 }
 
 @utility ds-title {
-  @apply text-2xl font-extrabold text-slate-100 tracking-tight;
+  @apply text-2xl font-extrabold text-zinc-50 tracking-tight;
 }
 
 @utility ds-subtitle {
-  @apply text-base font-semibold text-slate-200;
+  @apply text-base font-semibold text-zinc-200;
 }
 
 @utility ds-body {
-  @apply text-sm font-normal text-slate-300;
+  @apply text-sm font-normal text-zinc-300;
 }
 
 @utility ds-label {
-  @apply block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5;
+  @apply block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5;
 }
 
 @utility ds-input {
-  @apply h-10 w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand transition-all duration-200;
+  @apply h-10 w-full px-3 py-2 bg-black border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand transition-all duration-200;
 }
 
 @utility ds-select {
-  @apply h-10 w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand transition-all duration-200 cursor-pointer;
+  @apply h-10 w-full px-3 py-2 bg-black border border-zinc-800 rounded-xl text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand transition-all duration-200 cursor-pointer;
 }
 
 @utility ds-textarea {
-  @apply min-h-[80px] w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand transition-all duration-200;
+  @apply min-h-[80px] w-full px-3 py-2 bg-black border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand transition-all duration-200;
 }
 
 @utility ds-button-primary {
-  @apply h-10 px-4 flex items-center justify-center gap-2 rounded-xl text-sm font-semibold text-white bg-brand hover:bg-brand-hover active:scale-[0.98] transition-all duration-200 shadow-md shadow-brand/10 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer;
+  @apply h-10 px-4 flex items-center justify-center gap-2 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 active:scale-[0.98] transition-all duration-200 shadow-lg shadow-orange-950/40 border border-orange-400/30 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer;
 }
 
 @utility ds-button-secondary {
-  @apply h-10 px-4 flex items-center justify-center gap-2 rounded-xl text-sm font-semibold text-slate-200 bg-slate-800 hover:bg-slate-750 active:scale-[0.98] transition-all duration-200 border border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer;
+  @apply h-10 px-4 flex items-center justify-center gap-2 rounded-xl text-sm font-semibold text-zinc-200 bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] transition-all duration-200 border border-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer;
 }
 
 @utility ds-button-danger {
-  @apply h-10 px-4 flex items-center justify-center gap-2 rounded-xl text-sm font-semibold text-white bg-rose-600 hover:bg-rose-500 active:scale-[0.98] transition-all duration-200 shadow-md shadow-rose-900/10 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer;
+  @apply h-10 px-4 flex items-center justify-center gap-2 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 active:scale-[0.98] transition-all duration-200 shadow-lg shadow-rose-950/40 border border-rose-400/30 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer;
 }
 
 @utility ds-button-success {
-  @apply h-10 px-4 flex items-center justify-center gap-2 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] transition-all duration-200 shadow-md shadow-emerald-900/10 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer;
+  @apply h-10 px-4 flex items-center justify-center gap-2 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-[0.98] transition-all duration-200 shadow-lg shadow-emerald-950/40 border border-emerald-400/30 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer;
 }
 
 @utility ds-card {
-  @apply p-5 bg-slate-900/70 border border-slate-800 rounded-2xl shadow-sm backdrop-blur-sm;
+  @apply p-5 bg-zinc-950/90 border border-zinc-800/80 rounded-2xl shadow-xl shadow-black/80 backdrop-blur-md hover:border-orange-500/30 transition-all duration-200;
 }
 
 @utility ds-modal-container {
-  @apply fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm;
+  @apply fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md;
 }
 
 @utility ds-modal {
-  @apply p-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-xl max-w-xl w-full mx-4 space-y-6 relative text-slate-100;
+  @apply p-6 bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl shadow-black max-w-xl w-full mx-4 space-y-6 relative text-zinc-100;
 }
 
 @utility ds-table {
@@ -68,13 +103,80 @@
 }
 
 @utility ds-th {
-  @apply bg-slate-800/40 text-slate-400 text-xs font-semibold uppercase tracking-wider px-4 py-3 select-none;
+  @apply bg-zinc-900/90 text-zinc-400 text-[11px] font-bold uppercase tracking-wider px-4 py-3 border-b border-zinc-800 select-none;
 }
 
 @utility ds-td {
-  @apply px-4 py-3 text-sm text-slate-200 border-b border-slate-850;
+  @apply px-4 py-3 text-sm text-zinc-200 border-b border-zinc-800/80;
 }
 
 @utility ds-table-row {
-  @apply hover:bg-slate-800/25 transition-colors duration-150;
+  @apply hover:bg-zinc-900/70 transition-colors duration-150;
+}
+
+/* Global Midnight OLED Cyberpunk Typography & Base Styles */
+html, body, #root {
+  background-color: #000000 !important;
+  color: #f4f4f5 !important;
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  text-rendering: optimizeLegibility !important;
+}
+
+body {
+  background-image: radial-gradient(circle at 50% 0%, rgba(255,85,0,0.05) 0%, rgba(0,0,0,0) 70%);
+  background-attachment: fixed;
+}
+
+h1, h2, h3, h4, h5, h6, .ds-title, .font-display {
+  font-family: 'Outfit', 'Plus Jakarta Sans', 'Inter', sans-serif !important;
+  letter-spacing: -0.02em;
+}
+
+nav, button, .menu-item, .nav-item, label {
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif !important;
+}
+
+code, pre, .font-mono {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace !important;
+}
+
+/* Global High Contrast Inputs & Selects for OLED Dark Mode */
+input, textarea, select {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif !important;
+  color: #f4f4f5 !important;
+  -webkit-text-fill-color: #f4f4f5 !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: #71717a !important;
+  -webkit-text-fill-color: #71717a !important;
+  opacity: 1;
+}
+
+/* Explicit Light Container Input Override */
+input.bg-white, input.bg-slate-50, input.bg-slate-100,
+textarea.bg-white, textarea.bg-slate-50, textarea.bg-slate-100,
+select.bg-white, select.bg-slate-50, select.bg-slate-100 {
+  background-color: #09090b !important;
+  border-color: #27272a !important;
+  color: #f4f4f5 !important;
+  -webkit-text-fill-color: #f4f4f5 !important;
+}
+
+/* Scrollbar Customization for Cyberpunk Theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #000000;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #ff5500;
 }

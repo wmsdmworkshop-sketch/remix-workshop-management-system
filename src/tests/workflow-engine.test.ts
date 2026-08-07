@@ -176,16 +176,16 @@ async function runTestSuite() {
   console.log("\n--- Running Unit Test Suite ---");
   
   // Test valid transition rules
-  const val1 = WorkflowValidator.validate("GATE_IN", "INTAKE_PENDING", "Service Advisor", logContext);
+  const val1 = await WorkflowValidator.validate("GATE_IN", "INTAKE_PENDING", "Service Advisor", logContext);
   assert(val1.isValid === true, "Valid transition GATE_IN -> INTAKE_PENDING (Advisor)");
 
   // Test invalid transition rules
-  const val2 = WorkflowValidator.validate("GATE_IN", "WIP_START", "Technician", logContext);
+  const val2 = await WorkflowValidator.validate("GATE_IN", "WIP_START", "Technician", logContext);
   assert(val2.isValid === false, "Invalid transition GATE_IN -> WIP_START (Blocked)");
   assert(val2.isOverrideRequired === true, "Transition block flags override requirement");
 
   // Test invalid role permissions
-  const val3 = WorkflowValidator.validate("INTAKE_PENDING", "DIAGNOSTIC_WIP", "Security", logContext);
+  const val3 = await WorkflowValidator.validate("INTAKE_PENDING", "DIAGNOSTIC_WIP", "Security", logContext);
   assert(val3.isValid === false && val3.reason!.includes("Security"), "Invalid role validation rules (Security cannot start Diagnostics)");
 
   // Test SLA Engine
@@ -256,7 +256,7 @@ async function runTestSuite() {
   });
 
   assert(res1.success === true, "Transition execution GATE_IN -> INTAKE_PENDING successful");
-  assert(eventFired === true, "Domain event published and handled by subscriber");
+  assert(Boolean(eventFired), "Domain event published and handled by subscriber");
 
   // Verify database updates
   const histRows = mockDb.tbl_workflow_history.filter((h) => h.job_id === TEST_JOB_ID);

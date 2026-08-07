@@ -1,0 +1,83 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1783943158091,
+      "tag": "0000_hard_xavin",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783943970902,
+      "tag": "0001_spicy_rogue",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783944723032,
+      "tag": "0002_new_living_mummy",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783945210653,
+      "tag": "0003_silky_black_tarantula",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783945494658,
+      "tag": "0004_wonderful_nehzno",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783945744694,
+      "tag": "0005_safe_lily_hollister",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783951104081,
+      "tag": "0006_chubby_nocturne",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783951534053,
+      "tag": "0007_unique_mephistopheles",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783951926673,
+      "tag": "0008_foamy_warbound",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783956282873,
+      "tag": "0009_broken_strong_guy",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783956619821,
+      "tag": "0010_talented_black_knight",
+      "breakpoints": true
+    }
+  ]
+}

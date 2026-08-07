@@ -1,9 +1,9 @@
 {
-  "version": "1.0.0 GA",
-  "release": "DWIP V1 RC2.1",
-  "commit": "3a1dcd941b8fda890ffae46700f46d4ea597d2c8",
-  "shortCommit": "3a1dcd9",
-  "buildTime": "2026-07-25T11:45:00.000Z",
+  "version": "2.0.0-GA",
+  "release": "DWIP-v2.0.0-GA",
+  "tag": "DWIP-v2.0.0-GA",
+  "enterprise": "Devanand Automobiles (Motors) LLP",
+  "buildTime": "2026-07-27T14:40:00.000+05:30",
   "environment": "production",
-  "buildNumber": "73"
+  "buildNumber": "101"
 }

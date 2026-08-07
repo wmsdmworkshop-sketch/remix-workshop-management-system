@@ -40,7 +40,9 @@ import {
   Building,
   Smartphone,
   FileSpreadsheet,
-  Server
+  Server,
+  Terminal,
+  Activity
 } from "lucide-react";
 import UserManagement from "./components/UserManagement";
 import { 
@@ -51,7 +53,6 @@ import {
   TechnicianProfilePanel 
 } from "./components/RoleSpecialPanels";
 
-import GateEntryManager from "./components/GateEntryManager";
 import PartsWarrantyManager from "./components/PartsWarrantyManager";
 import CashierManager from "./components/CashierManager";
 import FunnyLoader from "./components/FunnyLoader";
@@ -71,6 +72,7 @@ import CustomerExperiencePlatform from "./components/CustomerExperiencePlatform"
 import MobilePlatformWorkspace from "./components/MobilePlatformWorkspace";
 import PowerBiAnalytics from "./components/PowerBiAnalytics";
 import SystemHardeningMetrics from "./components/SystemHardeningMetrics";
+import SecurityWorkspace from "./components/SecurityWorkspace";
 import { 
   Employee, 
   Bay, 
@@ -95,6 +97,8 @@ import EmployeeDirectory from "./components/EmployeeDirectory";
 import ProductivityDashboard from "./components/ProductivityDashboard";
 import ActiveBayTatMonitor from "./components/ActiveBayTatMonitor";
 import DmsImporter from "./components/DmsImporter";
+import EnterpriseMasterDataHub from "./components/EnterpriseMasterDataHub";
+import AppShell from "./components/AppShell";
 import GoogleIntegration from "./components/GoogleIntegration";
 import GeminiAssistant from "./components/GeminiAssistant";
 import AuthScreen from "./components/AuthScreen";
@@ -103,11 +107,24 @@ import CpscCertificationPanel from "./components/CpscCertificationPanel";
 import AttendanceShiftLog from "./components/AttendanceShiftLog";
 import OvertimeEmployeeDashboard from "./components/OvertimeEmployeeDashboard";
 import OvertimeApprovalPortal from "./components/OvertimeApprovalPortal";
-import DmsImporterConsolidated from "./components/dms-import"; // dead import kept for type reference only — not rendered
 import QuerySearch from "./components/query";
-import BillingExit from "./components/billing-exit";
 import BreakdownManagement from "./components/BreakdownManagement";
 import ExceptionReport from "./components/ExceptionReport";
+
+const GateEntryManager = React.lazy(() => import("./components/GateEntryManager"));
+const BillingExit = React.lazy(() => import("./components/billing-exit"));
+
+import DealerSetupWizard from "./components/DealerSetupWizard";
+import UserOnboardingTour from "./components/UserOnboardingTour";
+import PilotControlRoom from "./components/PilotControlRoom";
+import StaffFeedbackWidget from "./components/StaffFeedbackWidget";
+import BusinessImpactTracker from "./components/BusinessImpactTracker";
+import LiveSupportPanel from "./components/LiveSupportPanel";
+import DevOpsDashboard from "./components/DevOpsDashboard";
+import OperationsCommandCenter from "./components/OperationsCommandCenter";
+import PlatformControlCenter from "./components/platform/PlatformControlCenter";
+import { PartsInChargeWorkspace } from "./components/PartsInChargeWorkspace";
+import { WarrantyClerkWorkspace } from "./components/WarrantyClerkWorkspace";
 
 function darkenColor(hex: string, percent: number): string {
   let num = parseInt(hex.replace("#", ""), 16),
@@ -123,13 +140,67 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [lookupQuery, setLookupQuery] = useState<string>("");
 
+  // Authentication State (Declared first so useEffect hooks can read user safely)
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+      const saved = localStorage.getItem("wms_user");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [token, setToken] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("wms_token");
+    } catch {
+      return null;
+    }
+  });
+  const [needsAuth, setNeedsAuth] = useState(() => {
+    try {
+      return !localStorage.getItem("wms_user");
+    } catch {
+      return true;
+    }
+  });
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [userPermissions, setUserPermissions] = useState<any[]>([]);
+
+  // Production hardening tab access guard
+  useEffect(() => {
+    const isRc1 = import.meta.env.VITE_WORKFORCE_PROFILE === "rc1";
+    const isAdminOrDev = user?.role && ["admin", "developer", "dealer_principal", "gm_service", "workshop_manager"].includes(user.role);
+    if (isRc1 && !isAdminOrDev) {
+      const excludedTabs = [
+        "breakdown",
+        "customer-portal",
+        "assistant",
+        "devops-dashboard",
+        "operations-console",
+        "setup-wizard",
+        "pilot-control-room",
+        "roi-tracker",
+        "live-support",
+        "system-hardening",
+        "mobile-platform",
+        "certification"
+      ];
+      if (excludedTabs.includes(activeTab)) {
+        console.warn(`[SECURITY] Access to blocked tab '${activeTab}' prevented under RC1 profile.`);
+        setActiveTab("dashboard");
+      }
+    }
+  }, [activeTab, user]);
+
+
   // --- Toast notification system ---
   const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: "success" | "error" | "info" }>>([]);
   let toastCounter = 0;
   const showToast = (message: string, type: "success" | "error" | "info" = "info") => {
     const id = ++toastCounter;
     setToasts(prev => [...prev, { id, message, type }]);
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+    const duration = type === "error" ? 8000 : 4000;
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
   };
 
   // UX Settings & Brand Customization states
@@ -183,31 +254,7 @@ export default function App() {
     setActiveTab("vehicle-lookup");
   };
 
-  // Authentication State
-  const [user, setUser] = useState<User | null>(() => {
-    try {
-      const saved = localStorage.getItem("wms_user");
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
-  const [token, setToken] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem("wms_token");
-    } catch {
-      return null;
-    }
-  });
-  const [needsAuth, setNeedsAuth] = useState(() => {
-    try {
-      return !localStorage.getItem("wms_user");
-    } catch {
-      return true;
-    }
-  });
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [userPermissions, setUserPermissions] = useState<any[]>([]);
+  // TAB MODULE MAPPING for Role-Based Access Control
 
   const TAB_MODULE_MAPPING: Record<string, string> = {
     dashboard: "Dashboard",
@@ -227,6 +274,7 @@ export default function App() {
     "cashier-workspace": "Billing",
     "billing-exit": "Billing",
     "dms-import": "DMS Import",
+    "master-data-hub": "User Management",
     employees: "User Management",
     users: "User Management",
     breakdown: "Breakdowns",
@@ -269,6 +317,8 @@ export default function App() {
 
   const ROLE_TABS: Record<string, Array<{ id: string; label: string; icon: any }>> = {
     developer: [
+      { id: "devops-dashboard", label: "DevOps Console", icon: Terminal },
+      { id: "operations-console", label: "Operations Cockpit", icon: Activity },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
@@ -277,6 +327,7 @@ export default function App() {
       { id: "parts-command", label: "Parts Command", icon: Package },
       { id: "billing-workspace", label: "Billing Workspace", icon: FileText },
       { id: "cashier-workspace", label: "Cashier Desk", icon: DollarSign },
+      { id: "security-workspace", label: "Security Gate Out", icon: ShieldAlert },
       { id: "delivery-workspace", label: "Vehicle Delivery", icon: Truck },
       { id: "gm-command", label: "GM Command", icon: Building },
       { id: "dealer-principal-cockpit", label: "Dealer Principal", icon: Sparkles },
@@ -291,6 +342,8 @@ export default function App() {
       { id: "exception-report", label: "Exceptions", icon: AlertOctagon },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
+      { id: "parts-incharge-workspace", label: "Parts Desk (Mobile)", icon: Package },
+      { id: "warranty-clerk-workspace", label: "Warranty Desk (Mobile)", icon: ShieldAlert },
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
       { id: "query", label: "Multimedia Query", icon: HelpCircle },
       { id: "jobs", label: "Job Cards", icon: Wrench },
@@ -300,11 +353,24 @@ export default function App() {
       { id: "certification", label: "CPSC Certification", icon: Shield },
       { id: "attendance", label: "Attendance", icon: ClipboardCheck },
       { id: "dms-import", label: "DMS Import", icon: FileDown },
+      { id: "master-data-hub", label: "Master Data Hub", icon: Database },
       { id: "users", label: "User Management", icon: ShieldAlert },
       { id: "google", label: "Google Workspace", icon: Share2 },
       { id: "assistant", label: "Gemini Copilot", icon: Sparkles },
+      { id: "setup-wizard", label: "Setup Wizard", icon: Building },
+      { id: "pilot-control-room", label: "Pilot Control Room", icon: Activity },
+      { id: "roi-tracker", label: "Business ROI Tracker", icon: TrendingUp },
+      { id: "live-support", label: "Live Support Desk", icon: ShieldAlert },
+      { id: "integration-monitor", label: "Integration Monitor", icon: Activity },
+      { id: "external-systems", label: "External Systems", icon: Server },
+      { id: "sync-queue", label: "Sync Queue", icon: Clock },
+      { id: "api-logs", label: "API Logs", icon: FileText },
+      { id: "health-dashboard", label: "Health Dashboard", icon: Activity },
+      { id: "integration-config", label: "Platform Config", icon: Settings },
     ],
     admin: [
+      { id: "operations-console", label: "Operations Cockpit", icon: Activity },
+      { id: "devops-dashboard", label: "DevOps Console", icon: Terminal },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
@@ -313,6 +379,7 @@ export default function App() {
       { id: "parts-command", label: "Parts Command", icon: Package },
       { id: "billing-workspace", label: "Billing Workspace", icon: FileText },
       { id: "cashier-workspace", label: "Cashier Desk", icon: DollarSign },
+      { id: "security-workspace", label: "Security Gate Out", icon: ShieldAlert },
       { id: "delivery-workspace", label: "Vehicle Delivery", icon: Truck },
       { id: "gm-command", label: "GM Command", icon: Building },
       { id: "dealer-principal-cockpit", label: "Dealer Principal", icon: Sparkles },
@@ -327,6 +394,8 @@ export default function App() {
       { id: "exception-report", label: "Exceptions", icon: AlertOctagon },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
+      { id: "parts-incharge-workspace", label: "Parts Desk (Mobile)", icon: Package },
+      { id: "warranty-clerk-workspace", label: "Warranty Desk (Mobile)", icon: ShieldAlert },
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
       { id: "query", label: "Multimedia Query", icon: HelpCircle },
       { id: "jobs", label: "Job Cards", icon: Wrench },
@@ -336,41 +405,58 @@ export default function App() {
       { id: "certification", label: "CPSC Certification", icon: Shield },
       { id: "attendance", label: "Attendance", icon: ClipboardCheck },
       { id: "dms-import", label: "DMS Import", icon: FileDown },
+      { id: "master-data-hub", label: "Master Data Hub", icon: Database },
       { id: "users", label: "User Management", icon: ShieldAlert },
       { id: "google", label: "Google Workspace", icon: Share2 },
       { id: "assistant", label: "Gemini Copilot", icon: Sparkles },
+      { id: "setup-wizard", label: "Setup Wizard", icon: Building },
+      { id: "pilot-control-room", label: "Pilot Control Room", icon: Activity },
+      { id: "roi-tracker", label: "Business ROI Tracker", icon: TrendingUp },
+      { id: "live-support", label: "Live Support Desk", icon: ShieldAlert },
+      { id: "integration-monitor", label: "Integration Monitor", icon: Activity },
+      { id: "external-systems", label: "External Systems", icon: Server },
+      { id: "sync-queue", label: "Sync Queue", icon: Clock },
+      { id: "api-logs", label: "API Logs", icon: FileText },
+      { id: "health-dashboard", label: "Health Dashboard", icon: Activity },
+      { id: "integration-config", label: "Platform Config", icon: Settings },
     ],
     billing: [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "revenue", label: "Revenue Split", icon: DollarSign },
       { id: "dms-import", label: "DMS Import", icon: FileDown },
     ],
     service_advisor: [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "jobs", label: "Job Cards", icon: Wrench },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
     ],
     floor_supervisor: [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "jobs", label: "Job Cards", icon: Wrench },
       { id: "productivity", label: "Productivity", icon: TrendingUp },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
       { id: "employees", label: "Employee Directory", icon: Users },
-      { id: "certification", label: "CPSC Certification", icon: Shield },
       { id: "attendance", label: "Attendance", icon: ClipboardCheck },
     ],
     warranty_advisor: [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "jobs", label: "Job Cards", icon: Wrench },
+    ],
+    warranty: [
+      { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
+      { id: "warranty-clerk-workspace", label: "Warranty Desk (Mobile)", icon: ShieldAlert },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "jobs", label: "Job Cards", icon: Wrench },
     ],
     floor_incharge: [
+      { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "jobs", label: "Job Cards", icon: Wrench },
@@ -381,9 +467,10 @@ export default function App() {
       { id: "attendance", label: "Attendance", icon: ClipboardCheck },
     ],
     workshop_manager: [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
       { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
+      { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
+      { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
@@ -398,15 +485,32 @@ export default function App() {
       { id: "revenue", label: "Revenue Split", icon: DollarSign },
     ],
     gm_service: [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "gm-command", label: "GM Command", icon: Building },
       { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
+      { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
       { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
     ],
-    // Removed first duplicate dealer_principal block
     spares_manager: [
+      { id: "parts-incharge-workspace", label: "Parts Desk (Mobile)", icon: Package },
+      { id: "parts-command", label: "Parts Command", icon: Package },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
+    ],
+    parts: [
+      { id: "parts-incharge-workspace", label: "Parts Desk (Mobile)", icon: Package },
+      { id: "parts-command", label: "Parts Command", icon: Package },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
+    ],
+    parts_incharge: [
+      { id: "parts-incharge-workspace", label: "Parts Desk (Mobile)", icon: Package },
+      { id: "jobs", label: "Job Cards", icon: Wrench },
+    ],
+    warranty_clerk: [
+      { id: "warranty-clerk-workspace", label: "Warranty Desk (Mobile)", icon: ShieldAlert },
+      { id: "jobs", label: "Job Cards", icon: Wrench },
     ],
     dkam: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -414,6 +518,7 @@ export default function App() {
       { id: "productivity", label: "Productivity", icon: TrendingUp },
     ],
     cashier: [
+      { id: "cashier-workspace", label: "Cashier Desk", icon: DollarSign },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
       { id: "revenue", label: "Revenue Split", icon: DollarSign },
@@ -433,10 +538,11 @@ export default function App() {
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
     ],
     tools_incharge: [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     ],
     security_agent: [
+      { id: "security-workspace", label: "Security Workspace", icon: ShieldAlert },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
     ],
@@ -447,6 +553,8 @@ export default function App() {
       { id: "attendance", label: "Attendance", icon: ClipboardCheck },
     ],
     dealer_principal: [
+      { id: "dealer-principal-cockpit", label: "Dealer Principal", icon: Sparkles },
+      { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "jobs", label: "Job Cards", icon: Wrench },
@@ -458,20 +566,6 @@ export default function App() {
       { id: "users", label: "User Management", icon: ShieldAlert },
       { id: "revenue", label: "Revenue Split", icon: DollarSign },
       { id: "assistant", label: "Gemini Copilot", icon: Sparkles },
-    ],
-    service_manager: [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { id: "vehicle-lookup", label: "Vehicle History", icon: History },
-      { id: "gate-entry", label: "Gate Entry", icon: Truck },
-      { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
-      { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
-      { id: "jobs", label: "Job Cards", icon: Wrench },
-      { id: "productivity", label: "Productivity", icon: TrendingUp },
-      { id: "bay-tat", label: "Bay Monitor", icon: Clock },
-      { id: "employees", label: "Employee Directory", icon: Users },
-      { id: "certification", label: "CPSC Certification", icon: Shield },
-      { id: "attendance", label: "Attendance", icon: ClipboardCheck },
-      { id: "dms-import", label: "DMS Import", icon: FileDown },
     ],
     supervisor: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -660,7 +754,8 @@ export default function App() {
 
       const jobsData = await jobRes.json();
       console.log("/api/job-cards", jobsData);
-      setJobCards(jobsData && Array.isArray(jobsData.jobCards) ? jobsData.jobCards : []);
+      const rawJobs = jobsData ? (jobsData.jobCards || jobsData.data || (Array.isArray(jobsData) ? jobsData : [])) : [];
+      setJobCards(Array.isArray(rawJobs) ? rawJobs : []);
       setAllocations(jobsData && Array.isArray(jobsData.technicianMaps) ? jobsData.technicianMaps : []);
       setProjectedRevenue(jobsData ? jobsData.projectedRevenue || 0 : 0);
       setGeneratedRevenue(jobsData ? jobsData.generatedRevenue || 0 : 0);
@@ -1147,6 +1242,9 @@ export default function App() {
           setUser(currentUser);
           setToken(currentToken);
           setNeedsAuth(false);
+          
+          // Removed DealerSetupWizard intercept as per GA Release requirements
+          
           // Pass token directly — React state is async so `token` is still null here
           fetchAllData(currentToken || undefined);
         }} 
@@ -1155,303 +1253,46 @@ export default function App() {
   }
 
   const baseTabs = ((user && ROLE_TABS[user.role]) || ROLE_TABS["reception"] || []).filter(
-    t => (t.id !== "assistant" || aiModeEnabled) && isTabPermitted(t.id)
+    t => {
+      if (t.id === "assistant" && !aiModeEnabled) return false;
+      const isRc1 = import.meta.env.VITE_WORKFORCE_PROFILE === "rc1";
+      if (isRc1) {
+        const excludedTabs = [
+          "breakdown",
+          "customer-portal",
+          "assistant",
+          "devops-dashboard",
+          "operations-console",
+          "setup-wizard",
+          "pilot-control-room",
+          "roi-tracker",
+          "live-support",
+          "system-hardening",
+          "mobile-platform",
+          "certification"
+        ];
+        if (excludedTabs.includes(t.id)) return false;
+      }
+      return isTabPermitted(t.id);
+    }
   );
+
   const permittedTabs = [
     ...baseTabs,
     { id: "logout-deep-link", label: "Logout", icon: LogOut }
   ];
 
   return (
-    <div className="min-h-screen bg-[#0B1220] flex flex-col font-sans text-slate-100">
-      
-      {/* Sidebar Navigation - Desktop */}
-      <aside className="hidden md:flex flex-col h-screen fixed left-0 top-0 w-64 bg-[#111827]/90 text-slate-400 p-5 shrink-0 justify-between z-40 shadow-2xl border-r border-slate-800/80 backdrop-blur-md">
-        <div className="flex flex-col flex-1 min-h-0 space-y-4">
-          <div className="flex items-center gap-3 border-b border-slate-800/80 pb-4 shrink-0">
-            <div className="w-8 h-8 bg-gradient-to-br from-[#2563EB] to-[#06B6D4] rounded-lg flex items-center justify-center font-black text-xl text-white shadow-lg shadow-[#2563EB]/20">
-              W
-            </div>
-            <div>
-              <h2 className="font-extrabold text-white text-sm tracking-wide uppercase">WORKFORCE 1.1</h2>
-              <p className="text-[9px] text-[#06B6D4] font-bold uppercase tracking-widest leading-none mt-0.5">Sync Engine</p>
-            </div>
-          </div>
+    <AppShell
+      user={user}
+      activeTab={activeTab}
+      permittedTabs={permittedTabs}
+      setActiveTab={setActiveTab}
+      handleLogout={handleLogout}
+      aiModeEnabled={aiModeEnabled}
+      onToggleAiMode={() => setAiModeEnabled(prev => !prev)}
+    >
 
-          <nav className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar min-h-0">
-            {permittedTabs.map((tab) => {
-              const TabIcon = tab.icon;
-              const activeJobCount = tab.id === "jobs" ? jobCards.filter(j => !j.gate_out_time && !['Closed', 'Cancelled'].includes(j.status)).length : 0;
-              return (
-                <button 
-                  key={tab.id}
-                  onClick={() => {
-                    if (tab.id === "logout-deep-link") {
-                      handleLogout();
-                    } else {
-                      setActiveTab(tab.id);
-                      setDashboardSelectedJob(null);
-                    }
-                  }}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all border ${
-                    activeTab === tab.id 
-                      ? "bg-gradient-to-r from-[#2563EB]/20 to-[#06B6D4]/5 text-white border-[#2563EB]/35 shadow-lg shadow-[#2563EB]/5" 
-                      : "bg-transparent border-transparent hover:bg-slate-800/50 hover:text-white"
-                  }`}
-                >
-                  <TabIcon className={`h-4.5 w-4.5 ${activeTab === tab.id ? "text-[#06B6D4]" : ""}`} />
-                  <span className="flex-1 text-left">{tab.label}</span>
-                  {tab.id === "jobs" && activeJobCount > 0 && (
-                    <span className="ml-auto bg-gradient-to-r from-[#2563EB] to-[#06B6D4] text-white text-[9px] font-extrabold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 shadow-lg shadow-[#2563EB]/30 animate-pulse">
-                      {activeJobCount}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-          
-          {(isAdmin || isDeveloper) && (
-            <div className="pt-3 border-t border-slate-800/80 space-y-2 shrink-0">
-              <button
-                onClick={handleReloadDatabase}
-                disabled={isReloading}
-                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
-                  reloadSuccess
-                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                    : "bg-slate-900 text-slate-300 border-slate-800 hover:bg-slate-800/80 hover:text-white"
-                } disabled:opacity-50 cursor-pointer`}
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${isReloading ? "animate-spin" : ""}`} />
-                <span>{isReloading ? "Reloading..." : reloadSuccess ? "Reload Success!" : "Reload Database"}</span>
-              </button>
-
-              <button
-                onClick={handleClearJobCards}
-                disabled={isClearing}
-                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
-                  clearSuccess
-                    ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                    : "bg-rose-950/25 hover:bg-rose-900/30 text-rose-300 border-rose-500/25 hover:border-rose-500/40"
-                } disabled:opacity-50 cursor-pointer`}
-              >
-                <Database className={`h-3.5 w-3.5 ${isClearing ? "animate-pulse" : ""}`} />
-                <span>{isClearing ? "Cleaning..." : clearSuccess ? "Clean Success!" : "Clean Job Cards"}</span>
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* User context footer */}
-        <div className="border-t border-slate-800/80 pt-4 flex flex-col gap-3">
-          <button
-            onClick={() => setAiModeEnabled(prev => !prev)}
-            className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
-              aiModeEnabled
-                ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/15"
-                : "bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800/80"
-            }`}
-          >
-            <div className="flex items-center gap-1.5">
-              <Sparkles className={`h-3.5 w-3.5 ${aiModeEnabled ? "text-indigo-400 animate-pulse" : "text-slate-500"}`} />
-              <span>AI Mode</span>
-            </div>
-            <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
-              aiModeEnabled ? "bg-indigo-500/20 text-indigo-300" : "bg-slate-800 text-slate-500"
-            }`}>
-              {aiModeEnabled ? "Active" : "Off"}
-            </span>
-          </button>
-
-          <div className="flex items-center space-x-3 px-3 py-2 mb-1 bg-slate-950/60 border border-slate-800/80 rounded-xl">
-            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-            <span className="text-[9px] text-[#06B6D4] font-bold uppercase tracking-widest">SYSTEM ONLINE • v1.1</span>
-          </div>
-
-          {user ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-xs font-semibold">
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-slate-900 flex items-center justify-center font-bold text-[#06B6D4] uppercase border border-slate-800 shrink-0">
-                    {(user.username || "").slice(0, 2)}
-                  </div>
-                  <div className="truncate max-w-[120px]">
-                    <p className="text-slate-200 truncate font-bold text-xs">{user.full_name || ""}</p>
-                    <p className="text-[9px] text-[#06B6D4] font-bold uppercase tracking-wider leading-none mt-0.5">{(user.role || "").split("_").join(" ")}</p>
-                    <p className="text-[9px] text-slate-500 truncate leading-none mt-0.5">@{user.username || ""}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={() => setShowSettingsDrawer(true)} 
-                    className="text-slate-400 hover:text-white transition-colors cursor-pointer"
-                    title="UX Theme Settings"
-                  >
-                    <Settings className="h-4 w-4" />
-                  </button>
-                  <button onClick={handleLogout} className="text-slate-400 hover:text-white transition-colors cursor-pointer">
-                    <LogOut className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Dev Role Override Dropdown */}
-              {user.username === "developer" && (
-                <div className="pt-2.5 border-t border-slate-700/40 space-y-1">
-                  <label className="text-[8px] font-extrabold text-slate-500 uppercase tracking-widest block">Dev Role Override</label>
-                  <select
-                    value={user.role || ""}
-                    onChange={(e) => {
-                      const newRole = e.target.value;
-                      const updatedUser = { ...user, role: newRole };
-                      setUser(updatedUser);
-                      localStorage.setItem("wms_user", JSON.stringify(updatedUser));
-                      const permitted = ROLE_TABS[newRole] || [];
-                      if (permitted.length > 0) {
-                        setActiveTab(permitted[0].id);
-                      }
-                    }}
-                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[11px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-orange-500 font-bold cursor-pointer"
-                  >
-                    <option value="developer">Developer</option>
-                    <option value="admin">Admin</option>
-                    <option value="dealer_principal">Dealer Principal</option>
-                    <option value="workshop_manager">Workshop Manager</option>
-                    <option value="billing">Billing (Accounts)</option>
-                    <option value="cashier">Cashier</option>
-                    <option value="service_advisor">Service Advisor</option>
-                    <option value="floor_supervisor">Floor Supervisor</option>
-                    <option value="floor_incharge">Floor Incharge</option>
-                    <option value="warranty_advisor">Warranty Advisor</option>
-                    <option value="warranty_manager">Warranty Manager</option>
-                    <option value="spares_manager">Spares Manager</option>
-                    <option value="dkam">D-KAM</option>
-                    <option value="reception">Receptionist</option>
-                    <option value="tools_incharge">Tools Incharge</option>
-                    <option value="security_agent">Security Agent</option>
-                    <option value="breakdown">Breakdown Personnel</option>
-                    <option value="service_manager">Service Manager</option>
-                    <option value="supervisor">Supervisor</option>
-                    <option value="accounts">Accounts fallback</option>
-                    <option value="gate_personnel">Gate Personnel</option>
-                    <option value="technician">Technician</option>
-                  </select>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-xs text-slate-400">Not Signed In</div>
-          )}
-        </div>
-      </aside>
-
-      {/* Header - Mobile */}
-      <header className="md:hidden bg-[#1e293b] text-white p-4 flex items-center justify-between border-b border-slate-700/50">
-        <div className="flex items-center gap-2">
-          {activeTab !== "dashboard" && (
-            <button 
-              onClick={() => setActiveTab("dashboard")}
-              className="p-1 mr-1 text-slate-300 hover:text-white transition-colors cursor-pointer"
-              title="Return to Dashboard"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-          )}
-          <div className="w-6 h-6 bg-brand rounded flex items-center justify-center font-bold text-sm text-white">W</div>
-          <h2 className="font-bold text-sm uppercase tracking-tight">WMS Workshop</h2>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setAiModeEnabled(prev => !prev)}
-            className={`p-1 rounded-lg border transition-all cursor-pointer ${
-              aiModeEnabled
-                ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/35 hover:bg-indigo-500/15"
-                : "bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800/80"
-            }`}
-            title={`AI Mode: ${aiModeEnabled ? "Active" : "Disabled"}`}
-          >
-            <Sparkles className={`h-4 w-4 ${aiModeEnabled ? "text-indigo-400 animate-pulse" : "text-slate-500"}`} />
-          </button>
-          <button 
-            onClick={() => setShowSettingsDrawer(true)} 
-            className="text-slate-300 hover:text-white transition-colors cursor-pointer"
-            title="UX Theme Settings"
-          >
-            <Settings className="h-5 w-5" />
-          </button>
-          <button 
-            onClick={handleLogout} 
-            className="text-slate-300 hover:text-white transition-colors cursor-pointer"
-            title="Log Out"
-          >
-            <LogOut className="h-5 w-5" />
-          </button>
-          {!showBottomNav && (
-            <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-            </button>
-          )}
-        </div>
-      </header>
-
-      {/* Mobile Menu Overlay */}
-      {mobileMenuOpen && (
-        <div className="md:hidden bg-[#1e293b] text-slate-400 absolute top-14 left-0 w-full z-40 border-b border-slate-700/50 shadow-xl flex flex-col p-4 space-y-2">
-          {permittedTabs.map((tab) => (
-            <button 
-              key={tab.id}
-              onClick={() => {
-                if (tab.id === "logout-deep-link") {
-                  handleLogout();
-                } else {
-                  setActiveTab(tab.id);
-                  setMobileMenuOpen(false);
-                  setDashboardSelectedJob(null);
-                }
-              }}
-              className={`flex items-center gap-3 px-3 py-2 rounded-md text-xs font-bold transition-all text-left ${
-                activeTab === tab.id ? "bg-slate-800 text-white" : "hover:bg-slate-800/50 text-slate-300"
-              }`}
-            >
-              <span>{tab.label}</span>
-            </button>
-          ))}
-
-          {(isAdmin || isDeveloper) && (
-            <div className="pt-2 border-t border-slate-700/50 space-y-2">
-              <button
-                onClick={() => { handleReloadDatabase(); setMobileMenuOpen(false); }}
-                disabled={isReloading}
-                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-bold border ${
-                  reloadSuccess
-                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                    : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white"
-                } disabled:opacity-50`}
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${isReloading ? "animate-spin" : ""}`} />
-                <span>{isReloading ? "Reloading..." : reloadSuccess ? "Reload Success!" : "Reload Database"}</span>
-              </button>
-
-              <button
-                onClick={() => { handleClearJobCards(); setMobileMenuOpen(false); }}
-                disabled={isClearing}
-                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-bold border ${
-                  clearSuccess
-                    ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                    : "bg-rose-950/25 hover:bg-rose-900/30 text-rose-300 border-rose-500/25 hover:border-rose-500/40"
-                } disabled:opacity-50`}
-              >
-                <Database className={`h-3.5 w-3.5 ${isClearing ? "animate-pulse" : ""}`} />
-                <span>{isClearing ? "Cleaning..." : clearSuccess ? "Clean Success!" : "Clean Job Cards"}</span>
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Primary Main Stage */}
-      <main className={`md:ml-64 flex-1 p-4 md:p-6 w-auto max-w-full min-h-screen overflow-y-auto overflow-x-hidden ${showBottomNav ? "pb-24" : ""}`}>
-        <div className="max-w-7xl mx-auto w-full">
           {activeTab === "dashboard" && (
             <Dashboard 
               jobCards={jobCards}
@@ -1569,13 +1410,27 @@ export default function App() {
             />
           )}
 
+          {activeTab === "master-data-hub" && (
+            <EnterpriseMasterDataHub />
+          )}
+
+          {["integration-monitor", "external-systems", "sync-queue", "api-logs", "health-dashboard", "integration-config"].includes(activeTab) && (
+            <PlatformControlCenter initialTab={activeTab} />
+          )}
+
 
           {activeTab === "query" && (
             <QuerySearch aiModeEnabled={aiModeEnabled} />
           )}
 
-          {activeTab === "billing-exit" && (
-            <BillingExit />
+           {activeTab === "billing-exit" && (
+            <React.Suspense fallback={<FunnyLoader message="Loading checkout portal..." />}>
+              <BillingExit 
+                jobCards={jobCards}
+                onUpdateJob={handleUpdateJob}
+                onRefresh={fetchAllData}
+              />
+            </React.Suspense>
           )}
 
           {activeTab === "google" && (
@@ -1785,20 +1640,68 @@ export default function App() {
             />
           )}
 
-          {activeTab === "system-hardening" && (
+           {activeTab === "system-hardening" && (
             <SystemHardeningMetrics 
               onRefresh={fetchAllData}
             />
           )}
 
-          {activeTab === "gate-entry" && (
-            <GateEntryManager 
-              bays={bays} 
-              jobCards={jobCards} 
-              onCreateJob={handleCreateJob} 
-              onUpdateJob={handleUpdateJob}
-              onRefresh={fetchAllData} 
+          {activeTab === "setup-wizard" && (
+            <DealerSetupWizard 
+              onSetupComplete={fetchAllData}
+              showToast={showToast}
             />
+          )}
+
+          {activeTab === "pilot-control-room" && (
+            <PilotControlRoom />
+          )}
+
+          {activeTab === "roi-tracker" && (
+            <BusinessImpactTracker />
+          )}
+
+          {activeTab === "live-support" && (
+            <LiveSupportPanel 
+              showToast={showToast}
+            />
+          )}
+
+          {activeTab === "devops-dashboard" && (
+            <DevOpsDashboard />
+          )}
+
+          {activeTab === "operations-console" && (
+            <OperationsCommandCenter />
+          )}
+
+          {activeTab === "gate-entry" && (
+            <React.Suspense fallback={<FunnyLoader message="Loading gate registry..." />}>
+              <GateEntryManager 
+                bays={bays} 
+                jobCards={jobCards} 
+                onCreateJob={handleCreateJob} 
+                onUpdateJob={handleUpdateJob}
+                onRefresh={fetchAllData} 
+              />
+            </React.Suspense>
+          )}
+
+          {activeTab === "security-workspace" && (
+            <SecurityWorkspace 
+              jobCards={jobCards}
+              onRefresh={fetchAllData}
+              onUpdateJob={handleUpdateJob}
+              currentUser={user}
+            />
+          )}
+
+          { activeTab === "parts-incharge-workspace" && (
+            <PartsInChargeWorkspace currentUser={user} />
+          )}
+
+          { activeTab === "warranty-clerk-workspace" && (
+            <WarrantyClerkWorkspace currentUser={user} />
           )}
 
           {activeTab === "parts-warranty" && (
@@ -1830,8 +1733,6 @@ export default function App() {
           {activeTab === "tech-profile" && (
             <TechnicianProfilePanel employees={employees} employeeId={employeeId} />
           )}
-        </div>
-      </main>
 
       {showClearConfirmModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
@@ -2124,12 +2025,27 @@ export default function App() {
               ) : (
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-blue-400" />
               )}
-              <span className="flex-1 text-xs leading-relaxed">{toast.message}</span>
+              <span className="flex-1 text-xs leading-relaxed whitespace-pre-line">{toast.message}</span>
             </div>
           ))}
         </div>
       )}
 
-    </div>
+      {user && (
+        <>
+          <UserOnboardingTour 
+            employeeId={employeeId || 22} 
+            role={userRole} 
+            showToast={showToast} 
+          />
+          <StaffFeedbackWidget 
+            employeeId={employeeId || 22} 
+            role={userRole} 
+            activeScreen={activeTab} 
+            showToast={showToast} 
+          />
+        </>
+      )}
+    </AppShell>
   );
 }

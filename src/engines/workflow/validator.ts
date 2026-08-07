@@ -5,6 +5,7 @@
 
 import { WORKFLOW_CONFIG } from "./config";
 import { LogPayload } from "./logger";
+import { PermissionEngine } from "../../core/permission-engine";
 
 export interface ValidationResult {
   isValid: boolean;
@@ -16,12 +17,12 @@ export class WorkflowValidator {
   /**
    * Evaluates if a transition is valid under standard rules.
    */
-  public static validate(
+  public static async validate(
     currentState: string,
     targetState: string,
     userRole: string,
     logContext: LogPayload
-  ): ValidationResult {
+  ): Promise<ValidationResult> {
     // 1. Fetch source state config
     const sourceConfig = WORKFLOW_CONFIG[currentState];
     if (!sourceConfig) {
@@ -50,12 +51,12 @@ export class WorkflowValidator {
       };
     }
 
-    // 4. Validate user permissions role
-    const isRoleAllowed = targetConfig.allowedRoles.includes(userRole);
-    if (!isRoleAllowed) {
+    // 4. Validate user permissions via PermissionEngine
+    const isAuthorized = await PermissionEngine.can(userRole, targetConfig.requiredPermission);
+    if (!isAuthorized) {
       return {
         isValid: false,
-        reason: `User role "${userRole}" is not authorized to transition into "${targetState}". Allowed: ${targetConfig.allowedRoles.join(", ")}`,
+        reason: `User role "${userRole}" is not authorized to transition into "${targetState}" (requires ${targetConfig.requiredPermission}).`,
         isOverrideRequired: true, // Role bypass requires supervisor override
       };
     }

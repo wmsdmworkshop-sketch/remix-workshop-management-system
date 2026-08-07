@@ -1,0 +1,4295 @@
+{
+  "id": "74d49955-33b1-4cfb-a4ba-86070e2963de",
+  "prevId": "b945f421-a80c-4a7a-be12-b0be6bd3645f",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.alert_configs": {
+      "name": "alert_configs",
+      "schema": "",
+      "columns": {
+        "alert_config_id": {
+          "name": "alert_config_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "alert_code": {
+          "name": "alert_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "alert_name": {
+          "name": "alert_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "alert_category": {
+          "name": "alert_category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trigger_condition": {
+          "name": "trigger_condition",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "threshold_value": {
+          "name": "threshold_value",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "threshold_unit": {
+          "name": "threshold_unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "severity": {
+          "name": "severity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.alert_logs": {
+      "name": "alert_logs",
+      "schema": "",
+      "columns": {
+        "alert_id": {
+          "name": "alert_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "alert_config_id": {
+          "name": "alert_config_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_type": {
+          "name": "entity_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "alert_message": {
+          "name": "alert_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "severity": {
+          "name": "severity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "acknowledged_by": {
+          "name": "acknowledged_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "acknowledged_at": {
+          "name": "acknowledged_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.approval_matrices": {
+      "name": "approval_matrices",
+      "schema": "",
+      "columns": {
+        "matrix_id": {
+          "name": "matrix_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "module_name": {
+          "name": "module_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ot_category": {
+          "name": "ot_category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workshop_id": {
+          "name": "workshop_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role_name": {
+          "name": "role_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approval_level": {
+          "name": "approval_level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.bays": {
+      "name": "bays",
+      "schema": "",
+      "columns": {
+        "bay_id": {
+          "name": "bay_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "bay_code": {
+          "name": "bay_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bay_name": {
+          "name": "bay_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bay_type": {
+          "name": "bay_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.carry_forward_logs": {
+      "name": "carry_forward_logs",
+      "schema": "",
+      "columns": {
+        "cf_id": {
+          "name": "cf_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "job_id": {
+          "name": "job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cf_reason": {
+          "name": "cf_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "raised_by": {
+          "name": "raised_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approved_by": {
+          "name": "approved_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cf_status": {
+          "name": "cf_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "raised_at": {
+          "name": "raised_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actioned_at": {
+          "name": "actioned_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "canonical.customer_passports": {
+      "name": "customer_passports",
+      "schema": "canonical",
+      "columns": {
+        "customer_passport_id": {
+          "name": "customer_passport_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "lifecycle_state": {
+          "name": "lifecycle_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Active'"
+        },
+        "customer_name": {
+          "name": "customer_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "customer_type": {
+          "name": "customer_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Individual'"
+        },
+        "contact_phone": {
+          "name": "contact_phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contact_email": {
+          "name": "contact_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pan_number": {
+          "name": "pan_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gstin": {
+          "name": "gstin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "billing_address": {
+          "name": "billing_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "credit_limit": {
+          "name": "credit_limit",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0.00'"
+        },
+        "outstanding_amount": {
+          "name": "outstanding_amount",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0.00'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.dim_certifications": {
+      "name": "dim_certifications",
+      "schema": "",
+      "columns": {
+        "cert_id": {
+          "name": "cert_id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "certification_name": {
+          "name": "certification_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issuing_authority": {
+          "name": "issuing_authority",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "certified_on": {
+          "name": "certified_on",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valid_until": {
+          "name": "valid_until",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        }
+      },
+      "indexes": {
+        "idx_certs_employee": {
+          "name": "idx_certs_employee",
+          "columns": [
+            {
+              "expression": "employee_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.dms_import_batches": {
+      "name": "dms_import_batches",
+      "schema": "",
+      "columns": {
+        "batch_id": {
+          "name": "batch_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "imported_by": {
+          "name": "imported_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_name": {
+          "name": "file_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_rows": {
+          "name": "total_rows",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "matched_rows": {
+          "name": "matched_rows",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unmatched_rows": {
+          "name": "unmatched_rows",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "imported_at": {
+          "name": "imported_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.dms_import_rows": {
+      "name": "dms_import_rows",
+      "schema": "",
+      "columns": {
+        "row_id": {
+          "name": "row_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "batch_id": {
+          "name": "batch_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row_number": {
+          "name": "row_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vrn": {
+          "name": "vrn",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "job_date": {
+          "name": "job_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sr_type": {
+          "name": "sr_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "labour_amount": {
+          "name": "labour_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parts_amount": {
+          "name": "parts_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_amount": {
+          "name": "total_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "matched_job_id": {
+          "name": "matched_job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "match_status": {
+          "name": "match_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "conflict_reason": {
+          "name": "conflict_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_by": {
+          "name": "resolved_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "raw_data": {
+          "name": "raw_data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "canonical.driver_passports": {
+      "name": "driver_passports",
+      "schema": "canonical",
+      "columns": {
+        "driver_passport_id": {
+          "name": "driver_passport_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "lifecycle_state": {
+          "name": "lifecycle_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Active'"
+        },
+        "driver_name": {
+          "name": "driver_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "license_number": {
+          "name": "license_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "license_expiry": {
+          "name": "license_expiry",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mobile_no": {
+          "name": "mobile_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "emergency_contact": {
+          "name": "emergency_contact",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "medical_fitness_status": {
+          "name": "medical_fitness_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "safety_violations_count": {
+          "name": "safety_violations_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "canonical.employee_passports": {
+      "name": "employee_passports",
+      "schema": "canonical",
+      "columns": {
+        "employee_passport_id": {
+          "name": "employee_passport_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "lifecycle_state": {
+          "name": "lifecycle_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Candidate'"
+        },
+        "human_name": {
+          "name": "human_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "human_personal_details": {
+          "name": "human_personal_details",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "human_medical_fitness": {
+          "name": "human_medical_fitness",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "human_government_ids": {
+          "name": "human_government_ids",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "operational_role": {
+          "name": "operational_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "operational_workshop_id": {
+          "name": "operational_workshop_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "operational_competency_matrix": {
+          "name": "operational_competency_matrix",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "operational_reputation_score": {
+          "name": "operational_reputation_score",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'100.00'"
+        },
+        "digital_credentials": {
+          "name": "digital_credentials",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "digital_auth_tokens": {
+          "name": "digital_auth_tokens",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "digital_signature_cert": {
+          "name": "digital_signature_cert",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.employees": {
+      "name": "employees",
+      "schema": "",
+      "columns": {
+        "employee_id": {
+          "name": "employee_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "full_name": {
+          "name": "full_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "employee_code": {
+          "name": "employee_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "employee_grade": {
+          "name": "employee_grade",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "basic_salary": {
+          "name": "basic_salary",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mobile": {
+          "name": "mobile",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "allocated_revenue": {
+          "name": "allocated_revenue",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "target_revenue": {
+          "name": "target_revenue",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paid_pct": {
+          "name": "paid_pct",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tml_claim_pct": {
+          "name": "tml_claim_pct",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "department": {
+          "name": "department",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "workshop_id": {
+          "name": "workshop_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "shift_id": {
+          "name": "shift_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "joining_date": {
+          "name": "joining_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "profile_photo_url": {
+          "name": "profile_photo_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "face_embedding_reference": {
+          "name": "face_embedding_reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "record_status": {
+          "name": "record_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "canonical.fleet_passports": {
+      "name": "fleet_passports",
+      "schema": "canonical",
+      "columns": {
+        "fleet_passport_id": {
+          "name": "fleet_passport_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "lifecycle_state": {
+          "name": "lifecycle_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Active'"
+        },
+        "fleet_name": {
+          "name": "fleet_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fleet_owner_passport_id": {
+          "name": "fleet_owner_passport_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "operational_region": {
+          "name": "operational_region",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "total_vehicles": {
+          "name": "total_vehicles",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "amc_contract_reference": {
+          "name": "amc_contract_reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sla_priority_level": {
+          "name": "sla_priority_level",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'MEDIUM'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.fsb_master": {
+      "name": "fsb_master",
+      "schema": "",
+      "columns": {
+        "fsb_id": {
+          "name": "fsb_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "job_card_id": {
+          "name": "job_card_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fsb_status": {
+          "name": "fsb_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.gate_entries": {
+      "name": "gate_entries",
+      "schema": "",
+      "columns": {
+        "gate_id": {
+          "name": "gate_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "token_number": {
+          "name": "token_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vrn": {
+          "name": "vrn",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vehicle_model": {
+          "name": "vehicle_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chassis_number": {
+          "name": "chassis_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "km_reading": {
+          "name": "km_reading",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "driver_name": {
+          "name": "driver_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "driver_mobile": {
+          "name": "driver_mobile",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "driver_image": {
+          "name": "driver_image",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "waiting_time_mins": {
+          "name": "waiting_time_mins",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.job_cards": {
+      "name": "job_cards",
+      "schema": "",
+      "columns": {
+        "job_id": {
+          "name": "job_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "job_card_no": {
+          "name": "job_card_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vrn": {
+          "name": "vrn",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "customer_name": {
+          "name": "customer_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "customer_mobile": {
+          "name": "customer_mobile",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vehicle_make": {
+          "name": "vehicle_make",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vehicle_model": {
+          "name": "vehicle_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vehicle_year": {
+          "name": "vehicle_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "km_reading": {
+          "name": "km_reading",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sr_type_id": {
+          "name": "sr_type_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "job_description": {
+          "name": "job_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "priority": {
+          "name": "priority",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bay_id": {
+          "name": "bay_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "etd": {
+          "name": "etd",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "invoiced_at": {
+          "name": "invoiced_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "workshop_stage": {
+          "name": "workshop_stage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "l1_delay": {
+          "name": "l1_delay",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "l2_delay": {
+          "name": "l2_delay",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "l3_delay": {
+          "name": "l3_delay",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "l5_delay": {
+          "name": "l5_delay",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delay_notes": {
+          "name": "delay_notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "time_slot": {
+          "name": "time_slot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tat_status": {
+          "name": "tat_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pending_reason": {
+          "name": "pending_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "remarks": {
+          "name": "remarks",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_in": {
+          "name": "date_in",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "time_in": {
+          "name": "time_in",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expected_date_out": {
+          "name": "expected_date_out",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expected_time_of_completion": {
+          "name": "expected_time_of_completion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "time_out": {
+          "name": "time_out",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_completed": {
+          "name": "date_completed",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bay_no": {
+          "name": "bay_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "service_advisor": {
+          "name": "service_advisor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "technician_name": {
+          "name": "technician_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "no_of_laborers": {
+          "name": "no_of_laborers",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actual_time_taken": {
+          "name": "actual_time_taken",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "numberplate_photo": {
+          "name": "numberplate_photo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "odometer_photo": {
+          "name": "odometer_photo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "chassis_number": {
+          "name": "chassis_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "driver_name": {
+          "name": "driver_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "driver_mobile": {
+          "name": "driver_mobile",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "driver_image": {
+          "name": "driver_image",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_number": {
+          "name": "token_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "waiting_time_mins": {
+          "name": "waiting_time_mins",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "progress_pct": {
+          "name": "progress_pct",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "parts_price": {
+          "name": "parts_price",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "labor_price": {
+          "name": "labor_price",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "parts_status": {
+          "name": "parts_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "parts_list": {
+          "name": "parts_list",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "parts_images": {
+          "name": "parts_images",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "warranty_status": {
+          "name": "warranty_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payment_method": {
+          "name": "payment_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payment_reference": {
+          "name": "payment_reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gate_pass_issued": {
+          "name": "gate_pass_issued",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "exited_at": {
+          "name": "exited_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "invoice_no": {
+          "name": "invoice_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gate_out_time": {
+          "name": "gate_out_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "emergency_flag": {
+          "name": "emergency_flag",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "rework_count": {
+          "name": "rework_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "current_workflow_state": {
+          "name": "current_workflow_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'GATE_IN'"
+        },
+        "current_queue": {
+          "name": "current_queue",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sla_status": {
+          "name": "sla_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'WITHIN_SLA'"
+        },
+        "current_etd": {
+          "name": "current_etd",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.job_revenue_split": {
+      "name": "job_revenue_split",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "job_id": {
+          "name": "job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "allocated_amount": {
+          "name": "allocated_amount",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "percentage": {
+          "name": "percentage",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.job_revenue_split_details": {
+      "name": "job_revenue_split_details",
+      "schema": "",
+      "columns": {
+        "detail_id": {
+          "name": "detail_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "revenue_id": {
+          "name": "revenue_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tech_role": {
+          "name": "tech_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "split_pct": {
+          "name": "split_pct",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "split_amount": {
+          "name": "split_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.job_revenues": {
+      "name": "job_revenues",
+      "schema": "",
+      "columns": {
+        "revenue_id": {
+          "name": "revenue_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "job_id": {
+          "name": "job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "labour_amount": {
+          "name": "labour_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parts_amount": {
+          "name": "parts_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_amount": {
+          "name": "total_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "split_id": {
+          "name": "split_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "calculated_at": {
+          "name": "calculated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.job_technician_maps": {
+      "name": "job_technician_maps",
+      "schema": "",
+      "columns": {
+        "map_id": {
+          "name": "map_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "job_id": {
+          "name": "job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tech_role": {
+          "name": "tech_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assigned_at": {
+          "name": "assigned_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.overtime_api_logs": {
+      "name": "overtime_api_logs",
+      "schema": "",
+      "columns": {
+        "log_id": {
+          "name": "log_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "api_endpoint": {
+          "name": "api_endpoint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ip_address": {
+          "name": "ip_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "device_info": {
+          "name": "device_info",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "execution_duration_ms": {
+          "name": "execution_duration_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "response_status": {
+          "name": "response_status",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timestamp": {
+          "name": "timestamp",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.overtime_attachments": {
+      "name": "overtime_attachments",
+      "schema": "",
+      "columns": {
+        "attachment_id": {
+          "name": "attachment_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "ot_id": {
+          "name": "ot_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attachment_type": {
+          "name": "attachment_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_path": {
+          "name": "file_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uploaded_at": {
+          "name": "uploaded_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.overtime_audit_logs": {
+      "name": "overtime_audit_logs",
+      "schema": "",
+      "columns": {
+        "log_id": {
+          "name": "log_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "ot_id": {
+          "name": "ot_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_role": {
+          "name": "actor_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timestamp": {
+          "name": "timestamp",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "ip_address": {
+          "name": "ip_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload_diff": {
+          "name": "payload_diff",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.overtime_requests": {
+      "name": "overtime_requests",
+      "schema": "",
+      "columns": {
+        "ot_id": {
+          "name": "ot_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ot_category": {
+          "name": "ot_category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "shift_id": {
+          "name": "shift_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ot_start_time": {
+          "name": "ot_start_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ot_end_time": {
+          "name": "ot_end_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_hours": {
+          "name": "total_hours",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "benefit_type": {
+          "name": "benefit_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ot_reason_category": {
+          "name": "ot_reason_category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "job_card_id": {
+          "name": "job_card_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "workshop_id": {
+          "name": "workshop_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "department": {
+          "name": "department",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "work_description": {
+          "name": "work_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "comp_attendance_credit_earned": {
+          "name": "comp_attendance_credit_earned",
+          "type": "numeric(3, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "snapshot_basic_salary": {
+          "name": "snapshot_basic_salary",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "snapshot_days_in_month": {
+          "name": "snapshot_days_in_month",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hourly_salary_rate": {
+          "name": "hourly_salary_rate",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "calculated_amount": {
+          "name": "calculated_amount",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "max_allowed_cap": {
+          "name": "max_allowed_cap",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "final_payable_amount": {
+          "name": "final_payable_amount",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capping_reason": {
+          "name": "capping_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "device_name": {
+          "name": "device_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "operating_system": {
+          "name": "operating_system",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "app_version": {
+          "name": "app_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ip_address": {
+          "name": "ip_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "device_time": {
+          "name": "device_time",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "server_time": {
+          "name": "server_time",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "time_difference_seconds": {
+          "name": "time_difference_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "face_verification_provider": {
+          "name": "face_verification_provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "face_match_result": {
+          "name": "face_match_result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "face_match_score": {
+          "name": "face_match_score",
+          "type": "numeric(4, 3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "face_verification_time": {
+          "name": "face_verification_time",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ocr_provider": {
+          "name": "ocr_provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ocr_confidence": {
+          "name": "ocr_confidence",
+          "type": "numeric(4, 3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ocr_verification_time": {
+          "name": "ocr_verification_time",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gps_lat": {
+          "name": "gps_lat",
+          "type": "numeric(9, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gps_lng": {
+          "name": "gps_lng",
+          "type": "numeric(9, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gps_matched": {
+          "name": "gps_matched",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ai_recommendation_status": {
+          "name": "ai_recommendation_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ai_flags": {
+          "name": "ai_flags",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "current_level": {
+          "name": "current_level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "current_status": {
+          "name": "current_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payroll_period": {
+          "name": "payroll_period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paid_at": {
+          "name": "paid_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payment_reference": {
+          "name": "payment_reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.overtime_workflow_history": {
+      "name": "overtime_workflow_history",
+      "schema": "",
+      "columns": {
+        "history_id": {
+          "name": "history_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "ot_id": {
+          "name": "ot_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "level": {
+          "name": "level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approver_id": {
+          "name": "approver_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approver_role": {
+          "name": "approver_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action_date": {
+          "name": "action_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action_time": {
+          "name": "action_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decision": {
+          "name": "decision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "remarks": {
+          "name": "remarks",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.productivity_alerts": {
+      "name": "productivity_alerts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "alert_type": {
+          "name": "alert_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "severity": {
+          "name": "severity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trigger_value": {
+          "name": "trigger_value",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "threshold_value": {
+          "name": "threshold_value",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "alert_message": {
+          "name": "alert_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recommended_action": {
+          "name": "recommended_action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.revenue_splits": {
+      "name": "revenue_splits",
+      "schema": "",
+      "columns": {
+        "split_id": {
+          "name": "split_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "combination_code": {
+          "name": "combination_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "combination_label": {
+          "name": "combination_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person_count": {
+          "name": "person_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tech_pct": {
+          "name": "tech_pct",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "co_tech_pct": {
+          "name": "co_tech_pct",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "electrician_pct": {
+          "name": "electrician_pct",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "add_tech_pct": {
+          "name": "add_tech_pct",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uses_salary_wt": {
+          "name": "uses_salary_wt",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "senior_override": {
+          "name": "senior_override",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.rework_logs": {
+      "name": "rework_logs",
+      "schema": "",
+      "columns": {
+        "rework_id": {
+          "name": "rework_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "original_job_id": {
+          "name": "original_job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "new_job_id": {
+          "name": "new_job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rework_reason": {
+          "name": "rework_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_tech_id": {
+          "name": "original_tech_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "raised_by": {
+          "name": "raised_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approved_by": {
+          "name": "approved_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rework_status": {
+          "name": "rework_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "raised_at": {
+          "name": "raised_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actioned_at": {
+          "name": "actioned_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.rework_tracking": {
+      "name": "rework_tracking",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "original_job_id": {
+          "name": "original_job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rework_job_id": {
+          "name": "rework_job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vehicle_reg": {
+          "name": "vehicle_reg",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assigned_technician_id": {
+          "name": "assigned_technician_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_closure_date": {
+          "name": "original_closure_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rework_date": {
+          "name": "rework_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "days_since_original": {
+          "name": "days_since_original",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_issue": {
+          "name": "original_issue",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rework_reason": {
+          "name": "rework_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rework_completed": {
+          "name": "rework_completed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rework_revenue": {
+          "name": "rework_revenue",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.role_permissions": {
+      "name": "role_permissions",
+      "schema": "",
+      "columns": {
+        "permission_id": {
+          "name": "permission_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "role_name": {
+          "name": "role_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "module_name": {
+          "name": "module_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "can_view": {
+          "name": "can_view",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "can_edit": {
+          "name": "can_edit",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "can_comment": {
+          "name": "can_comment",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.rpt_digital_approvals": {
+      "name": "rpt_digital_approvals",
+      "schema": "",
+      "columns": {
+        "approval_id": {
+          "name": "approval_id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "job_id": {
+          "name": "job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "signature_url": {
+          "name": "signature_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approval_method": {
+          "name": "approval_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "otp_hash": {
+          "name": "otp_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "estimate_version": {
+          "name": "estimate_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 1
+        },
+        "approved_amount": {
+          "name": "approved_amount",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "captured_by": {
+          "name": "captured_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_approvals_job": {
+          "name": "idx_approvals_job",
+          "columns": [
+            {
+              "expression": "job_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_approvals_method": {
+          "name": "idx_approvals_method",
+          "columns": [
+            {
+              "expression": "job_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "approval_method",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.rpt_qc_checklists": {
+      "name": "rpt_qc_checklists",
+      "schema": "",
+      "columns": {
+        "qc_checklist_id": {
+          "name": "qc_checklist_id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "job_id": {
+          "name": "job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "inspector_id": {
+          "name": "inspector_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "result": {
+          "name": "result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "check_items_json": {
+          "name": "check_items_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "road_test_km": {
+          "name": "road_test_km",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "inspector_notes": {
+          "name": "inspector_notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_qc_job": {
+          "name": "idx_qc_job",
+          "columns": [
+            {
+              "expression": "job_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_qc_results": {
+          "name": "idx_qc_results",
+          "columns": [
+            {
+              "expression": "result",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "job_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.shifts": {
+      "name": "shifts",
+      "schema": "",
+      "columns": {
+        "shift_id": {
+          "name": "shift_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "shift_type": {
+          "name": "shift_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "start_time": {
+          "name": "start_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "end_time": {
+          "name": "end_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.sr_types": {
+      "name": "sr_types",
+      "schema": "",
+      "columns": {
+        "sr_type_id": {
+          "name": "sr_type_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "sr_type_code": {
+          "name": "sr_type_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sr_type_name": {
+          "name": "sr_type_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "default_duration_mins": {
+          "name": "default_duration_mins",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.tbl_audit_trail": {
+      "name": "tbl_audit_trail",
+      "schema": "",
+      "columns": {
+        "audit_id": {
+          "name": "audit_id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "validation_run_id": {
+          "name": "validation_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "entity_type": {
+          "name": "entity_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action_code": {
+          "name": "action_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload_diff": {
+          "name": "payload_diff",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ip_address": {
+          "name": "ip_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_audit_entity": {
+          "name": "idx_audit_entity",
+          "columns": [
+            {
+              "expression": "entity_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "entity_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_audit_timestamp": {
+          "name": "idx_audit_timestamp",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.tbl_decision_log": {
+      "name": "tbl_decision_log",
+      "schema": "",
+      "columns": {
+        "decision_id": {
+          "name": "decision_id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "job_id": {
+          "name": "job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decision_type": {
+          "name": "decision_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_type": {
+          "name": "entity_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'job_card'"
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ai_recommended_value": {
+          "name": "ai_recommended_value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actual_selected_value": {
+          "name": "actual_selected_value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "override_flag": {
+          "name": "override_flag",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "reason_code": {
+          "name": "reason_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "justification": {
+          "name": "justification",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "confidence_score": {
+          "name": "confidence_score",
+          "type": "numeric(4, 3)",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_decision_job": {
+          "name": "idx_decision_job",
+          "columns": [
+            {
+              "expression": "job_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_decision_type": {
+          "name": "idx_decision_type",
+          "columns": [
+            {
+              "expression": "decision_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.tbl_notifications": {
+      "name": "tbl_notifications",
+      "schema": "",
+      "columns": {
+        "notification_id": {
+          "name": "notification_id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "notification_type": {
+          "name": "notification_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "priority": {
+          "name": "priority",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'MEDIUM'"
+        },
+        "is_read": {
+          "name": "is_read",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "related_job_id": {
+          "name": "related_job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "action_url": {
+          "name": "action_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "read_at": {
+          "name": "read_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_notifications_user": {
+          "name": "idx_notifications_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "is_read",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.tbl_validation_run": {
+      "name": "tbl_validation_run",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "validation_run_id": {
+          "name": "validation_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dwip_version": {
+          "name": "dwip_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etl_version": {
+          "name": "etl_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "schema_version": {
+          "name": "schema_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "config_version": {
+          "name": "config_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "git_commit_hash": {
+          "name": "git_commit_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "result": {
+          "name": "result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_checks": {
+          "name": "total_checks",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "passed_checks": {
+          "name": "passed_checks",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "failed_checks": {
+          "name": "failed_checks",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "summary_json": {
+          "name": "summary_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "executed_by": {
+          "name": "executed_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_validation_run_id": {
+          "name": "idx_validation_run_id",
+          "columns": [
+            {
+              "expression": "validation_run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.tbl_workflow_history": {
+      "name": "tbl_workflow_history",
+      "schema": "",
+      "columns": {
+        "history_id": {
+          "name": "history_id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "job_id": {
+          "name": "job_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "old_state": {
+          "name": "old_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "new_state": {
+          "name": "new_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "queue": {
+          "name": "queue",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sla_status": {
+          "name": "sla_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "etd": {
+          "name": "etd",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "transition_by": {
+          "name": "transition_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "transition_time": {
+          "name": "transition_time",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "duration": {
+          "name": "duration",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "correlation_id": {
+          "name": "correlation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "parent_event_id": {
+          "name": "parent_event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sequence_number": {
+          "name": "sequence_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_system": {
+          "name": "source_system",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "event_version": {
+          "name": "event_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "event_status": {
+          "name": "event_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "event_category": {
+          "name": "event_category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user": {
+          "name": "user",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "workshop_id": {
+          "name": "workshop_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payload": {
+          "name": "payload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_workflow_history_job": {
+          "name": "idx_workflow_history_job",
+          "columns": [
+            {
+              "expression": "job_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_workflow_history_states": {
+          "name": "idx_workflow_history_states",
+          "columns": [
+            {
+              "expression": "new_state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "old_state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.technician_kpi_daily": {
+      "name": "technician_kpi_daily",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kpi_date": {
+          "name": "kpi_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "jobs_assigned": {
+          "name": "jobs_assigned",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "jobs_completed": {
+          "name": "jobs_completed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "jobs_open": {
+          "name": "jobs_open",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revenue_earned": {
+          "name": "revenue_earned",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "avg_job_duration": {
+          "name": "avg_job_duration",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "completion_efficiency": {
+          "name": "completion_efficiency",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "utilization_percent": {
+          "name": "utilization_percent",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rework_count": {
+          "name": "rework_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rework_percent": {
+          "name": "rework_percent",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tml_claims": {
+          "name": "tml_claims",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tml_claim_rate": {
+          "name": "tml_claim_rate",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "avg_revenue_per_job": {
+          "name": "avg_revenue_per_job",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "on_time_completion": {
+          "name": "on_time_completion",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quality_score": {
+          "name": "quality_score",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "idle_time": {
+          "name": "idle_time",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "break_time": {
+          "name": "break_time",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "overtime_hours": {
+          "name": "overtime_hours",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "health_status": {
+          "name": "health_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.user_access_master": {
+      "name": "user_access_master",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "username": {
+          "name": "username",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_role": {
+          "name": "user_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "access_level": {
+          "name": "access_level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mobile_no": {
+          "name": "mobile_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "otp_hash": {
+          "name": "otp_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "otp_expiry": {
+          "name": "otp_expiry",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.users": {
+      "name": "users",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "full_name": {
+          "name": "full_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "username": {
+          "name": "username",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "last_login": {
+          "name": "last_login",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "password_plain": {
+          "name": "password_plain",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_of_joining": {
+          "name": "date_of_joining",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dob": {
+          "name": "dob",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "qualification": {
+          "name": "qualification",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "designation": {
+          "name": "designation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "grade": {
+          "name": "grade",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "floor_team": {
+          "name": "floor_team",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "clerical_team": {
+          "name": "clerical_team",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "emp_id": {
+          "name": "emp_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aadhaar_no": {
+          "name": "aadhaar_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mobile_no": {
+          "name": "mobile_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "canonical.vehicle_passports": {
+      "name": "vehicle_passports",
+      "schema": "canonical",
+      "columns": {
+        "vehicle_passport_id": {
+          "name": "vehicle_passport_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "lifecycle_state": {
+          "name": "lifecycle_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'FactoryGateOut'"
+        },
+        "chassis_number": {
+          "name": "chassis_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_engine_number": {
+          "name": "original_engine_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "current_engine_number": {
+          "name": "current_engine_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "transmission_type": {
+          "name": "transmission_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gearbox_serial_number": {
+          "name": "gearbox_serial_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rear_axle_ratio": {
+          "name": "rear_axle_ratio",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "wheelbase_mm": {
+          "name": "wheelbase_mm",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "emission_standard": {
+          "name": "emission_standard",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "manufacturing_date": {
+          "name": "manufacturing_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "current_customer_passport_id": {
+          "name": "current_customer_passport_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "current_fleet_passport_id": {
+          "name": "current_fleet_passport_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "current_driver_passport_id": {
+          "name": "current_driver_passport_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cumulative_maintenance_cost": {
+          "name": "cumulative_maintenance_cost",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0.00'"
+        },
+        "cumulative_breakdown_cost": {
+          "name": "cumulative_breakdown_cost",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0.00'"
+        },
+        "cost_per_kilometer": {
+          "name": "cost_per_kilometer",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'0.00'"
+        },
+        "reputation_score": {
+          "name": "reputation_score",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'100.00'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "vehicle_passports_chassis_number_unique": {
+          "name": "vehicle_passports_chassis_number_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "chassis_number"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.workshops": {
+      "name": "workshops",
+      "schema": "",
+      "columns": {
+        "workshop_id": {
+          "name": "workshop_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "workshop_name": {
+          "name": "workshop_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "latitude": {
+          "name": "latitude",
+          "type": "numeric(9, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "longitude": {
+          "name": "longitude",
+          "type": "numeric(9, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "allowed_gps_radius": {
+          "name": "allowed_gps_radius",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {
+    "canonical": "canonical",
+    "legacy": "legacy",
+    "staging": "staging"
+  },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

@@ -187,7 +187,7 @@ export default function Dashboard({
               </span>
             </div>
             <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-              DEVANAND WORKFORCE 1.1
+              DWIP ENTERPRISE
             </h1>
             <p className="text-sm text-slate-400 max-w-xl font-medium">
               Enterprise fleet operations, automated bay allocations, and AI-powered warranty adjudication panel.

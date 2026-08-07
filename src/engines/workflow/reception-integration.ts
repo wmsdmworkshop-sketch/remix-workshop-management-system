@@ -1,5 +1,6 @@
 import { IEventBus } from "../../core/event-bus";
 import { WorkflowEngine } from "./engine";
+import { makeSystemContext } from "../../core/business-context";
 
 export class ReceptionWorkflowIntegration {
   constructor(private readonly eventBus: IEventBus) {}
@@ -8,7 +9,7 @@ export class ReceptionWorkflowIntegration {
    * Publishes vehicle reception events.
    */
   public async registerVehicle(vehicleData: { vrn: string; make: string; model: string; customerId: number }, correlationId: string): Promise<void> {
-    await this.eventBus.publish("VEHICLE_RECEIVED", vehicleData, correlationId);
+    await this.eventBus.publish("VEHICLE_RECEIVED", vehicleData, makeSystemContext(correlationId));
   }
 
   /**
@@ -25,8 +26,10 @@ export class ReceptionWorkflowIntegration {
     }, 
     correlationId: string
   ): Promise<void> {
+    const ctx = makeSystemContext(correlationId);
+
     // 1. Publish JOB_CARD_CREATED event
-    await this.eventBus.publish("JOB_CARD_CREATED", jobCardData, correlationId);
+    await this.eventBus.publish("JOB_CARD_CREATED", jobCardData, ctx);
 
     // 2. Call Workflow Engine to transition to INTAKE_PENDING state
     const transitionResult = await WorkflowEngine.transition({
@@ -46,7 +49,7 @@ export class ReceptionWorkflowIntegration {
       jobId: jobCardData.job_id,
       queue: "INTAKE_QUEUE",
       state: "INTAKE_PENDING"
-    }, correlationId);
+    }, ctx);
 
     // 4. Publish TIMELINE_APPENDED event
     await this.eventBus.publish("TIMELINE_APPENDED", {
@@ -54,7 +57,7 @@ export class ReceptionWorkflowIntegration {
       sourceEngine: "Reception",
       eventType: "INITIALIZE",
       eventName: "VEHICLE_CHECK_IN"
-    }, correlationId);
+    }, ctx);
 
     // 5. Publish AUDIT_LOGGED event
     await this.eventBus.publish("AUDIT_LOGGED", {
@@ -62,7 +65,7 @@ export class ReceptionWorkflowIntegration {
       actionCode: "STATUS_CHANGE",
       oldState: "GATE_IN",
       newState: "INTAKE_PENDING"
-    }, correlationId);
+    }, ctx);
 
 
     // 6. Publish NOTIFICATION_CREATED event
@@ -71,6 +74,6 @@ export class ReceptionWorkflowIntegration {
       notificationType: "INITIALIZED",
       message: `Job card ${jobCardData.job_card_no} created successfully.`,
       priority: "LOW"
-    }, correlationId);
+    }, ctx);
   }
 }

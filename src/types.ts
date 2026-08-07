@@ -84,6 +84,7 @@ export interface SRType {
 export interface JobCard {
   job_id: number;
   job_card_no: string;
+  crm_job_card_no?: string | null;
   vrn: string;
   vin?: string;
   customer_name: string;
@@ -144,6 +145,9 @@ export interface JobCard {
   gate_out_time?: string | null;
   billing_status?: string | null;
   workshop_id?: number | null;
+  chassis_no?: string | null;
+  chassis_number?: string | null;
+  odometer_reading?: number | string | null;
 }
 
 export interface JobTechnicianMap {
@@ -272,12 +276,24 @@ export interface User {
   username: string;
   full_name: string;
   role: string;
+  role_id: number;
   is_active?: boolean;
   employee_id?: number | null;
   created_at?: string;
   last_login?: string | null;
   email?: string | null;
   mobile_no?: string | null;
+}
+
+export interface Role {
+  role_id: number;
+  role_name: string;
+  permission_level: string;
+}
+
+export interface Module {
+  module_id: number;
+  module_name: string;
 }
 
 export interface JobRevenueSplit {
@@ -344,8 +360,8 @@ export interface ReworkTracking {
   created_at?: string;
 }export interface RolePermission {
   permission_id: number;
-  role_name: string;
-  module_name: string;
+  role_id: number;
+  module_id: number;
   can_view: boolean;
   can_edit: boolean;
   can_comment: boolean;
@@ -481,3 +497,13 @@ export interface OvertimeAuditLog {
   payload_diff: string;
 }
 
+declare global {
+  interface ImportMetaEnv {
+    readonly VITE_WORKFORCE_PROFILE?: string;
+    readonly [key: string]: any;
+  }
+
+  interface ImportMeta {
+    readonly env: ImportMetaEnv;
+  }
+}

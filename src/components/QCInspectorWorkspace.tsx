@@ -29,15 +29,42 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
     mechanical: true, electrical: true, brakes: false, steering: true, suspension: false, roadTest: false
   });
 
-  // Road test checklists state
-  const [roadTestChecklist, setRoadTestChecklist] = useState<Record<string, boolean>>({
-    brakeResponse: true, steeringAlignment: true, gearShifts: false, cabinNoise: true
-  });
-
   // Decision state
   const [decision, setDecision] = useState<string>("PASS");
   const [reworkReason, setReworkReason] = useState<string>("");
   const [techFeedback, setTechFeedback] = useState<string>("");
+
+  // ─── AUTHORITATIVE ROAD TEST STATE ───────────────────────────────────────
+  // Mirrors backend qc_road_tests record for the selected job
+  type RtRequirement = "REQUIRED" | "NOT_REQUIRED" | null;
+  type RtStatus = "REQUIRED" | "NOT_REQUIRED" | "IN_PROGRESS" | "PASSED" | "FAILED" | null;
+
+  const [rtRoadTestId, setRtRoadTestId] = useState<number | null>(null);
+  const [rtRequirement, setRtRequirement] = useState<RtRequirement>(null);
+  const [rtStatus, setRtStatus] = useState<RtStatus>(null);
+  const [rtTesterName, setRtTesterName] = useState<string>("");
+  const [rtStartKm, setRtStartKm] = useState<string>("");
+  const [rtEndKm, setRtEndKm] = useState<string>("");
+  const [rtStartedAt, setRtStartedAt] = useState<string | null>(null);
+  const [rtRemarks, setRtRemarks] = useState<string>("");
+  const [rtLoading, setRtLoading] = useState(false);
+  const [rtError, setRtError] = useState<string | null>(null);
+  const [rtSuccess, setRtSuccess] = useState<string | null>(null);
+
+  const rtElapsed = useMemo(() => {
+    if (!rtStartedAt || rtStatus !== "IN_PROGRESS") return null;
+    const diff = Math.floor((Date.now() - new Date(rtStartedAt).getTime()) / 1000);
+    const m = Math.floor(diff / 60);
+    const s = diff % 60;
+    return `${m}m ${s}s`;
+  }, [rtStartedAt, rtStatus]);
+
+  const rtDistanceKm = useMemo(() => {
+    const start = parseFloat(rtStartKm);
+    const end = parseFloat(rtEndKm);
+    if (!isNaN(start) && !isNaN(end) && end >= start) return (end - start).toFixed(1);
+    return null;
+  }, [rtStartKm, rtEndKm]);
 
   // Target job card lookup
   const selectedJob = useMemo(() => {
@@ -99,6 +126,80 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
       onRefresh();
     } catch (e) {
       alert("Failed to submit decision.");
+    }
+  };
+
+  // ─── ROAD TEST API CALLS ────────────────────────────────────────────────────
+
+  const rtApiCall = async (path: string, method: string, body?: any) => {
+    const res = await fetch(`/api/qc/${path}`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+      credentials: "include"
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || "Request failed");
+    return data;
+  };
+
+  const handleSetRequirement = async (req: "REQUIRED" | "NOT_REQUIRED") => {
+    if (!selectedJob) return;
+    setRtLoading(true); setRtError(null); setRtSuccess(null);
+    try {
+      const res = await rtApiCall(`road-test/set-requirement/${selectedJob.job_id}`, "POST", { decision: req });
+      setRtRoadTestId(res.roadTestId);
+      setRtRequirement(req);
+      setRtStatus(req);
+      setRtSuccess(`Road test marked ${req} (ID: ${res.roadTestId})`);
+    } catch (e: any) {
+      setRtError(e.message);
+    } finally {
+      setRtLoading(false);
+    }
+  };
+
+  const handleStartRoadTest = async () => {
+    if (!selectedJob || !rtRoadTestId) return;
+    const kmVal = parseInt(rtStartKm);
+    if (isNaN(kmVal) || kmVal < 0) { setRtError("Enter a valid start odometer reading."); return; }
+    setRtLoading(true); setRtError(null); setRtSuccess(null);
+    try {
+      await rtApiCall(`road-test/start/${rtRoadTestId}`, "POST", {
+        jobId: selectedJob.job_id,
+        startOdometer: kmVal
+      });
+      setRtStatus("IN_PROGRESS");
+      setRtStartedAt(new Date().toISOString());
+      setRtTesterName(currentUser?.full_name || currentUser?.username || "QC Inspector");
+      setRtSuccess("Road test started — vehicle on route.");
+    } catch (e: any) {
+      setRtError(e.message);
+    } finally {
+      setRtLoading(false);
+    }
+  };
+
+  const handleCompleteRoadTest = async (result: "PASSED" | "FAILED") => {
+    if (!selectedJob || !rtRoadTestId) return;
+    const endKmVal = parseInt(rtEndKm);
+    const startKmVal = parseInt(rtStartKm);
+    if (isNaN(endKmVal)) { setRtError("Enter a valid end odometer reading."); return; }
+    if (endKmVal < startKmVal) { setRtError(`End odometer (${endKmVal}) must be ≥ start (${startKmVal}).`); return; }
+    setRtLoading(true); setRtError(null); setRtSuccess(null);
+    try {
+      await rtApiCall(`road-test/complete/${rtRoadTestId}`, "POST", {
+        jobId: selectedJob.job_id,
+        result,
+        endOdometer: endKmVal,
+        remarks: rtRemarks
+      });
+      setRtStatus(result);
+      setRtSuccess(`Road test ${result}. Distance: ${rtDistanceKm ?? "—"} km.`);
+    } catch (e: any) {
+      setRtError(e.message);
+    } finally {
+      setRtLoading(false);
     }
   };
 
@@ -178,10 +279,13 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
                         : "bg-slate-950/40 border-slate-850 text-slate-300 hover:border-slate-800"
                     }`}
                   >
-                    <div className="font-mono text-xs font-bold">{job.vrn}</div>
-                    <div className="text-[10px] text-slate-400 mt-1">{job.vehicle_make} {job.vehicle_model} • Tech: {job.technician_name || "Unassigned"}</div>
+                    <div className="font-bold text-xs">{job.job_card_no}</div>
+                    <div className="text-[10px] text-slate-500">{job.vrn} · {job.vehicle_model}</div>
                   </button>
                 ))}
+                {jobCards.filter(j => j.current_workflow_state === "QC_PENDING").length === 0 && (
+                  <div className="text-xs text-slate-500 text-center py-4">No vehicles pending QC</div>
+                )}
               </div>
             </div>
 
@@ -272,45 +376,7 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
         </div>
       )}
 
-      {activeTab === "roadtest" && selectedJob && (
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg space-y-4">
-          {/* SECTION 5: Road Test */}
-          <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
-            <Map className="h-4 w-4 text-blue-400" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Road Test Verification</h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <span className="text-slate-500 block">Distance Covered</span>
-                  <span className="text-sm font-bold text-slate-200">3.2 km</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block">Max Speed</span>
-                  <span className="text-sm font-bold text-slate-200">45 km/h</span>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-2">
-              {Object.keys(roadTestChecklist).map(key => (
-                <button
-                  key={key}
-                  onClick={() => setRoadTestChecklist(prev => ({ ...prev, [key]: !prev[key] }))}
-                  className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-xs font-bold transition-all ${
-                    roadTestChecklist[key] 
-                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" 
-                      : "bg-slate-950/40 border-slate-850 text-slate-400 hover:border-slate-800"
-                  }`}
-                >
-                  <span className="uppercase tracking-wider">{key}</span>
-                  <span>{roadTestChecklist[key] ? "✓ Clear" : "✗ Check"}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {activeTab === "decision" && selectedJob && (
         <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg space-y-4">
