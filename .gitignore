@@ -11,6 +11,18 @@ coverage/
 key.properties
 local.properties
 
+# Secret-scrub inputs — must never be committed (contain plaintext secrets)
+replacements.txt
+*.secrets
+
+# Editor/IDE
+.idea/
+.vscode/
+
+# Generated test artifacts
+test-results/
+playwright-report/
+blob-report/
 
 android/.gradle_home/
 
