@@ -107,6 +107,72 @@ export default function BreakdownManagement() {
   const [qrtTeams, setQrtTeams] = useState<QRTTeam[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [workshops, setWorkshops] = useState<any[]>([]);
+
+  // --- QRT Email Sync (Gmail ingestor) settings ---
+  const [qrtCfg, setQrtCfg] = useState<any>(null);
+  const [qrtCfgPwd, setQrtCfgPwd] = useState("");
+  const [qrtCfgSaving, setQrtCfgSaving] = useState(false);
+  const [qrtSyncing, setQrtSyncing] = useState(false);
+  const [qrtMsg, setQrtMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
+  const fetchQrtConfig = async () => {
+    try {
+      const res = await fetch("/api/integrations/qrt/config", { headers: getAuthHeaders() });
+      const data = await res.json();
+      if (data.success) setQrtCfg(data.config);
+    } catch { /* non-fatal */ }
+  };
+
+  const saveQrtConfig = async () => {
+    if (!qrtCfg) return;
+    setQrtCfgSaving(true);
+    setQrtMsg(null);
+    try {
+      const body: any = {
+        gmail_user: qrtCfg.gmail_user,
+        sender_filter: qrtCfg.sender_filter,
+        lookback_hours: qrtCfg.lookback_hours,
+        enabled: qrtCfg.enabled,
+      };
+      if (qrtCfgPwd) body.app_password = qrtCfgPwd;
+      const res = await fetch("/api/integrations/qrt/config", {
+        method: "POST", headers: getAuthHeaders(), body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setQrtCfg(data.config);
+        setQrtCfgPwd("");
+        setQrtMsg({ text: "Settings saved.", ok: true });
+      } else {
+        setQrtMsg({ text: data.error || "Save failed.", ok: false });
+      }
+    } catch (e: any) {
+      setQrtMsg({ text: e.message || "Network error.", ok: false });
+    } finally {
+      setQrtCfgSaving(false);
+    }
+  };
+
+  const runQrtSyncNow = async () => {
+    setQrtSyncing(true);
+    setQrtMsg(null);
+    try {
+      const res = await fetch("/api/integrations/qrt/sync", { method: "POST", headers: getAuthHeaders() });
+      const data = await res.json();
+      if (data.unavailable) {
+        setQrtMsg({ text: data.message || "Not configured yet.", ok: false });
+      } else if (data.error) {
+        setQrtMsg({ text: `Scan error: ${data.error}`, ok: false });
+      } else {
+        setQrtMsg({ text: `Scanned ${data.scanned}, created ${data.inserted}, ${data.duplicates} already existed.`, ok: true });
+        if (data.inserted) fetchAll();
+      }
+    } catch (e: any) {
+      setQrtMsg({ text: e.message || "Network error.", ok: false });
+    } finally {
+      setQrtSyncing(false);
+    }
+  };
   
   const [stats, setStats] = useState<any>({
     todayComplaints: 0,
@@ -204,6 +270,7 @@ export default function BreakdownManagement() {
 
   useEffect(() => {
     fetchAll();
+    fetchQrtConfig();
   }, []);
 
   const triggerNotify = (message: string) => {
@@ -879,6 +946,107 @@ export default function BreakdownManagement() {
             >
               <Plus className="h-4 w-4" /> Create Squad
             </button>
+          </div>
+
+          {/* QRT Email Sync (Gmail ingestor) settings */}
+          <div className="ds-card border rounded-[18px] p-5 backdrop-blur-md shadow-lg space-y-4">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                  <MessageSquare className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">QRT Email Sync</h3>
+                  <p className="text-[11px] text-slate-400">
+                    Auto-creates a P1 (2-hour SLA) breakdown from Tata alert emails in your inbox.
+                    {qrtCfg && (
+                      <span className={`ml-2 font-bold ${qrtCfg.enabled && qrtCfg.has_password ? "text-emerald-400" : "text-amber-400"}`}>
+                        {qrtCfg.enabled && qrtCfg.has_password ? "Active" : qrtCfg.enabled ? "Needs app password" : "Disabled"}
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={runQrtSyncNow}
+                  disabled={qrtSyncing}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[11px] uppercase tracking-wider px-3 py-2 rounded-lg flex items-center gap-2 transition-all disabled:opacity-50"
+                >
+                  <Search className="h-3.5 w-3.5" /> {qrtSyncing ? "Scanning..." : "Sync now"}
+                </button>
+              </div>
+            </div>
+
+            {qrtCfg && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="lg:col-span-2">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Mailbox address</label>
+                  <input
+                    value={qrtCfg.gmail_user}
+                    onChange={(e) => setQrtCfg({ ...qrtCfg, gmail_user: e.target.value })}
+                    placeholder="devanandautomobilescrmsv@gmail.com"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-100 px-3 py-2 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    App password {qrtCfg.has_password && <span className="text-emerald-400 normal-case">(set)</span>}
+                  </label>
+                  <input
+                    type="password"
+                    value={qrtCfgPwd}
+                    onChange={(e) => setQrtCfgPwd(e.target.value)}
+                    placeholder={qrtCfg.has_password ? "•••••• (leave blank to keep)" : "16-char Gmail app password"}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-100 px-3 py-2 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Backfill (hours)</label>
+                  <input
+                    type="number"
+                    value={qrtCfg.lookback_hours}
+                    onChange={(e) => setQrtCfg({ ...qrtCfg, lookback_hours: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-100 px-3 py-2 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Only from senders containing</label>
+                  <input
+                    value={qrtCfg.sender_filter}
+                    onChange={(e) => setQrtCfg({ ...qrtCfg, sender_filter: e.target.value })}
+                    placeholder="tatamotors.com"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-100 px-3 py-2 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-300 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!qrtCfg.enabled}
+                      onChange={(e) => setQrtCfg({ ...qrtCfg, enabled: e.target.checked })}
+                      className="h-4 w-4 rounded border-slate-600 bg-slate-900 accent-emerald-500"
+                    />
+                    Enabled
+                  </label>
+                </div>
+                <div className="flex items-end justify-end">
+                  <button
+                    onClick={saveQrtConfig}
+                    disabled={qrtCfgSaving}
+                    className="bg-gradient-to-r from-emerald-600 to-teal-500 text-white font-bold text-[11px] uppercase tracking-wider px-4 py-2 rounded-lg disabled:opacity-50"
+                  >
+                    {qrtCfgSaving ? "Saving..." : "Save"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {qrtMsg && (
+              <div className={`text-[11px] font-semibold ${qrtMsg.ok ? "text-emerald-400" : "text-amber-400"}`}>
+                {qrtMsg.text}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

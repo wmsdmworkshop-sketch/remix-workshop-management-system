@@ -13,6 +13,7 @@ import jwt from "jsonwebtoken";
 // @ts-ignore — no @types package available for express-rate-limit in this project
 import rateLimit from "express-rate-limit";
 import { pool as dbPool } from "./src/db/index.ts";
+import { startQrtGmailIngestor, runQrtIngestOnce, getQrtPublicConfig, updateQrtSettings } from "./src/integrations/qrt-gmail-ingestor.ts";
 import { DEFAULT_CIRCULARS } from "./src/lib/circularsData.ts";
 import { getReworkHistoryForTechnician } from "./src/engines/rework-tracking-service.ts";
 import { validateOvertimeRequest } from "./src/engines/overtime-rules.ts";
@@ -6578,6 +6579,38 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
+  // 3c. Read/update the QRT Gmail ingestor settings (mailbox address, etc.).
+  // The app password is write-only — it is never returned to the client.
+  app.get("/api/integrations/qrt/config", authenticateToken, requirePermission("Breakdowns", "view"), async (_req: any, res) => {
+    try {
+      res.json({ success: true, config: await getQrtPublicConfig(dbPool) });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Failed to read QRT settings" });
+    }
+  });
+
+  app.post("/api/integrations/qrt/config", authenticateToken, requirePermission("Breakdowns", "edit"), express.json(), async (req: any, res) => {
+    try {
+      res.json({ success: true, config: await updateQrtSettings(dbPool, req.body || {}) });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Failed to update QRT settings" });
+    }
+  });
+
+  // 3b. Manually trigger a QRT Gmail scan (for testing/verification). Reads the
+  // dealership inbox read-only and creates any new P1 breakdown cases found.
+  app.post("/api/integrations/qrt/sync", authenticateToken, requirePermission("Breakdowns", "edit"), async (_req: any, res) => {
+    try {
+      const summary = await runQrtIngestOnce(dbPool);
+      if (!summary.enabled) {
+        return res.json({ success: false, unavailable: true, message: "QRT Gmail ingestor is not configured (set QRT_GMAIL_USER and QRT_GMAIL_APP_PASSWORD)." });
+      }
+      return res.json({ success: !summary.error, ...summary });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "QRT sync failed" });
+    }
+  });
+
   // 4. Update status & add to history with SLA check
   app.post("/api/breakdowns/:id/status", authenticateToken, requirePermission("Breakdowns", "edit"), express.json(), async (req: any, res) => {
     try {
@@ -7098,6 +7131,10 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   const server = app.listen(Number(process.env.PORT || 3001), "0.0.0.0", () => {
     console.log(`Workshop Server running on http://localhost:${process.env.PORT || 3001}`);
   });
+
+  // QRT breakdown-alert ingestor: watches the dealership Gmail (read-only) and
+  // auto-creates P1 (2-hour SLA) breakdown cases. Dormant unless configured.
+  startQrtGmailIngestor(dbPool);
 
   // WebSocket Server for Live voice chat (manual upgrades)
   const wss = new WebSocketServer({ noServer: true });

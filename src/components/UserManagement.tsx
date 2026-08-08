@@ -37,6 +37,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
   const [activeTab, setActiveTab] = useState<'directory' | 'permissions' | 'profile-approvals'>('directory');
   const [permissionsList, setPermissionsList] = useState<any[]>([]);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
+  const [expandedRole, setExpandedRole] = useState<string | null>(null);
   const [saveLoading, setSaveLoading] = useState(false);
 
   // Profile update approvals state
@@ -129,17 +130,15 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
     }
   };
 
+  // Only modules that actually gate access (see TAB_MODULE_MAPPING in App.tsx).
+  // Bay Queue / Revenue / Ledger / FSB were never wired to enforcement and were removed.
   const MODULES = [
-    'Dashboard', 
-    'Bay Queue', 
-    'Job Cards', 
-    'Revenue', 
-    'Ledger', 
-    'Warranty', 
-    'FSB', 
-    'Query', 
-    'Billing', 
-    'DMS Import', 
+    'Dashboard',
+    'Job Cards',
+    'Warranty',
+    'Query',
+    'Billing',
+    'DMS Import',
     'User Management',
     'Breakdowns'
   ];
@@ -192,21 +191,91 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
     }
   }, [activeTab]);
 
-  const handleCheckboxChange = (module: string, roleKey: string, field: 'can_view' | 'can_edit' | 'can_comment', val: boolean) => {
+  // ---------------------------------------------------------------------------
+  // Simplified permission model: 4 access levels + role presets.
+  // Backend contract is unchanged (can_view / can_edit / can_comment as 0|1);
+  // the UI just maps a single access level onto those three flags.
+  // ---------------------------------------------------------------------------
+  type AccessLevel = 'none' | 'view' | 'comment' | 'full';
+
+  const LEVELS: Record<AccessLevel, { can_view: number; can_edit: number; can_comment: number }> = {
+    none:    { can_view: 0, can_edit: 0, can_comment: 0 },
+    view:    { can_view: 1, can_edit: 0, can_comment: 0 },
+    comment: { can_view: 1, can_edit: 0, can_comment: 1 },
+    full:    { can_view: 1, can_edit: 1, can_comment: 1 },
+  };
+
+  const LEVEL_OPTIONS: { value: AccessLevel; label: string }[] = [
+    { value: 'none', label: 'No Access' },
+    { value: 'view', label: 'View Only' },
+    { value: 'comment', label: 'View + Comment' },
+    { value: 'full', label: 'Full (Edit)' },
+  ];
+
+  // Modules that are administrative/sensitive — presets treat them more cautiously.
+  const SENSITIVE_MODULES = ['User Management', 'DMS Import'];
+
+  type PresetKey = 'none' | 'readonly' | 'operator' | 'manager' | 'admin';
+  const PRESET_OPTIONS: { value: PresetKey; label: string; hint: string }[] = [
+    { value: 'none', label: 'No Access', hint: 'Blocked from every module' },
+    { value: 'readonly', label: 'Read-only', hint: 'View everything, change nothing' },
+    { value: 'operator', label: 'Operator', hint: 'Full on daily work, no admin modules' },
+    { value: 'manager', label: 'Manager', hint: 'Full access, view-only on User Management' },
+    { value: 'admin', label: 'Admin', hint: 'Full control of everything' },
+  ];
+
+  const presetLevelFor = (preset: PresetKey, moduleName: string): AccessLevel => {
+    switch (preset) {
+      case 'none': return 'none';
+      case 'readonly': return 'view';
+      case 'operator': return SENSITIVE_MODULES.includes(moduleName) ? 'none' : 'full';
+      case 'manager': return moduleName === 'User Management' ? 'view' : 'full';
+      case 'admin': return 'full';
+      default: return 'none';
+    }
+  };
+
+  const getPerm = (moduleName: string, roleKey: string) =>
+    permissionsList.find(p => p.module_name === moduleName && p.role_name === roleKey) ||
+    { can_view: 0, can_edit: 0, can_comment: 0 };
+
+  const permToLevel = (perm: any): AccessLevel => {
+    const on = (v: any) => v === 1 || v === true;
+    if (on(perm.can_edit)) return 'full';
+    if (on(perm.can_comment)) return 'comment';
+    if (on(perm.can_view)) return 'view';
+    return 'none';
+  };
+
+  // Which preset (if any) exactly describes this role's current permissions.
+  const detectPreset = (roleKey: string): PresetKey | 'custom' => {
+    const presets: PresetKey[] = ['none', 'readonly', 'operator', 'manager', 'admin'];
+    for (const pk of presets) {
+      if (MODULES.every(m => permToLevel(getPerm(m, roleKey)) === presetLevelFor(pk, m))) return pk;
+    }
+    return 'custom';
+  };
+
+  const setModuleLevel = (moduleName: string, roleKey: string, level: AccessLevel) => {
+    const p = LEVELS[level];
     setPermissionsList(prev => {
       const copy = [...prev];
-      const idx = copy.findIndex(p => p.module_name === module && p.role_name === roleKey);
-      if (idx !== -1) {
-        copy[idx] = { ...copy[idx], [field]: val ? 1 : 0 };
-      } else {
-        copy.push({
-          module_name: module,
-          role_name: roleKey,
-          can_view: field === 'can_view' ? (val ? 1 : 0) : 0,
-          can_edit: field === 'can_edit' ? (val ? 1 : 0) : 0,
-          can_comment: field === 'can_comment' ? (val ? 1 : 0) : 0
-        });
-      }
+      const idx = copy.findIndex(x => x.module_name === moduleName && x.role_name === roleKey);
+      if (idx !== -1) copy[idx] = { ...copy[idx], ...p };
+      else copy.push({ module_name: moduleName, role_name: roleKey, ...p });
+      return copy;
+    });
+  };
+
+  const applyPreset = (roleKey: string, preset: PresetKey) => {
+    setPermissionsList(prev => {
+      const copy = [...prev];
+      MODULES.forEach(m => {
+        const p = LEVELS[presetLevelFor(preset, m)];
+        const idx = copy.findIndex(x => x.module_name === m && x.role_name === roleKey);
+        if (idx !== -1) copy[idx] = { ...copy[idx], ...p };
+        else copy.push({ module_name: m, role_name: roleKey, ...p });
+      });
       return copy;
     });
   };
@@ -1029,8 +1098,8 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
         <div className="bg-zinc-950/90 rounded-2xl border border-zinc-800 shadow-2xl p-6 space-y-6 backdrop-blur-md">
           <div className="flex justify-between items-center border-b border-zinc-800 pb-4 flex-wrap gap-4">
             <div>
-              <h2 className="text-lg font-bold text-zinc-100">Role Permissions Matrix</h2>
-              <p className="text-xs text-zinc-400 mt-1">Configure view, edit, and comment access rights for each module per role.</p>
+              <h2 className="text-lg font-bold text-zinc-100">Role Access Control</h2>
+              <p className="text-xs text-zinc-400 mt-1">Pick an access preset per role, then expand to fine-tune individual modules if needed.</p>
             </div>
             <button
               onClick={handleSavePermissions}
@@ -1042,73 +1111,87 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
           </div>
 
           {permissionsLoading ? (
-            <FunnyLoader message="Loading permissions matrix..." />
+            <FunnyLoader message="Loading role access..." />
           ) : (
-            <div className="overflow-auto max-h-[65vh] border border-zinc-800 rounded-xl relative">
-              <table className="ds-table w-full text-left border-collapse min-w-[900px]">
-                <thead className="sticky top-0 z-20 bg-zinc-900 shadow-md">
-                  <tr className="border-b border-zinc-800 bg-zinc-900">
-                    <th className="ds-th p-4 text-xs font-bold text-orange-400 w-48 sticky left-0 z-30 bg-zinc-900 border-r border-zinc-800">
-                      Module Name
-                    </th>
-                    {ROLES.map((role) => (
-                      <th key={role.key} className="ds-th p-4 text-center text-xs font-bold text-zinc-200 bg-zinc-900">
-                        {role.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-800/80 bg-black">
-                  {MODULES.map((moduleName) => (
-                    <tr key={moduleName} className="ds-table-row hover:bg-zinc-900/70 transition">
-                      <td className="ds-td p-4 text-xs font-bold text-zinc-100 sticky left-0 z-10 bg-zinc-950 border-r border-zinc-800 shadow-r">
-                        {moduleName}
-                      </td>
-                      {ROLES.map((role) => {
-                        const perm = permissionsList.find(p => p.module_name === moduleName && p.role_name === role.key) || {
-                          can_view: 0,
-                          can_edit: 0,
-                          can_comment: 0
-                        };
+            <div className="space-y-3">
+              {/* Legend */}
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[10px] text-zinc-500 border border-zinc-800/70 rounded-lg px-3 py-2">
+                <span className="font-bold text-zinc-400 uppercase tracking-wider">Access levels:</span>
+                <span><span className="text-zinc-300 font-semibold">No Access</span> — hidden</span>
+                <span><span className="text-zinc-300 font-semibold">View Only</span> — read</span>
+                <span><span className="text-zinc-300 font-semibold">View + Comment</span> — read &amp; note</span>
+                <span><span className="text-zinc-300 font-semibold">Full (Edit)</span> — read, edit &amp; comment</span>
+              </div>
 
-                        return (
-                          <td key={role.key} className="ds-td p-4 text-center border-l border-zinc-800/50">
-                            <div className="flex flex-col items-center gap-2 justify-center">
-                              <label className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-300 hover:text-white cursor-pointer select-none">
-                                <input
-                                  type="checkbox"
-                                  checked={perm.can_view === 1 || perm.can_view === true}
-                                  onChange={(e) => handleCheckboxChange(moduleName, role.key, 'can_view', e.target.checked)}
-                                  className="h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-900 text-orange-500 focus:ring-orange-500/30 accent-orange-500"
-                                />
-                                View
-                              </label>
-                              <label className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-300 hover:text-white cursor-pointer select-none">
-                                <input
-                                  type="checkbox"
-                                  checked={perm.can_edit === 1 || perm.can_edit === true}
-                                  onChange={(e) => handleCheckboxChange(moduleName, role.key, 'can_edit', e.target.checked)}
-                                  className="h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-900 text-orange-500 focus:ring-orange-500/30 accent-orange-500"
-                                />
-                                Edit
-                              </label>
-                              <label className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-300 hover:text-white cursor-pointer select-none">
-                                <input
-                                  type="checkbox"
-                                  checked={perm.can_comment === 1 || perm.can_comment === true}
-                                  onChange={(e) => handleCheckboxChange(moduleName, role.key, 'can_comment', e.target.checked)}
-                                  className="h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-900 text-orange-500 focus:ring-orange-500/30 accent-orange-500"
-                                />
-                                Comment
-                              </label>
-                            </div>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="border border-zinc-800 rounded-xl divide-y divide-zinc-800/80 overflow-hidden max-h-[62vh] overflow-y-auto">
+                {ROLES.map((role) => {
+                  const preset = detectPreset(role.key);
+                  const isOpen = expandedRole === role.key;
+                  const grantedCount = MODULES.filter(m => permToLevel(getPerm(m, role.key)) !== 'none').length;
+
+                  return (
+                    <div key={role.key} className="bg-zinc-950/60">
+                      {/* Role header row */}
+                      <div className="flex flex-wrap items-center gap-3 px-4 py-3 hover:bg-zinc-900/50 transition">
+                        <div className="min-w-[160px] flex-1">
+                          <div className="text-sm font-bold text-zinc-100">{role.label}</div>
+                          <div className="text-[10px] text-zinc-500 mt-0.5">
+                            {grantedCount} of {MODULES.length} modules accessible
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Preset</span>
+                          <select
+                            value={preset}
+                            onChange={(e) => applyPreset(role.key, e.target.value as PresetKey)}
+                            className="bg-zinc-900 border border-zinc-700 rounded-lg text-xs font-semibold px-2.5 py-1.5 text-zinc-100 focus:outline-none focus:border-orange-500 cursor-pointer"
+                          >
+                            {preset === 'custom' && <option value="custom">Custom</option>}
+                            {PRESET_OPTIONS.map(p => (
+                              <option key={p.value} value={p.value}>{p.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <button
+                          onClick={() => setExpandedRole(isOpen ? null : role.key)}
+                          className="text-[11px] font-bold text-orange-400 hover:text-orange-300 px-3 py-1.5 rounded-lg border border-zinc-800 hover:border-orange-500/40 transition"
+                        >
+                          {isOpen ? 'Hide modules' : 'Customize'}
+                        </button>
+                      </div>
+
+                      {/* Per-module override grid */}
+                      {isOpen && (
+                        <div className="px-4 pb-4 pt-1 bg-black/40 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                          {MODULES.map((moduleName) => {
+                            const level = permToLevel(getPerm(moduleName, role.key));
+                            return (
+                              <div key={moduleName} className="flex items-center justify-between gap-2 bg-zinc-950 border border-zinc-800/70 rounded-lg px-3 py-2">
+                                <span className="text-[11px] font-semibold text-zinc-300 truncate">{moduleName}</span>
+                                <select
+                                  value={level}
+                                  onChange={(e) => setModuleLevel(moduleName, role.key, e.target.value as AccessLevel)}
+                                  className={`shrink-0 rounded-md text-[11px] font-semibold px-2 py-1 focus:outline-none cursor-pointer border ${
+                                    level === 'none'
+                                      ? 'bg-zinc-900 border-zinc-800 text-zinc-500'
+                                      : 'bg-orange-500/10 border-orange-500/30 text-orange-300'
+                                  }`}
+                                >
+                                  {LEVEL_OPTIONS.map(o => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

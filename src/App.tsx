@@ -317,7 +317,6 @@ export default function App() {
 
   const ROLE_TABS: Record<string, Array<{ id: string; label: string; icon: any }>> = {
     developer: [
-      { id: "devops-dashboard", label: "DevOps Console", icon: Terminal },
       { id: "operations-console", label: "Operations Cockpit", icon: Activity },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
@@ -360,17 +359,9 @@ export default function App() {
       { id: "setup-wizard", label: "Setup Wizard", icon: Building },
       { id: "pilot-control-room", label: "Pilot Control Room", icon: Activity },
       { id: "roi-tracker", label: "Business ROI Tracker", icon: TrendingUp },
-      { id: "live-support", label: "Live Support Desk", icon: ShieldAlert },
-      { id: "integration-monitor", label: "Integration Monitor", icon: Activity },
-      { id: "external-systems", label: "External Systems", icon: Server },
-      { id: "sync-queue", label: "Sync Queue", icon: Clock },
-      { id: "api-logs", label: "API Logs", icon: FileText },
-      { id: "health-dashboard", label: "Health Dashboard", icon: Activity },
-      { id: "integration-config", label: "Platform Config", icon: Settings },
     ],
     admin: [
       { id: "operations-console", label: "Operations Cockpit", icon: Activity },
-      { id: "devops-dashboard", label: "DevOps Console", icon: Terminal },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
@@ -412,13 +403,6 @@ export default function App() {
       { id: "setup-wizard", label: "Setup Wizard", icon: Building },
       { id: "pilot-control-room", label: "Pilot Control Room", icon: Activity },
       { id: "roi-tracker", label: "Business ROI Tracker", icon: TrendingUp },
-      { id: "live-support", label: "Live Support Desk", icon: ShieldAlert },
-      { id: "integration-monitor", label: "Integration Monitor", icon: Activity },
-      { id: "external-systems", label: "External Systems", icon: Server },
-      { id: "sync-queue", label: "Sync Queue", icon: Clock },
-      { id: "api-logs", label: "API Logs", icon: FileText },
-      { id: "health-dashboard", label: "Health Dashboard", icon: Activity },
-      { id: "integration-config", label: "Platform Config", icon: Settings },
     ],
     billing: [
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
