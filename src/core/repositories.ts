@@ -15,6 +15,7 @@ export interface IEmployeeRepository {
   findByCode(employeeCode: string): Promise<EmployeeProfile | null>;
   update(employeeId: number, data: Partial<EmployeeProfile>): Promise<boolean>;
   create(data: Omit<EmployeeProfile, 'employee_id'>): Promise<number>;
+  delete(employeeId: number): Promise<boolean>;
 }
 
 export interface IRoleRepository {
@@ -77,6 +78,11 @@ export class EmployeeRepository implements IEmployeeRepository {
     const values = keys.map(k => data[k]);
     const [result] = await this.db.execute(query, values);
     return result.insertId;
+  }
+
+  public async delete(employeeId: number): Promise<boolean> {
+    const [result] = await this.db.execute("DELETE FROM employees WHERE employee_id = ?", [employeeId]);
+    return result.affectedRows > 0;
   }
 }
 

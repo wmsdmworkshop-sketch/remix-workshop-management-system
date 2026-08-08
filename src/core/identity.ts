@@ -168,6 +168,24 @@ export class EmployeeIdentityService {
     }
   }
 
+  public async updateEmployee(employeeId: number, data: Partial<EmployeeProfile>): Promise<boolean> {
+    try {
+      return await this.employeeRepo.update(employeeId, data);
+    } catch (err: any) {
+      console.error(`EmployeeIdentityService: Failed to update employee ${employeeId}:`, err.message);
+      return false;
+    }
+  }
+
+  public async deleteEmployee(employeeId: number): Promise<boolean> {
+    try {
+      return await this.employeeRepo.delete(employeeId);
+    } catch (err: any) {
+      console.error(`EmployeeIdentityService: Failed to delete employee ${employeeId}:`, err.message);
+      return false;
+    }
+  }
+
   public async mapUserToEmployee(
     userId: number,
     employeeId: number,
@@ -201,6 +219,14 @@ export class EmployeeIdentityService {
   // --- Static Delegation Methods for Backward Compatibility ---
   public static async getEmployees(includeLegacy = false): Promise<EmployeeProfile[]> {
     return await this.instance.getEmployees(includeLegacy);
+  }
+
+  public static async updateEmployee(employeeId: number, data: Partial<EmployeeProfile>): Promise<boolean> {
+    return await this.instance.updateEmployee(employeeId, data);
+  }
+
+  public static async deleteEmployee(employeeId: number): Promise<boolean> {
+    return await this.instance.deleteEmployee(employeeId);
   }
 
   public static async getEmployeeById(employeeId: number): Promise<EmployeeProfile | null> {

@@ -160,6 +160,10 @@ class MockEmployeeRepo implements IEmployeeRepository {
   public async create(data: any): Promise<number> {
     return 1;
   }
+
+  public async delete(id: number): Promise<boolean> {
+    return true;
+  }
 }
 
 class MockAuditRepo implements IAuditRepository {

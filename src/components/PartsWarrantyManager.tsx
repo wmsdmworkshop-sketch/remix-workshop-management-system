@@ -86,6 +86,8 @@ export default function PartsWarrantyManager({
   const [newCirSummary, setNewCirSummary] = useState("");
   const [newCirRules, setNewCirRules] = useState("");
   const [uploadingCir, setUploadingCir] = useState(false);
+  const [extractingCir, setExtractingCir] = useState(false);
+  const circularFileRef = React.useRef<HTMLInputElement>(null);
 
   // --- WARRANTY AI VALIDATION STATE ---
   const [valJobCardId, setValJobCardId] = useState("");
@@ -213,6 +215,51 @@ export default function PartsWarrantyManager({
     fetchCirculars();
     fetchFsbRecords();
   }, []);
+
+  const handleCircularFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset so selecting the same file again re-triggers onChange
+    if (e.target) e.target.value = "";
+    if (!file) return;
+    setExtractingCir(true);
+    setSuccess(null);
+    try {
+      const fileBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const r = reader.result as string;
+          resolve(r.includes(",") ? r.split(",")[1] : r);
+        };
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsDataURL(file);
+      });
+
+      const res = await fetch("/api/warranty/circulars/extract", {
+        method: "POST",
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ fileBase64, mimeType: file.type || "application/pdf" })
+      });
+      const data = await res.json();
+
+      if (data.success && data.fields) {
+        const f = data.fields;
+        if (f.id) setNewCirId(f.id);
+        if (f.title) setNewCirTitle(f.title);
+        if (f.date) setNewCirDate(f.date);
+        if (f.models) setNewCirModels(f.models);
+        if (f.summary) setNewCirSummary(f.summary);
+        if (f.warrantyRules) setNewCirRules(f.warrantyRules);
+        setSuccess("Fields auto-filled from the document. Please review and edit before indexing.");
+        setTimeout(() => setSuccess(null), 6000);
+      } else {
+        alert(data.message || "Could not extract fields from the document. Please fill the form manually.");
+      }
+    } catch (err: any) {
+      alert(err.message || "Failed to read the file. Please fill the form manually.");
+    } finally {
+      setExtractingCir(false);
+    }
+  };
 
   const handleUploadCircular = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1546,6 +1593,28 @@ export default function PartsWarrantyManager({
               </div>
 
               <form onSubmit={handleUploadCircular} className="space-y-4 text-xs">
+                <input
+                  ref={circularFileRef}
+                  type="file"
+                  accept="application/pdf,image/*"
+                  className="hidden"
+                  onChange={handleCircularFile}
+                />
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => circularFileRef.current?.click()}
+                    disabled={extractingCir}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-3 border-2 border-dashed border-orange-300 text-orange-600 font-semibold rounded-xl hover:bg-orange-50 disabled:opacity-50 transition-colors"
+                  >
+                    <FileText className="h-4 w-4" />
+                    <span>{extractingCir ? "Reading document with AI…" : "Upload PDF to auto-fill fields"}</span>
+                  </button>
+                  <p className="text-[10px] text-slate-400 text-center mt-1">
+                    Pick a circular PDF — AI reads it and fills the fields below for you to review before indexing.
+                  </p>
+                </div>
+
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                     Circular reference number / ID *

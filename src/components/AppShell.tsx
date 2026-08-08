@@ -90,6 +90,29 @@ export default function AppShell({
   children
 }: AppShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const [notifOpen, setNotifOpen] = React.useState(false);
+  const [notifications, setNotifications] = React.useState<any[]>([]);
+
+  const fetchNotifications = React.useCallback(async () => {
+    try {
+      const token = typeof localStorage !== "undefined" ? localStorage.getItem("wms_token") : null;
+      const res = await fetch("/api/notifications", {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNotifications(Array.isArray(data?.notifications) ? data.notifications : []);
+      }
+    } catch {
+      /* non-fatal: leave notifications as-is */
+    }
+  }, []);
+
+  React.useEffect(() => {
+    fetchNotifications();
+    const id = setInterval(fetchNotifications, 60000);
+    return () => clearInterval(id);
+  }, [fetchNotifications]);
 
   // Determine current active workspace
   const activeWorkspace = WORKSPACE_MAPPING[activeTab] || "dashboard";
@@ -308,10 +331,46 @@ export default function AppShell({
               </button>
             )}
 
-            <button className="relative p-1 hover:text-white">
-              <Bell className="h-4 w-4" />
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-orange-500 rounded-full"></span>
-            </button>
+            <div className="relative">
+              <button
+                className="relative p-1 hover:text-white"
+                title="Notifications"
+                onClick={() => {
+                  const next = !notifOpen;
+                  setNotifOpen(next);
+                  if (next) fetchNotifications();
+                }}
+              >
+                <Bell className="h-4 w-4" />
+                {notifications.length > 0 && (
+                  <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-orange-500 rounded-full"></span>
+                )}
+              </button>
+              {notifOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setNotifOpen(false)} />
+                  <div className="absolute right-0 mt-2 w-72 max-h-96 overflow-y-auto bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl z-50">
+                    <div className="px-3 py-2 border-b border-zinc-800 text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                      Notifications
+                    </div>
+                    {notifications.length === 0 ? (
+                      <div className="px-3 py-4 text-xs text-zinc-500">No new notifications</div>
+                    ) : (
+                      notifications.map((n: any) => (
+                        <button
+                          key={n.id}
+                          onClick={() => { if (n.link) setActiveTab(n.link); setNotifOpen(false); }}
+                          className="w-full text-left px-3 py-2 border-b border-zinc-800/50 hover:bg-zinc-800/50"
+                        >
+                          <div className="text-xs font-semibold text-zinc-200">{n.title}</div>
+                          <div className="text-[11px] text-zinc-400">{n.message}</div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
             
             <div className="h-4 w-[1px] bg-zinc-800 hidden sm:block"></div>
 

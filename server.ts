@@ -2421,30 +2421,32 @@ async function startServer() {
   });
 
   app.put("/api/employees/:id", async (req, res) => {
-    const db = getDB();
-    const id = parseInt(req.params.id);
-    const index = db.employees.findIndex((e: Employee) => e.employee_id === id);
-    if (index !== -1) {
-      db.employees[index] = { ...db.employees[index], ...req.body };
-      setDB(db);
-      await syncSave(db);
-      res.json(db.employees[index]);
-    } else {
-      res.status(404).json({ error: "Employee not found" });
+    try {
+      const id = parseInt(req.params.id);
+      // Persist against the MySQL employees table (single source of truth) — the
+      // GET route reads from here, so mutations must too (used by edit + deactivate).
+      const existing = await EmployeeIdentityService.instance.getEmployeeById(id);
+      if (!existing) return res.status(404).json({ error: "Employee not found" });
+      // Strip non-column / computed fields so the UPDATE doesn't hit unknown columns.
+      const { employee_id, target_revenue, ...data } = req.body || {};
+      if (Object.keys(data).length > 0) {
+        await EmployeeIdentityService.updateEmployee(id, data);
+      }
+      const updated = await EmployeeIdentityService.instance.getEmployeeById(id);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to update employee." });
     }
   });
 
   app.delete("/api/employees/:id", async (req, res) => {
-    const db = getDB();
-    const id = parseInt(req.params.id);
-    const index = db.employees.findIndex((e: Employee) => e.employee_id === id);
-    if (index !== -1) {
-      const removed = db.employees.splice(index, 1)[0];
-      setDB(db);
-      await syncSave(db);
-      res.json({ success: true, removed });
-    } else {
-      res.status(404).json({ error: "Employee not found" });
+    try {
+      const id = parseInt(req.params.id);
+      const ok = await EmployeeIdentityService.deleteEmployee(id);
+      if (!ok) return res.status(404).json({ error: "Employee not found" });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to delete employee." });
     }
   });
 
@@ -4015,6 +4017,45 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     } else {
       res.status(404).json({ error: "Alert not found" });
     }
+  });
+
+  // Aggregated operational notifications feed for the header bell. Each signal is
+  // derived from real DB data and individually guarded, so a missing table
+  // degrades that one signal gracefully instead of failing the whole feed.
+  app.get("/api/notifications", async (req, res) => {
+    const notifications: any[] = [];
+
+    try {
+      const [rows]: any = await dbPool.query(
+        "SELECT COUNT(*) AS n FROM job_card_master WHERE job_status IN ('Open','In Progress')"
+      );
+      const n = Number(rows?.[0]?.n || 0);
+      if (n > 0) {
+        notifications.push({
+          id: "open-jobs", type: "workshop", severity: "info",
+          title: "Open Job Cards",
+          message: `${n} job card${n === 1 ? "" : "s"} open or in progress`,
+          link: "jobs"
+        });
+      }
+    } catch (e) { /* job_card_master absent — skip this signal */ }
+
+    try {
+      const [rows]: any = await dbPool.query(
+        "SELECT COUNT(*) AS n FROM profile_update_requests WHERE status = 'Pending'"
+      );
+      const n = Number(rows?.[0]?.n || 0);
+      if (n > 0) {
+        notifications.push({
+          id: "profile-approvals", type: "approval", severity: "warning",
+          title: "Pending Approvals",
+          message: `${n} profile update request${n === 1 ? "" : "s"} awaiting approval`,
+          link: "users"
+        });
+      }
+    } catch (e) { /* profile_update_requests absent — skip */ }
+
+    res.json({ success: true, count: notifications.length, notifications });
   });
 
   // --- ROLES ENDPOINTS ---
@@ -5620,6 +5661,72 @@ Return a JSON object where keys are the uploaded CSV headers, and values are the
       res.json({ success: true, circular: newCircular });
     } catch (e: any) {
       res.status(500).json({ error: e.message || "Failed to save circular." });
+    }
+  });
+
+  // Extract circular fields from an uploaded PDF/image via Gemini (multimodal).
+  // Degrades gracefully to a "fill manually" response when GEMINI_API_KEY is unset.
+  app.post("/api/warranty/circulars/extract", express.json({ limit: "25mb" }), async (req, res) => {
+    try {
+      const { fileBase64, mimeType } = req.body || {};
+      if (!fileBase64) {
+        return res.status(400).json({ success: false, error: "No file provided." });
+      }
+      if (!process.env.GEMINI_API_KEY) {
+        return res.json({
+          success: false,
+          unavailable: true,
+          message: "AI extraction is not configured (GEMINI_API_KEY missing). Please fill the fields manually."
+        });
+      }
+
+      const ai = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: { headers: { "User-Agent": "aistudio-build" } }
+      });
+
+      const prompt = `You read Tata Motors service/warranty circular documents.
+Extract these fields from the attached document and return EXACTLY a JSON object with this schema:
+{
+  "id": "circular reference number e.g. SC/2026/82 (empty string if not found)",
+  "title": "circular title / subject line",
+  "date": "release/publication date in short form like 'June 2026' (empty string if not found)",
+  "models": "applicable vehicle models e.g. 'All HCV - BS6 Phase-II' (empty string if not found)",
+  "summary": "1-3 sentence summary of what changes or rules this circular introduces",
+  "warrantyRules": "the detailed warranty rules, parts lists, limits and coverage content as plain text"
+}
+Return only the clean JSON object — no Markdown, no code fences.`;
+
+      const aiRes = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: [
+          { inlineData: { mimeType: mimeType || "application/pdf", data: fileBase64 } },
+          prompt
+        ],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let parsed: any = {};
+      try {
+        parsed = JSON.parse((aiRes.text || "{}").trim());
+      } catch {
+        return res.json({ success: false, message: "Could not read the document. Please fill the fields manually." });
+      }
+
+      return res.json({
+        success: true,
+        fields: {
+          id: parsed.id || "",
+          title: parsed.title || "",
+          date: parsed.date || "",
+          models: parsed.models || "",
+          summary: parsed.summary || "",
+          warrantyRules: parsed.warrantyRules || ""
+        }
+      });
+    } catch (e: any) {
+      console.error("Circular extract failed:", e.message);
+      return res.status(500).json({ success: false, error: e.message || "Extraction failed. Please fill manually." });
     }
   });
 
