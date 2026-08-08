@@ -1,7 +1,11 @@
 import * as dotenv from "dotenv";
 
-// Load environment variables before doing any checks
-dotenv.config({ override: true });
+// Load environment variables before doing any checks.
+// When running under NODE_ENV=test, load .env.test so integration tests target
+// the isolated test database (railway_test) instead of the production .env.
+// NODE_ENV must be exported by the caller before this module is imported.
+const envFile = process.env.NODE_ENV === "test" ? ".env.test" : ".env";
+dotenv.config({ path: envFile, override: true });
 
 export const envConfig = {
   // Required Variables
@@ -59,6 +63,17 @@ export function validateEnvironment(): void {
   let hasErrors = false;
   const report: string[] = [];
   report.push("=== Environment Check ===");
+
+  if (envConfig.NODE_ENV === "test") {
+    if (
+      envConfig.DB_DATABASE === "railway" ||
+      envConfig.DB_HOST === "35.200.150.167" ||
+      envConfig.DB_DATABASE !== "railway_test"
+    ) {
+      console.error("[SECURITY] CRITICAL: Test execution blocked! Attempted to connect to production database or missing 'railway_test' configuration.");
+      process.exit(1);
+    }
+  }
 
   requiredVars.forEach((key) => {
     // We check the original process.env or our fallback config logic
