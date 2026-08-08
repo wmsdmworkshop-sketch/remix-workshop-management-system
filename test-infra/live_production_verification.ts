@@ -39,19 +39,19 @@ async function runLiveVerification() {
   }
 
   // 1. Developer Login
-  const devRes = await testLogin("Developer Login (sayeed_dp)", { username: "sayeed_dp", password: "Dev@12345" }, 200);
+  const devRes = await testLogin("Developer Login (sayeed_dp)", { username: "sayeed_dp", password: process.env.TEST_USER_PASSWORD }, 200);
 
   // 2. Admin Login
-  const adminRes = await testLogin("Admin Login (admin)", { username: "admin", password: "Dev@12345" }, 200);
+  const adminRes = await testLogin("Admin Login (admin)", { username: "admin", password: process.env.TEST_USER_PASSWORD }, 200);
 
   // 3. Service Advisor Login
-  const saRes = await testLogin("Service Advisor Login (shashi_sa)", { username: "shashi_sa", password: "Dev@12345" }, 200);
+  const saRes = await testLogin("Service Advisor Login (shashi_sa)", { username: "shashi_sa", password: process.env.TEST_USER_PASSWORD }, 200);
 
   // 4. Invalid Password Test
   await testLogin("Invalid Password Rejection", { username: "sayeed_dp", password: "WrongPassword999" }, 401);
 
   // 5. Non-existent Account Test
-  await testLogin("Non-existent Account Rejection", { username: "non_existent_user_9999", password: "Dev@12345" }, 401);
+  await testLogin("Non-existent Account Rejection", { username: "non_existent_user_9999", password: process.env.TEST_USER_PASSWORD }, 401);
 
   // 6. JWT Generation & /api/auth/me Verification
   if (devRes && devRes.token) {

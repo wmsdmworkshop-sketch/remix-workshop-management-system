@@ -16,7 +16,7 @@ async function api(method, path, body, token) {
 
 async function run() {
   // Login as admin
-  const r = await api('POST', '/api/auth/login', { username: 'admin', password: 'Admin@DWIP2026' });
+  const r = await api('POST', '/api/auth/login', { username: 'admin', password: process.env.ADMIN_PASSWORD });
   const token = r.data.token;
 
   // Get users to find Mustafa

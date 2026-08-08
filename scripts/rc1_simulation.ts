@@ -69,7 +69,7 @@ async function runSimulation() {
   let token = '';
 
   // Attempt login
-  const login = await api('POST', '/api/auth/login', { username: 'admin', password: 'Admin@DWIP2026' });
+  const login = await api('POST', '/api/auth/login', { username: 'admin', password: process.env.ADMIN_PASSWORD });
   if (login.ok) {
     token = login.data.token;
   }

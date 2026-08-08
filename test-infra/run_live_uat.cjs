@@ -38,7 +38,7 @@ async function run() {
 
   // Login
   console.log('Logging in as admin...');
-  const loginRes = await api('POST', '/api/auth/login', { username: 'admin', password: 'Admin@DWIP2026' });
+  const loginRes = await api('POST', '/api/auth/login', { username: 'admin', password: process.env.ADMIN_PASSWORD });
   if (!loginRes.ok) {
     console.error('Login failed:', loginRes.data);
     process.exit(1);

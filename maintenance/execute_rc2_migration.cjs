@@ -79,7 +79,7 @@ async function executeRC2Migration() {
   console.log(`=======================================================\n`);
 
   console.log('1. Authenticating Admin Release Engineer...');
-  const loginRes = await sendRequest('/api/auth/login', 'POST', { username: 'admin', password: 'Admin@DWIP2026' });
+  const loginRes = await sendRequest('/api/auth/login', 'POST', { username: 'admin', password: process.env.ADMIN_PASSWORD });
   const token = loginRes.token;
   if (!token) {
     console.error('Authentication failed!', loginRes);

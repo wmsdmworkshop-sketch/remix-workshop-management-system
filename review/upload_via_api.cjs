@@ -72,7 +72,7 @@ async function postBatch(endpoint, rows, token) {
 
 async function run() {
   console.log('🔑 Logging in as admin to get auth token...');
-  const loginRes = await sendRequest('/api/auth/login', { username: 'admin', password: 'Admin@DWIP2026' });
+  const loginRes = await sendRequest('/api/auth/login', { username: 'admin', password: process.env.ADMIN_PASSWORD });
   if (!loginRes.token) {
     console.error('Login failed:', loginRes);
     process.exit(1);

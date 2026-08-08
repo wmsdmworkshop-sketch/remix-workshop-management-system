@@ -6,7 +6,7 @@ test.describe('CORE-DATA-001 Vehicle Passport Regression Suite', () => {
   test('Verify API Certification Endpoint Returns PASS with 100% Accuracy', async ({ request }) => {
     // 1. Authenticate
     const loginRes = await request.post(`${BASE_URL}/api/auth/login`, {
-      data: { username: 'mustafaladaf50@gmail.com', password: 'password123' }
+      data: { username: 'mustafaladaf50@gmail.com', password: process.env.TEST_USER_PASSWORD }
     });
     expect(loginRes.ok()).toBeTruthy();
     const { token } = await loginRes.json();
@@ -25,7 +25,7 @@ test.describe('CORE-DATA-001 Vehicle Passport Regression Suite', () => {
 
   test('Verify Vehicle Passport Aggregate for High-History Vehicle KA32AA5833', async ({ request }) => {
     const loginRes = await request.post(`${BASE_URL}/api/auth/login`, {
-      data: { username: 'mustafaladaf50@gmail.com', password: 'password123' }
+      data: { username: 'mustafaladaf50@gmail.com', password: process.env.TEST_USER_PASSWORD }
     });
     const { token } = await loginRes.json();
 
@@ -53,7 +53,7 @@ test.describe('CORE-DATA-001 Vehicle Passport Regression Suite', () => {
 
   test('Verify Vehicle Passport Aggregate for KA32AA9194', async ({ request }) => {
     const loginRes = await request.post(`${BASE_URL}/api/auth/login`, {
-      data: { username: 'mustafaladaf50@gmail.com', password: 'password123' }
+      data: { username: 'mustafaladaf50@gmail.com', password: process.env.TEST_USER_PASSWORD }
     });
     const { token } = await loginRes.json();
 
