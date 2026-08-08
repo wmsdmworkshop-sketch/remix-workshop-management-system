@@ -21,6 +21,7 @@ import { verifyJobCard } from "./src/engines/ocr-processor.ts";
 import { EmployeeIdentityService, RoleService, AuditService } from "./src/core/identity.ts";
 import { EmployeeRepository, PermissionRepository, AuditRepository } from "./src/core/repositories.ts";
 import { EventBus } from "./src/core/event-bus.ts";
+import { resolveSeedPassword } from "./src/core/seed-password.ts";
 import { 
   OperationalEventRepository, 
   OperationalEventService, 
@@ -307,8 +308,8 @@ async function getLocalUsers() {
     cachedDB = { ...INITIAL_DATA };
   }
   if (!cachedDB.users) {
-    const devHash = await bcrypt.hash("developer", 10);
-    const adminHash = await bcrypt.hash("admin123", 10);
+    const devHash = await bcrypt.hash(resolveSeedPassword("SEED_DEVELOPER_PASSWORD", "developer").password, 10);
+    const adminHash = await bcrypt.hash(resolveSeedPassword("SEED_ADMIN_PASSWORD", "admin").password, 10);
     cachedDB.users = [
       {
         user_id: 1,
@@ -568,17 +569,21 @@ async function startServer() {
       { full_name: "Vitthal Suti", username: "vitthal", role: "dealer_principal" }
     ];
 
-    const defaultPasswordHash = await bcrypt.hash("password123", 10);
-    const developerPasswordHash = await bcrypt.hash("developer", 10);
-    const adminPasswordHash = await bcrypt.hash("admin123", 10);
+    // Seed passwords are sourced from env vars; when unset, resolveSeedPassword
+    // generates a strong random password per user and logs it once. No shared,
+    // hardcoded default passwords are ever seeded.
+    const seedEnvVarFor = (username: string): string => {
+      if (username === "developer" || username === "wmsdmworkshop@gmail.com") return "SEED_DEVELOPER_PASSWORD";
+      if (username === "admin" || username === "workshop_admin") return "SEED_ADMIN_PASSWORD";
+      return "SEED_DEFAULT_PASSWORD";
+    };
 
     for (const u of usersToSeed) {
       const [existing] = await dbPool.query("SELECT * FROM users WHERE username = ?", [u.username]) as any[];
       if (existing.length === 0) {
         console.log(`Seeding user: ${u.full_name} (${u.role})`);
-        let passHash = defaultPasswordHash;
-        if (u.username === "developer") passHash = developerPasswordHash;
-        if (u.username === "admin") passHash = adminPasswordHash;
+        const { password } = resolveSeedPassword(seedEnvVarFor(u.username), u.username);
+        const passHash = await bcrypt.hash(password, 10);
 
         await dbPool.execute(
           "INSERT INTO users (full_name, username, password_hash, role, is_active) VALUES (?, ?, ?, ?, 1)",

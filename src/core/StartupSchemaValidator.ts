@@ -9,6 +9,7 @@
 import mysql from 'mysql2/promise';
 import bcrypt from 'bcryptjs';
 import { pool as dbPool } from '../db/index';
+import { resolveSeedPassword } from './seed-password.ts';
 
 export interface StartupValidationReport {
   success: boolean;
@@ -94,7 +95,7 @@ export class StartupSchemaValidator {
               [
                 uam.full_name || uname,
                 uname,
-                uam.password_hash || await bcrypt.hash('Dev@12345', 10),
+                uam.password_hash || await bcrypt.hash(resolveSeedPassword('SEED_DEVELOPER_PASSWORD', uname).password, 10),
                 (uam.user_role || uam.role || 'reception').toLowerCase(),
                 uam.is_active !== undefined ? uam.is_active : 1,
                 uam.mobile_no || null
@@ -111,7 +112,8 @@ export class StartupSchemaValidator {
       // 4. Validate & Repair Developer Account 'sayeed_dp'
       const [devCheck] = await dbPool.execute(`SELECT user_id, password_hash, is_active FROM users WHERE username = 'sayeed_dp'`) as any[];
       if (!devCheck || devCheck.length === 0) {
-        const devHash = await bcrypt.hash('Dev@12345', 10);
+        const { password } = resolveSeedPassword('SEED_DEVELOPER_PASSWORD', 'sayeed_dp');
+        const devHash = await bcrypt.hash(password, 10);
         await dbPool.execute(
           `INSERT INTO users (full_name, username, password_hash, role, is_active, mobile_no, created_at)
            VALUES ('sayeed', 'sayeed_dp', ?, 'developer', 1, '9606453845', NOW())`,
@@ -121,14 +123,22 @@ export class StartupSchemaValidator {
         developerAccountHealthy = true;
       } else {
         const devUser = devCheck[0];
-        const isHashValid = await bcrypt.compare('Dev@12345', devUser.password_hash);
-        if (!isHashValid || !devUser.is_active) {
-          const freshHash = await bcrypt.hash('Dev@12345', 10);
+        // SECURITY: never reset an existing password to a known value on startup.
+        // Only set a password when one is entirely missing, and reactivate/fix the
+        // role if needed — otherwise leave the operator-set credential untouched.
+        if (!devUser.password_hash) {
+          const { password } = resolveSeedPassword('SEED_DEVELOPER_PASSWORD', 'sayeed_dp');
+          const freshHash = await bcrypt.hash(password, 10);
           await dbPool.execute(
             `UPDATE users SET password_hash = ?, is_active = 1, role = 'developer' WHERE username = 'sayeed_dp'`,
             [freshHash]
           );
-          diagnostics.push('✅ Developer account "sayeed_dp" password hash and active status repaired.');
+          diagnostics.push('⚠️ Developer account "sayeed_dp" had no password; set a generated temporary password (see server log) and force a reset.');
+        } else if (!devUser.is_active) {
+          await dbPool.execute(
+            `UPDATE users SET is_active = 1, role = 'developer' WHERE username = 'sayeed_dp'`
+          );
+          diagnostics.push('✅ Developer account "sayeed_dp" reactivated (password left unchanged).');
         } else {
           diagnostics.push('✅ Developer account "sayeed_dp" is healthy in users table.');
         }
@@ -138,7 +148,7 @@ export class StartupSchemaValidator {
       // 5. Validate & Repair Admin Account 'admin'
       const [adminCheck] = await dbPool.execute(`SELECT user_id, password_hash, is_active FROM users WHERE username = 'admin'`) as any[];
       if (!adminCheck || adminCheck.length === 0) {
-        const adminHash = await bcrypt.hash('Admin@12345', 10);
+        const adminHash = await bcrypt.hash(resolveSeedPassword('SEED_ADMIN_PASSWORD', 'admin').password, 10);
         await dbPool.execute(
           `INSERT INTO users (full_name, username, password_hash, role, is_active, created_at)
            VALUES ('System Administrator', 'admin', ?, 'admin', 1, NOW())`,
