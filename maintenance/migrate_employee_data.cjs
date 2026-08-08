@@ -5,7 +5,7 @@ async function run() {
     host: '35.200.150.167',
     port: 3306,
     user: 'root',
-    password: 'mjzwCcYkEYSYRAADKjnyAiEZGGrtwAri',
+    password: process.env.DB_PASSWORD,
     database: 'railway'
   });
 

@@ -91,7 +91,7 @@ Database `railway` contains all production tables:
 | **`DWIP_DB_HOST`** | `35.200.150.167` | Production Cloud SQL IP |
 | **`DWIP_DB_PORT`** | `3306` | Standard MySQL Port |
 | **`DWIP_DB_USER`** | `root` | Database Superuser |
-| **`DWIP_DB_PASSWORD`** | `WmsSecureMySQL2026!` | Production Password |
+| **`DWIP_DB_PASSWORD`** | _(redacted — stored in Secret Manager)_ | Production Password |
 | **`DWIP_DB_DATABASE`** | `railway` | Active Production Database |
 | **`DWIP_DB_SOCKET_PATH`** | `/cloudsql/giga-course-dp497:asia-south1:wms-mysql-db` | Unix Domain Socket Path |
 

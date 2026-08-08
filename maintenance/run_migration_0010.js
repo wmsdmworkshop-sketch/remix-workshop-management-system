@@ -5,7 +5,7 @@ import path from 'path';
 async function main() {
   const host = '35.200.150.167';
   const user = 'root';
-  const password = 'WmsSecureMySQL2026!';
+  const password = process.env.DB_PASSWORD;
   const database = 'railway';
 
   const conn = await mysql.createConnection({

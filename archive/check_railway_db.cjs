@@ -4,7 +4,7 @@ async function run() {
   const host = "thomas.proxy.rlwy.net";
   const port = 50733;
   const user = "root";
-  const password = "mjzwCcYkEYSYRAADKjnyAiEZGGrtwAri";
+  const password = process.env.DB_PASSWORD;
   const database = "railway";
 
   try {

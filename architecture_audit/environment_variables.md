@@ -13,7 +13,7 @@ This document lists the environment variables required by the application. These
 | **`DB_HOST`** | `35.200.150.167` or `127.0.0.1` | IP address or hostname of the MySQL Cloud SQL instance. | **Yes** |
 | **`DB_PORT`** | `3306` | MySQL port (defaults to `3306` if omitted). | No |
 | **`DB_USER`** | `root` | Database username. | **Yes** |
-| **`DB_PASSWORD`** | `WmsSecureMySQL2026!` | Password for the database user. | **Yes** |
+| **`DB_PASSWORD`** | _(set via Secret Manager / env — never commit)_ | Password for the database user. | **Yes** |
 | **`DB_DATABASE`** | `railway` | The primary MySQL database name. | **Yes** |
 | **`GEMINI_API_KEY`** | `AIzaSy...` | API key from Google AI Studio to run Gemini Copilot and AI Warranty validations. | **Yes** |
 

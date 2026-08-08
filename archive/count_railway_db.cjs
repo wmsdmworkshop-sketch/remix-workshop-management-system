@@ -4,7 +4,7 @@ const railwayDbConfig = {
     host: 'thomas.proxy.rlwy.net',
     port: 50733,
     user: 'root',
-    password: 'mjzwCcYkEYSYRAADKjnyAiEZGGrtwAri',
+    password: process.env.DB_PASSWORD,
     database: 'railway'
 };
 

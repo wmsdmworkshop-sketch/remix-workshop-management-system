@@ -6,7 +6,7 @@ const gcpDbConfig = {
     host: '35.200.150.167',
     port: 3306,
     user: 'root',
-    password: 'WmsSecureMySQL2026!',
+    password: process.env.DB_PASSWORD,
     database: 'railway',
     connectTimeout: 30000,
 };

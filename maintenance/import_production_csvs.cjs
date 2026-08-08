@@ -10,7 +10,7 @@ async function main() {
     connection = await mysql.createConnection({
       host: process.env.DB_HOST || '35.200.150.167',
       user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASSWORD || 'WmsSecureMySQL2026!',
+      password: process.env.DB_PASSWORD,
       database: process.env.DB_DATABASE || 'railway',
       port: Number(process.env.DB_PORT || 3306),
       connectTimeout: 20000
