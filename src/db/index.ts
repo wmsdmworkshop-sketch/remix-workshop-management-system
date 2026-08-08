@@ -1,8 +1,12 @@
 import mysql from "mysql2/promise";
-import { envConfig } from "../config/env.ts";
+import { envConfig, validateEnvironment } from "../config/env.ts";
 import { TelemetryService, DbHealthMetrics } from "./telemetry-service.ts";
 import { HealthMonitor } from "./health-monitor.ts";
 import { RetryExecutor } from "./retry-executor.ts";
+
+// Execute the central safety gate and environment validation
+// BEFORE any connection pooling is attempted.
+validateEnvironment();
 
 /**
  * =============================================================================

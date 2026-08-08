@@ -9,11 +9,13 @@ import { IIntegrationConnector } from './common/types';
 import { TmsaConnector } from './tmsa';
 import { DmsConnector } from './dms';
 import { FleetEdgeConnector } from './fleetedge';
+import { QrtConnector } from './qrt';
 
 export * from './common/types';
 export * from './tmsa';
 export * from './dms';
 export * from './fleetedge';
+export * from './qrt';
 
 export class IntegrationRegistry {
   private static instance: IntegrationRegistry;
@@ -24,6 +26,7 @@ export class IntegrationRegistry {
     this.registerConnector(new TmsaConnector());
     this.registerConnector(new DmsConnector());
     this.registerConnector(new FleetEdgeConnector());
+    this.registerConnector(new QrtConnector());
   }
 
   public static getInstance(): IntegrationRegistry {

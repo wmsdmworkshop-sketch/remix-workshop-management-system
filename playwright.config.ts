@@ -15,7 +15,7 @@ export default defineConfig({
   use: {
     actionTimeout: 0,
     trace: 'on-first-retry',
-    baseURL: 'https://wms-workshop-app-473233046183.asia-south1.run.app',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3001',
     screenshot: 'only-on-failure',
   },
   projects: [

@@ -207,6 +207,15 @@ export interface IHealthService {
   pingEndpoint(endpoint: string): Promise<{ reachable: boolean; durationMs: number }>;
 }
 
+export interface IQrtServiceRequestContract {
+  getServiceRequests(): Promise<any>;
+  startServiceRequest(requestId: string, technicianId: string): Promise<boolean>;
+  markReached(requestId: string, lat?: number, lng?: number): Promise<boolean>;
+  submitReachedOtp(requestId: string, otp: string): Promise<boolean>;
+  confirmJobComplete(requestId: string, otp: string, notes?: string): Promise<boolean>;
+  updateLocation(lat: number, lng: number, technicianId: string): Promise<boolean>;
+}
+
 // =============================================================================
 // CONNECTOR PLUGIN INTERFACE
 // =============================================================================
@@ -223,6 +232,7 @@ export interface IIntegrationConnector {
   readonly mediaService: IMediaService;
   readonly masterSyncService: IMasterSyncService;
   readonly healthService: IHealthService;
+  readonly qrtService?: IQrtServiceRequestContract;
   
   initialize(config: Record<string, any>): Promise<void>;
   shutdown(): Promise<void>;

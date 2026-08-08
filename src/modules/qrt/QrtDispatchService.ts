@@ -11,6 +11,7 @@ import { TimelineEventTypes } from '../../core/vos/timeline/types';
 import { vosAuditEngine } from '../../core/vos/audit/VosAuditEngine';
 import { StructuredLogger } from '../../core/vos/utils/StructuredLogger';
 import { VosDomainException } from '../../core/vos/exceptions';
+import { integrationRegistry } from '../../integrations';
 
 export class QrtDispatchService {
   private dispatches: Map<string, QrtDispatchRecord> = new Map();
@@ -58,6 +59,21 @@ export class QrtDispatchService {
       'QRT dispatched'
     );
 
+    // Call external Tata Motors QRT API
+    try {
+      if (integrationRegistry.hasConnector('QRT_EXTERNAL')) {
+        const qrtConnector = integrationRegistry.getConnector('QRT_EXTERNAL');
+        if (qrtConnector.qrtService) {
+          // Send internal breakdownId to external QRT system (this may need to map to an external ID later)
+          await qrtConnector.qrtService.startServiceRequest(params.breakdownId, params.teamMembers[0]?.id || 'UNKNOWN_TECH');
+          console.log(`[QrtDispatchService] Successfully synced startServiceRequest with external QRT API for ${params.breakdownId}`);
+        }
+      }
+    } catch (apiError) {
+      console.error(`[QrtDispatchService] Failed to sync startServiceRequest with external QRT API for ${params.breakdownId}`, apiError);
+      // We don't block local dispatch on external failure, would typically queue for retry
+    }
+
     return record;
   }
 
@@ -93,6 +109,19 @@ export class QrtDispatchService {
       'TECHNICIAN',
       'QRT arrived'
     );
+
+    // Call external Tata Motors QRT API
+    try {
+      if (integrationRegistry.hasConnector('QRT_EXTERNAL')) {
+        const qrtConnector = integrationRegistry.getConnector('QRT_EXTERNAL');
+        if (qrtConnector.qrtService) {
+          await qrtConnector.qrtService.markReached(record.breakdownId, arrivalLocation.latitude, arrivalLocation.longitude);
+          console.log(`[QrtDispatchService] Successfully synced markReached with external QRT API for ${record.breakdownId}`);
+        }
+      }
+    } catch (apiError) {
+      console.error(`[QrtDispatchService] Failed to sync markReached with external QRT API for ${record.breakdownId}`, apiError);
+    }
 
     return record;
   }
