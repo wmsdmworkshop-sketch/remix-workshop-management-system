@@ -18,6 +18,7 @@ import { getReworkHistoryForTechnician } from "./src/engines/rework-tracking-ser
 import { validateOvertimeRequest } from "./src/engines/overtime-rules.ts";
 import { verifyFace } from "./src/engines/face-verifier.ts";
 import { verifyJobCard } from "./src/engines/ocr-processor.ts";
+import vehiclePassportFacade from "./src/engines/vehicle-passport/index.ts";
 import { EmployeeIdentityService, RoleService, AuditService } from "./src/core/identity.ts";
 import { EmployeeRepository, PermissionRepository, AuditRepository } from "./src/core/repositories.ts";
 import { EventBus } from "./src/core/event-bus.ts";
@@ -3014,178 +3015,19 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     if (!query || typeof query !== "string") {
       return res.status(400).json({ error: "Query parameter is required" });
     }
-    const db = getDB();
-    const rawSearch = query.trim().toUpperCase();
-    const cleanSearch = rawSearch.replace(/[^A-Z0-9]/g, "");
-
-    if (!cleanSearch) {
-      return res.json({ jobCards: [], technicianMaps: [], revenues: [], reworkLogs: [], carryForwardLogs: [] });
-    }
-
-    // Find all matching active job cards in memory
-    const matchingActiveJobs = db.jobCards.filter((job: JobCard) => {
-      const cleanVrn = job.vrn ? job.vrn.toUpperCase().replace(/[^A-Z0-9]/g, "") : "";
-      const cleanVin = job.vin ? job.vin.toUpperCase().replace(/[^A-Z0-9]/g, "") : "";
-
-      const vrnMatch = cleanVrn === cleanSearch;
-      const vinMatch = cleanVin === cleanSearch || (cleanVin && cleanVin.includes(cleanSearch) && cleanSearch.length >= 5);
-      return vrnMatch || vinMatch;
-    });
-
-    const activeJobIds = matchingActiveJobs.map((j: JobCard) => j.job_id);
-    const maps = db.jobTechnicianMaps.filter((m: any) => activeJobIds.includes(m.job_id));
-    const activeRevenues = db.jobRevenues ? db.jobRevenues.filter((r: any) => activeJobIds.includes(r.job_id)) : [];
-    const reworks = db.reworkLogs ? db.reworkLogs.filter((r: any) => activeJobIds.includes(r.original_job_id) || activeJobIds.includes(r.new_job_id)) : [];
-    const carryForwards = db.carryForwardLogs ? db.carryForwardLogs.filter((c: any) => activeJobIds.includes(c.job_id)) : [];
-
-    let lastServiceDate: string | null = null;
-    let odometerReading: number | null = null;
-    const historicalJobs: any[] = [];
-    const historicalRevenues: any[] = [];
 
     try {
-      // 1. Query vehicle_master by registration or chassis
-      const [vehicles] = await dbPool.query(
-        "SELECT * FROM vehicle_master WHERE REPLACE(REPLACE(chassis_no, '-', ''), ' ', '') = ? OR REPLACE(REPLACE(registration_no, '-', ''), ' ', '') = ?",
-        [cleanSearch, cleanSearch]
-      ) as any[];
-
-      if (vehicles && vehicles.length > 0) {
-        const vehicle = vehicles[0];
-
-        // 2. Query service history records
-        const [services] = await dbPool.query(
-          "SELECT * FROM service_history WHERE chassis_no = ? ORDER BY service_datetime DESC",
-          [vehicle.chassis_no]
-        ) as any[];
-
-        // 3. Query invoices
-        const [invoices] = await dbPool.query(
-          "SELECT * FROM invoices WHERE chassis_no = ? ORDER BY invoice_date DESC",
-          [vehicle.chassis_no]
-        ) as any[];
-
-        // Map invoices by SR #
-        const invoiceMap = new Map<string, any>();
-        invoices.forEach((inv: any) => {
-          if (inv.sr_no) invoiceMap.set(inv.sr_no, inv);
-        });
-
-        // Derive last service date and maximum odometer reading
-        if (services.length > 0) {
-          const latestService = services[0];
-          lastServiceDate = latestService.service_datetime || latestService.job_card_open_date || null;
-
-          const odometers = services.map((s: any) => s.odometer_reading).filter((o: any) => o !== null);
-          if (odometers.length > 0) {
-            odometerReading = Math.max(...odometers);
-          }
-        }
-
-        // Map service history to timeline-compatible format
-        services.forEach((sh: any) => {
-          const matchedInv = sh.sr_no ? invoiceMap.get(sh.sr_no) : null;
-          const jobId = `SH-${sh.sh_no}`;
-
-          // Mappings matching user criteria:
-          // 1. Odometer reading
-          const kmReading = sh.odometer_reading || null;
-
-          // 2. Lead tech replaced by Service Advisor ID (defaulting to Unassigned)
-          const advisorId = matchedInv ? matchedInv.sr_assigned_to : (sh.contact_full_name || 'Unassigned');
-
-          // 3. Job Card Number (JC-xxxx) from order_no or fallback to sr_no
-          const jobCardNo = matchedInv ? matchedInv.order_no : (sh.sr_no || sh.sh_no);
-
-          // 4. Job Description includes SR Type and Invoice Summary / Service Request
-          let jobDesc = sh.sr_type || "General Repair";
-          if (sh.summary) jobDesc += `: ${sh.summary}`;
-          else if (sh.service_request) jobDesc += `: ${sh.service_request}`;
-
-          // 5. Date maps directly to service_datetime
-          const serviceDate = sh.service_datetime || sh.job_card_open_date || new Date().toISOString();
-
-          // Helper to parse currency
-          const parseCurrencyString = (val: any): number => {
-            if (val === null || val === undefined || String(val).trim() === "") return 0;
-            if (typeof val === 'number') return val;
-            const clean = String(val).replace(/[₹,]/g, "").trim();
-            const parsed = parseFloat(clean);
-            return isNaN(parsed) ? 0 : parsed;
-          };
-
-          if (!matchedInv) {
-            console.log(`[Invoice Validation] Job Card ${sh.sr_no || sh.sh_no || sh.sh_no} has no matching invoice.`);
-          }
-
-          // 6. Labor and Parts prices from latest invoice
-          const laborPrice = matchedInv ? parseCurrencyString(matchedInv.final_labour_amount) : 0;
-          const partsPrice = matchedInv ? parseCurrencyString(matchedInv.final_spares_amount) : 0;
-
-          if (jobCardNo) {
-            historicalJobs.push({
-              job_id: jobId,
-              job_card_no: jobCardNo,
-              vrn: sh.registration_no || vehicle.registration_no || "",
-              customer_name: vehicle.owner_account_name || sh.account || "Customer",
-              customer_mobile: vehicle.contact_authorization || "",
-              vehicle_make: "TATA",
-              vehicle_model: vehicle.product_line || "Tata Vehicle",
-              vehicle_year: vehicle.original_sale_date ? new Date(vehicle.original_sale_date).getFullYear() : 2024,
-              vin: vehicle.chassis_no,
-              km_reading: kmReading,
-              sr_type_id: sh.sr_type === "PM" ? 2 : sh.sr_type === "QS" ? 4 : 1,
-              job_description: jobDesc,
-              priority: "Normal",
-              bay_id: null,
-              status: matchedInv ? "Invoiced" : "Completed",
-              etd: serviceDate,
-              started_at: sh.job_card_open_date || serviceDate,
-              completed_at: serviceDate,
-              invoiced_at: matchedInv ? matchedInv.invoice_date : null,
-              created_by: 1,
-              created_at: serviceDate,
-              bay_no: sh.other_service_center ? sh.other_service_center.replace("DEVANAND AUTOMOBILES LLP", "Main") : "Main",
-              service_advisor: advisorId,
-              technician_name: advisorId, // Match both to display advisor
-              no_of_laborers: 1,
-              actual_time_taken: null,
-              labor_price: laborPrice,
-              parts_price: partsPrice
-            });
-
-            if (matchedInv) {
-              let consolidatedAmt = parseCurrencyString(matchedInv.final_consolidated_amt);
-              if (consolidatedAmt === 0 && (laborPrice > 0 || partsPrice > 0)) {
-                consolidatedAmt = laborPrice + partsPrice;
-              }
-              historicalRevenues.push({
-                revenue_id: `REV-${matchedInv.invoice_no}`,
-                job_id: jobId,
-                labour_amount: laborPrice,
-                parts_amount: partsPrice,
-                total_amount: consolidatedAmt
-              });
-            }
-          }
-        });
+      const aggregate = await vehiclePassportFacade.getVehiclePassportAggregate(query);
+      if (aggregate) {
+        return res.json({ success: true, passportAggregate: aggregate });
+      } else {
+        // For backwards compatibility when no passport is found but the UI expects a 200 response
+        return res.json({ success: true, passportAggregate: null }); 
       }
-    } catch (e) {
-      console.error("Failed to query vehicle master or history tables:", e);
+    } catch (err: any) {
+      console.error("Error fetching vehicle passport:", err);
+      return res.status(500).json({ error: "Internal server error" });
     }
-
-    const combinedJobCards = [...matchingActiveJobs, ...historicalJobs];
-    const combinedRevenues = [...activeRevenues, ...historicalRevenues];
-
-    res.json({
-      jobCards: combinedJobCards,
-      technicianMaps: maps,
-      revenues: combinedRevenues,
-      reworkLogs: reworks,
-      carryForwardLogs: carryForwards,
-      last_service_date: lastServiceDate,
-      odometer_reading: odometerReading
-    });
   });
 
   app.get("/api/validation/exception-report", async (req, res) => {
