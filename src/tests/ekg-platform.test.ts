@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { pool as db } from "../db/index.ts";
+import { verifyTestIsolation } from "./destructive_test_guard.ts";
 import crypto from "crypto";
 import { EkgEngine } from "../engines/ekg-engine.ts";
 import { globalEventBus } from "../core/event-bus.ts";
@@ -22,6 +23,7 @@ function assertEquals(actual: any, expected: any, message?: string) {
 
 // Ensure clean database state before running EKG tests
 async function setupEkgTestDb() {
+  await verifyTestIsolation();
   await db.execute("DELETE FROM graph_edge_history");
   await db.execute("DELETE FROM graph_edges");
   await db.execute("DELETE FROM graph_nodes");
@@ -226,6 +228,7 @@ test("Event integration: EventBus listener automatically enriches graph", async 
 // RUNNER EXECUTION
 // =============================================================================
 async function run() {
+  await verifyTestIsolation();
   console.log("=============================================================================");
   console.log("STARTING ENTERPRISE KNOWLEDGE GRAPH (EKG) UNIT TESTS");
   console.log("=============================================================================");

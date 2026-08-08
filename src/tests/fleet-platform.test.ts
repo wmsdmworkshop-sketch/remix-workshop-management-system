@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { pool as db } from "../db/index.ts";
+import { verifyTestIsolation } from "./destructive_test_guard.ts";
 import crypto from "crypto";
 import {
   calculateFleetDashboardMetrics,
@@ -29,6 +30,7 @@ function assertEquals(actual: any, expected: any, message?: string) {
 
 // Ensure clean database state before running FIP tests
 async function setupFipTestDb() {
+  await verifyTestIsolation();
   await db.execute("DELETE FROM fleet_opportunities");
   await db.execute("DELETE FROM fleet_breakdowns");
   await db.execute("DELETE FROM fleet_amc_contracts");
@@ -225,6 +227,7 @@ test("Rules Engine: evaluateFleetRules evaluates thresholds correctly", async ()
 // RUNNER EXECUTION
 // =============================================================================
 async function run() {
+  await verifyTestIsolation();
   console.log("=============================================================================");
   console.log("STARTING FLEET INTELLIGENCE PLATFORM (FIP) UNIT TESTS");
   console.log("=============================================================================");

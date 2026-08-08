@@ -104,9 +104,12 @@ test("PermissionRepository.findByRoleAndModule constructs correct query", async 
   const result = await repo.findByRoleAndModule("admin", "User Management");
 
   assertEquals(db.queries.length, 1);
-  assert(db.queries[0].sql.includes("WHERE r.role_name = ? AND m.module_name = ?"));
+  // Query performs case-insensitive role/module matching (LOWER + COALESCE fallback)
+  // and normalizes the bound params to lowercase before matching.
+  assert(db.queries[0].sql.includes("role_permissions"));
+  assert(db.queries[0].sql.toUpperCase().includes("LOWER"));
   assertEquals(db.queries[0].params[0], "admin");
-  assertEquals(db.queries[0].params[1], "User Management");
+  assertEquals(db.queries[0].params[1], "user management");
   assert(result !== null);
   assertEquals(result?.can_view, 1);
 });

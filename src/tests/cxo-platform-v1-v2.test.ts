@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { pool as db } from "../db/index.ts";
+import { verifyTestIsolation } from "./destructive_test_guard.ts";
 import { globalEventBus } from "../core/event-bus.ts";
 import { initializeNotificationEventListeners } from "../core/notification-event-listener.ts";
 import crypto from "crypto";
@@ -21,6 +22,7 @@ function assertEquals(actual: any, expected: any, message?: string) {
 
 // Ensure clean database state before running CXO tests
 async function setupCxoTestDb() {
+  await verifyTestIsolation();
   await db.execute("DELETE FROM customer_feedback");
   await db.execute("DELETE FROM digital_approvals");
   await db.execute("DELETE FROM communication_logs");
@@ -143,6 +145,7 @@ test("Vehicle Health Card evaluates components status and AI explanations", () =
 // RUNNER
 // =============================================================================
 async function run() {
+  await verifyTestIsolation();
   console.log("=============================================================================");
   console.log("STARTING CUSTOMER EXPERIENCE (CXO) VERSIONED API UNIT TESTS");
   console.log("=============================================================================");

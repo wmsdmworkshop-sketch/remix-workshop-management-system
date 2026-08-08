@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { pool as db } from "../db/index.ts";
+import { verifyTestIsolation } from "./destructive_test_guard.ts";
 import { AiCopilotOrchestrator } from "../engines/ai-copilot-orchestrator.ts";
 import { EkgEngine } from "../engines/ekg-engine.ts";
 import { globalEventBus } from "../core/event-bus.ts";
@@ -21,6 +22,7 @@ function assertEquals(actual: any, expected: any, message?: string) {
 }
 
 async function setupHardeningTestDb() {
+  await verifyTestIsolation();
   await db.execute("DELETE FROM graph_edges");
   await db.execute("DELETE FROM graph_nodes");
   await db.execute("DELETE FROM ai_recommendations");
@@ -149,6 +151,7 @@ test("AI Performance Analytics: aggregates mathematical counts and ratings", asy
 // RUNNER EXECUTION
 // =============================================================================
 async function run() {
+  await verifyTestIsolation();
   console.log("=============================================================================");
   console.log("STARTING AI HARDENING PLATFORM UNIT TESTS");
   console.log("=============================================================================");

@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { pool as db } from "../db/index";
+import { verifyTestIsolation } from "./destructive_test_guard.ts";
 import crypto from "crypto";
 
 const tests: { name: string; fn: () => Promise<void> | void }[] = [];
@@ -19,6 +20,7 @@ function assertEquals(actual: any, expected: any, message?: string) {
 
 // Ensure WICE Tables exist and clear test data before runs
 async function setupWiceTestDb() {
+  await verifyTestIsolation();
   await db.execute("DELETE FROM oem_queries");
   await db.execute("DELETE FROM warranty_passports");
   await db.execute("DELETE FROM warranty_claims");
@@ -208,6 +210,7 @@ test("Epic 2 & 13: Warranty DNA records and retrieves learning objects successfu
 // RUNNER
 // =============================================================================
 async function run() {
+  await verifyTestIsolation();
   console.log("=============================================================================");
   console.log("STARTING WARRANTY INTELLIGENCE (WICE) UNIT TESTS");
   console.log("=============================================================================");

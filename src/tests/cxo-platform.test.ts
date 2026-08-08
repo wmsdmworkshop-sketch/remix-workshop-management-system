@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { pool as db } from "../db/index";
+import { verifyTestIsolation } from "./destructive_test_guard.ts";
 import crypto from "crypto";
 
 const tests: { name: string; fn: () => Promise<void> | void }[] = [];
@@ -19,6 +20,7 @@ function assertEquals(actual: any, expected: any, message?: string) {
 
 // Ensure clean database state before running CXO tests
 async function setupCxoTestDb() {
+  await verifyTestIsolation();
   await db.execute("DELETE FROM customer_feedback");
   await db.execute("DELETE FROM digital_approvals");
   await db.execute("DELETE FROM communication_logs");
@@ -184,6 +186,7 @@ test("Epic 10: Feedback metrics capture CSI / NPS ratings and dynamically promot
 // RUNNER
 // =============================================================================
 async function run() {
+  await verifyTestIsolation();
   console.log("=============================================================================");
   console.log("STARTING CUSTOMER EXPERIENCE & OWNERSHIP JOURNEY (CXO) UNIT TESTS");
   console.log("=============================================================================");
