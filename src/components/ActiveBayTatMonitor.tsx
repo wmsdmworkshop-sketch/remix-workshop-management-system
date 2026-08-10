@@ -227,6 +227,39 @@ export const TIME_SLOTS = (() => {
   return slots;
 })();
 
+// =============================================================================
+// UNIFIED BAY LIFECYCLE STATE
+// A bay's state is DERIVED from the job card occupying it — using fields we
+// already capture (workshop_stage, current_workflow_state, L1–L5 delays). No new
+// data source. Priority: a logged delay is the alert state and wins over stage.
+// =============================================================================
+export type BayLifecycleState =
+  | "EMPTY" | "WIP" | "WAITING_PARTS" | "WAITING_APPROVAL" | "WAITING_PAYMENT" | "DELAYED";
+
+export const BAY_STATE_CONFIG: Record<BayLifecycleState, { label: string; badge: string; border: string; dot: string }> = {
+  EMPTY:            { label: "Available",        badge: "bg-slate-100 text-slate-500 border-slate-200",   border: "border-slate-200",  dot: "bg-slate-300" },
+  WIP:              { label: "Work in Progress", badge: "bg-green-50 text-green-700 border-green-200",     border: "border-green-200",  dot: "bg-green-500" },
+  WAITING_PARTS:    { label: "Waiting Parts",    badge: "bg-sky-50 text-sky-700 border-sky-200",          border: "border-sky-200",    dot: "bg-sky-500" },
+  WAITING_APPROVAL: { label: "Waiting Approval", badge: "bg-violet-50 text-violet-700 border-violet-200", border: "border-violet-200", dot: "bg-violet-500" },
+  WAITING_PAYMENT:  { label: "Waiting Payment",  badge: "bg-amber-50 text-amber-700 border-amber-200",    border: "border-amber-200",  dot: "bg-amber-500" },
+  DELAYED:          { label: "Delayed",          badge: "bg-red-50 text-red-700 border-red-200",          border: "border-red-300",    dot: "bg-red-500" },
+};
+
+export const BAY_STATE_ORDER: BayLifecycleState[] =
+  ["WIP", "WAITING_PARTS", "WAITING_APPROVAL", "WAITING_PAYMENT", "DELAYED", "EMPTY"];
+
+export function deriveBayState(job: JobCard | undefined | null): BayLifecycleState {
+  if (!job) return "EMPTY";
+  const stage = String(job.workshop_stage || "").toLowerCase();
+  const wf = String((job as any).current_workflow_state || "").toUpperCase();
+  const hasDelay = !!(job.l1_delay || job.l2_delay || job.l3_delay || job.l5_delay);
+  if (hasDelay) return "DELAYED";
+  if (stage.includes("part") || wf === "PARTS_PENDING") return "WAITING_PARTS";
+  if (stage.includes("approval") || stage.includes("warranty")) return "WAITING_APPROVAL";
+  if (stage.includes("payment") || wf === "BILLING_PENDING" || wf === "CASHIER_PENDING") return "WAITING_PAYMENT";
+  return "WIP";
+}
+
 export default function ActiveBayTatMonitor({
   jobCards,
   bays,
@@ -234,13 +267,13 @@ export default function ActiveBayTatMonitor({
   onUpdateJob,
   onRefresh
 }: ActiveBayTatMonitorProps) {
-  const [activeTab, setActiveTab] = useState<"board" | "timeline" | "delay-manager" | "analytics" | "paster">("board");
+  const [activeTab, setActiveTab] = useState<"board" | "delay-manager" | "analytics">("board");
   
   // Search and Filtering states
   const [searchVrn, setSearchVrn] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [stageFilter, setStageFilter] = useState("All");
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState("09:15");
+  const [bayStateFilter, setBayStateFilter] = useState<BayLifecycleState | "ALL">("ALL");
 
   // Delay Picker Modal State
   const [loggingJobId, setLoggingJobId] = useState<number | null>(null);
@@ -255,12 +288,6 @@ export default function ActiveBayTatMonitor({
     time_slot: "09:15"
   });
 
-  // Importer state
-  const [pastedReport, setPastedReport] = useState("");
-  const [parsedRows, setParsedRows] = useState<any[]>([]);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncFeedback, setSyncFeedback] = useState<{ type: "success" | "error" | null; msg: string }>({ type: null, msg: "" });
-
   // Map of active jobs assigned to bays
   const activeBaysSnapshot = useMemo(() => {
     return bays.map(bay => {
@@ -268,10 +295,24 @@ export default function ActiveBayTatMonitor({
       const assignedJobs = jobCards.filter(j => j.bay_id === bay.bay_id && j.status !== "Completed" && j.status !== "Invoiced" && j.status !== "Cancelled");
       return {
         ...bay,
-        jobs: assignedJobs
+        jobs: assignedJobs,
+        lifecycleState: deriveBayState(assignedJobs[0])
       };
     });
   }, [bays, jobCards]);
+
+  // Counts per lifecycle state (for the control-room summary strip).
+  const bayStateCounts = useMemo(() => {
+    const c = {} as Record<BayLifecycleState, number>;
+    BAY_STATE_ORDER.forEach(s => { c[s] = 0; });
+    activeBaysSnapshot.forEach(b => { c[b.lifecycleState] = (c[b.lifecycleState] || 0) + 1; });
+    return c;
+  }, [activeBaysSnapshot]);
+
+  const visibleBays = useMemo(
+    () => activeBaysSnapshot.filter(b => bayStateFilter === "ALL" || b.lifecycleState === bayStateFilter),
+    [activeBaysSnapshot, bayStateFilter]
+  );
 
   // Open Delay logger for a job
   const openDelayLogger = (job: JobCard) => {
@@ -322,125 +363,6 @@ export default function ActiveBayTatMonitor({
 
     await onUpdateJob(jobId, { delay_notes: currentNotes });
     await onRefresh();
-  };
-
-  // Parser of Active Bay Sheet text
-  const handleParseReportText = (text: string) => {
-    if (!text.trim()) {
-      setParsedRows([]);
-      return;
-    }
-
-    const lines = text.split(/\r?\n/);
-    const parsed: any[] = [];
-
-    lines.forEach((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-
-      const cols = trimmed.includes("\t") ? trimmed.split("\t") : trimmed.split(",");
-      const cleanCols = cols.map(c => c.replace(/^["']|["']$/g, "").trim());
-
-      // Filter rows that are header indicators
-      if (cleanCols.some(c => c.toLowerCase() === "sr tech" || c.toLowerCase() === "l1" || c.toLowerCase() === "time set")) {
-        return;
-      }
-
-      // Check if row has at least status and stage or slot
-      const status = cleanCols[0];
-      const stage = cleanCols[2];
-      const timeSlot = cleanCols[cleanCols.length - 1];
-
-      if (!status && !stage && !timeSlot) return;
-
-      // Clean delay properties
-      const l1 = cleanCols[4] || "";
-      const l2 = cleanCols[6] || "";
-      const l3 = cleanCols[7] || "";
-      const l5 = cleanCols[11] || "";
-      const notes = cleanCols[12] || "";
-
-      // Match technicians
-      const srTech = cleanCols[14] || "";
-      const jrTech = cleanCols[15] || "";
-      const elecTech = cleanCols[16] || "";
-
-      parsed.push({
-        status: TAT_STATUSES.includes(status) ? status : "PENDING",
-        stage: WORKSHOP_STAGES.includes(stage) ? stage : "work-in-progress",
-        l1: L1_DELAYS.includes(l1) ? l1 : "",
-        l2: L2_DELAYS.includes(l2) ? l2 : "",
-        l3: L3_DELAYS.includes(l3) ? l3 : "",
-        l5: L5_DELAYS.includes(l5) ? l5 : "",
-        notes: notes || "",
-        srTech,
-        jrTech,
-        elecTech,
-        timeSlot: TIME_SLOTS.includes(timeSlot) ? timeSlot : "09:15"
-      });
-    });
-
-    setParsedRows(parsed);
-  };
-
-  const handleLoadSampleConfig = () => {
-    const sample = `PENDING,,Customer Approval,,AMC_Claim_Issue,,Additional work found by SA,Additional work during upon customer…,,,,Absentism due to leave /Holiday,,,LOKU,ALTAF HUSSAIN,ASIF,,,,09:15
-COMPLETED,,work-in-progress,,,,,,,,,,,,MALLINATH,ASHFAQ HUSSAIN,FAKIRAAPA,,,,09:30
-DELIVERED,,Waiting for payment,,Ancillary_Delay,,Additional work requested by customer,Additional work found during initial check…,,AMC_Activation_pending_TML,,Fund strucked in Market due to credit,,,MD JAVEED,HANUMATH RAYA,MAHMED ALTAF AHMED,,,,09:45
-ON-ROAD,,Warranty Pending,,,,,,,,,,,,MOHAMMED SHOAIB,HUNCHIRAY,MD ABDUL KHADEER,,,,10:00
-PARKING,,Warranty decline,,Awaiting_TML_Approval,,Advantek Delay,Additional work using dynamic check list,,Customer not reachable,,Fund Strucked with Insurance company,,,RAJKUMAR AMABARAYA MENTE,MD GOUSE,MOHSIN NAWAZ,,,,10:15
-WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMILL,,,,10:30`;
-    setPastedReport(sample);
-    handleParseReportText(sample);
-  };
-
-  const handleCommitPastedReport = async () => {
-    if (parsedRows.length === 0) return;
-    setIsSyncing(true);
-    setSyncFeedback({ type: null, msg: "" });
-
-    try {
-      // For each parsed row, update the active job cards in bays sequentially to build an amazing demo!
-      let updatedCount = 0;
-      
-      for (let i = 0; i < Math.min(parsedRows.length, jobCards.length); i++) {
-        const row = parsedRows[i];
-        const job = jobCards[i];
-        
-        let customNotes = row.notes || "";
-        if (row.srTech) customNotes = `[Sr Tech: ${row.srTech}] ${customNotes}`;
-        if (row.jrTech) customNotes = `[Jr Tech: ${row.jrTech}] ${customNotes}`;
-        if (row.elecTech) customNotes = `[Elec: ${row.elecTech}] ${customNotes}`;
-
-        await fetch(`/api/job-cards/${job.job_id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            tat_status: row.status,
-            workshop_stage: row.stage,
-            l1_delay: row.l1 || null,
-            l2_delay: row.l2 || null,
-            l3_delay: row.l3 || null,
-            l5_delay: row.l5 || null,
-            delay_notes: customNotes || null,
-            time_slot: row.timeSlot
-          })
-        });
-        updatedCount++;
-      }
-
-      setSyncFeedback({
-        type: "success",
-        msg: `Successfully synchronized ${updatedCount} Active Bay Reports! Connected technician categories and mapped custom delay hierarchies.`
-      });
-      setPastedReport("");
-      setParsedRows([]);
-      await onRefresh();
-    } catch (e: any) {
-      setSyncFeedback({ type: "error", msg: e.message || "Failed to sync reports." });
-    } finally {
-      setIsSyncing(false);
-    }
   };
 
   // Filtered Job Cards with delays
@@ -522,19 +444,7 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
             <Layers className="h-3.5 w-3.5" />
             Bay Report
           </button>
-          <button 
-            id="btn-timeline"
-            onClick={() => setActiveTab("timeline")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all flex items-center gap-1.5 ${
-              activeTab === "timeline" 
-                ? "bg-slate-900 text-white border-slate-950 shadow-xs" 
-                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
-            }`}
-          >
-            <Calendar className="h-3.5 w-3.5" />
-            Time Matrix
-          </button>
-          <button 
+          <button
             id="btn-delay"
             onClick={() => setActiveTab("delay-manager")}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all flex items-center gap-1.5 ${
@@ -557,18 +467,6 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
           >
             <BarChart3 className="h-3.5 w-3.5" />
             TAT Pareto Charts
-          </button>
-          <button 
-            id="btn-paster"
-            onClick={() => setActiveTab("paster")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all flex items-center gap-1.5 ${
-              activeTab === "paster" 
-                ? "bg-indigo-600 text-white border-indigo-700 shadow-xs hover:bg-indigo-700" 
-                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
-            }`}
-          >
-            <Upload className="h-3.5 w-3.5" />
-            Paste Master Sheets
           </button>
         </div>
       </div>
@@ -612,19 +510,19 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
             </span>
             <span className="text-[10px] font-bold text-slate-400">vehicles delivered</span>
           </div>
-          <p className="text-[9px] text-emerald-600 font-bold mt-2.5 uppercase tracking-wide">
-            ● Active Workshop TAT: 84.5% SLA
+          <p className="text-[9px] text-slate-400 font-bold mt-2.5 uppercase tracking-wide">
+            {bayStateCounts.WAITING_PARTS + bayStateCounts.WAITING_APPROVAL + bayStateCounts.WAITING_PAYMENT} bay(s) waiting on parts / approval / payment
           </p>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-none">Planning Interval</p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-none">Bays Delayed</p>
           <div className="flex items-baseline gap-2 mt-1.5">
-            <span className="text-xl font-black text-slate-900">15-Mins</span>
-            <span className="text-[10px] font-bold text-slate-400">increments</span>
+            <span className="text-2xl font-black text-red-600">{bayStateCounts.DELAYED}</span>
+            <span className="text-[10px] font-bold text-slate-400">of {activeBaysSnapshot.filter(b => b.jobs.length > 0).length} occupied</span>
           </div>
-          <p className="text-[9px] text-slate-500 font-bold mt-3 uppercase tracking-wide">
-            Schedules matched to DMS timelines
+          <p className="text-[9px] text-red-500 font-bold mt-3 uppercase tracking-wide flex items-center gap-1">
+            <AlertTriangle className="h-3 w-3" /> Delay reason logged — needs intervention
           </p>
         </div>
       </div>
@@ -635,38 +533,65 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4">
             
             {/* Legend and Intro */}
-            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
-              <div>
-                <h2 className="text-xs font-black uppercase text-slate-800 tracking-wider">Live Workshop Bay Allocation Board</h2>
-                <p className="text-[10px] text-slate-400 font-medium">Bays allocated to active job cards, grouped by TAT Status and Workshop Stage.</p>
+            <div className="space-y-3 border-b border-slate-100 pb-3">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-xs font-black uppercase text-slate-800 tracking-wider">Live Workshop Bay Allocation Board</h2>
+                  <p className="text-[10px] text-slate-400 font-medium">Each bay's state is derived live from its job card — click a state to filter.</p>
+                </div>
               </div>
+              {/* Control-room lifecycle summary — clickable filters */}
               <div className="flex flex-wrap items-center gap-2">
-                {TAT_STATUSES.map(stat => (
-                  <span key={stat} className="text-[9px] font-bold px-2 py-0.5 rounded-md border bg-slate-50 border-slate-200 text-slate-600">
-                    {stat}
-                  </span>
-                ))}
+                <button
+                  onClick={() => setBayStateFilter("ALL")}
+                  className={`text-[10px] font-bold px-2.5 py-1 rounded-md border transition-all ${
+                    bayStateFilter === "ALL" ? "bg-slate-900 text-white border-slate-950" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  All Bays <span className="opacity-70">({activeBaysSnapshot.length})</span>
+                </button>
+                {BAY_STATE_ORDER.map(state => {
+                  const cfg = BAY_STATE_CONFIG[state];
+                  const active = bayStateFilter === state;
+                  return (
+                    <button
+                      key={state}
+                      onClick={() => setBayStateFilter(active ? "ALL" : state)}
+                      className={`text-[10px] font-bold px-2.5 py-1 rounded-md border flex items-center gap-1.5 transition-all ${
+                        active ? "ring-2 ring-offset-1 ring-slate-400 " + cfg.badge : cfg.badge + " hover:opacity-80"
+                      }`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`}></span>
+                      {cfg.label} <span className="opacity-70">({bayStateCounts[state] || 0})</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
             {/* Grid of Bays */}
+            {visibleBays.length === 0 && (
+              <div className="text-center py-10 text-slate-400 text-xs font-medium">
+                No bays in “{bayStateFilter === "ALL" ? "any" : BAY_STATE_CONFIG[bayStateFilter as BayLifecycleState].label}” state.
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pt-2">
-              {activeBaysSnapshot.map(bay => {
+              {visibleBays.map(bay => {
                 const activeJob = bay.jobs[0]; // Primary active job card on this bay
+                const stateCfg = BAY_STATE_CONFIG[bay.lifecycleState];
 
                 return (
-                  <div key={bay.bay_id} className="bg-slate-50/70 border border-slate-200 rounded-xl p-4 flex flex-col justify-between h-72 hover:shadow-xs transition-all">
-                    
+                  <div key={bay.bay_id} className={`bg-slate-50/70 border-2 ${stateCfg.border} rounded-xl p-4 flex flex-col justify-between h-72 hover:shadow-xs transition-all`}>
+
                     {/* Header */}
                     <div className="flex items-start justify-between border-b border-slate-200/60 pb-2">
                       <div>
                         <span className="text-[9px] font-mono font-black text-indigo-600 uppercase tracking-widest">{bay.bay_type} Bay</span>
                         <h3 className="text-sm font-bold text-slate-800 leading-tight">{bay.bay_name}</h3>
                       </div>
-                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border shadow-2xs uppercase tracking-wider ${
-                        bay.status === "Active" ? "bg-green-50 text-green-700 border-green-200" : "bg-slate-100 text-slate-600 border-slate-300"
-                      }`}>
-                        {bay.status}
+                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border shadow-2xs uppercase tracking-wider flex items-center gap-1 ${stateCfg.badge}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${stateCfg.dot}`}></span>
+                        {stateCfg.label}
                       </span>
                     </div>
 
@@ -842,150 +767,6 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
             </div>
 
           </div>
-        </div>
-      )}
-
-      {/* 3. TIME MATRIX SNAPSHOT VIEW */}
-      {activeTab === "timeline" && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-5 space-y-6">
-          <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-            <div>
-              <h2 className="text-xs font-black uppercase text-slate-800 tracking-wider">15-Minute Planning & Scheduling Timeline</h2>
-              <p className="text-[10px] text-slate-400 font-medium">Select a time slot interval to record or view a snapshot report of bay occupancy and delays.</p>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-slate-400" />
-              <select
-                value={selectedTimeSlot}
-                onChange={(e) => setSelectedTimeSlot(e.target.value)}
-                className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 focus:outline-hidden"
-              >
-                {TIME_SLOTS.map(slot => (
-                  <option key={slot} value={slot}>{slot}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Graphical timeline tape */}
-          <div className="overflow-x-auto pb-4">
-            <div className="flex gap-1 min-w-[1200px]">
-              {TIME_SLOTS.slice(0, 48).map(slot => {
-                const isActive = slot === selectedTimeSlot;
-                const matches = jobCards.filter(j => j.time_slot === slot);
-                const hasBreach = matches.some(j => j.l1_delay);
-
-                return (
-                  <button
-                    key={slot}
-                    onClick={() => setSelectedTimeSlot(slot)}
-                    className={`flex-1 py-2.5 px-1 rounded-md border flex flex-col items-center justify-between text-[10px] font-bold transition-all ${
-                      isActive 
-                        ? "bg-slate-900 text-white border-slate-950 scale-105 shadow-sm" 
-                        : "bg-slate-50 text-slate-600 border-slate-200/70 hover:bg-slate-100"
-                    }`}
-                  >
-                    <span>{slot}</span>
-                    <div className="mt-1.5 flex gap-1">
-                      {matches.length > 0 && (
-                        <span className={`h-2 w-2 rounded-full ${hasBreach ? "bg-amber-500 animate-pulse" : "bg-emerald-500"}`}></span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Time Slot snapshot detail cards */}
-          <div className="space-y-4">
-            <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1">
-              <ClipboardList className="h-4 w-4 text-indigo-500" /> Snapshot at {selectedTimeSlot} Hour
-            </h3>
-
-            <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/50">
-              <table className="ds-table w-full text-left text-xs border-collapse font-medium">
-                <thead>
-                  <tr className="bg-slate-100/80 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                    <th className="ds-th p-3">Bay</th>
-                    <th className="ds-th p-3">VRN</th>
-                    <th className="ds-th p-3">TAT Status</th>
-                    <th className="ds-th p-3">Stage</th>
-                    <th className="ds-th p-3">Delay Metrics (L1 &gt; L2 &gt; L3 &gt; L5)</th>
-                    <th className="ds-th p-3 text-right">Roster</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200/60">
-                  {bays.map(bay => {
-                    const jobsInSlot = jobCards.filter(j => j.bay_id === bay.bay_id && j.time_slot === selectedTimeSlot);
-                    const slotJob = jobsInSlot[0] || jobCards.find(j => j.bay_id === bay.bay_id && j.status === "Active"); // fallback to active if no matching slot
-
-                    return (
-                      <tr key={bay.bay_id} className="ds-table-row hover:bg-slate-100/30 text-slate-700">
-                        <td className="ds-td p-3 font-bold text-slate-900">{bay.bay_name}</td>
-                        <td className="ds-td p-3">
-                          {slotJob ? (
-                            <span className="font-mono font-bold bg-white border px-1.5 py-0.5 rounded shadow-2xs">{slotJob.vrn}</span>
-                          ) : (
-                            <span className="text-slate-400 italic">No assigned vehicle</span>
-                          )}
-                        </td>
-                        <td className="ds-td p-3">
-                          {slotJob?.tat_status ? (
-                            <span className="text-[10px] font-black uppercase text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md">
-                              {slotJob.tat_status}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">-</span>
-                          )}
-                        </td>
-                        <td className="ds-td p-3">
-                          {slotJob?.workshop_stage ? (
-                            <span className="text-[10px] font-black uppercase text-orange-600 bg-orange-50 border border-orange-100 px-2 py-0.5 rounded-md">
-                              {slotJob.workshop_stage}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">-</span>
-                          )}
-                        </td>
-                        <td className="ds-td p-3">
-                          {slotJob?.l1_delay ? (
-                            <div className="flex flex-wrap items-center gap-1">
-                              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">L1: {slotJob.l1_delay}</span>
-                              {slotJob.l2_delay && <span className="text-[9px] text-slate-500 font-bold">&gt; L2: {slotJob.l2_delay}</span>}
-                              {slotJob.l3_delay && <span className="text-[9px] text-slate-400 font-bold">&gt; L3: {slotJob.l3_delay}</span>}
-                              {slotJob.l5_delay && <span className="text-[9px] text-red-500 font-bold">&gt; L5: {slotJob.l5_delay}</span>}
-                            </div>
-                          ) : slotJob ? (
-                            <span className="text-emerald-600 font-bold text-[11px] flex items-center gap-1">
-                              <CheckCircle2 className="h-3.5 w-3.5" /> Normal
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">-</span>
-                          )}
-                        </td>
-                        <td className="ds-td p-3 text-right">
-                          <div className="flex flex-wrap justify-end gap-1">
-                            {slotJob && SR_TECHS.filter(t => slotJob.delay_notes?.includes(t)).map(t => (
-                              <span key={t} className="text-[9px] font-bold bg-slate-200 text-slate-700 px-1 py-0.5 rounded">{t}</span>
-                            ))}
-                            {slotJob && JR_TECHS.filter(t => slotJob.delay_notes?.includes(t)).map(t => (
-                              <span key={t} className="text-[9px] font-bold bg-indigo-100 text-indigo-700 px-1 py-0.5 rounded">{t}</span>
-                            ))}
-                            {slotJob && ELECTRICIANS.filter(t => slotJob.delay_notes?.includes(t)).map(t => (
-                              <span key={t} className="text-[9px] font-bold bg-orange-100 text-orange-700 px-1 py-0.5 rounded">{t}</span>
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
         </div>
       )}
 
@@ -1175,113 +956,6 @@ WORK IN PROGRESS,,Warranty Conflict,,,,,,,,,,,,SAMEERUDDIN,MOHAMMED ZAKI,MUZAMIL
             </div>
           </div>
 
-        </div>
-      )}
-
-      {/* 6. COPIED SPREADSHEET PASTER */}
-      {activeTab === "paster" && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-6 space-y-6">
-          <div className="space-y-1">
-            <h3 className="text-sm font-black text-slate-900 uppercase">Paste Google Sheets Bay TAT Reports</h3>
-            <p className="text-xs text-slate-500 leading-normal">
-              Directly copy and paste rows from your Excel/Google tracking sheets. The parser matches the status indicators (PENDING, completed, etc.), L1/L2/L3/L5 delay categories, notes, technician levels (Sr Tech, Jr Tech, Electrician), and the 15-minute timesets dynamically.
-            </p>
-          </div>
-
-          <div className="flex gap-4">
-            <button
-              onClick={handleLoadSampleConfig}
-              className="px-3 py-1.5 rounded-lg border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-2xs"
-            >
-              <FileSpreadsheet className="h-4 w-4" />
-              Load Configuration Layout
-            </button>
-            <button
-              onClick={() => { setPastedReport(""); setParsedRows([]); setSyncFeedback({ type: null, msg: "" }); }}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 bg-white hover:bg-slate-50 text-xs font-bold uppercase tracking-wider transition-all"
-            >
-              Clear Raw Input
-            </button>
-          </div>
-
-          <div className="space-y-2">
-            <textarea
-              rows={10}
-              placeholder="Paste spreadsheet configuration here..."
-              value={pastedReport}
-              onChange={(e) => {
-                setPastedReport(e.target.value);
-                handleParseReportText(e.target.value);
-              }}
-              className="w-full font-mono text-[11px] bg-slate-50 border border-slate-200 rounded-xl p-4 focus:outline-hidden focus:border-slate-300 focus:bg-white transition-all shadow-inner placeholder-slate-400"
-            />
-          </div>
-
-          {syncFeedback.type && (
-            <div className={`p-4 rounded-xl border text-xs font-medium ${
-              syncFeedback.type === "success" 
-                ? "bg-emerald-50 text-emerald-800 border-emerald-200" 
-                : "bg-red-50 text-red-800 border-red-200"
-            }`}>
-              {syncFeedback.msg}
-            </div>
-          )}
-
-          {parsedRows.length > 0 && (
-            <div className="space-y-4 border border-slate-200 rounded-xl overflow-hidden bg-slate-50/50 p-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <span className="text-xs font-black text-slate-800 uppercase tracking-wider">Parsed Configuration Matrix ({parsedRows.length} Rows)</span>
-                <button
-                  onClick={handleCommitPastedReport}
-                  disabled={isSyncing}
-                  className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white text-xs font-bold uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5"
-                >
-                  {isSyncing ? (
-                    <>
-                      <FunnySpinner className="h-3.5 w-3.5" />
-                      Synchronizing active indicators...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="h-4 w-4" />
-                      Commit Active Bay Configuration
-                    </>
-                  )}
-                </button>
-              </div>
-
-              <div className="max-h-80 overflow-y-auto border border-slate-200/60 rounded-lg bg-white shadow-2xs">
-                <table className="ds-table w-full text-left text-xs border-collapse font-medium">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      <th className="ds-th p-2.5">Status</th>
-                      <th className="ds-th p-2.5">Stage</th>
-                      <th className="ds-th p-2.5">L1 Delay</th>
-                      <th className="ds-th p-2.5">L2 Delay</th>
-                      <th className="ds-th p-2.5">L3/L5 Detail</th>
-                      <th className="ds-th p-2.5">Technicians</th>
-                      <th className="ds-th p-2.5 text-right">Time Set</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {parsedRows.map((item, idx) => (
-                      <tr key={idx} className="ds-table-row hover:bg-slate-50/50 text-slate-700">
-                        <td className="ds-td p-2.5 font-bold text-indigo-700">{item.status}</td>
-                        <td className="ds-td p-2.5 uppercase text-[10px] text-slate-500">{item.stage}</td>
-                        <td className="ds-td p-2.5 text-amber-700 font-bold font-mono">{item.l1 || "-"}</td>
-                        <td className="ds-td p-2.5 text-slate-600 font-mono text-[11px]">{item.l2 || "-"}</td>
-                        <td className="ds-td p-2.5 text-slate-500 text-[11px]">{item.l3 || item.l5 || "-"}</td>
-                        <td className="ds-td p-2.5 text-[10px]">
-                          <span className="font-bold">{item.srTech ? `Sr: ${item.srTech}` : ""} {item.jrTech ? `Jr: ${item.jrTech}` : ""} {item.elecTech ? `Elec: ${item.elecTech}` : ""}</span>
-                        </td>
-                        <td className="ds-td p-2.5 text-right font-bold text-slate-900 font-mono">{item.timeSlot}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
         </div>
       )}
 

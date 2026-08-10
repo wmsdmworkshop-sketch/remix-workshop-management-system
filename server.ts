@@ -16,7 +16,7 @@ import { pool as dbPool } from "./src/db/index.ts";
 import { startQrtGmailIngestor, runQrtIngestOnce, getQrtPublicConfig, updateQrtSettings } from "./src/integrations/qrt-gmail-ingestor.ts";
 import { ensureOemTable, getPublicConfig as getOemPublicConfig, updateProviderConfig as updateOemProvider, testProvider as testOemProvider, callProvider as callOemProvider, OemNotConfiguredError, ensureVehicleCacheTable, getCachedVehicle, cacheVehicle, type OemProviderKey } from "./src/integrations/oem-api.ts";
 import { ingestAlert as ingestCctvAlert, listAlerts as listCctvAlerts, acknowledgeAlert as ackCctvAlert, listCameras as listCctvCameras, upsertCamera as upsertCctvCamera, deleteCamera as deleteCctvCamera, getCctvConfig, updateCctvConfig, countOpenAlerts as countOpenCctvAlerts } from "./src/integrations/cctv-analytics.ts";
-import { filterViewableJobCards, canEditJobCard, isOwnedBy, isInMyStage, isFullViewRole, GROUP1_FULL_CONTROL, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
+import { filterViewableJobCards, canEditJobCard, isGmOverride, isOwnedBy, isInMyStage, isFullViewRole, GROUP1_FULL_CONTROL, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
 import { DEFAULT_CIRCULARS } from "./src/lib/circularsData.ts";
 import { getReworkHistoryForTechnician } from "./src/engines/rework-tracking-service.ts";
 import { validateOvertimeRequest } from "./src/engines/overtime-rules.ts";
@@ -957,7 +957,8 @@ async function startServer() {
         { role_name: "service_manager", module_name: "Warranty", can_view: 1, can_edit: 1 },
         { role_name: "service_manager", module_name: "FSB", can_view: 1, can_edit: 1 },
         { role_name: "service_manager", module_name: "Query", can_view: 1, can_edit: 1 },
-        { role_name: "service_manager", module_name: "Billing", can_view: 1, can_edit: 1 },
+        // Billing view-only: managers do not mark-as-billed (Billing/Cashier lane).
+        { role_name: "service_manager", module_name: "Billing", can_view: 1, can_edit: 0 },
         { role_name: "service_manager", module_name: "DMS Import", can_view: 1, can_edit: 1 },
         { role_name: "service_manager", module_name: "User Management", can_view: 1, can_edit: 1 },
         { role_name: "service_manager", module_name: "Breakdowns", can_view: 1, can_edit: 1 },
@@ -971,7 +972,8 @@ async function startServer() {
         { role_name: "workshop_manager", module_name: "Warranty", can_view: 1, can_edit: 1 },
         { role_name: "workshop_manager", module_name: "FSB", can_view: 1, can_edit: 1 },
         { role_name: "workshop_manager", module_name: "Query", can_view: 1, can_edit: 1 },
-        { role_name: "workshop_manager", module_name: "Billing", can_view: 1, can_edit: 1 },
+        // Billing view-only: managers do not mark-as-billed (Billing/Cashier lane).
+        { role_name: "workshop_manager", module_name: "Billing", can_view: 1, can_edit: 0 },
         { role_name: "workshop_manager", module_name: "DMS Import", can_view: 1, can_edit: 1 },
         { role_name: "workshop_manager", module_name: "User Management", can_view: 1, can_edit: 1 },
         { role_name: "workshop_manager", module_name: "Breakdowns", can_view: 1, can_edit: 1 },
@@ -1063,6 +1065,41 @@ async function startServer() {
         console.log("Enforced dealer_principal as read-only across role_permissions.");
       } catch (dpErr: any) {
         console.warn("Could not enforce dealer_principal read-only:", dpErr.message);
+      }
+
+      // RBAC hardening (AIVAAHAN-DWIP-ENTERPRISE-RBAC-WORKFLOW-HARDENING-001):
+      // Manager tiers do NOT mark job cards as billed — billing is the Billing/
+      // Cashier lane per the workshop spec. Seed rows are INSERT-only, so force the
+      // correction on every boot for existing rows.
+      try {
+        await dbPool.execute(
+          "UPDATE role_permissions SET can_edit = 0 WHERE role_name IN ('workshop_manager','service_manager') AND module_name = 'Billing'"
+        );
+        console.log("Enforced Billing can_edit=0 for workshop_manager/service_manager.");
+      } catch (mgrErr: any) {
+        console.warn("Could not enforce manager Billing lock:", mgrErr.message);
+      }
+
+      // GM override audit trail.
+      try {
+        await dbPool.execute(`
+          CREATE TABLE IF NOT EXISTS gm_override_log (
+            id BIGINT NOT NULL AUTO_INCREMENT,
+            gm_user_id INT NULL,
+            gm_name VARCHAR(191) NULL,
+            job_id INT NULL,
+            job_card_no VARCHAR(64) NULL,
+            action VARCHAR(255) NULL,
+            jc_state VARCHAR(64) NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_gm_override_job (job_id),
+            KEY idx_gm_override_created (created_at)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+        `);
+        console.log("Ensured gm_override_log audit table.");
+      } catch (gmErr: any) {
+        console.warn("Could not ensure gm_override_log:", gmErr.message);
       }
       console.log("Role permissions seeding verified and completed successfully.");
     } catch (permErr) {
@@ -1326,7 +1363,31 @@ async function startServer() {
     if (jc && !canEditJobCard(jc, user)) {
       return res.status(403).json({ error: "You can only act on job cards assigned or related to you." });
     }
+    // GM scoped-audit override: GM may act on any JC, but out-of-lane actions are logged.
+    if (jc && isGmOverride(jc, user)) {
+      logGmOverride(user, jc, `${req.method} ${req.originalUrl || req.url}`).catch(() => {});
+    }
     next();
+  };
+
+  // Append a GM override to the audit trail. Best-effort; never blocks the request.
+  const logGmOverride = async (user: any, jc: any, action: string) => {
+    try {
+      await dbPool.execute(
+        `INSERT INTO gm_override_log (gm_user_id, gm_name, job_id, job_card_no, action, jc_state, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+        [
+          user?.user_id ?? null,
+          user?.full_name ?? null,
+          Number(jc?.job_id) || null,
+          jc?.job_card_no ?? null,
+          String(action).slice(0, 255),
+          jc?.current_workflow_state ?? jc?.status ?? null,
+        ]
+      );
+    } catch (e: any) {
+      console.warn("[gm_override_log] could not record override:", e?.message);
+    }
   };
 
   // Helper middleware to restrict access based on dynamically loaded DB permissions (single source of truth)
@@ -3476,7 +3537,11 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     });
   });
 
-  app.post("/api/job-cards", async (req, res) => {
+  // Gate-In creation. Automatic path = /api/gate/anpr/ingest (device-keyed). When the
+  // ANPR camera fails, SECURITY logs in and captures plate + ODO by phone, then
+  // RECEPTION cross-checks and verifies. Only those two gate roles (plus admin/dev)
+  // may create a gate entry — managers and advisors do NOT gate-in.
+  app.post("/api/job-cards", requireRoles(["security_agent", "reception", "admin", "developer"]), async (req: any, res) => {
     const db = getDB();
     const newJob: JobCard = req.body;
     const nextId = db.jobCards.reduce((max: number, j: JobCard) => Math.max(max, j.job_id), 0) + 1;
@@ -4632,12 +4697,14 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       // non-workflow fields for non-owners rather than mutating the core card.
       let incoming = req.body || {};
       const _role = req.user?.role;
-      // Superusers who override the core job-card lock and may edit any field.
-      // GM (gm_service) can override each and every rule (per DP directive).
-      const _isSuper = _role === "admin" || _role === "developer" || _role === "gm_service";
+      // TRUE superusers bypass the ownership lock outright.
+      const _isSuper = _role === "admin" || _role === "developer";
+      // GM overrides the ownership lock too, but the action is AUDITED by
+      // jobCardEditGuard (gm_override_log). GM is scoped, not a silent admin.
+      const _isOverride = _isSuper || _role === "gm_service";
       const _uName = String(req.user?.full_name || "").trim().toLowerCase();
       const _isCoreOwner =
-        _isSuper ||
+        _isOverride ||
         (req.user?.user_id != null && Number(oldJob.created_by) === Number(req.user.user_id)) ||
         (!!oldJob.service_advisor && _uName.length > 0 &&
           String(oldJob.service_advisor).toLowerCase().includes(_uName));
@@ -4646,6 +4713,22 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         const filtered: any = {};
         for (const k of WORKFLOW_ALLOWED) if (k in incoming) filtered[k] = incoming[k];
         incoming = filtered;
+      }
+
+      // GATE-CAPTURED FIELD LOCKS (RBAC hardening — gate-in integrity):
+      //  • date_in (service date) is HARD-LOCKED for everyone. It mirrors TMSA and
+      //    cannot be changed here — not even by admin/GM.
+      //  • vrn + km_reading (odometer) are captured by Security and verified by
+      //    Reception at gate-in. The Service Advisor may only REQUEST a change
+      //    (Update Request); it is applied by an APPROVER — Workshop Manager or GM
+      //    (admin/developer also). e.g. odometer corrected when the vehicle has
+      //    crossed the OEM scheduled-service minimum km.
+      if ("date_in" in incoming) delete (incoming as any).date_in;
+      const _isGateFieldApprover =
+        _isSuper || _role === "workshop_manager" || _role === "gm_service";
+      if (!_isGateFieldApprover) {
+        delete (incoming as any).vrn;
+        delete (incoming as any).km_reading;
       }
 
       const updatedJob = { ...oldJob, ...incoming, updated_at: new Date().toISOString() };
@@ -8644,7 +8727,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // Mark Job Card as Billed
-  app.post("/api/job-cards/:id/bill", jobCardEditGuard, express.json(), async (req, res) => {
+  app.post("/api/job-cards/:id/bill", requirePermission("Billing", "edit"), jobCardEditGuard, express.json(), async (req, res) => {
     const { id } = req.params;
     const { invoice_no } = req.body;
 

@@ -21,8 +21,14 @@ export interface RelevanceUser {
   full_name?: string | null;
 }
 
-export const GROUP1_FULL_CONTROL = ["admin", "developer", "gm_service", "workshop_manager"];
+export const GROUP1_FULL_CONTROL = ["admin", "developer", "workshop_manager"];
 export const GROUP2_VIEW_ALL_EDIT_OWN = ["floor_supervisor", "service_manager", "floor_incharge"];
+
+// GM (service) is NOT a blanket superuser. GM sees everything and MAY override any
+// job-card edit, but every override outside GM's own ownership/stage is AUDITED
+// (see gm_override_log). Enforcement lives in canEditJobCard (returns true) paired
+// with isGmOverride() so the caller can record the override.
+export const GM_OVERRIDE_ROLES = ["gm_service"];
 // Group 3 — sees & analyses everything, edits/actions NOTHING.
 // dealer_principal sits above everyone but is a pure observer (revenue, performance,
 // live job cards / occupancy / workflow / manpower & resource utilisation, CCTV,
@@ -100,8 +106,21 @@ export function canEditJobCard(jc: any, user: RelevanceUser): boolean {
   if (!role) return true; // legacy — Phase 2 will require auth on actions
   if (GROUP1_FULL_CONTROL.includes(role)) return true;
   if (GROUP3_VIEW_ONLY.includes(role)) return false; // observer: never edits
+  // GM: allowed to edit anything (override), but the caller audits it.
+  if (GM_OVERRIDE_ROLES.includes(role)) return true;
   // Group 2 (supervisor) and everyone scoped: only own/relevant.
   return isOwnedBy(jc, user) || isInMyStage(jc, role);
+}
+
+/**
+ * True when this action is a GM OVERRIDE — GM acting on a job card it does not
+ * own and is not the current stage-handler for. These must be written to the
+ * gm_override_log audit trail by the caller. Returns false for GM's in-lane work.
+ */
+export function isGmOverride(jc: any, user: RelevanceUser): boolean {
+  const role = user?.role;
+  if (!role || !GM_OVERRIDE_ROLES.includes(role)) return false;
+  return !(isOwnedBy(jc, user) || isInMyStage(jc, role));
 }
 
 /** True when the role sees the entire workshop (no read filtering needed). */

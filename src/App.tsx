@@ -635,7 +635,8 @@ export default function App() {
 
   // Selected Job (navigated from dashboard)
   const [dashboardSelectedJob, setDashboardSelectedJob] = useState<JobCard | null>(null);
-  
+  const [jobsAssignFilter, setJobsAssignFilter] = useState<"sa" | "tech" | null>(null);
+
   // Revenue state for Projected vs Generated
   const [projectedRevenue, setProjectedRevenue] = useState<number>(0);
   const [generatedRevenue, setGeneratedRevenue] = useState<number>(0);
@@ -1317,6 +1318,7 @@ export default function App() {
                 setActiveTab("jobs");
               }}
               onTabChange={(tab) => setActiveTab(tab as any)}
+              onPendingAssignDrill={(kind) => { setJobsAssignFilter(kind); setActiveTab("jobs"); }}
               projectedRevenue={projectedRevenue}
               generatedRevenue={generatedRevenue}
               aiModeEnabled={aiModeEnabled}
@@ -1362,6 +1364,8 @@ export default function App() {
               currentUser={user}
               onLookupVehicle={handleLookupVehicle}
               aiModeEnabled={aiModeEnabled}
+              initialAssignFilter={jobsAssignFilter}
+              onClearAssignFilter={() => setJobsAssignFilter(null)}
             />
           )}
 

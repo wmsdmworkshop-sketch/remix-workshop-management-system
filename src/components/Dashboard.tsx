@@ -48,6 +48,7 @@ interface DashboardProps {
   onAcknowledgeAlert: (id: number) => void;
   onSelectJob: (job: JobCard) => void;
   onTabChange: (tab: string) => void;
+  onPendingAssignDrill?: (kind: "sa" | "tech") => void;
   projectedRevenue?: number;
   generatedRevenue?: number;
   aiModeEnabled?: boolean;
@@ -75,6 +76,7 @@ export default function Dashboard({
   onAcknowledgeAlert,
   onSelectJob,
   onTabChange,
+  onPendingAssignDrill,
   projectedRevenue = 0,
   generatedRevenue = 0,
   aiModeEnabled = true,
@@ -111,6 +113,19 @@ export default function Dashboard({
   }
 
   const activeBaysCount = bays.filter(b => b.status !== "Idle").length;
+
+  // Real "pending assignment" metric (replaces the old static decorative label).
+  // A job card is OPEN when Active/Waiting. It is pending SA assignment when it has
+  // no service advisor; pending technician assignment when it has an SA but no
+  // technician yet. The two are mutually exclusive by construction.
+  const isOpenJc = (j: any) => j.status === "Active" || j.status === "Waiting";
+  const hasTechnician = (j: any) =>
+    (Array.isArray(j.technician_assignments) && j.technician_assignments.length > 0) ||
+    !!(j.technician_name && String(j.technician_name).trim());
+  const hasAdvisor = (j: any) => !!(j.service_advisor && String(j.service_advisor).trim());
+  const pendingAssignSaCount = jobCards.filter(j => isOpenJc(j) && !hasAdvisor(j)).length;
+  const pendingAssignTechCount = jobCards.filter(j => isOpenJc(j) && hasAdvisor(j) && !hasTechnician(j)).length;
+  const pendingAssignCount = pendingAssignSaCount + pendingAssignTechCount;
 
   // Fleet Mix — real distribution of vehicles currently inside the workshop, grouped by
   // model (top 5 + Other). Computed from live job cards, not hardcoded.
@@ -313,11 +328,24 @@ export default function Dashboard({
                   <FileText className="h-5 w-5" />
                 </div>
               </div>
-              <div className="flex items-center justify-between mt-4">
-                <div className="flex items-center gap-1.5 text-xs text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded-full">
-                  <span>Pending Assign</span>
-                </div>
-                <Sparkline points={[12, 10, 15, 13, 14, 11, 12]} color="#F59E0B" />
+              <div className="flex items-center gap-1.5 mt-4 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => (onPendingAssignDrill ? onPendingAssignDrill("sa") : onTabChange?.("jobs"))}
+                  title="Open job cards with no service advisor assigned"
+                  className="flex items-center gap-1 text-[11px] text-amber-400 font-bold bg-amber-500/10 hover:bg-amber-500/20 px-2 py-0.5 rounded-full transition-colors"
+                >
+                  <span>{pendingAssignSaCount} SA</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => (onPendingAssignDrill ? onPendingAssignDrill("tech") : onTabChange?.("jobs"))}
+                  title="Job cards with an advisor but no technician assigned"
+                  className="flex items-center gap-1 text-[11px] text-orange-300 font-bold bg-orange-500/10 hover:bg-orange-500/20 px-2 py-0.5 rounded-full transition-colors"
+                >
+                  <span>{pendingAssignTechCount} Tech</span>
+                </button>
+                <span className="text-[10px] text-slate-500 font-semibold">pending assign</span>
               </div>
             </motion.div>
 

@@ -57,6 +57,9 @@ interface JobCardManagerProps {
   currentUser?: User | null;
   onLookupVehicle?: (vrn: string) => void;
   aiModeEnabled?: boolean;
+  /** Pre-filter the list to unassigned-SA or unassigned-technician (dashboard drill-down). */
+  initialAssignFilter?: "sa" | "tech" | null;
+  onClearAssignFilter?: () => void;
 }
 
 export default function JobCardManager({
@@ -78,7 +81,9 @@ export default function JobCardManager({
   currentUserRole = "Workshop Manager",
   currentUser,
   onLookupVehicle,
-  aiModeEnabled = true
+  aiModeEnabled = true,
+  initialAssignFilter = null,
+  onClearAssignFilter
 }: JobCardManagerProps) {
   const [selectedJob, setSelectedJob] = useState<JobCard | null>(selectedJobExternal || jobCards[0] || null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -798,16 +803,23 @@ export default function JobCardManager({
     }
   }, [employees, currentUser, showCreateModal]);
 
+  // Deterministic technician eligibility. Supervisory / desk / gate roles are
+  // NEVER technicians (fixes floor_incharge showing up in the technician dropdown).
+  // A role qualifies only if it is not on the exclusion list AND names a hands-on
+  // bay designation. No substring "incharge" match — that mislabelled supervisors.
+  const NON_TECHNICIAN_ROLES = new Set([
+    "admin", "developer", "gm_service", "workshop_manager", "service_manager",
+    "floor_supervisor", "floor_incharge", "service_advisor", "reception",
+    "security_agent", "gate_personnel", "cashier", "billing", "accounts",
+    "warranty_clerk", "spares_manager", "parts_incharge", "tools_incharge",
+    "qc", "dkam", "dealer_principal", "breakdown",
+  ]);
+  const TECHNICIAN_KEYWORDS = ["technician", "mechanic", "electrician", "helper", "alignment", "denter", "painter", "washer"];
   const isTechnicianRole = (role: string) => {
     if (!role) return false;
-    const lower = role.toLowerCase();
-    return (
-      lower.includes("tech") ||
-      lower.includes("electrician") ||
-      lower.includes("helper") ||
-      lower.includes("alignment") ||
-      lower.includes("incharge")
-    );
+    const lower = role.toLowerCase().trim();
+    if (NON_TECHNICIAN_ROLES.has(lower)) return false;
+    return TECHNICIAN_KEYWORDS.some(k => lower.includes(k));
   };
 
   // Assignment states
@@ -930,14 +942,23 @@ export default function JobCardManager({
   const [listDate, setListDate] = useState("");
   const [listStatus, setListStatus] = useState("All");
   const [showBilledClosed, setShowBilledClosed] = useState(false);
+  // Dashboard drill-down: "sa" = open & no advisor, "tech" = advisor set but no technician.
+  const [assignFilter, setAssignFilter] = useState<"sa" | "tech" | null>(initialAssignFilter);
+  React.useEffect(() => { setAssignFilter(initialAssignFilter); }, [initialAssignFilter]);
 
   const filteredJobCards = useMemo(() => {
+    const isOpenJc = (j: any) => j.status === "Active" || j.status === "Waiting";
+    const hasTech = (j: any) =>
+      (Array.isArray(j.technician_assignments) && j.technician_assignments.length > 0) ||
+      !!(j.technician_name && String(j.technician_name).trim());
+    const hasAdvisor = (j: any) => !!(j.service_advisor && String(j.service_advisor).trim());
+
     return jobCards.filter(job => {
       const s = String(job.status || '').toLowerCase();
       const isClosed = s === 'billed' || s === 'out of workshop' || s === 'invoiced' || s === 'completed' || !!job.gate_out_time;
       if (!showBilledClosed && isClosed) return false;
 
-      const matchesSearch = 
+      const matchesSearch =
         job.vrn.toLowerCase().includes(listSearch.toLowerCase()) ||
         job.job_card_no.toLowerCase().includes(listSearch.toLowerCase()) ||
         (job.customer_name && job.customer_name.toLowerCase().includes(listSearch.toLowerCase()));
@@ -945,9 +966,13 @@ export default function JobCardManager({
       const matchesDate = !listDate || job.date_in === listDate || job.date_completed === listDate;
       const matchesStatus = listStatus === "All" || job.status.toLowerCase() === listStatus.toLowerCase();
 
-      return matchesSearch && matchesDate && matchesStatus;
+      let matchesAssign = true;
+      if (assignFilter === "sa") matchesAssign = isOpenJc(job) && !hasAdvisor(job);
+      else if (assignFilter === "tech") matchesAssign = isOpenJc(job) && hasAdvisor(job) && !hasTech(job);
+
+      return matchesSearch && matchesDate && matchesStatus && matchesAssign;
     });
-  }, [jobCards, listSearch, listDate, listStatus, showBilledClosed]);
+  }, [jobCards, listSearch, listDate, listStatus, showBilledClosed, assignFilter]);
 
   const handleExportCSV = () => {
     const headers = [
@@ -1400,6 +1425,22 @@ export default function JobCardManager({
               </button>
             )}
           </div>
+
+        {assignFilter && (
+          <div className="flex items-center justify-between gap-2 mt-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200">
+            <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">
+              {assignFilter === "sa"
+                ? `Pending Service-Advisor assignment · ${filteredJobCards.length} job card${filteredJobCards.length === 1 ? "" : "s"}`
+                : `Pending Technician assignment · ${filteredJobCards.length} job card${filteredJobCards.length === 1 ? "" : "s"}`}
+            </span>
+            <button
+              onClick={() => { setAssignFilter(null); onClearAssignFilter?.(); }}
+              className="text-amber-700 hover:text-amber-900 text-[10px] font-bold uppercase tracking-wider cursor-pointer"
+            >
+              Clear
+            </button>
+          </div>
+        )}
 
         <div className="space-y-3 pt-1">
           {filteredJobCards.map((job) => {
