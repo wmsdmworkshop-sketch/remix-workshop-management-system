@@ -13,9 +13,16 @@ export const SecurityWorkspace: React.FC<SecurityWorkspaceProps> = ({ currentUse
   const [detectedVrn, setDetectedVrn] = useState<string>("");
   const [evidenceId, setEvidenceId] = useState<string>("");
 
+  const authHeaders = (): Record<string, string> => {
+    const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || currentUser?.token || "";
+    const h: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) h["Authorization"] = `Bearer ${token}`;
+    return h;
+  };
+
   const fetchData = async () => {
     try {
-      const res = await fetch("/api/gate-out/security-queue", { headers: { Authorization: `Bearer ${currentUser?.token}` } });
+      const res = await fetch("/api/gate-out/security-queue", { headers: authHeaders() });
       if (res.ok) setQueue(await res.json());
     } catch (e) {
       console.error("Failed to fetch security queue", e);
@@ -33,7 +40,7 @@ export const SecurityWorkspace: React.FC<SecurityWorkspaceProps> = ({ currentUse
     try {
       const res = await fetch("/api/gate-out/gate-out", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${currentUser?.token}` },
+        headers: authHeaders(),
         body: JSON.stringify({
           gatePassId: selectedGatePass.gate_pass_id,
           jobId: selectedGatePass.job_id,

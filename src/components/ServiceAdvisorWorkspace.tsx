@@ -648,7 +648,7 @@ const SABillingVisibility: React.FC<{ currentUser?: any }> = ({ currentUser }) =
   const fetchVisibility = async () => {
     try {
       const res = await fetch("/api/gate-out/sa-billing-visibility", {
-        headers: { Authorization: `Bearer ${currentUser?.token}` }
+        headers: { Authorization: `Bearer ${localStorage.getItem("dwip_token") || localStorage.getItem("token") || currentUser?.token || ""}` }
       });
       if (res.ok) setBillingList(await res.json());
     } catch (e) {

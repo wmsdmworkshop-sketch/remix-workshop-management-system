@@ -728,6 +728,105 @@ async function startServer() {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
       `);
 
+    // Gate-out (prod-native, lean). Cashier issues a gate pass = the ANPR exit
+    // pre-approval for that VRN; ANPR at exit (or security manually) records the
+    // gate-out. Column shape is compatible with the fuller VOS tbl_gate_pass/tbl_gate_out
+    // so a future upgrade can adopt the engine without a rename.
+    await dbPool.execute(`
+        CREATE TABLE IF NOT EXISTS tbl_gate_pass (
+          gate_pass_id VARCHAR(50) PRIMARY KEY,
+          gate_pass_no VARCHAR(100) NOT NULL UNIQUE,
+          job_id VARCHAR(50) NOT NULL,
+          vrn VARCHAR(50) DEFAULT NULL,
+          customer_name VARCHAR(255) DEFAULT NULL,
+          vehicle_model VARCHAR(255) DEFAULT NULL,
+          branch_id VARCHAR(50) DEFAULT '1',
+          release_basis VARCHAR(50) NOT NULL DEFAULT 'PAID',
+          payment_mode VARCHAR(50) DEFAULT NULL,
+          amount DECIMAL(12,2) DEFAULT NULL,
+          reference_number VARCHAR(255) DEFAULT NULL,
+          status VARCHAR(50) NOT NULL DEFAULT 'ISSUED',
+          issued_by VARCHAR(50) DEFAULT NULL,
+          issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          revoked_by VARCHAR(50) DEFAULT NULL,
+          revoked_at TIMESTAMP NULL DEFAULT NULL,
+          revoke_reason TEXT DEFAULT NULL,
+          INDEX idx_gp_job (job_id),
+          INDEX idx_gp_vrn (vrn),
+          INDEX idx_gp_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
+    await dbPool.execute(`
+        CREATE TABLE IF NOT EXISTS tbl_gate_out (
+          gate_out_id VARCHAR(50) PRIMARY KEY,
+          gate_pass_id VARCHAR(50) NOT NULL,
+          job_id VARCHAR(50) NOT NULL,
+          branch_id VARCHAR(50) DEFAULT '1',
+          security_operator_id VARCHAR(50) DEFAULT NULL,
+          evidence_id VARCHAR(50) DEFAULT NULL,
+          capture_source VARCHAR(50) DEFAULT 'MANUAL_CAMERA',
+          expected_vrn VARCHAR(50) DEFAULT NULL,
+          detected_vrn VARCHAR(50) DEFAULT NULL,
+          verification_result VARCHAR(50) DEFAULT 'VERIFIED',
+          image_url TEXT DEFAULT NULL,
+          gate_out_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_go_pass (gate_pass_id),
+          INDEX idx_go_job (job_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
+    await dbPool.execute(`
+        CREATE TABLE IF NOT EXISTS tbl_payments (
+          payment_id VARCHAR(50) PRIMARY KEY,
+          job_id VARCHAR(50) NOT NULL,
+          branch_id VARCHAR(50) DEFAULT '1',
+          amount DECIMAL(12,2) NOT NULL,
+          payment_mode VARCHAR(50) NOT NULL,
+          reference_number VARCHAR(255) DEFAULT NULL,
+          cashier_id VARCHAR(50) DEFAULT NULL,
+          status VARCHAR(50) DEFAULT 'COMPLETED',
+          recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_pay_job (job_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
+    await dbPool.execute(`
+        CREATE TABLE IF NOT EXISTS tbl_credit_requests (
+          credit_request_id VARCHAR(50) PRIMARY KEY,
+          job_id VARCHAR(50) NOT NULL,
+          branch_id VARCHAR(50) DEFAULT '1',
+          amount DECIMAL(12,2) DEFAULT NULL,
+          reason TEXT NOT NULL,
+          requested_by VARCHAR(50) DEFAULT NULL,
+          status VARCHAR(50) DEFAULT 'REQUESTED',
+          gm_id VARCHAR(50) DEFAULT NULL,
+          requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          decision_at TIMESTAMP NULL DEFAULT NULL,
+          INDEX idx_cr_job (job_id),
+          INDEX idx_cr_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
+    await dbPool.execute(`
+        CREATE TABLE IF NOT EXISTS tbl_task_claims (
+          claim_id VARCHAR(50) PRIMARY KEY,
+          job_id VARCHAR(50) NOT NULL,
+          task_type VARCHAR(50) NOT NULL,
+          owner_id VARCHAR(50) NOT NULL,
+          claimed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uq_job_task (job_id, task_type)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
+    // Self-heal: older tbl_gate_pass (from the VOS migration) lacks the snapshot cols.
+    for (const col of [
+      "ADD COLUMN vrn VARCHAR(50) DEFAULT NULL",
+      "ADD COLUMN customer_name VARCHAR(255) DEFAULT NULL",
+      "ADD COLUMN vehicle_model VARCHAR(255) DEFAULT NULL",
+      "ADD COLUMN payment_mode VARCHAR(50) DEFAULT NULL",
+      "ADD COLUMN amount DECIMAL(12,2) DEFAULT NULL",
+      "ADD COLUMN reference_number VARCHAR(255) DEFAULT NULL",
+    ]) {
+      try { await dbPool.execute(`ALTER TABLE tbl_gate_pass ${col}`); }
+      catch (e: any) { if (e.errno !== 1060) console.warn("gate_pass alter skipped:", e.message); } // 1060 = duplicate column
+    }
+
     console.log("Profile management tables and settings initialized successfully.");
 
     // SQL-002: Add performance indexes (idempotent — CREATE INDEX IF NOT EXISTS)
@@ -3429,6 +3528,336 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       return res.json({ success: true, job_id: nextId, job_card_no: jobCardNo, vrn });
     } catch (e: any) {
       return res.status(500).json({ success: false, error: e.message || "ANPR ingest failed" });
+    }
+  });
+
+  // ===========================================================================
+  // GATE-OUT (prod-native, lean). Flow: Cashier verifies invoice & takes payment
+  // → issues a Gate Pass (this is the ANPR exit pre-approval for the VRN) → at the
+  // exit, ANPR matches the plate and auto-opens (records gate-out), or Security
+  // opens manually with a VRN verify. Reuses the VOS engine's guards (VRN
+  // normalize+match, single-gate-out lock, revoke rules) against the real schema.
+  // ===========================================================================
+  const GATE_PASS_ISSUE_ROLES = ["admin", "developer", "gm_service", "workshop_manager", "service_manager", "cashier"];
+  const GATE_OUT_SECURITY_ROLES = ["admin", "developer", "gm_service", "workshop_manager", "security_agent", "gate_personnel"];
+  const normVrn = (s: any) => String(s ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const genId = (prefix: string) => `${prefix}-${Date.now().toString(36).toUpperCase()}${Math.floor(100 + Math.random() * 900)}`;
+
+  // Cashier queue: job cards that are billed/invoiced and don't yet have an active gate pass.
+  app.get("/api/gate-out/cashier-queue", authenticateToken, async (_req: any, res: any) => {
+    try {
+      const [passes]: any = await dbPool.execute(`SELECT job_id FROM tbl_gate_pass WHERE status <> 'REVOKED'`);
+      const withPass = new Set((passes || []).map((p: any) => String(p.job_id)));
+      const eligible = (getDB().jobCards || [])
+        .filter((j: any) => ["invoiced", "completed"].includes(String(j.status || "").toLowerCase()))
+        .filter((j: any) => !withPass.has(String(j.job_id)))
+        .map((j: any) => ({ job_id: j.job_id, job_card_no: j.job_card_no, vrn: j.vrn, customer_name: j.customer_name, vehicle_model: j.vehicle_model, status: j.status }));
+      res.json(eligible);
+    } catch (err: any) {
+      console.error("[GATE-OUT] cashier-queue:", err.message);
+      res.status(500).json({ error: "Failed to load cashier queue." });
+    }
+  });
+
+  // Cashier issues a gate pass = stores the VRN exit pre-approval.
+  app.post("/api/gate-out/create-gate-pass", authenticateToken, requireRoles(GATE_PASS_ISSUE_ROLES), async (req: any, res: any) => {
+    try {
+      const jobId = parseInt(req.body?.jobId);
+      const { paymentMode, amount, referenceNumber, releaseBasis } = req.body || {};
+      if (!jobId) return res.status(400).json({ error: "Missing jobId." });
+
+      const jc = (getDB().jobCards || []).find((j: any) => Number(j.job_id) === jobId);
+      if (!jc) return res.status(404).json({ error: "Job card not found." });
+
+      // Eligibility: a recorded payment, or billed status, or an approved credit /
+      // manual override. Mirrors the engine's release-basis logic.
+      const [paid]: any = await dbPool.execute(`SELECT payment_id FROM tbl_payments WHERE job_id = ? AND status = 'COMPLETED' LIMIT 1`, [String(jobId)]);
+      const [creditOk]: any = await dbPool.execute(`SELECT credit_request_id FROM tbl_credit_requests WHERE job_id = ? AND status = 'GM_APPROVED' LIMIT 1`, [String(jobId)]);
+      const hasPayment = (paid || []).length > 0;
+      const hasCredit = (creditOk || []).length > 0;
+      const billed = ["invoiced", "completed"].includes(String(jc.status || "").toLowerCase());
+      let basis = String(releaseBasis || "").toUpperCase();
+      if (!basis) basis = hasPayment ? "PAID" : hasCredit ? "CREDIT_APPROVED" : billed ? "PAID" : "";
+      if (!hasPayment && !hasCredit && !billed && basis !== "MANUAL_GATE_PASS") {
+        return res.status(400).json({ error: "GATE_PASS_NOT_ELIGIBLE: no payment/credit recorded and job card is not billed." });
+      }
+      // A pass with a mandatory reference for non-cash modes (mirror engine rule).
+      if (paymentMode && ["UPI", "NEFT", "RTGS", "IMPS", "CARD", "CHEQUE"].includes(String(paymentMode).toUpperCase()) && !String(referenceNumber || "").trim()) {
+        return res.status(400).json({ error: `PAYMENT_REFERENCE_REQUIRED: reference is mandatory for ${paymentMode}.` });
+      }
+
+      const [existing]: any = await dbPool.execute(
+        `SELECT gate_pass_id, gate_pass_no FROM tbl_gate_pass WHERE job_id = ? AND status <> 'REVOKED' LIMIT 1`, [String(jobId)]
+      );
+      if ((existing || []).length > 0) {
+        return res.status(409).json({ error: "GATE_PASS_ALREADY_ISSUED", gatePassId: existing[0].gate_pass_id, gatePassNo: existing[0].gate_pass_no });
+      }
+
+      const gpId = genId("GP");
+      const gpNo = `GP/1/${new Date().getFullYear()}/${Math.floor(1000 + Math.random() * 9000)}`;
+      await dbPool.execute(
+        `INSERT INTO tbl_gate_pass (gate_pass_id, gate_pass_no, job_id, vrn, customer_name, vehicle_model, release_basis, payment_mode, amount, reference_number, status, issued_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ISSUED', ?)`,
+        [gpId, gpNo, String(jobId), normVrn(jc.vrn), jc.customer_name || null, jc.vehicle_model || null, basis || "PAID",
+         paymentMode || null, amount != null ? Number(amount) : null, referenceNumber || null, String(req.user?.user_id ?? "")]
+      );
+      res.status(201).json({ gatePassId: gpId, gatePassNo: gpNo, vrn: normVrn(jc.vrn) });
+    } catch (err: any) {
+      console.error("[GATE-OUT] create-gate-pass:", err.message);
+      res.status(500).json({ error: "Failed to create gate pass." });
+    }
+  });
+
+  // Security exit queue: issued passes not yet gated out.
+  app.get("/api/gate-out/security-queue", authenticateToken, async (_req: any, res: any) => {
+    try {
+      const [rows]: any = await dbPool.execute(`
+        SELECT gp.gate_pass_id, gp.gate_pass_no, gp.job_id, gp.vrn, gp.customer_name, gp.vehicle_model, gp.release_basis, gp.issued_at
+        FROM tbl_gate_pass gp
+        LEFT JOIN tbl_gate_out go ON go.gate_pass_id = gp.gate_pass_id
+        WHERE gp.status = 'ISSUED' AND go.gate_out_id IS NULL
+        ORDER BY gp.issued_at DESC`);
+      res.json(rows || []);
+    } catch (err: any) {
+      console.error("[GATE-OUT] security-queue:", err.message);
+      res.status(500).json({ error: "Failed to load security queue." });
+    }
+  });
+
+  // Internal helper: record a gate-out + mark the JC delivered. Returns gateOutId.
+  const recordGateOut = async (opts: { pass: any; source: "ANPR" | "MANUAL_CAMERA"; operatorId?: string; detectedVrn: string; evidenceId?: string; imageUrl?: string; }) => {
+    const { pass, source, operatorId, detectedVrn, evidenceId, imageUrl } = opts;
+    const [go]: any = await dbPool.execute(`SELECT gate_out_id FROM tbl_gate_out WHERE job_id = ? LIMIT 1`, [String(pass.job_id)]);
+    if ((go || []).length > 0) throw new Error("VEHICLE_ALREADY_GATED_OUT");
+    const goId = genId("GO");
+    await dbPool.execute(
+      `INSERT INTO tbl_gate_out (gate_out_id, gate_pass_id, job_id, security_operator_id, evidence_id, capture_source, expected_vrn, detected_vrn, verification_result, image_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'VERIFIED', ?)`,
+      [goId, pass.gate_pass_id, String(pass.job_id), operatorId || null, evidenceId || null, source, normVrn(pass.vrn), normVrn(detectedVrn), imageUrl || null]
+    );
+    await dbPool.execute(`UPDATE tbl_gate_pass SET status = 'VERIFIED' WHERE gate_pass_id = ?`, [pass.gate_pass_id]);
+    // Mark the in-memory job card delivered / gated out.
+    try {
+      const db = getDB();
+      const idx = (db.jobCards || []).findIndex((j: any) => Number(j.job_id) === Number(pass.job_id));
+      if (idx !== -1) {
+        db.jobCards[idx].status = "Delivered";
+        db.jobCards[idx].current_workflow_state = "GATE_OUT";
+        db.jobCards[idx].gated_out_at = new Date().toISOString();
+        setDB(db);
+        await syncSave(db);
+      }
+    } catch (e: any) { console.error("[GATE-OUT] jc update:", e.message); }
+    return goId;
+  };
+
+  // ANPR at the exit gate. Matches the plate against an issued pass and auto-opens.
+  app.post("/api/gate-out/anpr/exit", express.json(), async (req: any, res: any) => {
+    const expectedKey = process.env.ANPR_WEBHOOK_KEY;
+    if (!expectedKey) return res.status(503).json({ open: false, unavailable: true, message: "ANPR webhook not configured." });
+    if (req.headers["x-anpr-key"] !== expectedKey) return res.status(401).json({ open: false, error: "Invalid ANPR key." });
+
+    const vrn = normVrn(req.body?.plate);
+    if (!vrn || vrn.length < 3) return res.status(400).json({ open: false, error: "Missing or invalid plate." });
+    try {
+      const [rows]: any = await dbPool.execute(`
+        SELECT gp.* FROM tbl_gate_pass gp
+        LEFT JOIN tbl_gate_out go ON go.gate_pass_id = gp.gate_pass_id
+        WHERE gp.status = 'ISSUED' AND go.gate_out_id IS NULL AND gp.vrn = ?
+        ORDER BY gp.issued_at DESC LIMIT 1`, [vrn]);
+      const pass = (rows || [])[0];
+      if (!pass) return res.json({ open: false, reason: "NO_PREAPPROVAL", message: `No issued gate pass for ${vrn}. Security must verify manually.` });
+
+      const goId = await recordGateOut({ pass, source: "ANPR", detectedVrn: vrn, imageUrl: req.body?.image_url });
+      res.json({ open: true, gateOutId: goId, gate_pass_no: pass.gate_pass_no, job_id: Number(pass.job_id), vrn });
+    } catch (err: any) {
+      console.error("[GATE-OUT] anpr/exit:", err.message);
+      res.status(err.message === "VEHICLE_ALREADY_GATED_OUT" ? 409 : 500).json({ open: false, error: err.message || "ANPR exit failed." });
+    }
+  });
+
+  // Security manual gate-out (fallback / when ANPR fails). Matches SecurityWorkspace's payload.
+  app.post("/api/gate-out/gate-out", authenticateToken, requireRoles(GATE_OUT_SECURITY_ROLES), express.json(), async (req: any, res: any) => {
+    try {
+      const { gatePassId, expectedVrn, detectedVrn, evidenceId, captureSource } = req.body || {};
+      if (!gatePassId || !detectedVrn) return res.status(400).json({ error: "Missing gatePassId or detectedVrn." });
+
+      const [rows]: any = await dbPool.execute(`SELECT * FROM tbl_gate_pass WHERE gate_pass_id = ? LIMIT 1`, [gatePassId]);
+      const pass = (rows || [])[0];
+      if (!pass) return res.status(404).json({ error: "GATE_PASS_INVALID" });
+      if (pass.status === "REVOKED") return res.status(400).json({ error: "GATE_PASS_INVALID: revoked." });
+
+      const expect = normVrn(expectedVrn || pass.vrn);
+      if (expect && normVrn(detectedVrn) !== expect) {
+        return res.status(400).json({ error: "VRN_MISMATCH: detected plate does not match the gate pass." });
+      }
+      const goId = await recordGateOut({
+        pass, source: captureSource === "ANPR" ? "ANPR" : "MANUAL_CAMERA",
+        operatorId: String(req.user?.user_id ?? ""), detectedVrn, evidenceId,
+      });
+      res.json({ gateOutId: goId });
+    } catch (err: any) {
+      console.error("[GATE-OUT] gate-out:", err.message);
+      res.status(err.message === "VEHICLE_ALREADY_GATED_OUT" ? 409 : 500).json({ error: err.message || "Gate out failed." });
+    }
+  });
+
+  // Cashier claims a job (optional soft-lock so two cashiers don't double-process).
+  app.post("/api/gate-out/claim-task", authenticateToken, async (req: any, res: any) => {
+    try {
+      const { jobId, taskType } = req.body || {};
+      if (!jobId || !taskType) return res.status(400).json({ error: "Missing jobId or taskType." });
+      const owner = String(req.user?.user_id ?? "");
+      const [rows]: any = await dbPool.execute(`SELECT owner_id FROM tbl_task_claims WHERE job_id = ? AND task_type = ? LIMIT 1`, [String(jobId), String(taskType)]);
+      if ((rows || []).length > 0) {
+        if (rows[0].owner_id !== owner) return res.status(409).json({ error: "TASK_ALREADY_CLAIMED" });
+        return res.json({ success: true, ownerId: owner });
+      }
+      await dbPool.execute(`INSERT INTO tbl_task_claims (claim_id, job_id, task_type, owner_id) VALUES (?, ?, ?, ?)`, [genId("CLAIM"), String(jobId), String(taskType), owner]);
+      res.json({ success: true, ownerId: owner });
+    } catch (err: any) {
+      console.error("[GATE-OUT] claim-task:", err.message);
+      res.status(500).json({ error: "Failed to claim task." });
+    }
+  });
+
+  // Cashier records a payment against a job (enables the gate pass).
+  app.post("/api/gate-out/record-payment", authenticateToken, requireRoles(GATE_PASS_ISSUE_ROLES), async (req: any, res: any) => {
+    try {
+      const jobId = parseInt(req.body?.jobId);
+      const { amount, paymentMode, referenceNumber } = req.body || {};
+      if (!jobId || amount == null || !paymentMode) return res.status(400).json({ error: "Missing required payment fields." });
+      if (["UPI", "NEFT", "RTGS", "IMPS", "CARD", "CHEQUE"].includes(String(paymentMode).toUpperCase()) && !String(referenceNumber || "").trim()) {
+        return res.status(400).json({ error: `PAYMENT_REFERENCE_REQUIRED: reference is mandatory for ${paymentMode}.` });
+      }
+      const [existing]: any = await dbPool.execute(`SELECT payment_id FROM tbl_payments WHERE job_id = ? AND status = 'COMPLETED' LIMIT 1`, [String(jobId)]);
+      if ((existing || []).length > 0) return res.status(409).json({ error: "PAYMENT_ALREADY_RECORDED" });
+      const payId = genId("PAY");
+      await dbPool.execute(
+        `INSERT INTO tbl_payments (payment_id, job_id, amount, payment_mode, reference_number, cashier_id, status) VALUES (?, ?, ?, ?, ?, ?, 'COMPLETED')`,
+        [payId, String(jobId), Number(amount), String(paymentMode).toUpperCase(), referenceNumber || null, String(req.user?.user_id ?? "")]
+      );
+      res.status(201).json({ paymentId: payId });
+    } catch (err: any) {
+      console.error("[GATE-OUT] record-payment:", err.message);
+      res.status(500).json({ error: "Failed to record payment." });
+    }
+  });
+
+  // Cashier raises a credit (release-without-full-payment) request for GM approval.
+  app.post("/api/gate-out/request-credit", authenticateToken, requireRoles(GATE_PASS_ISSUE_ROLES), async (req: any, res: any) => {
+    try {
+      const jobId = parseInt(req.body?.jobId);
+      const { amount, reason } = req.body || {};
+      if (!jobId || !String(reason || "").trim()) return res.status(400).json({ error: "Missing jobId or reason." });
+      const [existing]: any = await dbPool.execute(`SELECT credit_request_id FROM tbl_credit_requests WHERE job_id = ? AND status = 'REQUESTED' LIMIT 1`, [String(jobId)]);
+      if ((existing || []).length > 0) return res.status(409).json({ error: "CREDIT_ALREADY_REQUESTED" });
+      const crId = genId("CR");
+      await dbPool.execute(
+        `INSERT INTO tbl_credit_requests (credit_request_id, job_id, amount, reason, requested_by, status) VALUES (?, ?, ?, ?, ?, 'REQUESTED')`,
+        [crId, String(jobId), amount != null ? Number(amount) : null, String(reason).trim(), String(req.user?.user_id ?? "")]
+      );
+      res.status(201).json({ creditId: crId });
+    } catch (err: any) {
+      console.error("[GATE-OUT] request-credit:", err.message);
+      res.status(500).json({ error: "Failed to request credit." });
+    }
+  });
+
+  // GM approves / rejects a credit request (only GM / superusers).
+  app.post("/api/gate-out/decide-credit", authenticateToken, requireRoles(["admin", "developer", "gm_service"]), async (req: any, res: any) => {
+    try {
+      const { creditRequestId, decision } = req.body || {};
+      if (!creditRequestId || !["APPROVE", "REJECT"].includes(String(decision || "").toUpperCase())) {
+        return res.status(400).json({ error: "creditRequestId and decision (APPROVE/REJECT) required." });
+      }
+      const [rows]: any = await dbPool.execute(`SELECT status FROM tbl_credit_requests WHERE credit_request_id = ? LIMIT 1`, [creditRequestId]);
+      const cr = (rows || [])[0];
+      if (!cr) return res.status(404).json({ error: "CREDIT_NOT_FOUND" });
+      if (cr.status !== "REQUESTED") return res.status(400).json({ error: "CREDIT_ALREADY_DECIDED" });
+      const newStatus = String(decision).toUpperCase() === "APPROVE" ? "GM_APPROVED" : "GM_REJECTED";
+      await dbPool.execute(`UPDATE tbl_credit_requests SET status = ?, gm_id = ?, decision_at = NOW() WHERE credit_request_id = ?`, [newStatus, String(req.user?.user_id ?? ""), creditRequestId]);
+      res.json({ status: newStatus });
+    } catch (err: any) {
+      console.error("[GATE-OUT] decide-credit:", err.message);
+      res.status(500).json({ error: "Failed to decide credit." });
+    }
+  });
+
+  // Read-models for the cashier / GM dashboards.
+  app.get("/api/gate-out/my-credit-requests", authenticateToken, async (req: any, res: any) => {
+    try {
+      const [rows]: any = await dbPool.execute(`SELECT * FROM tbl_credit_requests WHERE requested_by = ? ORDER BY requested_at DESC LIMIT 200`, [String(req.user?.user_id ?? "")]);
+      res.json(rows || []);
+    } catch (err: any) { res.status(500).json({ error: "Failed to load credit requests." }); }
+  });
+  app.get("/api/gate-out/gm-pending-credits", authenticateToken, async (_req: any, res: any) => {
+    try {
+      const [rows]: any = await dbPool.execute(`SELECT * FROM tbl_credit_requests WHERE status = 'REQUESTED' ORDER BY requested_at DESC LIMIT 200`);
+      res.json(rows || []);
+    } catch (err: any) { res.status(500).json({ error: "Failed to load pending credits." }); }
+  });
+  app.get("/api/gate-out/paid-today", authenticateToken, async (req: any, res: any) => {
+    try {
+      const [rows]: any = await dbPool.execute(`SELECT * FROM tbl_payments WHERE cashier_id = ? AND DATE(recorded_at) = CURDATE() ORDER BY recorded_at DESC`, [String(req.user?.user_id ?? "")]);
+      res.json(rows || []);
+    } catch (err: any) { res.status(500).json({ error: "Failed to load payments." }); }
+  });
+  app.get("/api/gate-out/gate-pass-ready", authenticateToken, async (_req: any, res: any) => {
+    try {
+      const [rows]: any = await dbPool.execute(`
+        SELECT gp.* FROM tbl_gate_pass gp
+        LEFT JOIN tbl_gate_out go ON go.gate_pass_id = gp.gate_pass_id
+        WHERE gp.status = 'ISSUED' AND go.gate_out_id IS NULL ORDER BY gp.issued_at DESC`);
+      res.json(rows || []);
+    } catch (err: any) { res.status(500).json({ error: "Failed to load ready gate passes." }); }
+  });
+
+  // SA billing/gate visibility: the advisor's own jobs with their payment & gate status.
+  app.get("/api/gate-out/sa-billing-visibility", authenticateToken, async (req: any, res: any) => {
+    try {
+      const me: RelevanceUser = { role: req.user?.role, user_id: req.user?.user_id, employee_id: req.user?.employee_id, full_name: req.user?.full_name };
+      const myJobs = (getDB().jobCards || []).filter((jc: any) =>
+        isOwnedBy(jc, me) && ["invoiced", "completed", "delivered"].includes(String(jc.status || "").toLowerCase()));
+      if (myJobs.length === 0) return res.json([]);
+      const ids = myJobs.map((j: any) => String(j.job_id));
+      const ph = ids.map(() => "?").join(",");
+      const [passes]: any = await dbPool.execute(`SELECT job_id, gate_pass_id, status FROM tbl_gate_pass WHERE job_id IN (${ph})`, ids);
+      const [outs]: any = await dbPool.execute(`SELECT job_id, gate_out_time FROM tbl_gate_out WHERE job_id IN (${ph})`, ids);
+      const [pays]: any = await dbPool.execute(`SELECT job_id, payment_mode FROM tbl_payments WHERE status='COMPLETED' AND job_id IN (${ph})`, ids);
+      const passBy = new Map((passes || []).map((p: any) => [String(p.job_id), p]));
+      const outBy = new Map((outs || []).map((o: any) => [String(o.job_id), o]));
+      const payBy = new Map((pays || []).map((p: any) => [String(p.job_id), p]));
+      res.json(myJobs.map((j: any) => ({
+        job_id: j.job_id, job_card_no: j.job_card_no, vrn: j.vrn, customer_name: j.customer_name,
+        payment_mode: payBy.get(String(j.job_id))?.payment_mode || null,
+        gate_pass_status: passBy.get(String(j.job_id))?.status || null,
+        gate_out_time: outBy.get(String(j.job_id))?.gate_out_time || null,
+      })));
+    } catch (err: any) {
+      console.error("[GATE-OUT] sa-billing-visibility:", err.message);
+      res.status(500).json({ error: "Failed to load billing visibility." });
+    }
+  });
+
+  // Revoke an issued gate pass (before the vehicle leaves).
+  app.post("/api/gate-out/revoke", authenticateToken, requireRoles(GATE_PASS_ISSUE_ROLES), async (req: any, res: any) => {
+    try {
+      const { gatePassId, reason } = req.body || {};
+      if (!gatePassId || !String(reason || "").trim()) return res.status(400).json({ error: "gatePassId and reason are required." });
+      const [rows]: any = await dbPool.execute(`SELECT status FROM tbl_gate_pass WHERE gate_pass_id = ? LIMIT 1`, [gatePassId]);
+      const pass = (rows || [])[0];
+      if (!pass) return res.status(404).json({ error: "GATE_PASS_NOT_FOUND" });
+      if (pass.status === "REVOKED") return res.status(400).json({ error: "GATE_PASS_ALREADY_REVOKED" });
+      if (pass.status === "VERIFIED") return res.status(400).json({ error: "GATE_PASS_CANNOT_BE_REVOKED: vehicle already gated out." });
+      await dbPool.execute(
+        `UPDATE tbl_gate_pass SET status = 'REVOKED', revoked_by = ?, revoked_at = NOW(), revoke_reason = ? WHERE gate_pass_id = ?`,
+        [String(req.user?.user_id ?? ""), String(reason).trim(), gatePassId]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[GATE-OUT] revoke:", err.message);
+      res.status(500).json({ error: "Failed to revoke gate pass." });
     }
   });
 
