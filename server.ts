@@ -3930,7 +3930,9 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       // non-workflow fields for non-owners rather than mutating the core card.
       let incoming = req.body || {};
       const _role = req.user?.role;
-      const _isSuper = _role === "admin" || _role === "developer";
+      // Superusers who override the core job-card lock and may edit any field.
+      // GM (gm_service) can override each and every rule (per DP directive).
+      const _isSuper = _role === "admin" || _role === "developer" || _role === "gm_service";
       const _uName = String(req.user?.full_name || "").trim().toLowerCase();
       const _isCoreOwner =
         _isSuper ||
