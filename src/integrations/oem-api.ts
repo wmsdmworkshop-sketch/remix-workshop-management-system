@@ -198,6 +198,60 @@ export async function callProvider(
   }
 }
 
+// --- Vehicle record cache: once fetched from TMSA, keep it in our DB so the same
+// vehicle never needs another TMSA lookup (until an explicit refresh). ---
+
+const normVrnKey = (s: any) => String(s ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+const pick = (obj: any, keys: string[]): string | null => {
+  if (!obj || typeof obj !== "object") return null;
+  for (const k of keys) { if (obj[k] != null && obj[k] !== "") return String(obj[k]); }
+  // shallow search one level deep
+  for (const v of Object.values(obj)) {
+    if (v && typeof v === "object") { const hit = pick(v, keys); if (hit) return hit; }
+  }
+  return null;
+};
+
+export async function ensureVehicleCacheTable(pool: any): Promise<void> {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS oem_vehicle_cache (
+      vrn VARCHAR(40) PRIMARY KEY,
+      provider VARCHAR(40) NOT NULL DEFAULT 'tmsa_cv',
+      chassis_no VARCHAR(60) DEFAULT NULL,
+      model VARCHAR(120) DEFAULT NULL,
+      payload LONGTEXT DEFAULT NULL,
+      fetched_by VARCHAR(50) DEFAULT NULL,
+      fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_ovc_chassis (chassis_no)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+}
+
+export async function getCachedVehicle(pool: any, vrn: string): Promise<any | null> {
+  const key = normVrnKey(vrn);
+  if (!key) return null;
+  const [rows]: any = await pool.execute(`SELECT * FROM oem_vehicle_cache WHERE vrn = ? LIMIT 1`, [key]);
+  const row = (rows || [])[0];
+  if (!row) return null;
+  let data: any = row.payload;
+  try { data = JSON.parse(row.payload); } catch { /* leave as text */ }
+  return { vrn: row.vrn, provider: row.provider, chassis_no: row.chassis_no, model: row.model, data, fetched_at: row.fetched_at, updated_at: row.updated_at };
+}
+
+export async function cacheVehicle(pool: any, vrn: string, provider: string, payload: any, fetchedBy?: string): Promise<void> {
+  const key = normVrnKey(vrn);
+  if (!key) return;
+  const chassis = pick(payload, ["chassis_no", "chassisNo", "chassis_number", "chassisNumber", "vin", "VIN"]);
+  const model = pick(payload, ["model", "vehicle_model", "vehicleModel", "modelName", "model_name"]);
+  await pool.execute(
+    `INSERT INTO oem_vehicle_cache (vrn, provider, chassis_no, model, payload, fetched_by)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE provider=VALUES(provider), chassis_no=VALUES(chassis_no), model=VALUES(model), payload=VALUES(payload), fetched_by=VALUES(fetched_by)`,
+    [key, provider, chassis, model, typeof payload === "string" ? payload : JSON.stringify(payload), fetchedBy || null]
+  );
+}
+
 /** Lightweight connectivity check for the "Test" button. */
 export async function testProvider(pool: any, key: OemProviderKey): Promise<{ ok: boolean; message: string; status?: number }> {
   const row = await getProviderRow(pool, key);

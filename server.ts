@@ -14,7 +14,7 @@ import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
 import { pool as dbPool } from "./src/db/index.ts";
 import { startQrtGmailIngestor, runQrtIngestOnce, getQrtPublicConfig, updateQrtSettings } from "./src/integrations/qrt-gmail-ingestor.ts";
-import { ensureOemTable, getPublicConfig as getOemPublicConfig, updateProviderConfig as updateOemProvider, testProvider as testOemProvider, callProvider as callOemProvider, OemNotConfiguredError, type OemProviderKey } from "./src/integrations/oem-api.ts";
+import { ensureOemTable, getPublicConfig as getOemPublicConfig, updateProviderConfig as updateOemProvider, testProvider as testOemProvider, callProvider as callOemProvider, OemNotConfiguredError, ensureVehicleCacheTable, getCachedVehicle, cacheVehicle, type OemProviderKey } from "./src/integrations/oem-api.ts";
 import { ingestAlert as ingestCctvAlert, listAlerts as listCctvAlerts, acknowledgeAlert as ackCctvAlert, listCameras as listCctvCameras, upsertCamera as upsertCctvCamera, deleteCamera as deleteCctvCamera, getCctvConfig, updateCctvConfig, countOpenAlerts as countOpenCctvAlerts } from "./src/integrations/cctv-analytics.ts";
 import { filterViewableJobCards, canEditJobCard, isOwnedBy, isInMyStage, isFullViewRole, GROUP1_FULL_CONTROL, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
 import { DEFAULT_CIRCULARS } from "./src/lib/circularsData.ts";
@@ -880,7 +880,7 @@ async function startServer() {
     }
 
     // OEM official-API provider slots (TMSA-CV / QRT / Fleet Edge) — inert until keyed.
-    try { await ensureOemTable(dbPool); console.log("OEM API provider slots initialized (inert until keyed)."); }
+    try { await ensureOemTable(dbPool); await ensureVehicleCacheTable(dbPool); console.log("OEM API provider slots + vehicle cache initialized (inert until keyed)."); }
     catch (e: any) { console.warn("OEM slots init skipped:", e.message); }
 
     console.log("Profile management tables and settings initialized successfully.");
@@ -7851,20 +7851,37 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     catch (e: any) { res.status(500).json({ ok: false, message: e.message || "Test failed" }); }
   });
 
-  // Vehicle Passport → TMSA-CV lookup. 503 (not configured) until keys are pasted.
+  // Vehicle Passport → TMSA-CV lookup. Cache-first: once a vehicle's official record
+  // is fetched it's stored in oem_vehicle_cache and served from our DB thereafter, so
+  // the same vehicle never needs another TMSA call. Pass ?refresh=1 to force a re-pull.
+  // 503 (not configured) only when there's no cache AND no keys yet.
   app.get("/api/vehicle/tmsa-lookup", authenticateToken, async (req: any, res) => {
     const vrn = String(req.query?.vrn || req.query?.query || "").trim();
+    const forceRefresh = String(req.query?.refresh || "") === "1" || req.query?.refresh === "true";
     if (!vrn) return res.status(400).json({ error: "vrn is required." });
     try {
+      // 1. Serve from our DB unless a refresh was explicitly requested.
+      if (!forceRefresh) {
+        const cached = await getCachedVehicle(dbPool, vrn);
+        if (cached) {
+          return res.json({ success: true, source: "TMSA-CV", cached: true, vrn, fetched_at: cached.fetched_at, data: cached.data });
+        }
+      }
+      // 2. Cache miss (or refresh) → hit the official API, then persist.
       const cfg = (await getOemPublicConfig(dbPool)).find((p: any) => p.provider_key === "tmsa_cv");
       const template = cfg?.lookup_path || "";
       const opts: any = template.includes("{vrn}")
         ? { path: template.replace("{vrn}", encodeURIComponent(vrn)) }
         : { path: template || "/", query: { vrn } };
       const data = await callOemProvider(dbPool, "tmsa_cv", opts);
-      res.json({ success: true, source: "TMSA-CV", vrn, data });
+      try { await cacheVehicle(dbPool, vrn, "tmsa_cv", data, String(req.user?.user_id ?? "")); }
+      catch (cacheErr: any) { console.error("[TMSA] cache write failed:", cacheErr.message); }
+      res.json({ success: true, source: "TMSA-CV", cached: false, vrn, data });
     } catch (e: any) {
       if (e instanceof OemNotConfiguredError || e.code === "NOT_CONFIGURED") {
+        // If we happen to have a stale cache but keys were removed, still serve it.
+        const cached = await getCachedVehicle(dbPool, vrn).catch(() => null);
+        if (cached) return res.json({ success: true, source: "TMSA-CV", cached: true, stale: true, vrn, fetched_at: cached.fetched_at, data: cached.data });
         return res.status(503).json({ success: false, unavailable: true, message: e.message });
       }
       res.status(502).json({ success: false, error: e.message || "TMSA lookup failed", status: e.status, body: e.body });

@@ -49,31 +49,35 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
   const [passportAggregate, setPassportAggregate] = useState<VehiclePassportAggregate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedVisitId, setExpandedVisitId] = useState<string | null>(null);
-  const [tmsa, setTmsa] = useState<{ loading: boolean; note: string | null; error: boolean }>({ loading: false, note: null, error: false });
+  const [tmsa, setTmsa] = useState<{ loading: boolean; note: string | null; error: boolean; canRefetch: boolean }>({ loading: false, note: null, error: false, canRefetch: false });
 
-  const tmsaLookup = async () => {
+  const tmsaLookup = async (force = false) => {
     const vrn = searchQuery.trim();
     if (!vrn) return;
-    setTmsa({ loading: true, note: null, error: false });
+    setTmsa({ loading: true, note: null, error: false, canRefetch: false });
     try {
       const token = localStorage.getItem("wms_token") || localStorage.getItem("dwip_token") || localStorage.getItem("token") || "";
-      const resp = await fetch(`/api/vehicle/tmsa-lookup?vrn=${encodeURIComponent(vrn)}`, {
+      const resp = await fetch(`/api/vehicle/tmsa-lookup?vrn=${encodeURIComponent(vrn)}${force ? "&refresh=1" : ""}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       const data = await resp.json().catch(() => ({}));
       if (resp.status === 503 || data.unavailable) {
-        setTmsa({ loading: false, error: true, note: data.message || "TMSA-CV is not configured yet. Add the official API key in External Integrations." });
+        setTmsa({ loading: false, error: true, canRefetch: false, note: data.message || "TMSA-CV is not configured yet. Add the official API key in External Integrations." });
         return;
       }
       if (!resp.ok) {
-        setTmsa({ loading: false, error: true, note: data.error || "TMSA lookup failed." });
+        setTmsa({ loading: false, error: true, canRefetch: false, note: data.error || "TMSA lookup failed." });
         return;
       }
-      setTmsa({ loading: false, error: false, note: `TMSA-CV responded for ${vrn}. Fetched official record.` });
+      const when = data.fetched_at ? new Date(data.fetched_at).toLocaleString() : "";
+      const note = data.cached
+        ? `Served from our saved TMSA record${when ? ` (fetched ${when})` : ""} — no new TMSA call.`
+        : `Fetched fresh from TMSA-CV and saved for next time.`;
+      setTmsa({ loading: false, error: false, canRefetch: true, note });
       // When the official schema is known, map data.data into the passport aggregate here.
-      console.log("[TMSA] official data:", data.data);
+      console.log("[TMSA] official data:", data.data, "cached:", data.cached);
     } catch (e: any) {
-      setTmsa({ loading: false, error: true, note: e.message || "TMSA lookup failed." });
+      setTmsa({ loading: false, error: true, canRefetch: false, note: e.message || "TMSA lookup failed." });
     }
   };
 
@@ -223,9 +227,9 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
             </button>
             <button
               type="button"
-              onClick={tmsaLookup}
+              onClick={() => tmsaLookup(false)}
               disabled={tmsa.loading || !searchQuery.trim()}
-              title="Fetch the official record from Tata TMSA-CV (needs the official API key configured in External Integrations)"
+              title="Fetch the official record from Tata TMSA-CV. Cached after the first pull — later lookups load from our DB with no new TMSA call."
               className="px-4 py-3 bg-orange-600/90 hover:bg-orange-600 disabled:opacity-50 text-white rounded-lg font-medium text-sm transition-colors duration-150 flex items-center justify-center gap-2 shadow-sm"
             >
               {tmsa.loading
@@ -234,7 +238,14 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
             </button>
           </div>
           {tmsa.note && (
-            <p className={`mt-2 text-xs ${tmsa.error ? "text-amber-400" : "text-emerald-400"}`}>{tmsa.note}</p>
+            <p className={`mt-2 text-xs ${tmsa.error ? "text-amber-400" : "text-emerald-400"}`}>
+              {tmsa.note}
+              {tmsa.canRefetch && (
+                <button type="button" onClick={() => tmsaLookup(true)} className="ml-2 underline text-orange-300 hover:text-orange-200">
+                  Re-fetch from TMSA
+                </button>
+              )}
+            </p>
           )}
         </form>
 
