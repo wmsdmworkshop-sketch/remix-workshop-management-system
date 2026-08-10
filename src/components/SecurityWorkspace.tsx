@@ -103,7 +103,12 @@ export const SecurityWorkspace: React.FC<SecurityWorkspaceProps> = ({ currentUse
                     : "bg-slate-950/40 border-slate-850 text-slate-300 hover:border-slate-800"
                 }`}
               >
-                <div className="font-mono text-lg font-bold text-emerald-400">{gp.vrn}</div>
+                <div className="flex items-center gap-2">
+                  <div className="font-mono text-lg font-bold text-emerald-400">{gp.vrn}</div>
+                  {gp.sla_status === "BREACHED" && (
+                    <span className="text-[9px] font-bold text-red-300 bg-red-900/40 border border-red-700/50 rounded px-1.5 py-0.5 uppercase">SLA Breached</span>
+                  )}
+                </div>
                 <div className="text-[10px] text-slate-400 mt-1">Pass: {gp.gate_pass_no} • {gp.release_basis}</div>
               </button>
             ))}

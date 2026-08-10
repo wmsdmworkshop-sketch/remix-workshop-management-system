@@ -814,6 +814,25 @@ async function startServer() {
           UNIQUE KEY uq_job_task (job_id, task_type)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
       `);
+    // Phase B (VOS upgrade): per-stage handoff SLA clocks. A clock opens when a stage
+    // hands off to the next owner (billing→cashier, cashier→security) and closes on
+    // acceptance; overdue open clocks flip to BREACHED.
+    await dbPool.execute(`
+        CREATE TABLE IF NOT EXISTS tbl_handoff_sla (
+          handoff_id VARCHAR(50) PRIMARY KEY,
+          stage_name VARCHAR(60) NOT NULL,
+          job_id VARCHAR(50) NOT NULL,
+          entity_id VARCHAR(50) DEFAULT NULL,
+          owner_role VARCHAR(50) DEFAULT NULL,
+          sla_due_at DATETIME NOT NULL,
+          status VARCHAR(30) NOT NULL DEFAULT 'ON_TRACK',
+          opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          accepted_at DATETIME NULL DEFAULT NULL,
+          INDEX idx_sla_job (job_id),
+          INDEX idx_sla_stage (stage_name),
+          INDEX idx_sla_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
     // Phase A (VOS upgrade): formal invoice = billing evidence. One row per billed job;
     // the invoice_no is the CRM/DMS invoice number, amount is the payable. The cashier
     // queue and gate-pass eligibility are driven by this record, not raw job status.
@@ -3560,14 +3579,46 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   const normVrn = (s: any) => String(s ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const genId = (prefix: string) => `${prefix}-${Date.now().toString(36).toUpperCase()}${Math.floor(100 + Math.random() * 900)}`;
 
+  // --- Phase B: SLA handoff clocks ---
+  const SLA_DUE_MINS: Record<string, number> = {
+    SLA_BILLING_TO_CASHIER: Number(process.env.SLA_BILLING_TO_CASHIER_MINS || 30),
+    SLA_CASHIER_TO_SECURITY: Number(process.env.SLA_CASHIER_TO_SECURITY_MINS || 5),
+  };
+  // Flip overdue open clocks to BREACHED (called before any read of SLA state).
+  const markSlaBreaches = async () => {
+    try { await dbPool.execute(`UPDATE tbl_handoff_sla SET status = 'BREACHED' WHERE status = 'ON_TRACK' AND sla_due_at < NOW()`); }
+    catch (e: any) { console.error("[SLA] breach sweep:", e.message); }
+  };
+  // Open a clock for a stage/job (idempotent — one open clock per stage+job).
+  const openSla = async (stage: string, jobId: any, entityId: string | null, ownerRole: string) => {
+    try {
+      const [ex]: any = await dbPool.execute(`SELECT handoff_id FROM tbl_handoff_sla WHERE job_id = ? AND stage_name = ? AND status IN ('ON_TRACK','BREACHED') LIMIT 1`, [String(jobId), stage]);
+      if ((ex || []).length > 0) return;
+      const mins = SLA_DUE_MINS[stage] ?? 30;
+      await dbPool.execute(
+        `INSERT INTO tbl_handoff_sla (handoff_id, stage_name, job_id, entity_id, owner_role, sla_due_at, status)
+         VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE), 'ON_TRACK')`,
+        [genId("SLA"), stage, String(jobId), entityId, ownerRole, mins]
+      );
+    } catch (e: any) { console.error("[SLA] open:", e.message); }
+  };
+  // Close a stage clock for a job (accepted → COMPLETED).
+  const closeSla = async (stage: string, jobId: any) => {
+    try { await dbPool.execute(`UPDATE tbl_handoff_sla SET status = 'COMPLETED', accepted_at = NOW() WHERE job_id = ? AND stage_name = ? AND status IN ('ON_TRACK','BREACHED')`, [String(jobId), stage]); }
+    catch (e: any) { console.error("[SLA] close:", e.message); }
+  };
+
   // Cashier queue (invoice-driven, Phase A): jobs with a raised invoice (= billing
   // evidence) and no active gate pass yet. Enriched with live job-card + payment state.
   app.get("/api/gate-out/cashier-queue", authenticateToken, async (_req: any, res: any) => {
     try {
+      await markSlaBreaches();
       const [invoices]: any = await dbPool.execute(`
         SELECT i.job_id, i.invoice_no, i.amount, i.tax_amount,
                (SELECT payment_mode FROM tbl_payments p WHERE p.job_id = i.job_id AND p.status='COMPLETED' LIMIT 1) AS payment_mode,
                (SELECT status FROM tbl_credit_requests cr WHERE cr.job_id = i.job_id ORDER BY requested_at DESC LIMIT 1) AS credit_status,
+               (SELECT status FROM tbl_handoff_sla s WHERE s.job_id = i.job_id AND s.stage_name = 'SLA_BILLING_TO_CASHIER' ORDER BY s.opened_at DESC LIMIT 1) AS sla_status,
+               (SELECT sla_due_at FROM tbl_handoff_sla s WHERE s.job_id = i.job_id AND s.stage_name = 'SLA_BILLING_TO_CASHIER' ORDER BY s.opened_at DESC LIMIT 1) AS sla_due_at,
                tc.owner_id AS claimed_by
         FROM tbl_invoice i
         LEFT JOIN tbl_gate_pass gp ON gp.job_id = i.job_id AND gp.status <> 'REVOKED'
@@ -3581,6 +3632,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
           customer_name: j.customer_name, vehicle_model: j.vehicle_model, status: j.status,
           invoice_no: inv.invoice_no, invoice_amount: inv.amount, tax_amount: inv.tax_amount,
           payment_mode: inv.payment_mode, credit_status: inv.credit_status, claimed_by: inv.claimed_by,
+          sla_status: inv.sla_status, sla_due_at: inv.sla_due_at,
         };
       });
       res.json(rows);
@@ -3640,6 +3692,9 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         [gpId, gpNo, String(jobId), normVrn(jc.vrn), jc.customer_name || null, jc.vehicle_model || null, basis || "PAID",
          paymentMode || null, amount != null ? Number(amount) : null, referenceNumber || null, String(req.user?.user_id ?? "")]
       );
+      // Phase B: cashier accepted → close billing→cashier, open cashier→security.
+      await closeSla("SLA_BILLING_TO_CASHIER", jobId);
+      await openSla("SLA_CASHIER_TO_SECURITY", jobId, gpId, "SECURITY");
       res.status(201).json({ gatePassId: gpId, gatePassNo: gpNo, vrn: normVrn(jc.vrn) });
     } catch (err: any) {
       console.error("[GATE-OUT] create-gate-pass:", err.message);
@@ -3650,10 +3705,13 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   // Security exit queue: issued passes not yet gated out.
   app.get("/api/gate-out/security-queue", authenticateToken, async (_req: any, res: any) => {
     try {
+      await markSlaBreaches();
       const [rows]: any = await dbPool.execute(`
-        SELECT gp.gate_pass_id, gp.gate_pass_no, gp.job_id, gp.vrn, gp.customer_name, gp.vehicle_model, gp.release_basis, gp.issued_at
+        SELECT gp.gate_pass_id, gp.gate_pass_no, gp.job_id, gp.vrn, gp.customer_name, gp.vehicle_model, gp.release_basis, gp.issued_at,
+               s.status AS sla_status, s.sla_due_at
         FROM tbl_gate_pass gp
         LEFT JOIN tbl_gate_out go ON go.gate_pass_id = gp.gate_pass_id
+        LEFT JOIN tbl_handoff_sla s ON s.job_id = gp.job_id AND s.stage_name = 'SLA_CASHIER_TO_SECURITY'
         WHERE gp.status = 'ISSUED' AND go.gate_out_id IS NULL
         ORDER BY gp.issued_at DESC`);
       res.json(rows || []);
@@ -3675,6 +3733,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       [goId, pass.gate_pass_id, String(pass.job_id), operatorId || null, evidenceId || null, source, normVrn(pass.vrn), normVrn(detectedVrn), imageUrl || null]
     );
     await dbPool.execute(`UPDATE tbl_gate_pass SET status = 'VERIFIED' WHERE gate_pass_id = ?`, [pass.gate_pass_id]);
+    await closeSla("SLA_CASHIER_TO_SECURITY", pass.job_id); // Phase B: security accepted.
     // Mark the in-memory job card delivered / gated out.
     try {
       const db = getDB();
@@ -3880,6 +3939,32 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     } catch (err: any) {
       console.error("[GATE-OUT] sa-billing-visibility:", err.message);
       res.status(500).json({ error: "Failed to load billing visibility." });
+    }
+  });
+
+  // Open/breached handoff SLA clocks (dashboard). Optional ?stage= filter.
+  app.get("/api/gate-out/sla-breaches", authenticateToken, async (req: any, res: any) => {
+    try {
+      await markSlaBreaches();
+      const stage = String(req.query?.stage || "");
+      const params: any[] = [];
+      let where = `status IN ('ON_TRACK','BREACHED')`;
+      if (stage) { where += ` AND stage_name = ?`; params.push(stage); }
+      const [rows]: any = await dbPool.execute(
+        `SELECT s.*, i.invoice_no, gp.gate_pass_no,
+                TIMESTAMPDIFF(MINUTE, NOW(), s.sla_due_at) AS mins_remaining
+         FROM tbl_handoff_sla s
+         LEFT JOIN tbl_invoice i ON i.job_id = s.job_id
+         LEFT JOIN tbl_gate_pass gp ON gp.job_id = s.job_id AND gp.status <> 'REVOKED'
+         WHERE ${where} ORDER BY s.sla_due_at ASC LIMIT 500`, params);
+      const jcById = new Map((getDB().jobCards || []).map((j: any) => [Number(j.job_id), j]));
+      res.json((rows || []).map((r: any) => {
+        const j = jcById.get(Number(r.job_id)) || {};
+        return { ...r, vrn: j.vrn, customer_name: j.customer_name, job_card_no: j.job_card_no };
+      }));
+    } catch (err: any) {
+      console.error("[GATE-OUT] sla-breaches:", err.message);
+      res.status(500).json({ error: "Failed to load SLA breaches." });
     }
   });
 
@@ -6368,7 +6453,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   // Powers the personal tab: My Jobs / Pending / Breaches / Performance /
   // Incentives / Attendance.
   // ============================================================================
-  app.get("/api/my/summary", authenticateToken, (req: any, res: any) => {
+  app.get("/api/my/summary", authenticateToken, async (req: any, res: any) => {
     try {
       const db = getDB();
       const me: RelevanceUser = {
@@ -6408,6 +6493,18 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         Number(r.employee_id) === Number(empId) && String(r.shift_date || "").startsWith(ym)
       );
 
+      // Phase B: SLA breaches owned by my stage (cashier / security).
+      let slaBreaches = 0;
+      const OWNER_BY_ROLE: Record<string, string> = { cashier: "CASHIER", security_agent: "SECURITY", gate_personnel: "SECURITY" };
+      const ownerRole = OWNER_BY_ROLE[String(me.role || "")];
+      if (ownerRole) {
+        try {
+          await dbPool.execute(`UPDATE tbl_handoff_sla SET status = 'BREACHED' WHERE status = 'ON_TRACK' AND sla_due_at < NOW()`);
+          const [sb]: any = await dbPool.execute(`SELECT COUNT(*) AS n FROM tbl_handoff_sla WHERE status = 'BREACHED' AND owner_role = ?`, [ownerRole]);
+          slaBreaches = Number((sb || [])[0]?.n || 0);
+        } catch (e: any) { console.error("[MY-SUMMARY] sla:", e.message); }
+      }
+
       res.json({
         me: { user_id: me.user_id, employee_id: empId, full_name: me.full_name, role: me.role },
         performance: emp ? {
@@ -6421,7 +6518,8 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         counts: {
           total: myJobs.length,
           pending: pending.length,
-          breaches: breaches.length,
+          breaches: breaches.length + slaBreaches,
+          sla_breaches: slaBreaches,
           attendance_days: attendance.length,
         },
         jobs: myJobs,
@@ -8423,6 +8521,8 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
           [`INV-${Date.now().toString(36).toUpperCase()}${Math.floor(100 + Math.random() * 900)}`, invoice_no, String(jobId),
            Number.isFinite(invAmount) ? invAmount : null, invTax, String((req as any).user?.user_id ?? "")]
         );
+        // Phase B: open the billing→cashier SLA clock.
+        await openSla("SLA_BILLING_TO_CASHIER", jobId, invoice_no, "CASHIER");
       } catch (invErr: any) {
         console.error('[INVOICE] record failed:', invErr.message);
       }
