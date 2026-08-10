@@ -88,7 +88,7 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
     try {
       const res = await fetch('/api/system/health-gateway');
       const data = await res.json();
-      if (data.success) {
+      if (data && (data.success || data.status === 'ok' || data.buildInfo)) {
         setHealthData(data);
       }
     } catch (err) {
