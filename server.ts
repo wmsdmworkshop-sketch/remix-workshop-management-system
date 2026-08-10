@@ -3623,6 +3623,27 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     catch (e: any) { console.error("[SLA] close:", e.message); }
   };
 
+  // --- Phase D: unified timeline events for the gate-out lifecycle ---
+  const emitGateEvent = async (eventType: string, jobId: any, opts: { user?: string; role?: string; remarks?: string; payload?: any } = {}) => {
+    try {
+      const jc = (getDB().jobCards || []).find((j: any) => Number(j.job_id) === Number(jobId));
+      await operationalEventService.publish({
+        job_id: Number(jobId),
+        job_card_no: jc?.job_card_no || null,
+        user: opts.user || "System",
+        role: opts.role || "System",
+        workshop_id: jc?.workshop_id || 1,
+        source: "MANUAL",
+        event_category: "GateOut",
+        event_type: eventType,
+        remarks: opts.remarks || eventType,
+        correlation_id: `CORR-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
+        source_system: "WMS-Core",
+        payload: opts.payload || {},
+      });
+    } catch (e: any) { console.error("[GATE-EVENT]", eventType, e.message); }
+  };
+
   // Cashier queue (invoice-driven, Phase A): jobs with a raised invoice (= billing
   // evidence) and no active gate pass yet. Enriched with live job-card + payment state.
   app.get("/api/gate-out/cashier-queue", authenticateToken, async (_req: any, res: any) => {
@@ -3710,6 +3731,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       // Phase B: cashier accepted → close billing→cashier, open cashier→security.
       await closeSla("SLA_BILLING_TO_CASHIER", jobId);
       await openSla("SLA_CASHIER_TO_SECURITY", jobId, gpId, "SECURITY");
+      await emitGateEvent("GATE_PASS_CREATED", jobId, { user: req.user?.full_name, role: "Cashier", remarks: `Gate pass ${gpNo} issued (${basis}).`, payload: { gatePassId: gpId, gatePassNo: gpNo, releaseBasis: basis } });
       res.status(201).json({ gatePassId: gpId, gatePassNo: gpNo, vrn: normVrn(jc.vrn) });
     } catch (err: any) {
       console.error("[GATE-OUT] create-gate-pass:", err.message);
@@ -3779,6 +3801,12 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         await syncSave(db);
       }
     } catch (e: any) { console.error("[GATE-OUT] jc update:", e.message); }
+    await emitGateEvent("VEHICLE_GATED_OUT", pass.job_id, {
+      user: source === "ANPR" ? "ANPR" : (operatorId ? `User ${operatorId}` : "Security"),
+      role: "Security",
+      remarks: `Vehicle ${normVrn(pass.vrn)} gated out (${source}).`,
+      payload: { gateOutId: goId, gatePassId: pass.gate_pass_id, captureSource: source, evidenceId },
+    });
     return goId;
   };
 
@@ -3868,6 +3896,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         `INSERT INTO tbl_payments (payment_id, job_id, amount, payment_mode, reference_number, cashier_id, status) VALUES (?, ?, ?, ?, ?, ?, 'COMPLETED')`,
         [payId, String(jobId), Number(amount), String(paymentMode).toUpperCase(), referenceNumber || null, String(req.user?.user_id ?? "")]
       );
+      await emitGateEvent("PAYMENT_RECORDED", jobId, { user: req.user?.full_name, role: "Cashier", remarks: `Payment ${amount} via ${String(paymentMode).toUpperCase()}.`, payload: { paymentId: payId, amount, paymentMode } });
       res.status(201).json({ paymentId: payId });
     } catch (err: any) {
       console.error("[GATE-OUT] record-payment:", err.message);
@@ -3888,6 +3917,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         `INSERT INTO tbl_credit_requests (credit_request_id, job_id, amount, reason, requested_by, status) VALUES (?, ?, ?, ?, ?, 'REQUESTED')`,
         [crId, String(jobId), amount != null ? Number(amount) : null, String(reason).trim(), String(req.user?.user_id ?? "")]
       );
+      await emitGateEvent("CREDIT_REQUESTED", jobId, { user: req.user?.full_name, role: "Cashier", remarks: `Credit requested: ${String(reason).trim()}`, payload: { creditId: crId, amount } });
       res.status(201).json({ creditId: crId });
     } catch (err: any) {
       console.error("[GATE-OUT] request-credit:", err.message);
@@ -3908,6 +3938,8 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       if (cr.status !== "REQUESTED") return res.status(400).json({ error: "CREDIT_ALREADY_DECIDED" });
       const newStatus = String(decision).toUpperCase() === "APPROVE" ? "GM_APPROVED" : "GM_REJECTED";
       await dbPool.execute(`UPDATE tbl_credit_requests SET status = ?, gm_id = ?, decision_at = NOW() WHERE credit_request_id = ?`, [newStatus, String(req.user?.user_id ?? ""), creditRequestId]);
+      const [crJob]: any = await dbPool.execute(`SELECT job_id FROM tbl_credit_requests WHERE credit_request_id = ? LIMIT 1`, [creditRequestId]);
+      if ((crJob || [])[0]) await emitGateEvent(newStatus === "GM_APPROVED" ? "CREDIT_APPROVED" : "CREDIT_REJECTED", crJob[0].job_id, { user: req.user?.full_name, role: "GM", remarks: `Credit ${newStatus} by GM.`, payload: { creditRequestId } });
       res.json({ status: newStatus });
     } catch (err: any) {
       console.error("[GATE-OUT] decide-credit:", err.message);
@@ -4032,6 +4064,8 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         `UPDATE tbl_gate_pass SET status = 'REVOKED', revoked_by = ?, revoked_at = NOW(), revoke_reason = ? WHERE gate_pass_id = ?`,
         [String(req.user?.user_id ?? ""), String(reason).trim(), gatePassId]
       );
+      const [gpJob]: any = await dbPool.execute(`SELECT job_id FROM tbl_gate_pass WHERE gate_pass_id = ? LIMIT 1`, [gatePassId]);
+      if ((gpJob || [])[0]) await emitGateEvent("GATE_PASS_REVOKED", gpJob[0].job_id, { user: req.user?.full_name, role: req.user?.role, remarks: `Gate pass revoked: ${String(reason).trim()}`, payload: { gatePassId } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[GATE-OUT] revoke:", err.message);
