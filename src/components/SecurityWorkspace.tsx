@@ -29,6 +29,27 @@ export const SecurityWorkspace: React.FC<SecurityWorkspaceProps> = ({ currentUse
     }
   };
 
+  // Phase C: register a real rear-plate evidence record and use its id for gate-out.
+  const captureEvidence = async () => {
+    if (!selectedGatePass) return;
+    try {
+      const res = await fetch("/api/gate-out/evidence", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ jobId: selectedGatePass.job_id, gatePassId: selectedGatePass.gate_pass_id, type: "REAR_PLATE" }),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        setEvidenceId(d.evidenceId);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Capture failed: ${err.error || "unknown"}`);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 10000);
@@ -145,14 +166,14 @@ export const SecurityWorkspace: React.FC<SecurityWorkspaceProps> = ({ currentUse
                     className="flex-1 bg-slate-950 border border-slate-850 rounded-xl p-3 text-sm font-mono text-slate-200 outline-none"
                     placeholder="E.g. IMG-20260801-12345"
                   />
-                  <button 
-                    onClick={() => setEvidenceId(`EVID-SIM-${Date.now()}`)}
+                  <button
+                    onClick={captureEvidence}
                     className="px-4 bg-slate-800 text-slate-300 border border-slate-700 text-xs font-bold rounded-xl flex items-center gap-2"
                   >
-                    <Camera className="w-4 h-4" /> Simulate Camera
+                    <Camera className="w-4 h-4" /> Capture Rear Plate
                   </button>
                 </div>
-                <p className="text-[10px] text-slate-500 mt-2">* Real implementation requires hardware integration. In Phase 9, must correspond to a valid tbl_evidence ID.</p>
+                <p className="text-[10px] text-slate-500 mt-2">* Registers a rear-plate evidence record. Gate-out is blocked until a valid capture exists.</p>
               </div>
 
               <div className="p-4 bg-slate-950/40 rounded-xl border border-slate-850 space-y-2 text-xs">

@@ -814,6 +814,21 @@ async function startServer() {
           UNIQUE KEY uq_job_task (job_id, task_type)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
       `);
+    // Phase C (VOS upgrade): evidence records (rear-plate capture at gate-out, etc.).
+    await dbPool.execute(`
+        CREATE TABLE IF NOT EXISTS tbl_evidence (
+          evidence_id VARCHAR(50) PRIMARY KEY,
+          job_id VARCHAR(50) DEFAULT NULL,
+          gate_pass_id VARCHAR(50) DEFAULT NULL,
+          evidence_type VARCHAR(50) NOT NULL DEFAULT 'REAR_PLATE',
+          image_url TEXT DEFAULT NULL,
+          capture_source VARCHAR(50) DEFAULT 'MANUAL_CAMERA',
+          captured_by VARCHAR(50) DEFAULT NULL,
+          lifecycle_status VARCHAR(50) NOT NULL DEFAULT 'CAPTURED',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_ev_job (job_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
     // Phase B (VOS upgrade): per-stage handoff SLA clocks. A clock opens when a stage
     // hands off to the next owner (billing→cashier, cashier→security) and closes on
     // acceptance; overdue open clocks flip to BREACHED.
@@ -3723,9 +3738,27 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
 
   // Internal helper: record a gate-out + mark the JC delivered. Returns gateOutId.
   const recordGateOut = async (opts: { pass: any; source: "ANPR" | "MANUAL_CAMERA"; operatorId?: string; detectedVrn: string; evidenceId?: string; imageUrl?: string; }) => {
-    const { pass, source, operatorId, detectedVrn, evidenceId, imageUrl } = opts;
+    const { pass, source, operatorId, detectedVrn, imageUrl } = opts;
+    let evidenceId = opts.evidenceId;
     const [go]: any = await dbPool.execute(`SELECT gate_out_id FROM tbl_gate_out WHERE job_id = ? LIMIT 1`, [String(pass.job_id)]);
     if ((go || []).length > 0) throw new Error("VEHICLE_ALREADY_GATED_OUT");
+
+    // Phase C: a gate-out must be backed by a real rear-plate evidence record.
+    if (evidenceId) {
+      const [ev]: any = await dbPool.execute(`SELECT evidence_id FROM tbl_evidence WHERE evidence_id = ? LIMIT 1`, [evidenceId]);
+      if ((ev || []).length === 0) throw new Error("REAR_EVIDENCE_REQUIRED: evidence id not found.");
+    } else if (source === "ANPR") {
+      // ANPR read is itself the capture — persist it as an evidence record.
+      evidenceId = genId("EVID");
+      await dbPool.execute(
+        `INSERT INTO tbl_evidence (evidence_id, job_id, gate_pass_id, evidence_type, image_url, capture_source, captured_by, lifecycle_status)
+         VALUES (?, ?, ?, 'REAR_PLATE', ?, 'ANPR', 'ANPR', 'VERIFIED')`,
+        [evidenceId, String(pass.job_id), pass.gate_pass_id, imageUrl || null]
+      );
+    } else {
+      throw new Error("REAR_EVIDENCE_REQUIRED: capture the rear plate before gate-out.");
+    }
+
     const goId = genId("GO");
     await dbPool.execute(
       `INSERT INTO tbl_gate_out (gate_out_id, gate_pass_id, job_id, security_operator_id, evidence_id, capture_source, expected_vrn, detected_vrn, verification_result, image_url)
@@ -3939,6 +3972,23 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     } catch (err: any) {
       console.error("[GATE-OUT] sa-billing-visibility:", err.message);
       res.status(500).json({ error: "Failed to load billing visibility." });
+    }
+  });
+
+  // Phase C: register a rear-plate (or other) evidence capture, returns its id.
+  app.post("/api/gate-out/evidence", authenticateToken, express.json({ limit: "8mb" }), async (req: any, res: any) => {
+    try {
+      const { jobId, gatePassId, type, imageUrl } = req.body || {};
+      const evId = genId("EVID");
+      await dbPool.execute(
+        `INSERT INTO tbl_evidence (evidence_id, job_id, gate_pass_id, evidence_type, image_url, capture_source, captured_by, lifecycle_status)
+         VALUES (?, ?, ?, ?, ?, 'MANUAL_CAMERA', ?, 'CAPTURED')`,
+        [evId, jobId != null ? String(jobId) : null, gatePassId || null, String(type || "REAR_PLATE"), imageUrl || null, String(req.user?.user_id ?? "")]
+      );
+      res.status(201).json({ evidenceId: evId });
+    } catch (err: any) {
+      console.error("[GATE-OUT] evidence:", err.message);
+      res.status(500).json({ error: "Failed to register evidence." });
     }
   });
 
