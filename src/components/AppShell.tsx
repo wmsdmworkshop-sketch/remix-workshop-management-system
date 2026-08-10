@@ -123,6 +123,15 @@ export default function AppShell({
     t => WORKSPACE_MAPPING[t.id] === activeWorkspace && t.id !== "logout-deep-link"
   );
 
+  // Workspaces the user can actually reach — powers the mobile bottom nav bar.
+  const accessibleWorkspaces = WORKSPACES.filter(
+    ws => (permittedTabs || []).some(t => WORKSPACE_MAPPING[t.id] === ws.id)
+  );
+  // On a phone, show up to 4 primary workspaces in the thumb bar + a "More" that opens
+  // the full drawer; if 5 or fewer, show them all.
+  const bottomBarPrimary = accessibleWorkspaces.length <= 5 ? accessibleWorkspaces : accessibleWorkspaces.slice(0, 4);
+  const bottomBarHasMore = accessibleWorkspaces.length > 5;
+
   const handleWorkspaceClick = (workspaceId: string) => {
     // Find first permitted sub-tab in this workspace
     const firstSubTab = (permittedTabs || []).find(t => WORKSPACE_MAPPING[t.id] === workspaceId);
@@ -385,8 +394,9 @@ export default function AppShell({
         </header>
 
         {/* 3. WORKSPACE HEADER */}
-        <div className="bg-[#111827]/20 border-b border-slate-800/60 p-4 px-6 flex flex-col gap-3 shrink-0">
-          <div className="flex items-center justify-between">
+        <div className="bg-[#111827]/20 border-b border-slate-800/60 p-3 sm:p-4 sm:px-6 flex flex-col gap-2 sm:gap-3 shrink-0">
+          {/* Breadcrumb + badges — hidden on phones to save vertical space */}
+          <div className="hidden sm:flex items-center justify-between">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
               <span>DWIP ERP</span>
               <ChevronRight className="h-3 w-3" />
@@ -398,7 +408,7 @@ export default function AppShell({
                 </>
               )}
             </div>
-            
+
             <div className="flex items-center gap-3">
               <span className="px-2.5 py-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-extrabold text-[9px] rounded-lg tracking-wider">
                 LIVE PILOT
@@ -409,10 +419,13 @@ export default function AppShell({
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
               {getWorkspaceIcon()}
-              <h2 className="text-lg font-extrabold text-white leading-none">{getWorkspaceTitle()} Workspace</h2>
+              <h2 className="text-base sm:text-lg font-extrabold text-white leading-none truncate">
+                <span className="sm:hidden">{activeSubTab?.label || getWorkspaceTitle()}</span>
+                <span className="hidden sm:inline">{getWorkspaceTitle()} Workspace</span>
+              </h2>
             </div>
 
             {/* 4. WORKSPACE NAVIGATION */}
@@ -440,12 +453,45 @@ export default function AppShell({
         </div>
 
         {/* 5. PAGE CONTENT CONTAINER */}
-        <main className="flex-1 overflow-y-auto p-6 bg-[#0B1220]">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-6 pb-24 md:pb-6 bg-[#0B1220]">
           <div className="max-w-7xl mx-auto w-full">
             {children}
           </div>
         </main>
       </div>
+
+      {/* 6. MOBILE BOTTOM NAV — thumb-reachable primary workspace switcher (phones only) */}
+      <nav
+        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 flex items-stretch justify-around"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        {bottomBarPrimary.map(ws => {
+          const Icon = ws.icon;
+          const isActive = activeWorkspace === ws.id;
+          return (
+            <button
+              key={ws.id}
+              onClick={() => handleWorkspaceClick(ws.id)}
+              className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[3.5rem] transition-colors ${
+                isActive ? "text-orange-400" : "text-zinc-400 active:text-white"
+              }`}
+            >
+              <Icon className={`h-5 w-5 ${isActive ? "text-orange-400" : ""}`} />
+              <span className="text-[9px] font-bold leading-none truncate max-w-[4.5rem]">{ws.label.split(" ")[0]}</span>
+              {isActive && <span className="absolute top-0 h-0.5 w-8 bg-orange-400 rounded-full" />}
+            </button>
+          );
+        })}
+        {bottomBarHasMore && (
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[3.5rem] text-zinc-400 active:text-white"
+          >
+            <Menu className="h-5 w-5" />
+            <span className="text-[9px] font-bold leading-none">More</span>
+          </button>
+        )}
+      </nav>
 
     </div>
   );
