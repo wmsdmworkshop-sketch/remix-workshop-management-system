@@ -49,6 +49,33 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
   const [passportAggregate, setPassportAggregate] = useState<VehiclePassportAggregate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedVisitId, setExpandedVisitId] = useState<string | null>(null);
+  const [tmsa, setTmsa] = useState<{ loading: boolean; note: string | null; error: boolean }>({ loading: false, note: null, error: false });
+
+  const tmsaLookup = async () => {
+    const vrn = searchQuery.trim();
+    if (!vrn) return;
+    setTmsa({ loading: true, note: null, error: false });
+    try {
+      const token = localStorage.getItem("wms_token") || localStorage.getItem("dwip_token") || localStorage.getItem("token") || "";
+      const resp = await fetch(`/api/vehicle/tmsa-lookup?vrn=${encodeURIComponent(vrn)}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.status === 503 || data.unavailable) {
+        setTmsa({ loading: false, error: true, note: data.message || "TMSA-CV is not configured yet. Add the official API key in External Integrations." });
+        return;
+      }
+      if (!resp.ok) {
+        setTmsa({ loading: false, error: true, note: data.error || "TMSA lookup failed." });
+        return;
+      }
+      setTmsa({ loading: false, error: false, note: `TMSA-CV responded for ${vrn}. Fetched official record.` });
+      // When the official schema is known, map data.data into the passport aggregate here.
+      console.log("[TMSA] official data:", data.data);
+    } catch (e: any) {
+      setTmsa({ loading: false, error: true, note: e.message || "TMSA lookup failed." });
+    }
+  };
 
   // Sync with initialQuery if changed externally
   useEffect(() => {
@@ -194,7 +221,21 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
                 </>
               )}
             </button>
+            <button
+              type="button"
+              onClick={tmsaLookup}
+              disabled={tmsa.loading || !searchQuery.trim()}
+              title="Fetch the official record from Tata TMSA-CV (needs the official API key configured in External Integrations)"
+              className="px-4 py-3 bg-orange-600/90 hover:bg-orange-600 disabled:opacity-50 text-white rounded-lg font-medium text-sm transition-colors duration-150 flex items-center justify-center gap-2 shadow-sm"
+            >
+              {tmsa.loading
+                ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                : <span>TMSA Lookup</span>}
+            </button>
           </div>
+          {tmsa.note && (
+            <p className={`mt-2 text-xs ${tmsa.error ? "text-amber-400" : "text-emerald-400"}`}>{tmsa.note}</p>
+          )}
         </form>
 
         {/* QUICK SUGGESTIONS */}

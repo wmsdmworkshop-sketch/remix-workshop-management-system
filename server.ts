@@ -14,6 +14,7 @@ import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
 import { pool as dbPool } from "./src/db/index.ts";
 import { startQrtGmailIngestor, runQrtIngestOnce, getQrtPublicConfig, updateQrtSettings } from "./src/integrations/qrt-gmail-ingestor.ts";
+import { ensureOemTable, getPublicConfig as getOemPublicConfig, updateProviderConfig as updateOemProvider, testProvider as testOemProvider, callProvider as callOemProvider, OemNotConfiguredError, type OemProviderKey } from "./src/integrations/oem-api.ts";
 import { ingestAlert as ingestCctvAlert, listAlerts as listCctvAlerts, acknowledgeAlert as ackCctvAlert, listCameras as listCctvCameras, upsertCamera as upsertCctvCamera, deleteCamera as deleteCctvCamera, getCctvConfig, updateCctvConfig, countOpenAlerts as countOpenCctvAlerts } from "./src/integrations/cctv-analytics.ts";
 import { filterViewableJobCards, canEditJobCard, isOwnedBy, isInMyStage, isFullViewRole, GROUP1_FULL_CONTROL, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
 import { DEFAULT_CIRCULARS } from "./src/lib/circularsData.ts";
@@ -877,6 +878,10 @@ async function startServer() {
       try { await dbPool.execute(`ALTER TABLE tbl_gate_pass ${col}`); }
       catch (e: any) { if (e.errno !== 1060) console.warn("gate_pass alter skipped:", e.message); } // 1060 = duplicate column
     }
+
+    // OEM official-API provider slots (TMSA-CV / QRT / Fleet Edge) — inert until keyed.
+    try { await ensureOemTable(dbPool); console.log("OEM API provider slots initialized (inert until keyed)."); }
+    catch (e: any) { console.warn("OEM slots init skipped:", e.message); }
 
     console.log("Profile management tables and settings initialized successfully.");
 
@@ -7819,6 +7824,50 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       return res.json({ success: !summary.error, ...summary });
     } catch (e: any) {
       res.status(500).json({ error: e.message || "QRT sync failed" });
+    }
+  });
+
+  // ===========================================================================
+  // OEM OFFICIAL-API INTEGRATIONS (TMSA-CV / QRT / Fleet Edge)
+  // Copy-paste ready: admins paste the official base URL + credentials here; the
+  // slots stay inert (no outbound calls) until then. No app-login impersonation.
+  // ===========================================================================
+  const OEM_ADMIN_ROLES = ["admin", "developer", "gm_service", "workshop_manager"];
+
+  app.get("/api/integrations/oem/config", authenticateToken, requireRoles(OEM_ADMIN_ROLES), async (_req: any, res) => {
+    try { res.json({ success: true, providers: await getOemPublicConfig(dbPool) }); }
+    catch (e: any) { res.status(500).json({ error: e.message || "Failed to load OEM config" }); }
+  });
+
+  app.post("/api/integrations/oem/:key/config", authenticateToken, requireRoles(OEM_ADMIN_ROLES), express.json(), async (req: any, res) => {
+    try {
+      const providers = await updateOemProvider(dbPool, req.params.key as OemProviderKey, req.body || {}, String(req.user?.user_id ?? ""));
+      res.json({ success: true, providers });
+    } catch (e: any) { res.status(400).json({ error: e.message || "Failed to update provider" }); }
+  });
+
+  app.post("/api/integrations/oem/:key/test", authenticateToken, requireRoles(OEM_ADMIN_ROLES), async (req: any, res) => {
+    try { res.json(await testOemProvider(dbPool, req.params.key as OemProviderKey)); }
+    catch (e: any) { res.status(500).json({ ok: false, message: e.message || "Test failed" }); }
+  });
+
+  // Vehicle Passport → TMSA-CV lookup. 503 (not configured) until keys are pasted.
+  app.get("/api/vehicle/tmsa-lookup", authenticateToken, async (req: any, res) => {
+    const vrn = String(req.query?.vrn || req.query?.query || "").trim();
+    if (!vrn) return res.status(400).json({ error: "vrn is required." });
+    try {
+      const cfg = (await getOemPublicConfig(dbPool)).find((p: any) => p.provider_key === "tmsa_cv");
+      const template = cfg?.lookup_path || "";
+      const opts: any = template.includes("{vrn}")
+        ? { path: template.replace("{vrn}", encodeURIComponent(vrn)) }
+        : { path: template || "/", query: { vrn } };
+      const data = await callOemProvider(dbPool, "tmsa_cv", opts);
+      res.json({ success: true, source: "TMSA-CV", vrn, data });
+    } catch (e: any) {
+      if (e instanceof OemNotConfiguredError || e.code === "NOT_CONFIGURED") {
+        return res.status(503).json({ success: false, unavailable: true, message: e.message });
+      }
+      res.status(502).json({ success: false, error: e.message || "TMSA lookup failed", status: e.status, body: e.body });
     }
   });
 

@@ -1,0 +1,214 @@
+import { useEffect, useState } from "react";
+import { Plug, ShieldCheck, Save, Loader2, CheckCircle2, XCircle, RefreshCw, KeyRound } from "lucide-react";
+
+/**
+ * External Integrations — paste the OFFICIAL Tata API base URL + credentials for
+ * each provider (TMSA-CV / QRT / Fleet Edge). Slots stay inert until saved+enabled.
+ * Secrets are write-only: the server returns only a "set" flag, never the key.
+ */
+
+interface Provider {
+  provider_key: string;
+  label: string;
+  blurb: string;
+  base_url: string;
+  auth_mode: "api_key" | "bearer" | "oauth2";
+  key_header: string;
+  token_url: string;
+  client_id: string;
+  lookup_path: string;
+  enabled: boolean;
+  has_api_key: boolean;
+  has_client_secret: boolean;
+  configured: boolean;
+  updated_at: string | null;
+}
+
+const authHeaders = (): Record<string, string> => {
+  const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || "";
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) h["Authorization"] = `Bearer ${token}`;
+  return h;
+};
+
+const AUTH_MODES = [
+  { value: "api_key", label: "API Key (header)" },
+  { value: "bearer", label: "Bearer token" },
+  { value: "oauth2", label: "OAuth2 (client credentials)" },
+];
+
+export default function ExternalIntegrations() {
+  const [providers, setProviders] = useState<Provider[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, any>>({});
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<Record<string, { ok: boolean; message: string }>>({});
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true); setErr(null);
+    try {
+      const r = await fetch("/api/integrations/oem/config", { headers: authHeaders() });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || "Failed to load (admin only)."); }
+      const d = await r.json();
+      setProviders(d.providers || []);
+      const init: Record<string, any> = {};
+      (d.providers || []).forEach((p: Provider) => {
+        init[p.provider_key] = {
+          base_url: p.base_url, auth_mode: p.auth_mode, key_header: p.key_header || "X-API-Key",
+          token_url: p.token_url, client_id: p.client_id, lookup_path: p.lookup_path,
+          enabled: p.enabled, api_key: "", client_secret: "",
+        };
+      });
+      setDrafts(init);
+    } catch (e: any) { setErr(e.message); }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const setField = (key: string, field: string, value: any) =>
+    setDrafts(d => ({ ...d, [key]: { ...d[key], [field]: value } }));
+
+  const save = async (key: string) => {
+    setBusy(key); setErr(null);
+    try {
+      const r = await fetch(`/api/integrations/oem/${key}/config`, { method: "POST", headers: authHeaders(), body: JSON.stringify(drafts[key]) });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || "Save failed."); }
+      const d = await r.json();
+      setProviders(d.providers || []);
+    } catch (e: any) { setErr(e.message); }
+    setBusy(null);
+  };
+
+  const test = async (key: string) => {
+    setBusy(`test-${key}`); setErr(null);
+    try {
+      const r = await fetch(`/api/integrations/oem/${key}/test`, { method: "POST", headers: authHeaders() });
+      const d = await r.json();
+      setTestResult(t => ({ ...t, [key]: { ok: !!d.ok, message: d.message || "" } }));
+    } catch (e: any) { setTestResult(t => ({ ...t, [key]: { ok: false, message: e.message } })); }
+    setBusy(null);
+  };
+
+  if (loading) return <div className="flex items-center gap-2 text-slate-400 p-8 text-sm"><Loader2 className="h-4 w-4 animate-spin" /> Loading integrations…</div>;
+
+  return (
+    <div className="space-y-4 max-w-4xl">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-black text-white flex items-center gap-2"><Plug className="h-5 w-5 text-orange-400" /> External Integrations</h1>
+          <p className="text-xs text-slate-400 mt-1">Paste the official Tata API base URL + credentials. Each slot stays inert until saved and enabled — no calls go out before then.</p>
+        </div>
+        <button onClick={load} className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-300 bg-slate-800 border border-slate-700 rounded px-3 py-1.5"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>
+      </div>
+
+      {err && <p className="text-xs text-red-400 bg-red-950/40 border border-red-900/50 rounded p-2">{err}</p>}
+
+      {providers.map((p) => {
+        const d = drafts[p.provider_key] || {};
+        const tr = testResult[p.provider_key];
+        return (
+          <div key={p.provider_key} className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  {p.label}
+                  {p.configured
+                    ? <span className="text-[9px] font-bold text-emerald-300 bg-emerald-900/40 border border-emerald-700/50 rounded px-1.5 py-0.5 uppercase">Live</span>
+                    : <span className="text-[9px] font-bold text-amber-300 bg-amber-900/30 border border-amber-700/40 rounded px-1.5 py-0.5 uppercase">Inert</span>}
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">{p.blurb}</p>
+              </div>
+              <label className="flex items-center gap-2 text-[11px] font-bold text-slate-300">
+                <input type="checkbox" checked={!!d.enabled} onChange={e => setField(p.provider_key, "enabled", e.target.checked)} />
+                Enabled
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+              <div className="sm:col-span-2">
+                <label className="text-[10px] font-bold uppercase text-slate-500">Base URL</label>
+                <input value={d.base_url || ""} onChange={e => setField(p.provider_key, "base_url", e.target.value)}
+                  placeholder="https://api.tatamotors.com/tmsa-cv/v1"
+                  className="w-full mt-1 bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-orange-500" />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-500">Auth mode</label>
+                <select value={d.auth_mode || "api_key"} onChange={e => setField(p.provider_key, "auth_mode", e.target.value)}
+                  className="w-full mt-1 bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200">
+                  {AUTH_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
+
+              {d.auth_mode !== "oauth2" ? (
+                <>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1"><KeyRound className="h-3 w-3" /> API Key {p.has_api_key && <span className="text-emerald-400 normal-case">• stored</span>}</label>
+                    <input type="password" value={d.api_key || ""} onChange={e => setField(p.provider_key, "api_key", e.target.value)}
+                      placeholder={p.has_api_key ? "•••• leave blank to keep" : "paste key"}
+                      className="w-full mt-1 bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-orange-500" />
+                  </div>
+                  {d.auth_mode === "api_key" && (
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-500">Key header</label>
+                      <input value={d.key_header || ""} onChange={e => setField(p.provider_key, "key_header", e.target.value)}
+                        placeholder="X-API-Key"
+                        className="w-full mt-1 bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-orange-500" />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="sm:col-span-2">
+                    <label className="text-[10px] font-bold uppercase text-slate-500">Token URL</label>
+                    <input value={d.token_url || ""} onChange={e => setField(p.provider_key, "token_url", e.target.value)}
+                      placeholder="https://auth.tatamotors.com/oauth/token"
+                      className="w-full mt-1 bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-orange-500" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-500">Client ID</label>
+                    <input value={d.client_id || ""} onChange={e => setField(p.provider_key, "client_id", e.target.value)}
+                      className="w-full mt-1 bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-orange-500" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-500">Client Secret {p.has_client_secret && <span className="text-emerald-400 normal-case">• stored</span>}</label>
+                    <input type="password" value={d.client_secret || ""} onChange={e => setField(p.provider_key, "client_secret", e.target.value)}
+                      placeholder={p.has_client_secret ? "•••• leave blank to keep" : "paste secret"}
+                      className="w-full mt-1 bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-orange-500" />
+                  </div>
+                </>
+              )}
+
+              {p.provider_key === "tmsa_cv" && (
+                <div className="sm:col-span-2">
+                  <label className="text-[10px] font-bold uppercase text-slate-500">Vehicle lookup path <span className="normal-case text-slate-600">(use {"{vrn}"} placeholder, e.g. /vehicle/{"{vrn}"}/passport)</span></label>
+                  <input value={d.lookup_path || ""} onChange={e => setField(p.provider_key, "lookup_path", e.target.value)}
+                    placeholder="/vehicle/{vrn}"
+                    className="w-full mt-1 bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-orange-500" />
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 mt-3">
+              <button onClick={() => save(p.provider_key)} disabled={busy === p.provider_key}
+                className="inline-flex items-center gap-1.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-bold text-[11px] px-3 py-1.5 rounded uppercase tracking-wider">
+                {busy === p.provider_key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save
+              </button>
+              <button onClick={() => test(p.provider_key)} disabled={busy === `test-${p.provider_key}`}
+                className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 font-bold text-[11px] px-3 py-1.5 rounded uppercase tracking-wider border border-slate-700">
+                {busy === `test-${p.provider_key}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />} Test
+              </button>
+              {tr && (
+                <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${tr.ok ? "text-emerald-400" : "text-red-400"}`}>
+                  {tr.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />} {tr.message}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}

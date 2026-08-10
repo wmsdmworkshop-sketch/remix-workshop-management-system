@@ -124,6 +124,7 @@ import LiveSupportPanel from "./components/LiveSupportPanel";
 import DevOpsDashboard from "./components/DevOpsDashboard";
 import CctvFloorSafety from "./components/CctvFloorSafety";
 import MyWorkspace from "./components/MyWorkspace";
+import ExternalIntegrations from "./components/ExternalIntegrations";
 import OperationsCommandCenter from "./components/OperationsCommandCenter";
 import PlatformControlCenter from "./components/platform/PlatformControlCenter";
 import { PartsInChargeWorkspace } from "./components/PartsInChargeWorkspace";
@@ -338,6 +339,7 @@ export default function App() {
       { id: "powerbi-analytics", label: "Power BI Analytics", icon: FileSpreadsheet },
       { id: "system-hardening", label: "System Hardening", icon: Server },
       { id: "cctv-safety", label: "CCTV & Safety", icon: Video },
+      { id: "oem-integrations", label: "External Integrations", icon: Share2 },
       { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
       { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
@@ -383,6 +385,7 @@ export default function App() {
       { id: "powerbi-analytics", label: "Power BI Analytics", icon: FileSpreadsheet },
       { id: "system-hardening", label: "System Hardening", icon: Server },
       { id: "cctv-safety", label: "CCTV & Safety", icon: Video },
+      { id: "oem-integrations", label: "External Integrations", icon: Share2 },
       { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
       { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
@@ -1296,6 +1299,10 @@ export default function App() {
                 setActiveTab("jobs");
               }}
             />
+          )}
+
+          {activeTab === "oem-integrations" && (
+            <ExternalIntegrations />
           )}
 
           {activeTab === "dashboard" && (

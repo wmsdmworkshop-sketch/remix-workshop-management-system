@@ -44,6 +44,7 @@ export const WORKSPACE_MAPPING: Record<string, string> = {
   "live-support": "admin",
   "devops-dashboard": "admin",
   "cctv-safety": "admin",
+  "oem-integrations": "admin",
   "operations-console": "admin",
   "system-hardening": "admin",
   "exception-report": "admin",

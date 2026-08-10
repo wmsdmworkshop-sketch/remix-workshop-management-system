@@ -1,0 +1,215 @@
+/**
+ * =============================================================================
+ * OEM Official-API integration layer (copy-paste ready, INERT until keyed).
+ * -----------------------------------------------------------------------------
+ * Three provider slots: TMSA-CV, QRT, Fleet Edge. Each stays completely inert
+ * (no outbound calls) until an admin pastes the OFFICIAL base URL + credentials
+ * issued by Tata. Auth is configurable to whatever the official API uses:
+ *   - api_key : a header (default X-API-Key: <key>)
+ *   - bearer  : Authorization: Bearer <key>
+ *   - oauth2  : client-credentials grant against a token URL, then Bearer
+ *
+ * This deliberately contains NO reverse-engineered app-login flow. It only ever
+ * talks to a base URL and credentials the dealer is officially issued.
+ * =============================================================================
+ */
+
+export type OemProviderKey = "tmsa_cv" | "qrt" | "fleet_edge";
+export type OemAuthMode = "api_key" | "bearer" | "oauth2";
+
+export const OEM_PROVIDERS: { key: OemProviderKey; label: string; blurb: string }[] = [
+  { key: "tmsa_cv", label: "TMSA-CV", blurb: "Tata Motors Service App (CV) — vehicle master, service history, billing/fault codes." },
+  { key: "qrt", label: "QRT (Breakdown)", blurb: "Quick Response Team — live breakdown cases & status." },
+  { key: "fleet_edge", label: "Fleet Edge", blurb: "Tata Fleet Edge telematics / vehicle live data." },
+];
+
+const KEY_LABELS: Record<OemProviderKey, string> = {
+  tmsa_cv: "TMSA-CV", qrt: "QRT", fleet_edge: "Fleet Edge",
+};
+
+// A base URL is considered a non-live placeholder if empty or points at an
+// internal/stub host — the layer stays inert for these.
+const isPlaceholderUrl = (u: string) =>
+  !u || /(^$)|(\.internal)|(gateway\.internal)|(localhost)|(example\.)|(stub)/i.test(u);
+
+export async function ensureOemTable(pool: any): Promise<void> {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS oem_api_providers (
+      provider_key VARCHAR(40) PRIMARY KEY,
+      label VARCHAR(80) DEFAULT NULL,
+      base_url VARCHAR(500) DEFAULT NULL,
+      auth_mode VARCHAR(20) NOT NULL DEFAULT 'api_key',
+      api_key VARCHAR(1000) DEFAULT NULL,
+      key_header VARCHAR(80) DEFAULT 'X-API-Key',
+      token_url VARCHAR(500) DEFAULT NULL,
+      client_id VARCHAR(255) DEFAULT NULL,
+      client_secret VARCHAR(1000) DEFAULT NULL,
+      lookup_path VARCHAR(300) DEFAULT NULL,
+      enabled TINYINT(1) NOT NULL DEFAULT 0,
+      updated_by VARCHAR(50) DEFAULT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+  // Seed one empty (inert) row per provider so the settings UI always has all three.
+  for (const p of OEM_PROVIDERS) {
+    await pool.execute(
+      `INSERT IGNORE INTO oem_api_providers (provider_key, label, auth_mode, key_header, enabled) VALUES (?, ?, 'api_key', 'X-API-Key', 0)`,
+      [p.key, p.label]
+    );
+  }
+}
+
+export async function getProviderRow(pool: any, key: OemProviderKey): Promise<any | null> {
+  const [rows]: any = await pool.execute(`SELECT * FROM oem_api_providers WHERE provider_key = ? LIMIT 1`, [key]);
+  return (rows || [])[0] || null;
+}
+
+/** A provider is live only when enabled, has a real base URL, and carries credentials. */
+export function isConfigured(row: any): boolean {
+  if (!row || !row.enabled) return false;
+  if (isPlaceholderUrl(String(row.base_url || ""))) return false;
+  if (row.auth_mode === "oauth2") return !!(row.token_url && row.client_id && row.client_secret);
+  return !!row.api_key; // api_key / bearer
+}
+
+/** Public config for the settings UI — secrets masked, never returned raw. */
+export async function getPublicConfig(pool: any): Promise<any[]> {
+  await ensureOemTable(pool);
+  const [rows]: any = await pool.execute(`SELECT * FROM oem_api_providers`);
+  const byKey = new Map((rows || []).map((r: any) => [r.provider_key, r]));
+  return OEM_PROVIDERS.map(p => {
+    const r: any = byKey.get(p.key) || { provider_key: p.key, label: p.label, auth_mode: "api_key", key_header: "X-API-Key", enabled: 0 };
+    const mask = (v: any) => (v ? "•••• set" : "");
+    return {
+      provider_key: p.key,
+      label: p.label,
+      blurb: p.blurb,
+      base_url: r.base_url || "",
+      auth_mode: r.auth_mode || "api_key",
+      key_header: r.key_header || "X-API-Key",
+      token_url: r.token_url || "",
+      client_id: r.client_id || "",
+      lookup_path: r.lookup_path || "",
+      enabled: !!r.enabled,
+      has_api_key: !!r.api_key,
+      has_client_secret: !!r.client_secret,
+      api_key_masked: mask(r.api_key),
+      client_secret_masked: mask(r.client_secret),
+      configured: isConfigured(r),
+      updated_at: r.updated_at || null,
+    };
+  });
+}
+
+const ALLOWED_FIELDS = ["base_url", "auth_mode", "api_key", "key_header", "token_url", "client_id", "client_secret", "lookup_path", "enabled"];
+
+/** Admin paste/update. Only writes provided fields; blank secret keeps the stored one. */
+export async function updateProviderConfig(pool: any, key: OemProviderKey, patch: any, updatedBy?: string): Promise<any[]> {
+  await ensureOemTable(pool);
+  if (!OEM_PROVIDERS.some(p => p.key === key)) throw new Error("Unknown provider.");
+  const sets: string[] = [];
+  const vals: any[] = [];
+  for (const f of ALLOWED_FIELDS) {
+    if (!(f in patch)) continue;
+    let v = patch[f];
+    // Don't overwrite a stored secret with an empty string (UI sends blank to "keep").
+    if ((f === "api_key" || f === "client_secret") && (v === "" || v == null)) continue;
+    if (f === "enabled") v = v ? 1 : 0;
+    if (f === "auth_mode" && !["api_key", "bearer", "oauth2"].includes(String(v))) continue;
+    sets.push(`${f} = ?`);
+    vals.push(v);
+  }
+  if (sets.length > 0) {
+    sets.push("updated_by = ?"); vals.push(updatedBy || null);
+    vals.push(key);
+    await pool.execute(`UPDATE oem_api_providers SET ${sets.join(", ")} WHERE provider_key = ?`, vals);
+  }
+  return getPublicConfig(pool);
+}
+
+// --- Outbound calls (only ever run when a provider is configured) ---
+
+const tokenCache: Record<string, { token: string; exp: number }> = {};
+
+async function getBearerToken(row: any): Promise<string> {
+  const cached = tokenCache[row.provider_key];
+  if (cached && cached.exp > Date.now() + 5000) return cached.token;
+  const body = new URLSearchParams({ grant_type: "client_credentials", client_id: row.client_id, client_secret: row.client_secret });
+  const resp = await fetch(row.token_url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+  if (!resp.ok) throw new Error(`OAuth token request failed (${resp.status}).`);
+  const j: any = await resp.json();
+  const token = j.access_token || j.token;
+  if (!token) throw new Error("OAuth response had no access_token.");
+  tokenCache[row.provider_key] = { token, exp: Date.now() + (Number(j.expires_in || 3000) * 1000) };
+  return token;
+}
+
+export class OemNotConfiguredError extends Error {
+  code = "NOT_CONFIGURED";
+  constructor(public providerKey: string) { super(`${KEY_LABELS[providerKey as OemProviderKey] || providerKey} API is not configured yet. Paste the official base URL + key in External Integrations.`); }
+}
+
+/**
+ * Make an authenticated call to an official provider API. Throws
+ * OemNotConfiguredError while the slot is inert — nothing goes out.
+ */
+export async function callProvider(
+  pool: any,
+  key: OemProviderKey,
+  opts: { method?: string; path: string; query?: Record<string, any>; body?: any; headers?: Record<string, string>; timeoutMs?: number } = { path: "" }
+): Promise<any> {
+  const row = await getProviderRow(pool, key);
+  if (!isConfigured(row)) throw new OemNotConfiguredError(key);
+
+  const base = String(row.base_url).replace(/\/+$/, "");
+  const path = opts.path.startsWith("/") ? opts.path : `/${opts.path}`;
+  const url = new URL(base + path);
+  for (const [k, v] of Object.entries(opts.query || {})) {
+    if (v != null) url.searchParams.set(k, String(v));
+  }
+
+  const headers: Record<string, string> = { Accept: "application/json", ...(opts.headers || {}) };
+  if (opts.body) headers["Content-Type"] = headers["Content-Type"] || "application/json";
+  if (row.auth_mode === "api_key") headers[row.key_header || "X-API-Key"] = row.api_key;
+  else if (row.auth_mode === "bearer") headers["Authorization"] = `Bearer ${row.api_key}`;
+  else if (row.auth_mode === "oauth2") headers["Authorization"] = `Bearer ${await getBearerToken(row)}`;
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs || 15000);
+  try {
+    const resp = await fetch(url.toString(), {
+      method: opts.method || "GET",
+      headers,
+      body: opts.body ? (typeof opts.body === "string" ? opts.body : JSON.stringify(opts.body)) : undefined,
+      signal: ctrl.signal,
+    });
+    const text = await resp.text();
+    let data: any = text;
+    try { data = JSON.parse(text); } catch { /* leave as text */ }
+    if (!resp.ok) {
+      const err: any = new Error(`${KEY_LABELS[key]} API error ${resp.status}`);
+      err.status = resp.status; err.body = data;
+      throw err;
+    }
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Lightweight connectivity check for the "Test" button. */
+export async function testProvider(pool: any, key: OemProviderKey): Promise<{ ok: boolean; message: string; status?: number }> {
+  const row = await getProviderRow(pool, key);
+  if (!isConfigured(row)) return { ok: false, message: "Not configured — paste base URL + credentials and enable it." };
+  try {
+    // Hit the configured lookup path (or root) with a HEAD-ish GET; any non-network
+    // response means the credentials/URL are reachable.
+    await callProvider(pool, key, { path: row.lookup_path && !row.lookup_path.includes("{") ? row.lookup_path : "/", timeoutMs: 8000 });
+    return { ok: true, message: "Reachable — credentials accepted." };
+  } catch (e: any) {
+    if (e.code === "NOT_CONFIGURED") return { ok: false, message: e.message };
+    if (e.status) return { ok: true, message: `Reachable (API responded ${e.status}).`, status: e.status };
+    return { ok: false, message: `Unreachable: ${e.message}` };
+  }
+}
