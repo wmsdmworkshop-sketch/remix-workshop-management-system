@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { 
-  LayoutDashboard, 
-  Wrench, 
+import {
+  Video,
+  LayoutDashboard,
+  Wrench,
   Users, 
   FileDown, 
   Share2, 
@@ -121,6 +122,7 @@ import StaffFeedbackWidget from "./components/StaffFeedbackWidget";
 import BusinessImpactTracker from "./components/BusinessImpactTracker";
 import LiveSupportPanel from "./components/LiveSupportPanel";
 import DevOpsDashboard from "./components/DevOpsDashboard";
+import CctvFloorSafety from "./components/CctvFloorSafety";
 import OperationsCommandCenter from "./components/OperationsCommandCenter";
 import PlatformControlCenter from "./components/platform/PlatformControlCenter";
 import { PartsInChargeWorkspace } from "./components/PartsInChargeWorkspace";
@@ -334,6 +336,7 @@ export default function App() {
       { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
       { id: "powerbi-analytics", label: "Power BI Analytics", icon: FileSpreadsheet },
       { id: "system-hardening", label: "System Hardening", icon: Server },
+      { id: "cctv-safety", label: "CCTV & Safety", icon: Video },
       { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
       { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
@@ -378,6 +381,7 @@ export default function App() {
       { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
       { id: "powerbi-analytics", label: "Power BI Analytics", icon: FileSpreadsheet },
       { id: "system-hardening", label: "System Hardening", icon: Server },
+      { id: "cctv-safety", label: "CCTV & Safety", icon: Video },
       { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
       { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
@@ -1653,6 +1657,10 @@ export default function App() {
 
           {activeTab === "devops-dashboard" && (
             <DevOpsDashboard />
+          )}
+
+          {activeTab === "cctv-safety" && (
+            <CctvFloorSafety />
           )}
 
           {activeTab === "operations-console" && (

@@ -14,6 +14,7 @@ import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
 import { pool as dbPool } from "./src/db/index.ts";
 import { startQrtGmailIngestor, runQrtIngestOnce, getQrtPublicConfig, updateQrtSettings } from "./src/integrations/qrt-gmail-ingestor.ts";
+import { ingestAlert as ingestCctvAlert, listAlerts as listCctvAlerts, acknowledgeAlert as ackCctvAlert, listCameras as listCctvCameras, upsertCamera as upsertCctvCamera, deleteCamera as deleteCctvCamera, getCctvConfig, updateCctvConfig, countOpenAlerts as countOpenCctvAlerts } from "./src/integrations/cctv-analytics.ts";
 import { DEFAULT_CIRCULARS } from "./src/lib/circularsData.ts";
 import { getReworkHistoryForTechnician } from "./src/engines/rework-tracking-service.ts";
 import { validateOvertimeRequest } from "./src/engines/overtime-rules.ts";
@@ -3249,6 +3250,228 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     res.json(newJob);
   });
 
+  // CCTV / ANPR gate-in webhook. An on-site ANPR camera or NVR posts each plate
+  // read here; DWIP creates a virtual gate-in job card and routes it into the
+  // reception/advisor queues — exactly like a manual gate entry.
+  //
+  // Auth: shared secret in the `X-ANPR-Key` header must equal ANPR_WEBHOOK_KEY.
+  // Disabled (503) until that env var is set, so it never accepts anonymous posts.
+  // Legitimate by design: it reads plate events pushed FROM your own camera; it
+  // does not reach into any third-party system.
+  app.post("/api/gate/anpr/ingest", express.json(), async (req: any, res: any) => {
+    const expectedKey = process.env.ANPR_WEBHOOK_KEY;
+    if (!expectedKey) {
+      return res.status(503).json({ success: false, unavailable: true, message: "ANPR webhook not configured (set ANPR_WEBHOOK_KEY)." });
+    }
+    const providedKey = req.headers["x-anpr-key"];
+    if (providedKey !== expectedKey) {
+      return res.status(401).json({ success: false, error: "Invalid ANPR key." });
+    }
+
+    const { plate, camera_id, captured_at, confidence, image_url, customer_name, customer_mobile, model, odometer } = req.body || {};
+    if (!plate || String(plate).trim().length < 3) {
+      return res.status(400).json({ success: false, error: "Missing or invalid plate." });
+    }
+    const vrn = String(plate).trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+    try {
+      const db = getDB();
+
+      // Dedupe: ANPR cameras fire repeatedly. Ignore a plate that already has an
+      // open gate entry created within the last ANPR_DEDUPE_MINUTES.
+      const dedupeMs = Number(process.env.ANPR_DEDUPE_MINUTES || 10) * 60 * 1000;
+      const now = Date.now();
+      const recentOpen = db.jobCards.find((j: JobCard) =>
+        (j.vrn || "").toUpperCase().replace(/[^A-Z0-9]/g, "") === vrn &&
+        j.status !== "Invoiced" && j.status !== "Completed" &&
+        j.created_at && (now - new Date(j.created_at).getTime()) < dedupeMs
+      );
+      if (recentOpen) {
+        return res.json({ success: true, duplicate: true, job_id: recentOpen.job_id, job_card_no: recentOpen.job_card_no, message: "Recent open gate entry already exists for this plate." });
+      }
+
+      const nextId = db.jobCards.reduce((max: number, j: JobCard) => Math.max(max, j.job_id), 0) + 1;
+      const jobCardNo = `JC-${Date.now().toString().slice(-5)}`;
+      const cam = camera_id ? `Camera ${camera_id}` : "CCTV";
+      const conf = confidence != null ? ` | ANPR confidence ${confidence}` : "";
+
+      const newJob: any = {
+        job_id: nextId,
+        job_card_no: jobCardNo,
+        vrn,
+        customer_name: (customer_name || "").trim() || "Pending (ANPR)",
+        customer_mobile: (customer_mobile || "").trim() || "",
+        vehicle_make: "TATA",
+        vehicle_model: model || "Tata Commercial Heavy Vehicle",
+        status: "Waiting",
+        current_workflow_state: "GATE_IN",
+        current_queue: "Reception & Service Advisor Queue",
+        is_virtual: 1,
+        bay_id: null,
+        km_reading: odometer ? parseInt(odometer) : 0,
+        anpr_image_url: image_url || null,
+        created_by: 1,
+        created_at: new Date().toISOString(),
+        remarks: `Auto gate-in via ${cam}${conf}. Awaiting reception verification.`,
+      };
+      db.jobCards.push(newJob);
+      setDB(db);
+
+      try {
+        const correlationId = `CORR-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+        await operationalEventService.publish({
+          job_id: nextId,
+          job_card_no: jobCardNo,
+          user: "ANPR",
+          role: "System",
+          workshop_id: 1,
+          source: "CCTV",
+          event_category: "CCTV",
+          event_type: "VEHICLE_GATE_IN",
+          remarks: `Plate ${vrn} recognized at gate by ${cam}.`,
+          correlation_id: correlationId,
+          source_system: `CCTV-${camera_id || "Camera"}`,
+          payload: { old_state: null, new_state: "GATE_IN", queue: "INTAKE_QUEUE", plate: vrn, captured_at: captured_at || new Date().toISOString(), confidence: confidence ?? null },
+        });
+      } catch (e: any) {
+        console.error("[ANPR] event publish failed:", e.message);
+      }
+
+      return res.json({ success: true, job_id: nextId, job_card_no: jobCardNo, vrn });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message || "ANPR ingest failed" });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // CCTV & Floor-Safety Analytics
+  // ---------------------------------------------------------------------------
+
+  // Config/registry changes are admin-only; viewing & acknowledging alerts is
+  // open to supervisors/security too. The ingest webhook itself uses a separate
+  // device shared-secret (X-CCTV-Key), not a user login.
+  const CCTV_ADMIN_ROLES = ["admin", "developer", "dealer_principal", "gm_service", "workshop_manager"];
+  const CCTV_VIEW_ROLES = [...CCTV_ADMIN_ROLES, "service_manager", "floor_supervisor", "security_agent"];
+
+  // Generic analytics alert webhook. Any camera / VMS / edge-AI box posts a
+  // detection (idle_manpower, oil_spillage, object_on_floor, unidentified_person,
+  // ppe_violation, loitering, fire_smoke, intrusion, custom). Shared-secret auth.
+  app.post("/api/cctv/alerts/ingest", express.json({ limit: "2mb" }), async (req: any, res: any) => {
+    try {
+      const cfg = await getCctvConfig(dbPool);
+      const expectedKey = process.env.CCTV_WEBHOOK_KEY;
+      // Prefer env key; fall back to stored key via config check.
+      const storedOk = cfg.has_webhook_key;
+      if (!expectedKey && !storedOk) {
+        return res.status(503).json({ success: false, unavailable: true, message: "CCTV webhook not configured (set CCTV_WEBHOOK_KEY or a key in CCTV settings)." });
+      }
+      const provided = req.headers["x-cctv-key"];
+      // Validate against env key when present, else against the stored settings key.
+      let keyOk = false;
+      if (expectedKey) keyOk = provided === expectedKey;
+      if (!keyOk) {
+        const [row] = await dbPool.query("SELECT webhook_key FROM cctv_settings WHERE id = 1") as any[];
+        if (row && row.length && row[0].webhook_key) keyOk = provided === row[0].webhook_key;
+      }
+      if (!keyOk) return res.status(401).json({ success: false, error: "Invalid CCTV key." });
+      if (!cfg.enabled) return res.status(503).json({ success: false, message: "CCTV ingestion is disabled." });
+
+      const result = await ingestCctvAlert(dbPool, req.body || {});
+      return res.json({ success: true, ...result });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message || "CCTV ingest failed" });
+    }
+  });
+
+  app.get("/api/cctv/alerts", authenticateToken, requireRoles(CCTV_VIEW_ROLES), async (req: any, res: any) => {
+    try {
+      const rows = await listCctvAlerts(dbPool, { status: req.query.status as string, limit: Number(req.query.limit) || 100 });
+      res.json({ success: true, alerts: rows });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Failed to list CCTV alerts" });
+    }
+  });
+
+  app.post("/api/cctv/alerts/:id/ack", authenticateToken, requireRoles(CCTV_VIEW_ROLES), async (req: any, res: any) => {
+    try {
+      const ok = await ackCctvAlert(dbPool, Number(req.params.id), req.user?.full_name || req.user?.username || "system");
+      res.json({ success: ok });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Failed to acknowledge alert" });
+    }
+  });
+
+  app.get("/api/cctv/cameras", authenticateToken, requireRoles(CCTV_VIEW_ROLES), async (_req: any, res: any) => {
+    try {
+      res.json({ success: true, cameras: await listCctvCameras(dbPool) });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Failed to list cameras" });
+    }
+  });
+
+  app.post("/api/cctv/cameras", authenticateToken, requireRoles(CCTV_ADMIN_ROLES), express.json(), async (req: any, res: any) => {
+    try {
+      res.json({ success: true, ...(await upsertCctvCamera(dbPool, req.body || {})) });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Failed to save camera" });
+    }
+  });
+
+  app.delete("/api/cctv/cameras/:id", authenticateToken, requireRoles(CCTV_ADMIN_ROLES), async (req: any, res: any) => {
+    try {
+      res.json({ success: await deleteCctvCamera(dbPool, Number(req.params.id)) });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Failed to delete camera" });
+    }
+  });
+
+  app.get("/api/cctv/config", authenticateToken, requireRoles(CCTV_ADMIN_ROLES), async (_req: any, res: any) => {
+    try {
+      res.json({ success: true, config: await getCctvConfig(dbPool) });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Failed to read CCTV config" });
+    }
+  });
+
+  app.post("/api/cctv/config", authenticateToken, requireRoles(CCTV_ADMIN_ROLES), express.json(), async (req: any, res: any) => {
+    try {
+      res.json({ success: true, config: await updateCctvConfig(dbPool, req.body || {}) });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Failed to update CCTV config" });
+    }
+  });
+
+  // Bay View: each bay mapped to its camera + current vehicle + open safety alerts.
+  app.get("/api/cctv/bay-view", authenticateToken, requireRoles(CCTV_VIEW_ROLES), async (_req: any, res: any) => {
+    try {
+      const db = getDB();
+      const bays = (db.bays || []).filter((b: any) => b.is_active !== false);
+      const jobs = db.jobCards || [];
+      const cameras = await listCctvCameras(dbPool);
+      const openAlerts = await listCctvAlerts(dbPool, { status: "open", limit: 500 });
+
+      const activeStatuses = new Set(["Active", "In Progress", "Waiting"]);
+      const view = bays.map((bay: any) => {
+        const camera = cameras.find((c: any) => Number(c.bay_id) === Number(bay.bay_id)) || null;
+        const currentJob = jobs.find((j: any) => Number(j.bay_id) === Number(bay.bay_id) && activeStatuses.has(j.status)) || null;
+        const alerts = openAlerts.filter((a: any) =>
+          (camera && (a.camera_ref === camera.external_ref || a.camera_ref === camera.name || Number(a.camera_ref) === Number(camera.camera_id))) ||
+          (a.zone && bay.bay_name && String(a.zone).toLowerCase() === String(bay.bay_name).toLowerCase())
+        );
+        return {
+          bay_id: bay.bay_id, bay_name: bay.bay_name, bay_code: bay.bay_code, status: bay.status,
+          camera: camera ? { camera_id: camera.camera_id, name: camera.name, stream_url: camera.stream_url, enabled: !!camera.enabled } : null,
+          current_job: currentJob ? { job_id: currentJob.job_id, job_card_no: currentJob.job_card_no, vrn: currentJob.vrn, status: currentJob.status } : null,
+          open_alert_count: alerts.length,
+          top_alert: alerts[0] ? { alert_type: alerts[0].alert_type, severity: alerts[0].severity } : null,
+        };
+      });
+      res.json({ success: true, bays: view });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Failed to build bay view" });
+    }
+  });
+
   app.post("/api/job-cards/bulk-import-backdated", (req, res) => {
     const db = getDB();
     const { rows } = req.body; // Array of job card rows to import
@@ -3612,13 +3835,24 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     });
   });
 
-  app.put("/api/job-cards/:id", async (req, res) => {
+  app.put("/api/job-cards/:id", authenticateToken, async (req: any, res: any) => {
     const db = getDB();
     const id = parseInt(req.params.id);
     const index = db.jobCards.findIndex((j: JobCard) => j.job_id === id);
     if (index !== -1) {
       const oldJob = db.jobCards[index];
-      const updatedJob = { ...oldJob, ...req.body, updated_at: new Date().toISOString() };
+
+      // Technicians may only advance their own workflow status (mark done / route to QC).
+      // They are NOT allowed to edit any other job-card fields — strip everything else.
+      let incoming = req.body || {};
+      if (req.user && req.user.role === "technician") {
+        const TECH_ALLOWED = ["status", "current_workflow_state", "actual_tat", "actual_time_taken"];
+        const filtered: any = {};
+        for (const k of TECH_ALLOWED) if (k in incoming) filtered[k] = incoming[k];
+        incoming = filtered;
+      }
+
+      const updatedJob = { ...oldJob, ...incoming, updated_at: new Date().toISOString() };
 
       // Automatic bay status transition
       if (updatedJob.bay_id && updatedJob.status !== oldJob.status) {
@@ -4055,6 +4289,18 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         });
       }
     } catch (e) { /* profile_update_requests absent — skip */ }
+
+    try {
+      const openCctv = await countOpenCctvAlerts(dbPool);
+      if (openCctv > 0) {
+        notifications.push({
+          id: "cctv-alerts", type: "safety", severity: "warning",
+          title: "Floor-Safety Alerts",
+          message: `${openCctv} open CCTV alert${openCctv === 1 ? "" : "s"} on the floor`,
+          link: "cctv-safety"
+        });
+      }
+    } catch (e) { /* cctv table absent — skip */ }
 
     res.json({ success: true, count: notifications.length, notifications });
   });
