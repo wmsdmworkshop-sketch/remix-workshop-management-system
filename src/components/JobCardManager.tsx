@@ -3181,10 +3181,10 @@ export default function JobCardManager({
                     placeholder="e.g. TML-2026-14582"
                     maxLength={50}
                     value={editCrmJobCardNo}
-                    disabled={editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "dealer_principal" && currentUserRole !== "gm"}
+                    disabled={editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm"}
                     onChange={(e) => setEditCrmJobCardNo(e.target.value)}
-                    className={`w-full border rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden ${(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "dealer_principal" && currentUserRole !== "gm") ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-300' : 'bg-white border-amber-300 text-slate-900'}`}
-                    title={(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "dealer_principal" && currentUserRole !== "gm") ? "Locked after submission. GM / Developer override required." : "Enter CRM or DMS Reference Number"}
+                    className={`w-full border rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden ${(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-300' : 'bg-white border-amber-300 text-slate-900'}`}
+                    title={(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") ? "Locked after submission. GM / Developer override required." : "Enter CRM or DMS Reference Number"}
                   />
                 </div>
                 <div>
@@ -3243,35 +3243,35 @@ export default function JobCardManager({
                 <div>
                   <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
                     Date In*
-                    {(selectedJob?.date_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "dealer_principal" && currentUserRole !== "gm") && (
+                    {(selectedJob?.date_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") && (
                       <span className="ml-1 text-amber-600 font-normal text-[8px]">(Locked 🔒)</span>
                     )}
                   </label>
                   <input 
                     type="date" 
                     required 
-                    disabled={Boolean(selectedJob?.date_in) && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "dealer_principal" && currentUserRole !== "gm"}
+                    disabled={Boolean(selectedJob?.date_in) && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm"}
                     value={editDateIn}
                     onChange={(e) => setEditDateIn(e.target.value)}
-                    className={`w-full border rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden ${(selectedJob?.date_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "dealer_principal" && currentUserRole !== "gm") ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-300' : 'bg-slate-50 border-slate-200'}`}
-                    title={(selectedJob?.date_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "dealer_principal" && currentUserRole !== "gm") ? "Operational timestamp is locked after workflow progression. GM / Developer override required." : "Date In"}
+                    className={`w-full border rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden ${(selectedJob?.date_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-300' : 'bg-slate-50 border-slate-200'}`}
+                    title={(selectedJob?.date_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") ? "Operational timestamp is locked after workflow progression. GM / Developer override required." : "Date In"}
                   />
                 </div>
                 <div>
                   <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
                     Time-In*
-                    {(selectedJob?.time_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "dealer_principal" && currentUserRole !== "gm") && (
+                    {(selectedJob?.time_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") && (
                       <span className="ml-1 text-amber-600 font-normal text-[8px]">(Locked 🔒)</span>
                     )}
                   </label>
                   <input 
                     type="time" 
                     required 
-                    disabled={Boolean(selectedJob?.time_in) && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "dealer_principal" && currentUserRole !== "gm"}
+                    disabled={Boolean(selectedJob?.time_in) && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm"}
                     value={editTimeIn}
                     onChange={(e) => setEditTimeIn(e.target.value)}
-                    className={`w-full border rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden ${(selectedJob?.time_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "dealer_principal" && currentUserRole !== "gm") ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-300' : 'bg-slate-50 border-slate-200'}`}
-                    title={(selectedJob?.time_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "dealer_principal" && currentUserRole !== "gm") ? "Operational timestamp is locked after workflow progression. GM / Developer override required." : "Time-In"}
+                    className={`w-full border rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden ${(selectedJob?.time_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-300' : 'bg-slate-50 border-slate-200'}`}
+                    title={(selectedJob?.time_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") ? "Operational timestamp is locked after workflow progression. GM / Developer override required." : "Time-In"}
                   />
                 </div>
               </div>
@@ -3335,7 +3335,7 @@ export default function JobCardManager({
                 <div>
                   <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
                     Odometer Reading (KM)
-                    {(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "dealer_principal" && currentUserRole !== "gm") && (
+                    {(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") && (
                       <span className="ml-1 text-amber-600 font-normal text-[8px]">(Locked 🔒)</span>
                     )}
                   </label>
@@ -3343,11 +3343,11 @@ export default function JobCardManager({
                     <input 
                       type="number" 
                       min="0"
-                      disabled={editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "dealer_principal" && currentUserRole !== "gm"}
+                      disabled={editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm"}
                       value={editKmReading ?? ""}
                       onChange={(e) => setEditKmReading(e.target.value === "" ? "" : Math.max(0, Number(e.target.value)))}
-                      className={`w-full border rounded p-2 pr-9 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden ${(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "dealer_principal" && currentUserRole !== "gm") ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-300' : 'bg-slate-50 border-slate-200'}`}
-                      title={(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "dealer_principal" && currentUserRole !== "gm") ? "Odometer reading is locked after Job Card submission. GM / Developer override required." : "Enter vehicle odometer reading"}
+                      className={`w-full border rounded p-2 pr-9 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden ${(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-300' : 'bg-slate-50 border-slate-200'}`}
+                      title={(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") ? "Odometer reading is locked after Job Card submission. GM / Developer override required." : "Enter vehicle odometer reading"}
                     />
                     <label className="ds-label absolute right-2 cursor-pointer   hover:text-orange-500 transition-colors" title="Scan Odometer Photo">
                       <Camera className="h-4.5 w-4.5" />

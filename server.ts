@@ -15,7 +15,7 @@ import rateLimit from "express-rate-limit";
 import { pool as dbPool } from "./src/db/index.ts";
 import { startQrtGmailIngestor, runQrtIngestOnce, getQrtPublicConfig, updateQrtSettings } from "./src/integrations/qrt-gmail-ingestor.ts";
 import { ingestAlert as ingestCctvAlert, listAlerts as listCctvAlerts, acknowledgeAlert as ackCctvAlert, listCameras as listCctvCameras, upsertCamera as upsertCctvCamera, deleteCamera as deleteCctvCamera, getCctvConfig, updateCctvConfig, countOpenAlerts as countOpenCctvAlerts } from "./src/integrations/cctv-analytics.ts";
-import { filterViewableJobCards, canEditJobCard, isOwnedBy, isInMyStage, GROUP1_FULL_CONTROL, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
+import { filterViewableJobCards, canEditJobCard, isOwnedBy, isInMyStage, isFullViewRole, GROUP1_FULL_CONTROL, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
 import { DEFAULT_CIRCULARS } from "./src/lib/circularsData.ts";
 import { getReworkHistoryForTechnician } from "./src/engines/rework-tracking-service.ts";
 import { validateOvertimeRequest } from "./src/engines/overtime-rules.ts";
@@ -897,6 +897,17 @@ async function startServer() {
             [p.role_name, p.module_name, p.can_view, p.can_edit]
           );
         }
+      }
+      // dealer_principal is a pure observer (sees & analyses everything, edits NOTHING).
+      // Force view-only at the matrix level on every boot so no stale seed leaves it
+      // with edit rights.
+      try {
+        await dbPool.execute(
+          "UPDATE role_permissions SET can_edit = 0, can_comment = 0 WHERE role_name = 'dealer_principal'"
+        );
+        console.log("Enforced dealer_principal as read-only across role_permissions.");
+      } catch (dpErr: any) {
+        console.warn("Could not enforce dealer_principal read-only:", dpErr.message);
       }
       console.log("Role permissions seeding verified and completed successfully.");
     } catch (permErr) {
@@ -1995,9 +2006,9 @@ async function startServer() {
     }
   });
 
-  // PUT Profile Approval Settings (Admin/HR only)
+  // PUT Profile Approval Settings (Admin/HR only) — dealer_principal is read-only, excluded from writes
   app.put("/api/my-profile/settings", authenticateToken, async (req: any, res) => {
-    const allowed = ["developer", "admin", "dealer_principal", "service_manager", "supervisor"];
+    const allowed = ["developer", "admin", "service_manager", "supervisor"];
     if (!allowed.includes(req.user.role)) {
       return res.status(403).json({ error: "Access denied. Requires manager privileges." });
     }
@@ -2036,9 +2047,9 @@ async function startServer() {
     }
   });
 
-  // POST Resolve pending request (Approve/Reject) (Admin/HR only)
+  // POST Resolve pending request (Approve/Reject) (Admin/HR only) — dealer_principal excluded (read-only)
   app.post("/api/my-profile/requests/:requestId/resolve", authenticateToken, async (req: any, res) => {
-    const allowed = ["developer", "admin", "dealer_principal", "service_manager", "supervisor"];
+    const allowed = ["developer", "admin", "service_manager", "supervisor"];
     if (!allowed.includes(req.user.role)) {
       return res.status(403).json({ error: "Access denied. Requires manager privileges." });
     }
@@ -2380,7 +2391,7 @@ async function startServer() {
 
   // Workforce management (create/update/delete employees) is restricted to
   // admins/managers — never reception, technicians, billing, etc.
-  const WORKFORCE_ADMIN_ROLES = ["admin", "developer", "workshop_manager", "service_manager", "gm_service", "dealer_principal"];
+  const WORKFORCE_ADMIN_ROLES = ["admin", "developer", "workshop_manager", "service_manager", "gm_service"];
 
   app.post("/api/employees", authenticateToken, requireRoles(WORKFORCE_ADMIN_ROLES), (req: any, res) => {
     const db = getDB();
@@ -3428,8 +3439,9 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   // Config/registry changes are admin-only; viewing & acknowledging alerts is
   // open to supervisors/security too. The ingest webhook itself uses a separate
   // device shared-secret (X-CCTV-Key), not a user login.
-  const CCTV_ADMIN_ROLES = ["admin", "developer", "dealer_principal", "gm_service", "workshop_manager"];
-  const CCTV_VIEW_ROLES = [...CCTV_ADMIN_ROLES, "service_manager", "floor_supervisor", "security_agent"];
+  const CCTV_ADMIN_ROLES = ["admin", "developer", "gm_service", "workshop_manager"];
+  // dealer_principal is a pure observer — full CCTV view, no camera/config edits.
+  const CCTV_VIEW_ROLES = [...CCTV_ADMIN_ROLES, "dealer_principal", "service_manager", "floor_supervisor", "security_agent"];
 
   // Generic analytics alert webhook. Any camera / VMS / edge-AI box posts a
   // detection (idle_manpower, oil_spillage, object_on_floor, unidentified_person,
@@ -5846,10 +5858,12 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     let { employee_id } = req.query as any;
     const { month } = req.query as any;
 
-    // Force self for non-managers (IDOR fix): a non-manager may only read their OWN
-    // attendance, whatever employee_id they pass. Managers (Group 1) may query anyone.
-    const isManager = GROUP1_FULL_CONTROL.includes(req.user?.role);
-    if (!isManager) {
+    // Force self for individual contributors (IDOR fix): they may only read their OWN
+    // attendance, whatever employee_id they pass. Full-view roles (Group 1/2 managers &
+    // supervisors + Group 3 observers incl. dealer_principal) may query anyone for
+    // reporting/analysis.
+    const canReadAll = isFullViewRole(req.user?.role);
+    if (!canReadAll) {
       if (req.user?.employee_id == null) {
         return res.status(403).json({ error: "No employee record linked to your account." });
       }

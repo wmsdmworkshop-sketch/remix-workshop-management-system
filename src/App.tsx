@@ -1313,7 +1313,7 @@ export default function App() {
               projectedRevenue={projectedRevenue}
               generatedRevenue={generatedRevenue}
               aiModeEnabled={aiModeEnabled}
-              canManageWorkforce={["admin", "developer", "workshop_manager", "service_manager", "gm_service", "dealer_principal"].includes(userRole)}
+              canManageWorkforce={["admin", "developer", "workshop_manager", "service_manager", "gm_service"].includes(userRole)}
             />
           )}
 

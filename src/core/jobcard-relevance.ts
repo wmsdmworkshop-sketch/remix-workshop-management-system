@@ -21,9 +21,13 @@ export interface RelevanceUser {
   full_name?: string | null;
 }
 
-export const GROUP1_FULL_CONTROL = ["admin", "developer", "dealer_principal", "gm_service", "workshop_manager"];
+export const GROUP1_FULL_CONTROL = ["admin", "developer", "gm_service", "workshop_manager"];
 export const GROUP2_VIEW_ALL_EDIT_OWN = ["floor_supervisor", "service_manager", "floor_incharge"];
-export const GROUP3_VIEW_ONLY = ["dkam"];
+// Group 3 — sees & analyses everything, edits/actions NOTHING.
+// dealer_principal sits above everyone but is a pure observer (revenue, performance,
+// live job cards / occupancy / workflow / manpower & resource utilisation, CCTV,
+// vehicle in/out, and all historical reports) — no editing privileges at all.
+export const GROUP3_VIEW_ONLY = ["dkam", "dealer_principal"];
 
 // Roles whose relevance is the workflow STAGE the JC currently sits in.
 // Values are matched against jc.current_workflow_state (and a status fallback).
