@@ -1491,6 +1491,50 @@ async function startServer() {
     }
   });
 
+  // Self-service change password (any logged-in user). Verifies the current password,
+  // then updates the hash in whichever table the account lives in.
+  app.post("/api/my-profile/change-password", authenticateToken, express.json(), async (req: any, res) => {
+    const { current_password, new_password } = req.body || {};
+    if (!current_password || !new_password) {
+      return res.status(400).json({ error: "Both current and new password are required." });
+    }
+    if (String(new_password).length < 8) {
+      return res.status(400).json({ error: "New password must be at least 8 characters." });
+    }
+    if (String(current_password) === String(new_password)) {
+      return res.status(400).json({ error: "New password must be different from the current one." });
+    }
+    try {
+      let row: any = null, table = "", keyCol = "", keyVal: any = null;
+      const uid = req.user?.user_id;
+      const uname = req.user?.username;
+
+      if (uid != null) {
+        const [r]: any = await dbPool.query("SELECT user_id, password_hash FROM user_access_master WHERE user_id = ? LIMIT 1", [uid]);
+        if (r && r.length) { row = r[0]; table = "user_access_master"; keyCol = "user_id"; keyVal = row.user_id; }
+      }
+      if (!row && uname) {
+        const [r]: any = await dbPool.query("SELECT user_id, password_hash FROM user_access_master WHERE LOWER(username) = LOWER(?) LIMIT 1", [uname]);
+        if (r && r.length) { row = r[0]; table = "user_access_master"; keyCol = "user_id"; keyVal = row.user_id; }
+      }
+      if (!row && uname) {
+        const [r]: any = await dbPool.query("SELECT id, password_hash FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1", [uname]);
+        if (r && r.length) { row = r[0]; table = "users"; keyCol = "id"; keyVal = row.id; }
+      }
+      if (!row) return res.status(404).json({ error: "Your account was not found." });
+
+      const ok = await bcrypt.compare(String(current_password), row.password_hash || "");
+      if (!ok) return res.status(401).json({ error: "Current password is incorrect." });
+
+      const newHash = await bcrypt.hash(String(new_password), 10);
+      await dbPool.execute(`UPDATE ${table} SET password_hash = ? WHERE ${keyCol} = ?`, [newHash, keyVal]);
+      return res.json({ success: true, message: "Password changed successfully. Use it next time you log in." });
+    } catch (e: any) {
+      console.error("[CHANGE-PASSWORD] failed:", e.message);
+      return res.status(500).json({ error: "Failed to change password. Please try again." });
+    }
+  });
+
   // Verify OTP endpoint
   app.post("/api/auth/verify-otp", async (req, res) => {
     const { username, otp } = req.body;

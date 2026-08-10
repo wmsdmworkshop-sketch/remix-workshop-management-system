@@ -2,8 +2,9 @@ import React from "react";
 import { 
   LayoutDashboard, Truck, Wrench, Package, Users, TrendingUp, Settings, 
   HelpCircle, User, LogOut, ChevronRight, Bell, Search, Activity, Sparkles, Building,
-  Menu, X
+  Menu, X, KeyRound
 } from "lucide-react";
+import ChangePasswordModal from "./ChangePasswordModal";
 
 export interface TabItem {
   id: string;
@@ -94,6 +95,8 @@ export default function AppShell({
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [notifOpen, setNotifOpen] = React.useState(false);
   const [notifications, setNotifications] = React.useState<any[]>([]);
+  const [userMenuOpen, setUserMenuOpen] = React.useState(false);
+  const [showChangePassword, setShowChangePassword] = React.useState(false);
 
   const fetchNotifications = React.useCallback(async () => {
     try {
@@ -385,14 +388,46 @@ export default function AppShell({
             
             <div className="h-4 w-[1px] bg-zinc-800 hidden sm:block"></div>
 
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-xs text-zinc-300 border border-zinc-700">
-                {(user?.username || user?.full_name || "User")[0].toUpperCase()}
-              </div>
-              <span className="text-xs font-semibold text-zinc-200 hidden sm:inline">{user?.username || user?.full_name || "User"}</span>
+            <div className="relative">
+              <button
+                onClick={() => setUserMenuOpen((o) => !o)}
+                className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-zinc-900 transition-colors"
+                title="Account menu"
+              >
+                <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-xs text-zinc-300 border border-zinc-700">
+                  {(user?.username || user?.full_name || "User")[0].toUpperCase()}
+                </div>
+                <span className="text-xs font-semibold text-zinc-200 hidden sm:inline">{user?.username || user?.full_name || "User"}</span>
+                <ChevronRight className={`h-3 w-3 text-zinc-500 transition-transform ${userMenuOpen ? "rotate-90" : ""}`} />
+              </button>
+              {userMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
+                  <div className="absolute right-0 mt-2 w-52 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl z-50 overflow-hidden">
+                    <div className="px-3 py-2 border-b border-zinc-800">
+                      <div className="text-xs font-bold text-zinc-200 truncate">{user?.full_name || user?.username || "User"}</div>
+                      <div className="text-[10px] text-zinc-500 capitalize">{(user?.role || "").replace(/_/g, " ")}</div>
+                    </div>
+                    <button
+                      onClick={() => { setUserMenuOpen(false); setShowChangePassword(true); }}
+                      className="w-full text-left px-3 py-2.5 text-xs font-semibold text-zinc-200 hover:bg-zinc-800 flex items-center gap-2"
+                    >
+                      <KeyRound className="h-3.5 w-3.5 text-orange-400" /> Change Password
+                    </button>
+                    <button
+                      onClick={() => { setUserMenuOpen(false); handleLogout(); }}
+                      className="w-full text-left px-3 py-2.5 text-xs font-semibold text-red-300 hover:bg-zinc-800 flex items-center gap-2 border-t border-zinc-800"
+                    >
+                      <LogOut className="h-3.5 w-3.5" /> Logout
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </header>
+
+        {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
 
         {/* 3. WORKSPACE HEADER */}
         <div className="bg-[#111827]/20 border-b border-slate-800/60 p-3 sm:p-4 sm:px-6 flex flex-col gap-2 sm:gap-3 shrink-0">
