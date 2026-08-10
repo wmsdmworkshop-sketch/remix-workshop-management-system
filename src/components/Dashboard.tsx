@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   TrendingUp, 
@@ -67,42 +67,6 @@ const COLORS = {
   glowBlue: "rgba(37, 99, 235, 0.15)"
 };
 
-// Realistic mock data for rich visuals
-const revenueTrendData = [
-  { name: "09:00", projected: 120000, generated: 95000 },
-  { name: "11:00", projected: 240000, generated: 210000 },
-  { name: "13:00", projected: 380000, generated: 345000 },
-  { name: "15:00", projected: 450000, generated: 480000 },
-  { name: "17:00", projected: 550000, generated: 580000 },
-  { name: "19:00", projected: 680000, generated: 710000 }
-];
-
-const productivityData = [
-  { name: "Bay 1", efficiency: 94, jobs: 8 },
-  { name: "Bay 2", efficiency: 88, jobs: 6 },
-  { name: "Bay 3", efficiency: 75, jobs: 5 },
-  { name: "Bay 4", efficiency: 98, jobs: 9 },
-  { name: "Bay 5", efficiency: 82, jobs: 7 },
-  { name: "Bay 6", efficiency: 91, jobs: 8 }
-];
-
-const vehicleCategoryData = [
-  { name: "Prima HCV", value: 35, color: "#2563EB" },
-  { name: "Signa MCV", value: 25, color: "#06B6D4" },
-  { name: "Ultra LCV", value: 20, color: "#10B981" },
-  { name: "Nexon EV Fleet", value: 15, color: "#8B5CF6" },
-  { name: "Other", value: 5, color: "#6B7280" }
-];
-
-const attendanceTrendData = [
-  { day: "Mon", attendance: 92 },
-  { day: "Tue", attendance: 95 },
-  { day: "Wed", attendance: 98 },
-  { day: "Thu", attendance: 96 },
-  { day: "Fri", attendance: 94 },
-  { day: "Sat", attendance: 88 }
-];
-
 export default function Dashboard({
   jobCards,
   bays,
@@ -145,6 +109,45 @@ export default function Dashboard({
   function stateAJobsCount() {
     return jobCards.filter(j => j.status === "Waiting" && !j.bay_id).length;
   }
+
+  const activeBaysCount = bays.filter(b => b.status !== "Idle").length;
+
+  // Fleet Mix — real distribution of vehicles currently inside the workshop, grouped by
+  // model (top 5 + Other). Computed from live job cards, not hardcoded.
+  const fleetMix = useMemo(() => {
+    const palette = ["#2563EB", "#06B6D4", "#10B981", "#8B5CF6", "#F59E0B", "#EF4444"];
+    const inShop = jobCards.filter(j => j.status === "Active" || j.status === "Waiting");
+    const counts: Record<string, number> = {};
+    for (const j of inShop) {
+      const key = (j.vehicle_model || j.vehicle_make || "Unknown").toString().trim() || "Unknown";
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const total = inShop.length || 1;
+    const top = entries.slice(0, 5).map(([name, v], i) => ({ name, value: Math.round((v / total) * 100), color: palette[i % palette.length] }));
+    const otherCount = entries.slice(5).reduce((s, [, v]) => s + v, 0);
+    if (otherCount > 0) top.push({ name: "Other", value: Math.round((otherCount / total) * 100), color: "#6B7280" });
+    return top;
+  }, [jobCards]);
+
+  // Revenue trend — real cumulative-by-hour for today. Realized = invoiced/completed
+  // amounts; Projected = all of today's job-card values. Empty/flat on a quiet day (honest).
+  const revenueTrend = useMemo(() => {
+    const hours = [9, 11, 13, 15, 17, 19];
+    const today = new Date().toDateString();
+    const amt = (j: any) => Number(j.total_amount || j.net_amount || j.grand_total || 0);
+    const sameDay = (ts: any) => ts && new Date(ts).toDateString() === today;
+    return hours.map(h => {
+      let realized = 0, projected = 0;
+      for (const j of jobCards as any[]) {
+        const doneTs = j.invoiced_at || j.completed_at;
+        if (sameDay(doneTs) && new Date(doneTs).getHours() <= h) realized += amt(j);
+        const openTs = j.created_at || j.date_in;
+        if (sameDay(openTs) && new Date(openTs).getHours() <= h) projected += amt(j);
+      }
+      return { name: `${String(h).padStart(2, "0")}:00`, projected: Math.round(projected), generated: Math.round(realized) };
+    });
+  }, [jobCards]);
 
   // Mini-sparkline components using lightweight SVGs
   const Sparkline = ({ points, color }: { points: number[], color: string }) => {
@@ -289,7 +292,7 @@ export default function Dashboard({
               </div>
               <div className="flex items-center justify-between mt-4">
                 <div className="flex items-center gap-1.5 text-xs text-blue-400 font-bold bg-blue-500/10 px-2 py-0.5 rounded-full">
-                  <span>9 Active Bays</span>
+                  <span>{activeBaysCount} Active Bays</span>
                 </div>
                 <Sparkline points={[4, 5, 6, 5, 7, 8, 9]} color="#2563EB" />
               </div>
@@ -398,7 +401,7 @@ export default function Dashboard({
               
               <div className="h-80 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={revenueTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <AreaChart data={revenueTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="projColor" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#06B6D4" stopOpacity={0.2}/>
@@ -431,7 +434,7 @@ export default function Dashboard({
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={vehicleCategoryData}
+                      data={fleetMix}
                       cx="50%"
                       cy="50%"
                       innerRadius={60}
@@ -439,7 +442,7 @@ export default function Dashboard({
                       paddingAngle={4}
                       dataKey="value"
                     >
-                      {vehicleCategoryData.map((entry, index) => (
+                      {fleetMix.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
@@ -447,20 +450,24 @@ export default function Dashboard({
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="absolute flex flex-col items-center">
-                  <span className="text-2xl font-black text-white">{bays.filter(b => b.status !== "Idle").length || 9}</span>
+                  <span className="text-2xl font-black text-white">{activeBaysCount}</span>
                   <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Active Bays</span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                {vehicleCategoryData.map((v, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: v.color }} />
-                    <span className="text-slate-400">{v.name}:</span>
-                    <span className="font-bold text-slate-200">{v.value}%</span>
-                  </div>
-                ))}
-              </div>
+              {fleetMix.length > 0 ? (
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  {fleetMix.map((v, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: v.color }} />
+                      <span className="text-slate-400 truncate">{v.name}:</span>
+                      <span className="font-bold text-slate-200">{v.value}%</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 italic text-center">No vehicles currently inside the workshop.</p>
+              )}
             </div>
 
           </div>
