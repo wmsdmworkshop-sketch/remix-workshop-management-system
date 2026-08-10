@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import TruckInfoCard from './TruckInfoCard';
 import FunnySpinner from './FunnySpinner';
+import UpdateRequestPanel from './UpdateRequestPanel';
 import { 
   Plus, 
   Wrench, 
@@ -1479,8 +1480,14 @@ export default function JobCardManager({
                 <p className="text-xs text-slate-500 font-medium">
                   Customer: <span className="font-bold text-slate-700">{selectedJob.customer_name}</span> ({selectedJob.customer_mobile})
                 </p>
+                <UpdateRequestPanel
+                  jobId={selectedJob.job_id}
+                  jobCard={selectedJob}
+                  currentUser={currentUser}
+                  currentUserRole={currentUserRole}
+                />
               </div>
- 
+
               {/* Status Controls */}
               <div className="flex flex-wrap items-center gap-2">
                 {selectedJob.status === "Waiting" && currentUserRole !== "Service Advisor" && (

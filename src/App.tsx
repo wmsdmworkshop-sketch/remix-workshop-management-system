@@ -123,6 +123,7 @@ import BusinessImpactTracker from "./components/BusinessImpactTracker";
 import LiveSupportPanel from "./components/LiveSupportPanel";
 import DevOpsDashboard from "./components/DevOpsDashboard";
 import CctvFloorSafety from "./components/CctvFloorSafety";
+import MyWorkspace from "./components/MyWorkspace";
 import OperationsCommandCenter from "./components/OperationsCommandCenter";
 import PlatformControlCenter from "./components/platform/PlatformControlCenter";
 import { PartsInChargeWorkspace } from "./components/PartsInChargeWorkspace";
@@ -587,6 +588,11 @@ export default function App() {
   // Dynamically ensure every role has the "My Profile" tab
   Object.keys(ROLE_TABS).forEach(role => {
     const tabs = ROLE_TABS[role];
+    // "MY RESPONSIBILITY" phase 3 — every staff member gets a personal My Workspace tab
+    // (My Jobs / Pending / Breaches / Performance / Incentives / Attendance).
+    if (!tabs.some(t => t.id === "my-workspace")) {
+      tabs.unshift({ id: "my-workspace", label: "My Workspace", icon: ClipboardCheck });
+    }
     const attendanceIdx = tabs.findIndex(t => t.id === "attendance");
     const breakdownRoles = ["service_manager", "workshop_manager", "supervisor", "floor_supervisor", "floor_incharge", "admin", "developer"];
     if (breakdownRoles.includes(role) && !tabs.some(t => t.id === "breakdown")) {
@@ -1282,8 +1288,18 @@ export default function App() {
       onToggleAiMode={() => setAiModeEnabled(prev => !prev)}
     >
 
+          {activeTab === "my-workspace" && (
+            <MyWorkspace
+              currentUser={user}
+              onOpenJob={(job) => {
+                setDashboardSelectedJob(job);
+                setActiveTab("jobs");
+              }}
+            />
+          )}
+
           {activeTab === "dashboard" && (
-            <Dashboard 
+            <Dashboard
               jobCards={jobCards}
               bays={bays}
               alerts={alertLogs}

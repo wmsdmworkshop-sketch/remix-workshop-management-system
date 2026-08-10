@@ -28,6 +28,23 @@ So relevance = **OWNERSHIP (persistent)** ∪ **STAGE (while it's in your court)
 
 ## 2. Relevance rules per role  ← please confirm / adjust each row
 
+### A0. CORE JOB-CARD LOCK (LOCKED — final rule)
+
+The **actual job-card details are owned by the Service Advisor** (creator / named
+advisor). **Only that owner may edit the core card.** Technicians, floor supervisors,
+floor incharge, service managers, and even the GM edit **only their own stage forms**
+(status/progress, parts, QC, billing, cashier) — never the core card. `admin` /
+`developer` keep a superuser override.
+
+Anyone who needs a change or spots a mistake on the core card **raises an Update
+Request** (a free-text box) via `POST /api/job-cards/:id/update-request`. The owning
+advisor or a manager (Group 1) actions it (approve / reject / applied). Implemented in
+`jc_update_requests` + `UpdateRequestPanel.tsx`.
+
+> This supersedes the earlier "Group 2 edits own JC" reading below: Group 2 supervisors
+> do NOT edit the core job card — they raise Update Requests like everyone else. Their
+> "edit own/relevant" still applies to their **stage actions** (assign, QC, billing…).
+
 ### A. Supervision tiers (LOCKED — view-scope and edit-scope can differ)
 
 **Group 1 — Full control: VIEW all + EDIT all**

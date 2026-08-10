@@ -15,7 +15,7 @@ import rateLimit from "express-rate-limit";
 import { pool as dbPool } from "./src/db/index.ts";
 import { startQrtGmailIngestor, runQrtIngestOnce, getQrtPublicConfig, updateQrtSettings } from "./src/integrations/qrt-gmail-ingestor.ts";
 import { ingestAlert as ingestCctvAlert, listAlerts as listCctvAlerts, acknowledgeAlert as ackCctvAlert, listCameras as listCctvCameras, upsertCamera as upsertCctvCamera, deleteCamera as deleteCctvCamera, getCctvConfig, updateCctvConfig, countOpenAlerts as countOpenCctvAlerts } from "./src/integrations/cctv-analytics.ts";
-import { filterViewableJobCards, canEditJobCard, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
+import { filterViewableJobCards, canEditJobCard, isOwnedBy, isInMyStage, GROUP1_FULL_CONTROL, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
 import { DEFAULT_CIRCULARS } from "./src/lib/circularsData.ts";
 import { getReworkHistoryForTechnician } from "./src/engines/rework-tracking-service.ts";
 import { validateOvertimeRequest } from "./src/engines/overtime-rules.ts";
@@ -704,6 +704,30 @@ async function startServer() {
           device_info VARCHAR(255) DEFAULT NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
       `);
+    // "MY RESPONSIBILITY" — Update Request workflow. When a non-owner (manager,
+    // supervisor, floor incharge, technician, GM) needs a change on a job card they
+    // cannot edit, they raise a request here; the owning Service Advisor / a manager
+    // actions it.
+    await dbPool.execute(`
+        CREATE TABLE IF NOT EXISTS jc_update_requests (
+          id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          job_card_id INT NOT NULL,
+          jc_number VARCHAR(100) DEFAULT NULL,
+          requested_by_user_id INT DEFAULT NULL,
+          requested_by_name VARCHAR(255) DEFAULT NULL,
+          requested_by_role VARCHAR(100) DEFAULT NULL,
+          message TEXT NOT NULL,
+          status VARCHAR(30) NOT NULL DEFAULT 'open',
+          resolution_note TEXT DEFAULT NULL,
+          resolved_by_user_id INT DEFAULT NULL,
+          resolved_by_name VARCHAR(255) DEFAULT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          resolved_at TIMESTAMP NULL DEFAULT NULL,
+          INDEX idx_jcur_job (job_card_id),
+          INDEX idx_jcur_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
+
     console.log("Profile management tables and settings initialized successfully.");
 
     // SQL-002: Add performance indexes (idempotent — CREATE INDEX IF NOT EXISTS)
@@ -3896,13 +3920,27 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     if (index !== -1) {
       const oldJob = db.jobCards[index];
 
-      // Technicians may only advance their own workflow status (mark done / route to QC).
-      // They are NOT allowed to edit any other job-card fields — strip everything else.
+      // CORE JOB-CARD LOCK ("MY RESPONSIBILITY" rule):
+      // The actual job-card details are owned by the Service Advisor (the creator /
+      // named advisor) and may be edited ONLY by that owner or a superuser
+      // (admin/developer). Everyone else — technicians, floor supervisors, floor
+      // incharge, service managers, GM, stage roles — may only advance workflow /
+      // progress fields ("their own form"). Any other change must go through an
+      // Update Request (POST /api/job-cards/:id/update-request). So we strip all
+      // non-workflow fields for non-owners rather than mutating the core card.
       let incoming = req.body || {};
-      if (req.user && req.user.role === "technician") {
-        const TECH_ALLOWED = ["status", "current_workflow_state", "actual_tat", "actual_time_taken"];
+      const _role = req.user?.role;
+      const _isSuper = _role === "admin" || _role === "developer";
+      const _uName = String(req.user?.full_name || "").trim().toLowerCase();
+      const _isCoreOwner =
+        _isSuper ||
+        (req.user?.user_id != null && Number(oldJob.created_by) === Number(req.user.user_id)) ||
+        (!!oldJob.service_advisor && _uName.length > 0 &&
+          String(oldJob.service_advisor).toLowerCase().includes(_uName));
+      if (!_isCoreOwner) {
+        const WORKFLOW_ALLOWED = ["status", "current_workflow_state", "actual_tat", "actual_time_taken"];
         const filtered: any = {};
-        for (const k of TECH_ALLOWED) if (k in incoming) filtered[k] = incoming[k];
+        for (const k of WORKFLOW_ALLOWED) if (k in incoming) filtered[k] = incoming[k];
         incoming = filtered;
       }
 
@@ -4015,6 +4053,127 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       res.json(updatedJob);
     } else {
       res.status(404).json({ error: "Job card not found" });
+    }
+  });
+
+  // ============================================================================
+  // "MY RESPONSIBILITY" — JOB-CARD UPDATE REQUESTS
+  // Core job-card details are locked to the owning Service Advisor. Anyone else who
+  // needs a change / spots a mistake raises an Update Request here; the owner or a
+  // manager (Group 1) actions it.
+  // ============================================================================
+
+  // Raise an update request against a job card (any authenticated staff member).
+  app.post("/api/job-cards/:id/update-request", authenticateToken, async (req: any, res: any) => {
+    try {
+      const jobCardId = parseInt(req.params.id);
+      const message = String(req.body?.message || "").trim();
+      if (!jobCardId || Number.isNaN(jobCardId)) return res.status(400).json({ error: "Invalid job card id." });
+      if (!message) return res.status(400).json({ error: "Please describe the change you need." });
+
+      const jc = (getDB().jobCards || []).find((j: any) => Number(j.job_id) === jobCardId);
+      const jcNumber = jc?.job_card_number || jc?.jc_number || jc?.job_number || null;
+
+      const [result]: any = await dbPool.execute(
+        `INSERT INTO jc_update_requests
+           (job_card_id, jc_number, requested_by_user_id, requested_by_name, requested_by_role, message, status)
+         VALUES (?, ?, ?, ?, ?, ?, 'open')`,
+        [jobCardId, jcNumber, req.user?.user_id ?? null, req.user?.full_name ?? null, req.user?.role ?? null, message]
+      );
+
+      // Notify the advisor / supervisors that a request is waiting.
+      try {
+        await dbPool.execute(
+          `INSERT INTO alert_logs (jc_id, role, type, message, created_at, is_read)
+           VALUES (?, 'advisor', 'update_request', ?, NOW(), false)`,
+          [jobCardId, `Update request raised by ${req.user?.full_name || "a staff member"}`]
+        );
+      } catch { /* alert best-effort */ }
+
+      res.status(201).json({ ok: true, id: result?.insertId });
+    } catch (err: any) {
+      console.error("[UPDATE-REQUEST] create failed:", err.message);
+      res.status(500).json({ error: "Failed to raise update request." });
+    }
+  });
+
+  // List update requests for a single job card.
+  app.get("/api/job-cards/:id/update-requests", authenticateToken, async (req: any, res: any) => {
+    try {
+      const jobCardId = parseInt(req.params.id);
+      const [rows]: any = await dbPool.execute(
+        `SELECT * FROM jc_update_requests WHERE job_card_id = ? ORDER BY created_at DESC`,
+        [jobCardId]
+      );
+      res.json(rows || []);
+    } catch (err: any) {
+      console.error("[UPDATE-REQUEST] list-by-jc failed:", err.message);
+      res.status(500).json({ error: "Failed to load update requests." });
+    }
+  });
+
+  // Inbox: open update requests visible to the caller.
+  // Managers (Group 1) see all; everyone else sees requests they raised OR on JCs they own.
+  app.get("/api/update-requests", authenticateToken, async (req: any, res: any) => {
+    try {
+      const status = String(req.query?.status || "open");
+      const [rows]: any = await dbPool.execute(
+        `SELECT * FROM jc_update_requests WHERE status = ? ORDER BY created_at DESC LIMIT 500`,
+        [status]
+      );
+      const role = req.user?.role;
+      const isManager = GROUP1_FULL_CONTROL.includes(role);
+      let visible = rows || [];
+      if (!isManager) {
+        const me: RelevanceUser = {
+          role, user_id: req.user?.user_id, employee_id: req.user?.employee_id, full_name: req.user?.full_name,
+        };
+        const jcById = new Map((getDB().jobCards || []).map((j: any) => [Number(j.job_id), j]));
+        visible = visible.filter((r: any) =>
+          Number(r.requested_by_user_id) === Number(req.user?.user_id) ||
+          isOwnedBy(jcById.get(Number(r.job_card_id)), me)
+        );
+      }
+      res.json(visible);
+    } catch (err: any) {
+      console.error("[UPDATE-REQUEST] inbox failed:", err.message);
+      res.status(500).json({ error: "Failed to load update requests." });
+    }
+  });
+
+  // Resolve an update request (owner of the JC or a manager). Sets approved/rejected/applied.
+  app.post("/api/update-requests/:reqId/resolve", authenticateToken, async (req: any, res: any) => {
+    try {
+      const reqId = parseInt(req.params.reqId);
+      const status = String(req.body?.status || "").toLowerCase();
+      const note = String(req.body?.note || "").trim() || null;
+      if (!["approved", "rejected", "applied"].includes(status)) {
+        return res.status(400).json({ error: "status must be approved, rejected or applied." });
+      }
+      const [rows]: any = await dbPool.execute(`SELECT * FROM jc_update_requests WHERE id = ?`, [reqId]);
+      const reqRow = (rows || [])[0];
+      if (!reqRow) return res.status(404).json({ error: "Update request not found." });
+
+      const role = req.user?.role;
+      const isManager = GROUP1_FULL_CONTROL.includes(role);
+      const me: RelevanceUser = {
+        role, user_id: req.user?.user_id, employee_id: req.user?.employee_id, full_name: req.user?.full_name,
+      };
+      const jc = (getDB().jobCards || []).find((j: any) => Number(j.job_id) === Number(reqRow.job_card_id));
+      if (!isManager && !isOwnedBy(jc, me)) {
+        return res.status(403).json({ error: "Only the owning advisor or a manager can resolve this request." });
+      }
+
+      await dbPool.execute(
+        `UPDATE jc_update_requests
+            SET status = ?, resolution_note = ?, resolved_by_user_id = ?, resolved_by_name = ?, resolved_at = NOW()
+          WHERE id = ?`,
+        [status, note, req.user?.user_id ?? null, req.user?.full_name ?? null, reqId]
+      );
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("[UPDATE-REQUEST] resolve failed:", err.message);
+      res.status(500).json({ error: "Failed to resolve update request." });
     }
   });
 
@@ -5680,9 +5839,20 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // --- ATTENDANCE MONTHLY HISTORY ENDPOINT ---
-  app.get("/api/workforce/attendance/history", (req, res) => {
+  app.get("/api/workforce/attendance/history", authenticateToken, (req: any, res) => {
     const db = getDB();
-    const { employee_id, month } = req.query;
+    let { employee_id } = req.query as any;
+    const { month } = req.query as any;
+
+    // Force self for non-managers (IDOR fix): a non-manager may only read their OWN
+    // attendance, whatever employee_id they pass. Managers (Group 1) may query anyone.
+    const isManager = GROUP1_FULL_CONTROL.includes(req.user?.role);
+    if (!isManager) {
+      if (req.user?.employee_id == null) {
+        return res.status(403).json({ error: "No employee record linked to your account." });
+      }
+      employee_id = String(req.user.employee_id);
+    }
     if (!employee_id) {
       return res.status(400).json({ error: "employee_id query parameter is required" });
     }
@@ -5702,6 +5872,77 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     });
 
     res.json(enriched);
+  });
+
+  // ============================================================================
+  // "MY RESPONSIBILITY" — PHASE 3: My Workspace (self-scoped, IDOR-proof).
+  // Everything is derived from req.user only — no client-supplied id is trusted.
+  // Powers the personal tab: My Jobs / Pending / Breaches / Performance /
+  // Incentives / Attendance.
+  // ============================================================================
+  app.get("/api/my/summary", authenticateToken, (req: any, res: any) => {
+    try {
+      const db = getDB();
+      const me: RelevanceUser = {
+        role: req.user?.role,
+        user_id: req.user?.user_id,
+        employee_id: req.user?.employee_id,
+        full_name: req.user?.full_name,
+      };
+
+      // Match my employee record (by employee_id, else by name) — self only.
+      const emp = (db.employees || []).find((e: any) =>
+        (me.employee_id != null && Number(e.employee_id) === Number(me.employee_id)) ||
+        (me.full_name && String(e.full_name || "").toLowerCase() === String(me.full_name).toLowerCase())
+      ) || null;
+      const empId = emp?.employee_id ?? me.employee_id ?? null;
+
+      // My job cards = ones I own OR that currently sit in my stage (personal view,
+      // independent of manager full-view — this is "mine", not "everything").
+      const myJobs = (db.jobCards || []).filter((jc: any) => isOwnedBy(jc, me) || isInMyStage(jc, me.role));
+
+      const isClosed = (s: string) => ["completed", "invoiced", "cancelled"].includes(String(s || "").toLowerCase());
+      const pending = myJobs.filter((jc: any) => !isClosed(jc.status));
+
+      // Breach = still open AND promised delivery time has passed (best-effort over
+      // whichever field the card carries).
+      const now = Date.now();
+      const breaches = pending.filter((jc: any) => {
+        const due = jc.promised_delivery || jc.promised_delivery_date || jc.expected_delivery || jc.due_date;
+        if (!due) return false;
+        const t = new Date(due).getTime();
+        return !isNaN(t) && t < now;
+      });
+
+      // My attendance this month (self only).
+      const ym = new Date().toISOString().slice(0, 7); // YYYY-MM
+      const attendance = empId == null ? [] : (db.workforceAttendance || []).filter((r: any) =>
+        Number(r.employee_id) === Number(empId) && String(r.shift_date || "").startsWith(ym)
+      );
+
+      res.json({
+        me: { user_id: me.user_id, employee_id: empId, full_name: me.full_name, role: me.role },
+        performance: emp ? {
+          allocated_revenue: emp.allocated_revenue ?? 0,
+          paid_percentage: emp.paid_percentage ?? emp.paid_pct ?? null,
+          tml_claim_percentage: emp.tml_claim_percentage ?? emp.tml_claim_pct ?? null,
+          incentive: emp.incentive ?? emp.incentive_amount ?? null,
+          score: emp.score ?? emp.performance_score ?? null,
+          designation: emp.designation ?? emp.role ?? null,
+        } : null,
+        counts: {
+          total: myJobs.length,
+          pending: pending.length,
+          breaches: breaches.length,
+          attendance_days: attendance.length,
+        },
+        jobs: myJobs,
+        attendance,
+      });
+    } catch (err: any) {
+      console.error("[MY-SUMMARY] failed:", err.message);
+      res.status(500).json({ error: "Failed to load your workspace." });
+    }
   });
 
   // --- CSV TEMPLATES DATA IMPORTER ENDPOINTS ---
