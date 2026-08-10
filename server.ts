@@ -15,7 +15,7 @@ import rateLimit from "express-rate-limit";
 import { pool as dbPool } from "./src/db/index.ts";
 import { startQrtGmailIngestor, runQrtIngestOnce, getQrtPublicConfig, updateQrtSettings } from "./src/integrations/qrt-gmail-ingestor.ts";
 import { ingestAlert as ingestCctvAlert, listAlerts as listCctvAlerts, acknowledgeAlert as ackCctvAlert, listCameras as listCctvCameras, upsertCamera as upsertCctvCamera, deleteCamera as deleteCctvCamera, getCctvConfig, updateCctvConfig, countOpenAlerts as countOpenCctvAlerts } from "./src/integrations/cctv-analytics.ts";
-import { filterViewableJobCards, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
+import { filterViewableJobCards, canEditJobCard, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
 import { DEFAULT_CIRCULARS } from "./src/lib/circularsData.ts";
 import { getReworkHistoryForTechnician } from "./src/engines/rework-tracking-service.ts";
 import { validateOvertimeRequest } from "./src/engines/overtime-rules.ts";
@@ -1113,6 +1113,30 @@ async function startServer() {
       }
       next();
     };
+  };
+
+  // "MY RESPONSIBILITY" phase 2 — action guard for job-card mutations.
+  // Non-breaking: if no/invalid token, passes through (legacy). If an authenticated
+  // user is identified and is NOT allowed to edit the target job card (per the
+  // relevance rules), returns 403. Managers/Group-1 always pass; dkam never edits.
+  const jobCardEditGuard = (req: any, res: any, next: any) => {
+    let user: RelevanceUser | undefined = req.user;
+    if (!user) {
+      try {
+        const token = (req.headers["authorization"] || "").split(" ")[1];
+        if (token) {
+          const d = jwt.verify(token, JWT_SECRET) as any;
+          user = { role: d.role, user_id: d.user_id, employee_id: d.employee_id, full_name: d.full_name };
+        }
+      } catch { /* invalid token → legacy passthrough */ }
+    }
+    if (!user || !user.role) return next(); // unauthenticated → legacy behaviour
+    const id = parseInt(req.params.id);
+    const jc = (getDB().jobCards || []).find((j: any) => Number(j.job_id) === id);
+    if (jc && !canEditJobCard(jc, user)) {
+      return res.status(403).json({ error: "You can only act on job cards assigned or related to you." });
+    }
+    next();
   };
 
   // Helper middleware to restrict access based on dynamically loaded DB permissions (single source of truth)
@@ -3865,7 +3889,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     });
   });
 
-  app.put("/api/job-cards/:id", authenticateToken, async (req: any, res: any) => {
+  app.put("/api/job-cards/:id", authenticateToken, jobCardEditGuard, async (req: any, res: any) => {
     const db = getDB();
     const id = parseInt(req.params.id);
     const index = db.jobCards.findIndex((j: JobCard) => j.job_id === id);
@@ -3995,7 +4019,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // Assign technicians to a job
-  app.post("/api/job-cards/:id/assign", (req, res) => {
+  app.post("/api/job-cards/:id/assign", jobCardEditGuard, (req, res) => {
     const db = getDB();
     const id = parseInt(req.params.id);
     const allocations: { employee_id: number; tech_role: string }[] = req.body.allocations;
@@ -4018,7 +4042,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // Calculate and save dynamic revenue splits!
-  app.post("/api/job-cards/:id/revenue", (req, res) => {
+  app.post("/api/job-cards/:id/revenue", jobCardEditGuard, (req, res) => {
     const db = getDB();
     const jobId = parseInt(req.params.id);
     const { labour_amount, parts_amount } = req.body;
@@ -7535,7 +7559,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // --- START REPAIR AND REWORK ROUTES ---
-  app.post("/api/job-cards/:id/start-repair", async (req, res) => {
+  app.post("/api/job-cards/:id/start-repair", jobCardEditGuard, async (req, res) => {
     try {
       const { id } = req.params;
       const { started_by } = req.body;
@@ -7599,7 +7623,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // Mark Job Card as Billed
-  app.post("/api/job-cards/:id/bill", express.json(), async (req, res) => {
+  app.post("/api/job-cards/:id/bill", jobCardEditGuard, express.json(), async (req, res) => {
     const { id } = req.params;
     const { invoice_no } = req.body;
 
@@ -8530,7 +8554,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   // --- PIPELINE STATUS ENFORCEMENT ENDPOINTS ---
 
   // POST /api/job-cards/:id/estimate-approval
-  app.post("/api/job-cards/:id/estimate-approval", express.json(), async (req, res) => {
+  app.post("/api/job-cards/:id/estimate-approval", jobCardEditGuard, express.json(), async (req, res) => {
     try {
       const { id } = req.params;
       const { status, approved_by, notes } = req.body;
@@ -8614,7 +8638,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // POST /api/job-cards/:id/qc-check
-  app.post("/api/job-cards/:id/qc-check", express.json(), async (req, res) => {
+  app.post("/api/job-cards/:id/qc-check", jobCardEditGuard, express.json(), async (req, res) => {
     try {
       const { id } = req.params;
       const { qc_status, checked_by, fail_reason, checklist } = req.body;
@@ -8747,7 +8771,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // POST /api/job-cards/:id/pre-invoice
-  app.post("/api/job-cards/:id/pre-invoice", express.json(), async (req, res) => {
+  app.post("/api/job-cards/:id/pre-invoice", jobCardEditGuard, express.json(), async (req, res) => {
     try {
       const { id } = req.params;
       const { sent_to, sent_via, invoice_no } = req.body;
@@ -8802,7 +8826,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // POST /api/job-cards/:id/manager-approve
-  app.post("/api/job-cards/:id/manager-approve", express.json(), async (req, res) => {
+  app.post("/api/job-cards/:id/manager-approve", jobCardEditGuard, express.json(), async (req, res) => {
     try {
       const { id } = req.params;
       const { approved_by, notes } = req.body;
