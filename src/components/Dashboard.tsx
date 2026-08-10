@@ -51,6 +51,7 @@ interface DashboardProps {
   projectedRevenue?: number;
   generatedRevenue?: number;
   aiModeEnabled?: boolean;
+  canManageWorkforce?: boolean;
 }
 
 // Curated Luxury Color Palette
@@ -112,7 +113,8 @@ export default function Dashboard({
   onTabChange,
   projectedRevenue = 0,
   generatedRevenue = 0,
-  aiModeEnabled = true
+  aiModeEnabled = true,
+  canManageWorkforce = false
 }: DashboardProps) {
   const [activeSubView, setActiveSubView] = useState<"overview" | "workshop" | "workforce">("overview");
   const [warrantySearch, setWarrantySearch] = useState("");
@@ -215,16 +217,18 @@ export default function Dashboard({
             >
               Live Workshop ({bays.length} Bays)
             </button>
-            <button 
-              onClick={() => setActiveSubView("workforce")}
-              className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border ${
-                activeSubView === "workforce" 
-                  ? "bg-gradient-to-r from-[#2563EB] to-[#06B6D4] text-white border-transparent shadow-lg shadow-[#2563EB]/25" 
-                  : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              Team Roster ({employees.length})
-            </button>
+            {canManageWorkforce && (
+              <button
+                onClick={() => setActiveSubView("workforce")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border ${
+                  activeSubView === "workforce"
+                    ? "bg-gradient-to-r from-[#2563EB] to-[#06B6D4] text-white border-transparent shadow-lg shadow-[#2563EB]/25"
+                    : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Team Roster ({employees.length})
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -656,7 +660,7 @@ export default function Dashboard({
         </div>
       )}
 
-      {activeSubView === "workforce" && (
+      {activeSubView === "workforce" && canManageWorkforce && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>

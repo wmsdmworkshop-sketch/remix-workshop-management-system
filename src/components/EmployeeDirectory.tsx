@@ -225,9 +225,12 @@ export default function EmployeeDirectory({
     setIsPurging(true);
     setPurgeResult(null);
     try {
+      const token = typeof localStorage !== "undefined" ? localStorage.getItem("wms_token") : null;
       const res = await fetch("/api/employees/purge-mistakes", {
         method: "POST",
-        headers: { "Content-Type": "application/json" }
+        headers: token
+          ? { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }
+          : { "Content-Type": "application/json" }
       });
       const data = await res.json();
       if (data.success) {

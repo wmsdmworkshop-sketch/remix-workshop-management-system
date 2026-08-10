@@ -2329,7 +2329,11 @@ async function startServer() {
     }
   });
 
-  app.post("/api/employees", (req, res) => {
+  // Workforce management (create/update/delete employees) is restricted to
+  // admins/managers — never reception, technicians, billing, etc.
+  const WORKFORCE_ADMIN_ROLES = ["admin", "developer", "workshop_manager", "service_manager", "gm_service", "dealer_principal"];
+
+  app.post("/api/employees", authenticateToken, requireRoles(WORKFORCE_ADMIN_ROLES), (req: any, res) => {
     const db = getDB();
     const newEmp: Employee = req.body;
     const nextId = db.employees.reduce((max: number, e: Employee) => Math.max(max, e.employee_id), 0) + 1;
@@ -2345,7 +2349,7 @@ async function startServer() {
     res.json(newEmp);
   });
 
-  app.post("/api/employees/bulk", (req, res) => {
+  app.post("/api/employees/bulk", authenticateToken, requireRoles(WORKFORCE_ADMIN_ROLES), (req: any, res) => {
     const db = getDB();
     const employeesList = req.body.employees || [];
     const added: Employee[] = [];
@@ -2431,7 +2435,7 @@ async function startServer() {
     res.json({ success: true, updatedCount, addedCount, skippedCount, total: db.employees.length });
   });
 
-  app.put("/api/employees/:id", async (req, res) => {
+  app.put("/api/employees/:id", authenticateToken, requireRoles(WORKFORCE_ADMIN_ROLES), async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       // Persist against the MySQL employees table (single source of truth) — the
@@ -2450,7 +2454,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/employees/:id", async (req, res) => {
+  app.delete("/api/employees/:id", authenticateToken, requireRoles(WORKFORCE_ADMIN_ROLES), async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
       const ok = await EmployeeIdentityService.deleteEmployee(id);
@@ -2461,7 +2465,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/employees/purge-mistakes", (req, res) => {
+  app.post("/api/employees/purge-mistakes", authenticateToken, requireRoles(WORKFORCE_ADMIN_ROLES), (_req: any, res) => {
     const db = getDB();
     const beforeCount = db.employees.length;
 

@@ -1017,7 +1017,7 @@ export default function App() {
     try {
       const res = await fetch("/api/employees", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify(employeeData)
       });
       if (res.ok) fetchAllData();
@@ -1030,7 +1030,7 @@ export default function App() {
     try {
       const res = await fetch(`/api/employees/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify(employeeData)
       });
       if (res.ok) fetchAllData();
@@ -1042,7 +1042,8 @@ export default function App() {
   const handleDeleteEmployee = async (id: number) => {
     try {
       const res = await fetch(`/api/employees/${id}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: authHeaders()
       });
       if (res.ok) fetchAllData();
     } catch (e) {
@@ -1054,7 +1055,7 @@ export default function App() {
     try {
       const res = await fetch("/api/employees/bulk", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ employees: employeesList })
       });
       if (res.ok) fetchAllData();
@@ -1296,6 +1297,7 @@ export default function App() {
               projectedRevenue={projectedRevenue}
               generatedRevenue={generatedRevenue}
               aiModeEnabled={aiModeEnabled}
+              canManageWorkforce={["admin", "developer", "workshop_manager", "service_manager", "gm_service", "dealer_principal"].includes(userRole)}
             />
           )}
 
