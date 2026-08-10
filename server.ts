@@ -814,6 +814,23 @@ async function startServer() {
           UNIQUE KEY uq_job_task (job_id, task_type)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
       `);
+    // Phase A (VOS upgrade): formal invoice = billing evidence. One row per billed job;
+    // the invoice_no is the CRM/DMS invoice number, amount is the payable. The cashier
+    // queue and gate-pass eligibility are driven by this record, not raw job status.
+    await dbPool.execute(`
+        CREATE TABLE IF NOT EXISTS tbl_invoice (
+          invoice_id VARCHAR(50) PRIMARY KEY,
+          invoice_no VARCHAR(100) NOT NULL,
+          job_id VARCHAR(50) NOT NULL,
+          amount DECIMAL(12,2) DEFAULT NULL,
+          tax_amount DECIMAL(12,2) DEFAULT NULL,
+          status VARCHAR(50) NOT NULL DEFAULT 'RAISED',
+          created_by VARCHAR(50) DEFAULT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uq_inv_job (job_id),
+          INDEX idx_inv_no (invoice_no)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
     // Self-heal: older tbl_gate_pass (from the VOS migration) lacks the snapshot cols.
     for (const col of [
       "ADD COLUMN vrn VARCHAR(50) DEFAULT NULL",
@@ -3543,16 +3560,30 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   const normVrn = (s: any) => String(s ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const genId = (prefix: string) => `${prefix}-${Date.now().toString(36).toUpperCase()}${Math.floor(100 + Math.random() * 900)}`;
 
-  // Cashier queue: job cards that are billed/invoiced and don't yet have an active gate pass.
+  // Cashier queue (invoice-driven, Phase A): jobs with a raised invoice (= billing
+  // evidence) and no active gate pass yet. Enriched with live job-card + payment state.
   app.get("/api/gate-out/cashier-queue", authenticateToken, async (_req: any, res: any) => {
     try {
-      const [passes]: any = await dbPool.execute(`SELECT job_id FROM tbl_gate_pass WHERE status <> 'REVOKED'`);
-      const withPass = new Set((passes || []).map((p: any) => String(p.job_id)));
-      const eligible = (getDB().jobCards || [])
-        .filter((j: any) => ["invoiced", "completed"].includes(String(j.status || "").toLowerCase()))
-        .filter((j: any) => !withPass.has(String(j.job_id)))
-        .map((j: any) => ({ job_id: j.job_id, job_card_no: j.job_card_no, vrn: j.vrn, customer_name: j.customer_name, vehicle_model: j.vehicle_model, status: j.status }));
-      res.json(eligible);
+      const [invoices]: any = await dbPool.execute(`
+        SELECT i.job_id, i.invoice_no, i.amount, i.tax_amount,
+               (SELECT payment_mode FROM tbl_payments p WHERE p.job_id = i.job_id AND p.status='COMPLETED' LIMIT 1) AS payment_mode,
+               (SELECT status FROM tbl_credit_requests cr WHERE cr.job_id = i.job_id ORDER BY requested_at DESC LIMIT 1) AS credit_status,
+               tc.owner_id AS claimed_by
+        FROM tbl_invoice i
+        LEFT JOIN tbl_gate_pass gp ON gp.job_id = i.job_id AND gp.status <> 'REVOKED'
+        LEFT JOIN tbl_task_claims tc ON tc.job_id = i.job_id AND tc.task_type = 'CASHIER'
+        WHERE gp.gate_pass_id IS NULL AND i.status <> 'CANCELLED'`);
+      const jcById = new Map((getDB().jobCards || []).map((j: any) => [Number(j.job_id), j]));
+      const rows = (invoices || []).map((inv: any) => {
+        const j = jcById.get(Number(inv.job_id)) || {};
+        return {
+          job_id: Number(inv.job_id), job_card_no: j.job_card_no, vrn: j.vrn,
+          customer_name: j.customer_name, vehicle_model: j.vehicle_model, status: j.status,
+          invoice_no: inv.invoice_no, invoice_amount: inv.amount, tax_amount: inv.tax_amount,
+          payment_mode: inv.payment_mode, credit_status: inv.credit_status, claimed_by: inv.claimed_by,
+        };
+      });
+      res.json(rows);
     } catch (err: any) {
       console.error("[GATE-OUT] cashier-queue:", err.message);
       res.status(500).json({ error: "Failed to load cashier queue." });
@@ -3569,18 +3600,26 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       const jc = (getDB().jobCards || []).find((j: any) => Number(j.job_id) === jobId);
       if (!jc) return res.status(404).json({ error: "Job card not found." });
 
-      // Eligibility: a recorded payment, or billed status, or an approved credit /
-      // manual override. Mirrors the engine's release-basis logic.
+      // Eligibility (Phase A, invoice-aware): needs a raised invoice (billing evidence),
+      // plus a release basis — a recorded payment, an approved credit, or a manual override.
+      const [inv]: any = await dbPool.execute(`SELECT invoice_id FROM tbl_invoice WHERE job_id = ? AND status <> 'CANCELLED' LIMIT 1`, [String(jobId)]);
       const [paid]: any = await dbPool.execute(`SELECT payment_id FROM tbl_payments WHERE job_id = ? AND status = 'COMPLETED' LIMIT 1`, [String(jobId)]);
       const [creditOk]: any = await dbPool.execute(`SELECT credit_request_id FROM tbl_credit_requests WHERE job_id = ? AND status = 'GM_APPROVED' LIMIT 1`, [String(jobId)]);
+      const hasInvoice = (inv || []).length > 0;
       const hasPayment = (paid || []).length > 0;
       const hasCredit = (creditOk || []).length > 0;
-      const billed = ["invoiced", "completed"].includes(String(jc.status || "").toLowerCase());
-      let basis = String(releaseBasis || "").toUpperCase();
-      if (!basis) basis = hasPayment ? "PAID" : hasCredit ? "CREDIT_APPROVED" : billed ? "PAID" : "";
-      if (!hasPayment && !hasCredit && !billed && basis !== "MANUAL_GATE_PASS") {
-        return res.status(400).json({ error: "GATE_PASS_NOT_ELIGIBLE: no payment/credit recorded and job card is not billed." });
+      // Fallback for jobs invoiced before Phase A existed: treat billed status as invoice evidence.
+      const billed = hasInvoice || ["invoiced", "completed"].includes(String(jc.status || "").toLowerCase());
+      if (!billed) {
+        return res.status(400).json({ error: "GATE_PASS_NOT_ELIGIBLE: no invoice raised for this job yet." });
       }
+      // Release basis is DERIVED from real records (client can't claim PAID). A manager may
+      // force a manual exception by passing releaseBasis = MANUAL_GATE_PASS.
+      let basis: string;
+      if (hasPayment) basis = "PAID";
+      else if (hasCredit) basis = "CREDIT_APPROVED";
+      else if (String(releaseBasis || "").toUpperCase() === "MANUAL_GATE_PASS") basis = "MANUAL_GATE_PASS";
+      else return res.status(400).json({ error: "GATE_PASS_NOT_ELIGIBLE: record a payment, get credit approved, or issue a manual override." });
       // A pass with a mandatory reference for non-cash modes (mirror engine rule).
       if (paymentMode && ["UPI", "NEFT", "RTGS", "IMPS", "CARD", "CHEQUE"].includes(String(paymentMode).toUpperCase()) && !String(referenceNumber || "").trim()) {
         return res.status(400).json({ error: `PAYMENT_REFERENCE_REQUIRED: reference is mandatory for ${paymentMode}.` });
@@ -3825,11 +3864,15 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       const [passes]: any = await dbPool.execute(`SELECT job_id, gate_pass_id, status FROM tbl_gate_pass WHERE job_id IN (${ph})`, ids);
       const [outs]: any = await dbPool.execute(`SELECT job_id, gate_out_time FROM tbl_gate_out WHERE job_id IN (${ph})`, ids);
       const [pays]: any = await dbPool.execute(`SELECT job_id, payment_mode FROM tbl_payments WHERE status='COMPLETED' AND job_id IN (${ph})`, ids);
+      const [invs]: any = await dbPool.execute(`SELECT job_id, invoice_no, amount FROM tbl_invoice WHERE job_id IN (${ph})`, ids);
       const passBy = new Map((passes || []).map((p: any) => [String(p.job_id), p]));
       const outBy = new Map((outs || []).map((o: any) => [String(o.job_id), o]));
       const payBy = new Map((pays || []).map((p: any) => [String(p.job_id), p]));
+      const invBy = new Map((invs || []).map((i: any) => [String(i.job_id), i]));
       res.json(myJobs.map((j: any) => ({
         job_id: j.job_id, job_card_no: j.job_card_no, vrn: j.vrn, customer_name: j.customer_name,
+        invoice_no: invBy.get(String(j.job_id))?.invoice_no || null,
+        invoice_amount: invBy.get(String(j.job_id))?.amount ?? null,
         payment_mode: payBy.get(String(j.job_id))?.payment_mode || null,
         gate_pass_status: passBy.get(String(j.job_id))?.status || null,
         gate_out_time: outBy.get(String(j.job_id))?.gate_out_time || null,
@@ -8365,6 +8408,23 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         }
 
         saveDB(cachedDB);
+      }
+
+      // Phase A: record the formal invoice (= billing evidence). This is what puts the
+      // job in the cashier queue and makes a gate pass eligible.
+      try {
+        const invAmount = req.body?.invoice_amount != null ? Number(req.body.invoice_amount)
+          : (index !== -1 ? Number(cachedDB.jobCards[index].total_amount ?? cachedDB.jobCards[index].grand_total ?? cachedDB.jobCards[index].net_amount) : NaN);
+        const invTax = req.body?.tax_amount != null ? Number(req.body.tax_amount) : null;
+        await dbPool.execute(
+          `INSERT INTO tbl_invoice (invoice_id, invoice_no, job_id, amount, tax_amount, status, created_by)
+           VALUES (?, ?, ?, ?, ?, 'RAISED', ?)
+           ON DUPLICATE KEY UPDATE invoice_no = VALUES(invoice_no), amount = VALUES(amount), tax_amount = VALUES(tax_amount)`,
+          [`INV-${Date.now().toString(36).toUpperCase()}${Math.floor(100 + Math.random() * 900)}`, invoice_no, String(jobId),
+           Number.isFinite(invAmount) ? invAmount : null, invTax, String((req as any).user?.user_id ?? "")]
+        );
+      } catch (invErr: any) {
+        console.error('[INVOICE] record failed:', invErr.message);
       }
 
       // Alert 6: Gate pass issued → notify security
