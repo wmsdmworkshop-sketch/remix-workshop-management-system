@@ -15,6 +15,7 @@ import rateLimit from "express-rate-limit";
 import { pool as dbPool } from "./src/db/index.ts";
 import { startQrtGmailIngestor, runQrtIngestOnce, getQrtPublicConfig, updateQrtSettings } from "./src/integrations/qrt-gmail-ingestor.ts";
 import { ingestAlert as ingestCctvAlert, listAlerts as listCctvAlerts, acknowledgeAlert as ackCctvAlert, listCameras as listCctvCameras, upsertCamera as upsertCctvCamera, deleteCamera as deleteCctvCamera, getCctvConfig, updateCctvConfig, countOpenAlerts as countOpenCctvAlerts } from "./src/integrations/cctv-analytics.ts";
+import { filterViewableJobCards, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
 import { DEFAULT_CIRCULARS } from "./src/lib/circularsData.ts";
 import { getReworkHistoryForTechnician } from "./src/engines/rework-tracking-service.ts";
 import { validateOvertimeRequest } from "./src/engines/overtime-rules.ts";
@@ -3189,9 +3190,25 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       console.error("Error querying generated revenue:", e);
     }
 
-    // Return all job cards — frontend handles filtering by status/date.
-    // Historical records (DMS-imported, completed) are part of the ledger.
-    const filteredJobs = db.jobCards;
+    // "MY RESPONSIBILITY" read-scoping: each staff member sees only the job cards
+    // they own or are currently responsible for. Supervisors/managers see all.
+    // Optional token decode — if no/invalid token, fall back to legacy (all).
+    let requestUser: RelevanceUser | null = null;
+    try {
+      const authHeader = req.headers["authorization"];
+      const token = authHeader && authHeader.split(" ")[1];
+      if (token) {
+        const decoded = jwt.verify(token, JWT_SECRET) as any;
+        requestUser = {
+          role: decoded.role,
+          user_id: decoded.user_id,
+          employee_id: decoded.employee_id,
+          full_name: decoded.full_name,
+        };
+      }
+    } catch { /* invalid/expired token → no scoping (legacy behaviour) */ }
+
+    const filteredJobs = requestUser ? filterViewableJobCards(db.jobCards, requestUser) : db.jobCards;
 
     res.json({
       jobCards: filteredJobs,
