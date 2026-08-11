@@ -94,6 +94,7 @@ import {
 // Import modular panels
 import Dashboard from "./components/Dashboard";
 import JobCardManager from "./components/JobCardManager";
+import { getStaffToken, setStaffToken, clearStaffToken } from "./lib/authToken";
 import EmployeeDirectory from "./components/EmployeeDirectory";
 import ProductivityDashboard from "./components/ProductivityDashboard";
 import ActiveBayTatMonitor from "./components/ActiveBayTatMonitor";
@@ -155,7 +156,7 @@ export default function App() {
   });
   const [token, setToken] = useState<string | null>(() => {
     try {
-      return localStorage.getItem("wms_token");
+      return getStaffToken() || null;
     } catch {
       return null;
     }
@@ -782,7 +783,7 @@ export default function App() {
   // Auth initiation on load
   useEffect(() => {
     const savedUser = localStorage.getItem("wms_user");
-    const savedToken = localStorage.getItem("wms_token");
+    const savedToken = getStaffToken();
     if (savedUser && savedToken) {
       fetchAllData(savedToken);
     }
@@ -844,7 +845,7 @@ export default function App() {
 
   const handleLogout = async () => {
     localStorage.removeItem("wms_user");
-    localStorage.removeItem("wms_token");
+    clearStaffToken();
     setUser(null);
     setToken(null);
     setNeedsAuth(true);
@@ -1237,7 +1238,7 @@ export default function App() {
       <AuthScreen 
         onAuthSuccess={(currentUser, currentToken) => {
           localStorage.setItem("wms_user", JSON.stringify(currentUser));
-          localStorage.setItem("wms_token", currentToken || "");
+          setStaffToken(currentToken || "");
           setUser(currentUser);
           setToken(currentToken);
           setNeedsAuth(false);

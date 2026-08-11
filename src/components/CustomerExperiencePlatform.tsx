@@ -40,6 +40,15 @@ export const CustomerExperiencePlatform: React.FC<CustomerExperiencePlatformProp
     }
   }, [jobCards, selectedJob]);
 
+  // Formats a real timestamp to a clock string. Returns null (never a fabricated
+  // time) when the value is missing/unparseable so the UI can show "Pending".
+  const fmtClock = (v?: string | null): string | null => {
+    if (!v) return null;
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+
   return (
     <div className="space-y-6 bg-[#0B1220] text-slate-100 min-h-screen p-4 md:p-6" lang="en">
       {/* Header */}
@@ -117,7 +126,7 @@ export const CustomerExperiencePlatform: React.FC<CustomerExperiencePlatformProp
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="text-slate-400">Chassis No:</span>
-                <span className="font-mono text-slate-300">{selectedJob.vin || "MAT904812NEX8812"}</span>
+                <span className="font-mono text-slate-300">{selectedJob.vin || "—"}</span>
               </div>
             </div>
           )}
@@ -134,25 +143,28 @@ export const CustomerExperiencePlatform: React.FC<CustomerExperiencePlatformProp
                     <Activity className="h-4 w-4 text-emerald-400" />
                     <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Vehicle Health Card</h3>
                   </div>
-                  <span className="text-[10px] font-black text-emerald-400 uppercase bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">Active Warranty</span>
+                  {selectedJob.warranty_status && (
+                    <span className="text-[10px] font-black text-emerald-400 uppercase bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">{selectedJob.warranty_status}</span>
+                  )}
                 </div>
-                
+
+                {/* Telemetry is shown ONLY when real values are on record — never fabricated. */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                   <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-850">
                     <span className="text-[9px] text-slate-500 font-bold uppercase block mb-1">Battery Health</span>
-                    <span className="text-xs font-black text-emerald-400">Good (94% SoH)</span>
+                    <span className="text-xs font-black text-slate-200">{selectedJob.battery_soh != null ? `${selectedJob.battery_soh}% SoH` : "—"}</span>
                   </div>
                   <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-850">
                     <span className="text-[9px] text-slate-500 font-bold uppercase block mb-1">Brakes Condition</span>
-                    <span className="text-xs font-black text-slate-200">80% remaining</span>
+                    <span className="text-xs font-black text-slate-200">{selectedJob.brakes_condition || "—"}</span>
                   </div>
                   <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-850">
                     <span className="text-[9px] text-slate-500 font-bold uppercase block mb-1">Coolant Level</span>
-                    <span className="text-xs font-black text-slate-200">Optimal</span>
+                    <span className="text-xs font-black text-slate-200">{selectedJob.coolant_level || "—"}</span>
                   </div>
                   <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-850">
                     <span className="text-[9px] text-slate-500 font-bold uppercase block mb-1">OBD Diagnostics</span>
-                    <span className="text-xs font-black text-emerald-400">0 Active DTCs</span>
+                    <span className="text-xs font-black text-slate-200">{selectedJob.active_dtc_count != null ? `${selectedJob.active_dtc_count} Active DTCs` : "—"}</span>
                   </div>
                 </div>
               </div>
@@ -164,16 +176,27 @@ export const CustomerExperiencePlatform: React.FC<CustomerExperiencePlatformProp
                     <Clock className="h-4 w-4 text-emerald-400 animate-pulse" />
                     <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Active Service Timeline</h3>
                   </div>
-                  <span className="text-[10px] text-slate-400 font-bold">Estimated TAT: {selectedJob.estimated_tat || 45} mins</span>
+                  <span className="text-[10px] text-slate-400 font-bold">Estimated TAT: {selectedJob.estimated_tat ? `${selectedJob.estimated_tat} mins` : "—"}</span>
                 </div>
 
                 <div className="relative pl-6 border-l-2 border-slate-800 space-y-6">
-                  {[
-                    { title: "Gate Entry Registered", time: selectedJob.time_in || "09:15 AM", desc: "Vehicle checked in for routine service.", done: true },
-                    { title: "Technical Diagnostics Complete", time: "09:45 AM", desc: "High voltage isolation scan and routine inspections complete.", done: true },
-                    { title: "Work in Progress", time: "Active Now", desc: "Technician Sanjay Patel is carrying out components servicing.", done: selectedJob.status !== "Waiting", active: true },
-                    { title: "Quality Control Assessment", time: "Pending", desc: "Dual inspection check by Service Quality Supervisor.", done: false }
-                  ].map((step, idx) => (
+                  {(() => {
+                    // Drive the customer timeline from REAL job/workflow data only.
+                    // No fabricated diagnostics/technician/completion timestamps —
+                    // show "Pending"/"Awaiting update" when a real time is absent.
+                    const wfState = String(selectedJob.current_workflow_state || "").toUpperCase();
+                    const gateTime = fmtClock(selectedJob.started_at) || (selectedJob.time_in ? String(selectedJob.time_in) : null);
+                    const workStarted = !!selectedJob.started_at || ["Active", "Rework"].includes(selectedJob.status);
+                    const completed = !!selectedJob.completed_at || ["Completed", "Invoiced"].includes(selectedJob.status);
+                    const inDiagnostics = wfState.includes("DIAGNOS");
+                    const inQc = wfState.includes("QC") || wfState === "FINAL_REVIEW";
+                    return [
+                      { title: "Gate Entry Registered", time: gateTime || "Awaiting update", desc: "Vehicle checked in for service.", done: !!gateTime },
+                      { title: "Technical Diagnostics", time: "Awaiting update", desc: "Inspection and diagnostics.", done: workStarted || completed, active: inDiagnostics },
+                      { title: "Work in Progress", time: fmtClock(selectedJob.started_at) || (workStarted ? "In progress" : "Not started"), desc: selectedJob.technician_name ? `Technician ${selectedJob.technician_name} is carrying out servicing.` : "Servicing in progress.", done: completed, active: workStarted && !completed },
+                      { title: "Quality Control Assessment", time: fmtClock(selectedJob.completed_at) || "Pending", desc: "Quality inspection.", done: completed, active: inQc && !completed }
+                    ];
+                  })().map((step, idx) => (
                     <div key={idx} className="relative">
                       <span className={`absolute -left-[31px] top-1 flex h-4 w-4 items-center justify-center rounded-full border ${
                         step.active ? "bg-blue-600 border-blue-400 animate-pulse" :
@@ -202,18 +225,19 @@ export const CustomerExperiencePlatform: React.FC<CustomerExperiencePlatformProp
                   <Shield className="h-4 w-4 text-emerald-400" />
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Warranty Coverage</h3>
                 </div>
+                {/* Warranty details shown ONLY from real records — never fabricated. */}
                 <div className="space-y-3 text-xs">
                   <div className="flex justify-between border-b border-slate-850 pb-2">
                     <span className="text-slate-500">Coverage Class</span>
-                    <span className="font-bold text-slate-200">Extended EV Battery Warranty</span>
+                    <span className="font-bold text-slate-200">{selectedJob.warranty_class || "—"}</span>
                   </div>
                   <div className="flex justify-between border-b border-slate-850 pb-2">
                     <span className="text-slate-500">Clearance Threshold</span>
-                    <span className="font-bold text-slate-200">8 Years / 1,500,00 KM</span>
+                    <span className="font-bold text-slate-200">{selectedJob.warranty_threshold || "—"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-500">Current Status</span>
-                    <span className="font-bold text-emerald-400">100% Eligible (No deviations)</span>
+                    <span className="font-bold text-emerald-400">{selectedJob.warranty_status || "—"}</span>
                   </div>
                 </div>
               </div>
@@ -223,13 +247,19 @@ export const CustomerExperiencePlatform: React.FC<CustomerExperiencePlatformProp
                   <Bell className="h-4 w-4 text-amber-500" />
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Eligible Service Campaigns</h3>
                 </div>
-                <div className="bg-slate-950/40 p-4 rounded-xl border border-amber-500/10 flex items-start gap-3">
-                  <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="text-xs font-bold text-slate-200 block">Electric Isolator Connector Shielding Campaign</span>
-                    <span className="text-[10px] text-slate-400 mt-1 block">Free protective shielding installation for electric and hybrid range vehicles. Added to estimate automatically at zero charge.</span>
-                  </div>
-                </div>
+                {Array.isArray(selectedJob.open_campaigns) && selectedJob.open_campaigns.length > 0 ? (
+                  selectedJob.open_campaigns.map((c: any, idx: number) => (
+                    <div key={idx} className="bg-slate-950/40 p-4 rounded-xl border border-amber-500/10 flex items-start gap-3">
+                      <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="text-xs font-bold text-slate-200 block">{typeof c === "string" ? c : (c?.title || c?.code || "Campaign")}</span>
+                        {c?.description && <span className="text-[10px] text-slate-400 mt-1 block">{c.description}</span>}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-[10px] text-slate-500">No eligible service campaigns on record.</p>
+                )}
               </div>
             </div>
           )}
@@ -238,7 +268,7 @@ export const CustomerExperiencePlatform: React.FC<CustomerExperiencePlatformProp
             <AICopilotPanel 
               role="Customer"
               context={{
-                vin: selectedJob?.vin || "MAT904812NEX8812",
+                vin: selectedJob?.vin || "",
                 makeModel: `${selectedJob?.vehicle_make || ""} ${selectedJob?.vehicle_model || ""}`,
                 status: selectedJob?.status || "In Service"
               }}

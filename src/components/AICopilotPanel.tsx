@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { 
-  Sparkles, CheckCircle2, XCircle, Star, TrendingUp, Clock, 
-  BarChart3, ShieldAlert, BookOpen, User, RefreshCw 
+import {
+  Sparkles, CheckCircle2, XCircle, Star, TrendingUp, Clock,
+  BarChart3, ShieldAlert, BookOpen, User, RefreshCw
 } from "lucide-react";
+import { getStaffUserId, staffAuthHeaders } from "../lib/authToken";
 
 interface AICopilotPanelProps {
   role: string;
@@ -72,11 +73,17 @@ export const AICopilotPanel: React.FC<AICopilotPanelProps> = ({
 
   const handleApprove = async () => {
     if (!result?.recommendationId) return;
+    // Authoritative authenticated user id. No placeholder/fallback — fail safe.
+    const userId = getStaffUserId();
+    if (userId == null) {
+      alert("You must be signed in to approve a recommendation.");
+      return;
+    }
     try {
       const res = await fetch(`/api/v2/graph/recommendations/${result.recommendationId}/approve`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: 99 }) // Mock user ID
+        headers: staffAuthHeaders(),
+        body: JSON.stringify({ userId })
       });
       if (res.ok) {
         setResult((prev: any) => ({ ...prev, status: "APPROVED" }));

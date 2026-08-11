@@ -1222,8 +1222,13 @@ export async function syncLoad(): Promise<any> {
     const [dbEmployees] = await db.query("SELECT * FROM employees") as any[];
     const [dbBays] = await db.query("SELECT * FROM bays") as any[];
 
-    // If tables are empty, perform first-time seeding from workshop_db.json
-    if (dbEmployees.length === 0 && dbBays.length === 0) {
+    // If tables are empty, perform first-time seeding from workshop_db.json.
+    // PRODUCTION: never seed from the local fixture snapshot — an empty Cloud SQL
+    // must stay empty (no stale/demo operational data). Only an explicit dev/test
+    // opt-in (non-prod + DWIP_DEV_FIXTURES=1) may seed from the local file.
+    const allowDevFixtures =
+      process.env.NODE_ENV !== "production" && process.env.DWIP_DEV_FIXTURES === "1";
+    if (allowDevFixtures && dbEmployees.length === 0 && dbBays.length === 0) {
       console.log("Cloud SQL/MySQL tables are empty. Seeding from local workshop_db.json...");
       if (fs.existsSync(DATA_FILE)) {
         const fileContent = fs.readFileSync(DATA_FILE, "utf-8");
@@ -1606,11 +1611,17 @@ export async function syncLoad(): Promise<any> {
       evidence: []
     };
   } catch (error) {
-    console.error("Database sync load failed, falling back to local file:", error);
-    if (fs.existsSync(DATA_FILE)) {
+    console.error("Database sync load failed:", error);
+    // PRODUCTION: never silently recover operational state from the local
+    // workshop_db.json snapshot (it may hold stale/test data). Only a developer
+    // who explicitly opts in (non-prod + DWIP_DEV_FIXTURES=1) may use it.
+    const allowDevFixtures =
+      process.env.NODE_ENV !== "production" && process.env.DWIP_DEV_FIXTURES === "1";
+    if (allowDevFixtures && fs.existsSync(DATA_FILE)) {
+      console.warn("[DEV] Falling back to local workshop_db.json snapshot.");
       return JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
     }
-    console.warn("Local workshop_db.json not found. Proceeding with default empty dataset.");
+    console.warn("DB unavailable. Proceeding with empty dataset (no fixture fallback).");
     return {
       employees: [],
       bays: [],

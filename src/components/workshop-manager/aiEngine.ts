@@ -67,8 +67,10 @@ export class WorkshopAIEngine {
       if (!stateConfig) return;
 
       const limit = stateConfig.slaLimitMinutes || 30;
-      // Mock elapsed duration calculation
-      const elapsed = 25; // standard elapsed check
+      // Real elapsed minutes in current state (from started_at/created_at). No mock.
+      const startRef = job.started_at || job.created_at;
+      if (!startRef) return; // cannot assess SLA without a real start time
+      const elapsed = Math.max(0, Math.round((Date.now() - new Date(startRef).getTime()) / 60000));
       const remaining = limit - elapsed;
 
       if (remaining <= 10) {
@@ -91,12 +93,14 @@ export class WorkshopAIEngine {
     const invoicedJobs = jobCards.filter(j => j.status === "Invoiced");
     const activeJobs = jobCards.filter(j => ["Active", "Rework"].includes(j.status));
 
-    const currentLabour = invoicedJobs.reduce((sum, j) => sum + (j.labor_price || 0), 0) || 120000;
-    const currentParts = invoicedJobs.reduce((sum, j) => sum + (j.parts_price || 0), 0) || 195000;
+    // ACTUAL invoiced revenue only — no fabricated fallback. 0 when nothing invoiced.
+    const currentLabour = invoicedJobs.reduce((sum, j) => sum + (j.labor_price || 0), 0);
+    const currentParts = invoicedJobs.reduce((sum, j) => sum + (j.parts_price || 0), 0);
     const currentTotal = currentLabour + currentParts;
 
-    // Extrapolate potential active jobs in pipeline
-    const pipelineEstimate = activeJobs.reduce((sum, j) => sum + (j.labor_price || 1500) + (j.parts_price || 3000), 0);
+    // Pipeline projection uses only real prices already on the active job cards
+    // (no fabricated per-job amounts). This feeds FORECAST, never ACTUAL.
+    const pipelineEstimate = activeJobs.reduce((sum, j) => sum + (j.labor_price || 0) + (j.parts_price || 0), 0);
     const forecastEod = currentTotal + (pipelineEstimate * 0.7);
     const achievement = Math.round((currentTotal / targetRevenue) * 100);
 
@@ -115,17 +119,16 @@ export class WorkshopAIEngine {
    */
   public static predictPartsDelays(jobCards: any[]): any[] {
     const pendingPartsJobs = jobCards.filter(j => j.current_workflow_state === "PARTS_PENDING" || j.status === "Waiting");
-    return pendingPartsJobs.map((j, idx) => {
-      const isEV = j.vehicle_model?.toLowerCase().includes("ev");
-      return {
-        id: `parts-${idx}`,
-        vehicle: `${j.vehicle_make} ${j.vehicle_model} (${j.vrn})`,
-        delayedPart: isEV ? "High-Voltage DC Converter Relay" : "Timing Belt Assembly",
-        expectedDelay: isEV ? "3 days" : "1 day",
-        supplier: isEV ? "Tata Motors EV Supply Hub Pune" : "Local Authorized Spares Dealer",
-        alternatePart: isEV ? "Option B OEM Battery Isolator Shield" : "Compatible Aftermarket Gasket Kit"
-      };
-    });
+    // Report ONLY real, on-record fields for parts-pending vehicles. Do NOT fabricate
+    // part names, suppliers, ETAs, or alternates — those require authoritative parts data.
+    return pendingPartsJobs.map((j, idx) => ({
+      id: `parts-${idx}`,
+      vehicle: `${j.vehicle_make || ""} ${j.vehicle_model || ""} (${j.vrn})`.trim(),
+      delayedPart: j.parts_list || "Details unavailable",
+      expectedDelay: j.pending_reason || "Unknown",
+      supplier: null,
+      alternatePart: null
+    }));
   }
 
   /**
@@ -149,41 +152,27 @@ export class WorkshopAIEngine {
         : availableTechs[0];
 
       if (matchedBay && matchedTech) {
+        // Real match on real job cards/bays/technicians. Metrics without a calibrated
+        // model are shown as "—" (not fabricated numbers). No hardcoded fallback rec.
         recs.push({
           id: `ai-rec-${index}`,
-          vehicle: `${j.vehicle_make} ${j.vehicle_model} (${j.vrn})`,
+          vehicle: `${j.vehicle_make || ""} ${j.vehicle_model || ""} (${j.vrn})`.trim(),
           suggestedBay: matchedBay.bay_name,
           suggestedTechnician: matchedTech.full_name,
-          predictedTat: isEV ? "45 mins" : "30 mins",
-          predictedEtd: "18:45 PM",
-          confidence: isEV ? "96%" : "91%",
-          financialImpact: isEV ? "₹4,500" : "₹1,800",
-          timeSaved: isEV ? "20 mins" : "10 mins",
+          predictedTat: "—",
+          predictedEtd: "—",
+          confidence: "—",
+          financialImpact: "—",
+          timeSaved: "—",
           riskLevel: isEV ? "Low" : "Medium",
-          reason: isEV 
-            ? "Specialized high-voltage isolation checklist matching Gold certified technician."
-            : "Standard mechanical diagnostic check fits empty general lift bay configuration."
+          reason: isEV
+            ? "EV job matched to an EV-capable bay and a Gold-certified technician."
+            : "Mechanical job matched to an available general bay and technician."
         });
       }
     });
 
-    // Fallbacks if no unallocated jobs are active
-    if (recs.length === 0) {
-      recs.push({
-        id: "ai-rec-fallback-1",
-        vehicle: "Tata Nexon EV (MH12TM9090)",
-        suggestedBay: "Bay 3 (EV Isolation)",
-        suggestedTechnician: "Sanjay Patel (EV Specialist)",
-        predictedTat: "45 mins",
-        predictedEtd: "19:00 PM",
-        confidence: "96%",
-        financialImpact: "₹3,500",
-        timeSaved: "15 mins",
-        riskLevel: "Low",
-        reason: "EV Isolation requires Bay 3 high-voltage equipment and Sanjay's Gold CPSC tier safety certification."
-      });
-    }
-
+    // No unallocated jobs → no recommendations (never a demo fallback rec).
     return recs;
   }
 
@@ -196,18 +185,24 @@ export class WorkshopAIEngine {
     const pendingParts = jobCards.filter(j => j.current_workflow_state === "PARTS_PENDING").length;
     const criticalCust = jobCards.filter(j => j.priority === "Express").map(j => j.customer_name);
 
+    // All values derived from real job-card state. No hardcoded vehicles, capacities,
+    // revenue gaps, or actions.
+    const expressCount = criticalCust.length;
+    const recommendedActions: string[] = [];
+    if (pendingParts > 0) recommendedActions.push(`Follow up on ${pendingParts} parts-pending vehicle(s).`);
+    if (expressCount > 0) recommendedActions.push(`Prioritise ${expressCount} express-priority vehicle(s) in the queue.`);
+
     return {
-      morningBrief: `Shift started with ${totalJcs} registered vehicles. Floor capacity is at 78% average.`,
-      bottlenecks: pendingParts > 2 ? `${pendingParts} vehicles waiting for OEM parts supply chain flash.` : "No major parts constraints today.",
-      todayRisks: "Nexon EV battery isolator check approaching SLA diagnostic limit in 10 minutes.",
-      expectedDeliveries: Math.max(1, totalJcs - completed - pendingParts),
+      morningBrief: `Shift has ${totalJcs} registered vehicle(s); ${completed} completed so far.`,
+      bottlenecks: pendingParts > 2 ? `${pendingParts} vehicles waiting for OEM parts.` : "No major parts constraints.",
+      todayRisks: expressCount > 0
+        ? `${expressCount} express-priority vehicle(s) require close monitoring.`
+        : "No specific risks flagged.",
+      expectedDeliveries: Math.max(0, totalJcs - completed - pendingParts),
       pendingParts,
       criticalCustomers: criticalCust.slice(0, 3),
-      revenueGap: 87500,
-      recommendedActions: [
-        "Reassign Bay 3 to Nexon EV to prevent SLA warning breach.",
-        "Approve carry-forward request for Harrier awaiting suspension lifter."
-      ]
+      revenueGap: 0, // no authoritative target/actual source wired here
+      recommendedActions
     };
   }
 }

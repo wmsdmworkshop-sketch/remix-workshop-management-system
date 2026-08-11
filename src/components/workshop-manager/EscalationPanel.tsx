@@ -24,12 +24,8 @@ export const EscalationPanel: React.FC<EscalationPanelProps> = React.memo(({
   isLoading = false,
   hasError = false,
 }) => {
-  const defaultEscalations = useMemo<EscalationItem[]>(() => [
-    { id: "esc-1", level: "L3", vehicle: "Tata Nexon EV (MH12TM9090)", complaint: "Diagnostic phase breached SLA by 45 minutes - no diagnostic report filed.", ageMinutes: 45, owner: "Workshop Manager", priority: "Critical" },
-    { id: "esc-2", level: "L1", vehicle: "Tata Altroz (KA03MM5678)", complaint: "Parts request delayed for filter replacement.", ageMinutes: 20, owner: "Spares Supervisor", priority: "High" }
-  ], []);
-
-  const activeEscalations = escalations.length > 0 ? escalations : defaultEscalations;
+  // Real escalations only — no demo fallback. Empty renders the empty state.
+  const activeEscalations = escalations;
 
   if (hasError) {
     return (

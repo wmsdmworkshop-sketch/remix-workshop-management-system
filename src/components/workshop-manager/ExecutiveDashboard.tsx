@@ -58,13 +58,15 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = React.memo(
     const vip = jobCards.filter(j => j.priority === "VIP").length;
     const emergency = jobCards.filter(j => j.priority === "Express").length;
     const breachCount = alertLogs.filter(a => a.alert_type === "SLA_BREACH").length;
-    const overallHealth = Math.max(70, Math.min(100, 100 - (breachCount * 5)));
+    // Real health from breaches (no fabricated 70 floor).
+    const overallHealth = Math.max(0, Math.min(100, 100 - (breachCount * 5)));
 
     return {
       totalRev, labourRev, partsRev, outstanding, received, delivered, openJcs,
       carryForward, rework, breakdowns, warranty, waitingCust, vip, emergency,
-      avgTat: jobCards.length > 0 ? "45 mins" : "0 mins",
-      avgEtaAccuracy: "98.5%",
+      // No authoritative TAT / ETA-accuracy source → "No data", not fabricated figures.
+      avgTat: "—",
+      avgEtaAccuracy: "—",
       overallHealth
     };
   }, [jobCards, alertLogs]);
@@ -80,11 +82,12 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = React.memo(
         name,
         revenue: rev,
         jcCount: data.jobCards.length,
-        productivity: "96%",
-        bayUtil: `${Math.min(100, (data.jobCards.length * 10))}%`,
-        sla: "98%",
-        ftr: "97%",
-        csi: "4.9",
+        // No authoritative per-workshop productivity/utilisation/SLA/FTR/CSI source → "No data".
+        productivity: "—",
+        bayUtil: "—",
+        sla: "—",
+        ftr: "—",
+        csi: "—",
         pendingBilling: enterpriseKPIs.outstanding,
         openJobs: openCount,
         delayedVehicles: alertLogs.length,
@@ -101,13 +104,14 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = React.memo(
   // SECTION 4: Live Enterprise Operations Map nodes (real counts only)
   const mapNodes = useMemo(() => {
     const getCount = (state: string) => jobCards.filter(j => j.current_workflow_state === state || j.status === state).length;
+    // Real per-stage queue counts. avgTime has no authoritative source → "—" (not fabricated).
     return [
-      { name: "Gate Entry", queue: getCount("GATE_IN"), waiting: 0, critical: 0, avgTime: "4m" },
-      { name: "Reception", queue: getCount("INTAKE_PENDING"), waiting: 0, critical: 0, avgTime: "10m" },
-      { name: "Advisor Diagnostics", queue: getCount("ESTIMATE_PENDING"), waiting: 0, critical: 0, avgTime: "15m" },
-      { name: "Workshop Floor", queue: getCount("WIP_START") + getCount("Active") + getCount("In Progress"), waiting: 0, critical: 0, avgTime: "30m" },
-      { name: "Quality Check", queue: getCount("QC_PENDING") + getCount("QC"), waiting: 0, critical: 0, avgTime: "12m" },
-      { name: "Billing / Cashier", queue: getCount("FINAL_REVIEW") + getCount("Ready for Billing"), waiting: 0, critical: 0, avgTime: "8m" }
+      { name: "Gate Entry", queue: getCount("GATE_IN"), waiting: 0, critical: 0, avgTime: "—" },
+      { name: "Reception", queue: getCount("INTAKE_PENDING"), waiting: 0, critical: 0, avgTime: "—" },
+      { name: "Advisor Diagnostics", queue: getCount("ESTIMATE_PENDING"), waiting: 0, critical: 0, avgTime: "—" },
+      { name: "Workshop Floor", queue: getCount("WIP_START") + getCount("Active") + getCount("In Progress"), waiting: 0, critical: 0, avgTime: "—" },
+      { name: "Quality Check", queue: getCount("QC_PENDING") + getCount("QC"), waiting: 0, critical: 0, avgTime: "—" },
+      { name: "Billing / Cashier", queue: getCount("FINAL_REVIEW") + getCount("Ready for Billing"), waiting: 0, critical: 0, avgTime: "—" }
     ];
   }, [jobCards]);
 
@@ -126,7 +130,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = React.memo(
       warrantyRisks: "Warranty claims logged and tracked",
       fleetCustomerRisks: "Commercial fleet vehicles monitored",
       recommendations: [
-        { id: "exec-rec-1", text: "Maintain current bay allocation and monitor live technician heat maps", confidence: "98%", impact: "High", timeSaved: "15 mins", expectedRev: `₹${enterpriseKPIs.totalRev.toLocaleString('en-IN')}` }
+        { id: "exec-rec-1", text: "Maintain current bay allocation and monitor live technician heat maps", confidence: "—", impact: "High", timeSaved: "—", expectedRev: `₹${enterpriseKPIs.totalRev.toLocaleString('en-IN')}` }
       ]
     };
   }, [alertLogs, enterpriseKPIs]);
@@ -151,7 +155,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = React.memo(
       return {
         id: j.job_id,
         vrn: j.vrn,
-        customer: j.customer_name || "Retail Client",
+        customer: j.customer_name || "—",
         workshop: "Devanand Automobiles Main Workshop",
         stage: j.current_workflow_state || j.status || "Diagnostics",
         eta: j.expected_time_of_completion || "18:00",

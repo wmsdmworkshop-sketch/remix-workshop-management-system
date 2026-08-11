@@ -23,16 +23,8 @@ export const TechnicianHeatMap: React.FC<TechnicianHeatMapProps> = React.memo(({
   isLoading = false,
   hasError = false,
 }) => {
-  const activeTechs = useMemo<MockTechnicianItem[]>(() => {
-    if (technicians.length > 0) return technicians;
-    return [
-      { id: "tech-1", name: "Sanjay Patel", skill: "EV Specialist (Gold)", currentJob: "MH12TM9090", status: "Working", productivityScore: 94, jobsCompletedToday: 4, efficiency: "98%" },
-      { id: "tech-2", name: "Alex Carter", skill: "Heavy Engine (Silver)", currentJob: "KA03MM1234", status: "Working", productivityScore: 88, jobsCompletedToday: 3, efficiency: "92%" },
-      { id: "tech-3", name: "Ramesh Kumar", skill: "AC & Electrical (Bronze)", currentJob: null, status: "Idle", productivityScore: 82, jobsCompletedToday: 2, efficiency: "85%" },
-      { id: "tech-4", name: "Vikram Singh", skill: "Diagnostic Lead (Gold)", currentJob: "MH14AB5678", status: "Road Test", productivityScore: 91, jobsCompletedToday: 3, efficiency: "94%" },
-      { id: "tech-5", name: "Ankit Sharma", skill: "General Service (Bronze)", currentJob: null, status: "Leave", productivityScore: 0, jobsCompletedToday: 0, efficiency: "0%" }
-    ];
-  }, [technicians]);
+  // Real roster only — no demo fallback. Empty data renders the empty state below.
+  const activeTechs = technicians;
 
   if (hasError) {
     return (

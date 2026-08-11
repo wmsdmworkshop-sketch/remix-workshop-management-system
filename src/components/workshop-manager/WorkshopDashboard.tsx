@@ -198,34 +198,47 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
   // KPI computations
   const kpiMetrics = useMemo(() => {
     const todayStr = new Date().toISOString().split("T")[0];
-    const received = jobCards.filter(j => j.created_at && j.created_at.startsWith(todayStr)).length || 14;
+    // Real counts — 0 when there are no records (never a demo fallback).
+    const received = jobCards.filter(j => j.created_at && j.created_at.startsWith(todayStr)).length;
     const delivered = jobCards.filter(j => j.status === "Completed" || j.status === "Invoiced").length;
     const openJcs = jobCards.filter(j => ["Active", "Waiting", "Rework", "Carry Forward"].includes(j.status)).length;
-    const utilization = bays.length > 0 ? Math.round((bays.filter(b => b.status !== "Idle" && b.status !== "Empty").length / bays.length) * 100) : 0;
+    // Bay utilization is only meaningful when bays exist; otherwise "No data" (null), not a fabricated %.
+    const utilization = bays.length > 0
+      ? Math.round((bays.filter(b => b.status !== "Idle" && b.status !== "Empty").length / bays.length) * 100)
+      : null;
     const breaches = alertLogs.filter(a => a.alert_type === "SLA_BREACH" && a.status === "Active").length;
 
+    // productivity / ftr / csi / avgTat have no authoritative source wired here → null ("No data").
+    // They must NOT be fabricated. (Wire to real analytics before surfacing a value.)
     return {
       received,
       delivered,
       openJcs,
-      utilization: utilization || 78,
-      productivity: 92,
-      ftr: 96,
-      csi: 4.8,
-      avgTatMinutes: 135,
+      utilization,
+      productivity: null,
+      ftr: null,
+      csi: null,
+      avgTatMinutes: null,
       slaBreaches: breaches
     };
   }, [jobCards, bays, alertLogs]);
 
   // Financial Split computations & EOD Forecasts
   const financialMetrics = useMemo(() => {
+    // ACTUAL invoiced revenue today (real; 0 when nothing invoiced). forecast.total is
+    // computed from invoiced job cards only — NOT an AI projection. The projected EOD
+    // figure (forecast.forecastEod) is exposed separately as FORECAST, never as actual.
     const forecast = WorkshopAIEngine.forecastRevenue(jobCards);
     return {
-      todayRevenue: forecast.total,
-      targetRevenue: 500000,
-      labourRevenue: forecast.labour,
-      partsRevenue: forecast.parts,
-      avgJobCardVal: jobCards.length > 0 ? Math.round(jobCards.reduce((sum, j) => sum + (j.labor_price || 0) + (j.parts_price || 0), 0) / jobCards.length) : 8570
+      todayRevenue: forecast.total,          // ACTUAL (invoiced)
+      forecastEodRevenue: forecast.forecastEod, // FORECAST (projection)
+      targetRevenue: 500000,                 // TARGET (configured)
+      labourRevenue: forecast.labour,        // ACTUAL
+      partsRevenue: forecast.parts,          // ACTUAL
+      // Average over real job cards; null ("No data") when there are none — never a demo value.
+      avgJobCardVal: jobCards.length > 0
+        ? Math.round(jobCards.reduce((sum, j) => sum + (j.labor_price || 0) + (j.parts_price || 0), 0) / jobCards.length)
+        : null
     };
   }, [jobCards]);
 
@@ -257,22 +270,25 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
   // Columns wait list computation
   const queueColumns = useMemo(() => {
     const getCount = (stateName: string) => jobCards.filter(j => j.current_workflow_state === stateName).length;
+    const critical = (stateName: string) => jobCards.filter(j => j.current_workflow_state === stateName && j.priority === "Express").length;
+    // Real per-stage counts (0 when empty). avgWaitMinutes has no authoritative source
+    // here → null ("No data"); never a fabricated wait time.
     return [
-      { id: "gate", name: "Gate Entry", count: getCount("GATE_IN") || 3, avgWaitMinutes: 5, criticalCount: jobCards.filter(j => j.current_workflow_state === "GATE_IN" && j.priority === "Express").length },
-      { id: "reception", name: "Reception", count: getCount("INTAKE_PENDING") || 5, avgWaitMinutes: 12, criticalCount: jobCards.filter(j => j.current_workflow_state === "INTAKE_PENDING" && j.priority === "Express").length },
-      { id: "advisor", name: "Advisor", count: getCount("ESTIMATE_PENDING") || 8, avgWaitMinutes: 20, criticalCount: jobCards.filter(j => j.current_workflow_state === "ESTIMATE_PENDING" && j.priority === "Express").length },
-      { id: "workshop", name: "Workshop", count: getCount("WIP_START") || 14, avgWaitMinutes: 45, criticalCount: jobCards.filter(j => j.current_workflow_state === "WIP_START" && j.priority === "Express").length },
-      { id: "qc", name: "Quality Check", count: getCount("QC_PENDING") || 2, avgWaitMinutes: 15, criticalCount: 0 },
-      { id: "parts", name: "Parts Pending", count: getCount("PARTS_PENDING") || 6, avgWaitMinutes: 30, criticalCount: 1 },
-      { id: "billing", name: "Billing / Cashier", count: getCount("FINAL_REVIEW") || 4, avgWaitMinutes: 10, criticalCount: 0 }
+      { id: "gate", name: "Gate Entry", count: getCount("GATE_IN"), avgWaitMinutes: null, criticalCount: critical("GATE_IN") },
+      { id: "reception", name: "Reception", count: getCount("INTAKE_PENDING"), avgWaitMinutes: null, criticalCount: critical("INTAKE_PENDING") },
+      { id: "advisor", name: "Advisor", count: getCount("ESTIMATE_PENDING"), avgWaitMinutes: null, criticalCount: critical("ESTIMATE_PENDING") },
+      { id: "workshop", name: "Workshop", count: getCount("WIP_START"), avgWaitMinutes: null, criticalCount: critical("WIP_START") },
+      { id: "qc", name: "Quality Check", count: getCount("QC_PENDING"), avgWaitMinutes: null, criticalCount: critical("QC_PENDING") },
+      { id: "parts", name: "Parts Pending", count: getCount("PARTS_PENDING"), avgWaitMinutes: null, criticalCount: critical("PARTS_PENDING") },
+      { id: "billing", name: "Billing / Cashier", count: getCount("FINAL_REVIEW"), avgWaitMinutes: null, criticalCount: critical("FINAL_REVIEW") }
     ];
   }, [jobCards]);
 
   // SLA Warnings and Breaches monitor values
   const slaMetrics = useMemo(() => {
     return {
-      warnings: alertLogs.filter(a => a.alert_type === "SLA_WARNING" && a.status === "Active").length || 4,
-      breaches: alertLogs.filter(a => a.alert_type === "SLA_BREACH" && a.status === "Active").length || 2,
+      warnings: alertLogs.filter(a => a.alert_type === "SLA_WARNING" && a.status === "Active").length,
+      breaches: alertLogs.filter(a => a.alert_type === "SLA_BREACH" && a.status === "Active").length,
       emergencyCount: jobCards.filter(j => j.priority === "Express" && j.status !== "Completed").length,
       waitingParts: jobCards.filter(j => j.current_workflow_state === "PARTS_PENDING").length,
       waitingCustomer: jobCards.filter(j => j.current_workflow_state === "ESTIMATE_PENDING").length,
@@ -291,11 +307,14 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
         type: b.bay_type || "Mechanical",
         vehicle: activeJob ? `${activeJob.vehicle_make} ${activeJob.vehicle_model} (${activeJob.vrn})` : null,
         technician: activeJob ? (activeJob.technician_name || "Assigned Tech") : null,
-        status: activeJob 
+        status: activeJob
           ? (activeJob.status === "Rework" ? "Breakdown" : activeJob.status === "Carry Forward" ? "Carry Forward" : "Working")
           : "Empty Bay",
-        elapsedMinutes: activeJob ? 35 : 0,
-        etd: activeJob ? (activeJob.expected_time_of_completion || activeJob.etd || "19:00") : null,
+        // Real elapsed time from started_at; null when unknown (no fabricated 35 min).
+        elapsedMinutes: activeJob && activeJob.started_at
+          ? Math.max(0, Math.round((Date.now() - new Date(activeJob.started_at).getTime()) / 60000))
+          : null,
+        etd: activeJob ? (activeJob.expected_time_of_completion || activeJob.etd || null) : null,
         priority: activeJob ? activeJob.priority : "Normal"
       } as any;
     });
@@ -312,9 +331,12 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
         skill: `${t.role} (${t.certification_level || "Bronze"})`,
         currentJob: activeJob ? activeJob.vrn : null,
         status: activeJob ? "Working" : (t.is_active ? "Idle" : "Leave"),
-        productivityScore: t.allocated_revenue ? Math.min(100, Math.round((t.allocated_revenue / (t.target_revenue || 100000)) * 100)) : 88,
-        jobsCompletedToday: activeJob ? 2 : 3,
-        efficiency: "94%"
+        // Real productivity from allocated vs target revenue; null ("No data") when unavailable.
+        productivityScore: (t.allocated_revenue != null && t.target_revenue)
+          ? Math.min(100, Math.round((t.allocated_revenue / t.target_revenue) * 100))
+          : null,
+        jobsCompletedToday: null,
+        efficiency: null
       } as any;
     });
   }, [employees, jobCards]);
@@ -324,10 +346,10 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
     const activeJcs = [...jobCards].reverse().slice(0, 5);
     return activeJcs.map((j, index) => ({
       id: `time-${index}`,
-      time: j.time_in || "17:40",
-      vehicle: `${j.vehicle_make} ${j.vehicle_model} (${j.vrn})`,
+      time: j.time_in || null,
+      vehicle: `${j.vehicle_make || ""} ${j.vehicle_model || ""} (${j.vrn})`.trim(),
       action: j.status === "Completed" ? "Completed QC Verification" : `Workflow phase transition to ${j.current_workflow_state || j.status}`,
-      advisor: j.service_advisor || "Advisor Match",
+      advisor: j.service_advisor || null,
       stage: j.current_workflow_state || j.status,
       iconType: j.status === "Completed" ? "qc" : "repair"
     } as any));
@@ -338,11 +360,11 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
     const cfJobs = jobCards.filter(j => j.status === "Carry Forward" || j.status === "Rework");
     return cfJobs.map(j => ({
       id: String(j.job_id),
-      vehicle: `${j.vehicle_make} ${j.vehicle_model} (${j.vrn})`,
-      advisor: j.service_advisor || "Unassigned SA",
-      technician: j.technician_name || "Unassigned Tech",
-      reason: j.pending_reason || j.remarks || "Awaiting parts allocation approval.",
-      expectedCompletion: j.expected_date_out || "Tomorrow",
+      vehicle: `${j.vehicle_make || ""} ${j.vehicle_model || ""} (${j.vrn})`.trim(),
+      advisor: j.service_advisor || "Unassigned",
+      technician: j.technician_name || "Unassigned",
+      reason: j.pending_reason || j.remarks || "—",
+      expectedCompletion: j.expected_date_out || null,
       priority: j.priority
     } as any));
   }, [jobCards]);
@@ -355,9 +377,10 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
       return {
         id: String(a.alert_id),
         level: a.alert_type === "SLA_BREACH" ? "L3" : "L1",
-        vehicle: matchJob ? `${matchJob.vehicle_make} ${matchJob.vehicle_model} (${matchJob.vrn})` : "Vehicle",
+        vehicle: matchJob ? `${matchJob.vehicle_make || ""} ${matchJob.vehicle_model || ""} (${matchJob.vrn})`.trim() : "—",
         complaint: a.message,
-        ageMinutes: 25,
+        // Real age from alert creation; null when unknown (no fabricated 25 min).
+        ageMinutes: a.created_at ? Math.max(0, Math.round((Date.now() - new Date(a.created_at).getTime()) / 60000)) : null,
         owner: "Workshop Manager",
         priority: a.alert_type === "SLA_BREACH" ? "Critical" : "High"
       } as any;

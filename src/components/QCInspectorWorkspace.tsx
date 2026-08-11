@@ -93,7 +93,7 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
     if (!selectedJob) return null;
     const isEV = selectedJob.vehicle_model?.toLowerCase().includes("ev");
     return {
-      defectRisk: isEV ? "High risk of battery isolation failures on Nexon EV post-wash." : "Low risks detected.",
+      defectRisk: isEV ? `Verify high-voltage battery isolation after wash on ${`${selectedJob.vehicle_make || ""} ${selectedJob.vehicle_model || "EV"}`.trim()}.` : "Low risks detected.",
       missingChecks: ["Rear brake caliper torque check", "Tire pressure level log"],
       warrantyRisk: "None. Extended warranty coverage active.",
       suggestedChecks: isEV ? ["High Voltage Isolation Test"] : ["Brake fluid level verify"],

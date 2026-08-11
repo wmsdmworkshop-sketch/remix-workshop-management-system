@@ -58,6 +58,13 @@ const providers: Record<OCRProvider, OCRProcessorProvider> = {
   Custom: new MockOCRProcessor(),
 };
 
+// No real OCR provider is wired yet. PRODUCTION FAILS CLOSED: it must never
+// fabricate a passing extraction/confidence (a fabricated 0.90+ confidence would
+// silently satisfy the OT fast-track gate in overtime-rules.ts). Only non-production
+// (dev/test) may use the mock provider. Production returns an UNVERIFIED result
+// (confidence 0) so the document is treated as unverified, never as a fake success.
+const ALLOW_MOCK_OCR = process.env.NODE_ENV !== "production";
+
 /**
  * Processes job card photo and extracts OCR fields.
  */
@@ -65,6 +72,16 @@ export async function verifyJobCard(
   ocrImageBase64: string,
   provider: OCRProvider = 'GoogleVision'
 ): Promise<OCRResult> {
+  if (!ALLOW_MOCK_OCR) {
+    // Fail closed: unconfigured OCR → unverified (no fabricated text/confidence).
+    return {
+      text: "",
+      confidence: 0,
+      provider,
+      verificationTime: new Date().toISOString(),
+      extractedFields: {}
+    };
+  }
   const processor = providers[provider] || providers.GoogleVision;
   const result = await processor.process(ocrImageBase64);
   const extractedFields = extractJobCardFields(result.text);

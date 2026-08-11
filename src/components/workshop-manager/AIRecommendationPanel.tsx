@@ -25,30 +25,8 @@ export const AIRecommendationPanel: React.FC<AIRecommendationPanelProps> = React
   isLoading = false,
   hasError = false,
 }) => {
-  const defaultRecs = useMemo<MockAIRecommendation[]>(() => [
-    {
-      id: "ai-1",
-      vehicle: "Tata Nexon EV (MH12TM9090)",
-      suggestedBay: "Bay 3 (EV specialized)",
-      suggestedTechnician: "Sanjay Patel (EV Specialist)",
-      predictedTat: "45 mins",
-      predictedEtd: "18:30 PM",
-      confidence: "96%",
-      reason: "Drivetrain isolation error code requires specialized insulation test equipment matches Sanjay's Gold CPSC Tier and Bay 3's high-voltage isolation gear."
-    },
-    {
-      id: "ai-2",
-      vehicle: "Tata Safari (KA03MM1234)",
-      suggestedBay: "Bay 1 (Heavy Lift)",
-      suggestedTechnician: "Alex Carter (Senior Mechanic)",
-      predictedTat: "90 mins",
-      predictedEtd: "19:15 PM",
-      confidence: "91%",
-      reason: "Front suspension strut replacement aligns with heavy lift requirements and Alex's high turnaround safety record."
-    }
-  ], []);
-
-  const activeRecs = recommendations.length > 0 ? recommendations : defaultRecs;
+  // Real AI recommendations only — no demo fallback. Empty renders the empty state.
+  const activeRecs = recommendations;
 
   if (hasError) {
     return (

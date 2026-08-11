@@ -26,17 +26,8 @@ export const BayLayoutBoard: React.FC<BayLayoutBoardProps> = React.memo(({
   isLoading = false,
   hasError = false,
 }) => {
-  const activeBays = useMemo<MockBayItem[]>(() => {
-    if (bays.length > 0) return bays;
-    return [
-      { id: "bay-1", name: "Bay 1 (Heavy Lift)", type: "Mechanical", vehicle: "Tata Safari (KA03MM1234)", technician: "Alex Carter", status: "Working", elapsedMinutes: 45, etd: "19:15", priority: "Normal" },
-      { id: "bay-2", name: "Bay 2 (General Lift)", type: "Mechanical", vehicle: "Tata Altroz (KA03MM5678)", technician: "Ramesh Kumar", status: "Waiting Parts", elapsedMinutes: 120, etd: "20:00", priority: "Normal" },
-      { id: "bay-3", name: "Bay 3 (EV Isolation)", type: "EV Specialized", vehicle: "Tata Nexon EV (MH12TM9090)", technician: "Sanjay Patel", status: "Working", elapsedMinutes: 55, etd: "18:30", priority: "Express" },
-      { id: "bay-4", name: "Bay 4 (General Lift)", type: "Mechanical", vehicle: null, technician: null, status: "Empty Bay", elapsedMinutes: 0, etd: null, priority: "Normal" },
-      { id: "bay-5", name: "Bay 5 (QC Inspect)", type: "Quality", vehicle: "Tata Punch EV (MH14AB5678)", technician: "QC Inspector", status: "QC", elapsedMinutes: 20, etd: "18:15", priority: "Express" },
-      { id: "bay-6", name: "Bay 6 (Accident Repair)", type: "Accident", vehicle: "Tata Harrier (MH12XY4321)", technician: "Vikram Singh", status: "Carry Forward", elapsedMinutes: 180, etd: "July 11", priority: "Normal" }
-    ];
-  }, [bays]);
+  // Real bay layout only — no demo fallback. Empty renders the empty state.
+  const activeBays = bays;
 
   if (hasError) {
     return (

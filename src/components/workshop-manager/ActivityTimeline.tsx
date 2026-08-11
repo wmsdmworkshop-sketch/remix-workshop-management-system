@@ -22,15 +22,8 @@ export const ActivityTimeline: React.FC<ActivityTimelineProps> = React.memo(({
   isLoading = false,
   hasError = false,
 }) => {
-  const defaultItems = useMemo<MockTimelineItem[]>(() => [
-    { id: "1", time: "17:40", vehicle: "Tata Nexon EV (MH12TM9090)", action: "Vehicle registered Gate-In", advisor: "Security Incharge", stage: "GATE_IN", iconType: "arrival" },
-    { id: "2", time: "17:15", vehicle: "Tata Safari (KA03MM1234)", action: "Advisor matched & assigned", advisor: "Arnaud Kumar", stage: "INTAKE_PENDING", iconType: "advisor" },
-    { id: "3", time: "16:45", vehicle: "Tata Punch EV (MH14AB5678)", action: "Primary Diagnostic inspection started", advisor: "Sanjay Patel", stage: "DIAGNOSTIC_WIP", iconType: "repair" },
-    { id: "4", time: "16:00", vehicle: "Tata Tiago (KA04XY9876)", action: "Quality control check initiated", advisor: "QC Inspector", stage: "QC_PENDING", iconType: "qc" },
-    { id: "5", time: "15:30", vehicle: "Tata Tigor EV (MH12XY4321)", action: "Invoice cleared and gate-out approved", advisor: "Cashier", stage: "GATE_OUT", iconType: "invoice" }
-  ], []);
-
-  const activeItems = items.length > 0 ? items : defaultItems;
+  // Real activity feed only — no demo fallback. Empty renders the empty state.
+  const activeItems = items;
 
   if (hasError) {
     return (

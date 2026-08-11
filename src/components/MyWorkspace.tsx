@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ClipboardList, Clock, AlertTriangle, TrendingUp, Gift, CalendarCheck, Loader2, RefreshCw,
 } from "lucide-react";
+import { staffAuthHeaders } from "../lib/authToken";
 
 /**
  * "MY RESPONSIBILITY" — Phase 3: My Workspace.
@@ -14,12 +15,7 @@ interface Props {
   onOpenJob?: (job: any) => void;
 }
 
-const authHeaders = (): Record<string, string> => {
-  const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || "";
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) h["Authorization"] = `Bearer ${token}`;
-  return h;
-};
+const authHeaders = (): Record<string, string> => staffAuthHeaders();
 
 const inr = (n: any) =>
   n == null ? "—" : "₹" + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 });

@@ -1,5 +1,6 @@
 import FunnySpinner from "./FunnySpinner";
 import React, { useState, useEffect } from "react";
+import { getStaffToken } from "../lib/authToken";
 import {
   Award,
   Shield,
@@ -61,7 +62,7 @@ export default function CpscCertificationPanel() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || "";
+      const token = getStaffToken();
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
@@ -95,7 +96,7 @@ export default function CpscCertificationPanel() {
   const handleUpgrade = async (employeeId: number) => {
     setUpgradeLoading(employeeId);
     try {
-      const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || "";
+      const token = getStaffToken();
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
 

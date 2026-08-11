@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { getStaffToken } from "../lib/authToken";
 import { 
   DollarSign, Clock, ShieldCheck, CreditCard, Send, CheckCircle2, AlertTriangle 
 } from "lucide-react";
@@ -22,10 +23,10 @@ export const CashierWorkspace: React.FC<CashierWorkspaceProps> = ({ currentUser 
 
   const fetchData = async () => {
     try {
-      const qRes = await fetch("/api/gate-out/cashier-queue", { headers: { Authorization: `Bearer ${localStorage.getItem("dwip_token") || localStorage.getItem("token") || currentUser?.token || ""}` } });
-      const cRes = await fetch("/api/gate-out/my-credit-requests", { headers: { Authorization: `Bearer ${localStorage.getItem("dwip_token") || localStorage.getItem("token") || currentUser?.token || ""}` } });
-      const pRes = await fetch("/api/gate-out/paid-today", { headers: { Authorization: `Bearer ${localStorage.getItem("dwip_token") || localStorage.getItem("token") || currentUser?.token || ""}` } });
-      const gpRes = await fetch("/api/gate-out/gate-pass-ready", { headers: { Authorization: `Bearer ${localStorage.getItem("dwip_token") || localStorage.getItem("token") || currentUser?.token || ""}` } });
+      const qRes = await fetch("/api/gate-out/cashier-queue", { headers: { Authorization: `Bearer ${getStaffToken()}` } });
+      const cRes = await fetch("/api/gate-out/my-credit-requests", { headers: { Authorization: `Bearer ${getStaffToken()}` } });
+      const pRes = await fetch("/api/gate-out/paid-today", { headers: { Authorization: `Bearer ${getStaffToken()}` } });
+      const gpRes = await fetch("/api/gate-out/gate-pass-ready", { headers: { Authorization: `Bearer ${getStaffToken()}` } });
 
       if (qRes.ok) setQueue(await qRes.json());
       if (cRes.ok) setMyCredits(await cRes.json());
@@ -46,7 +47,7 @@ export const CashierWorkspace: React.FC<CashierWorkspaceProps> = ({ currentUser 
     try {
       const res = await fetch("/api/gate-out/claim-task", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("dwip_token") || localStorage.getItem("token") || currentUser?.token || ""}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getStaffToken()}` },
         body: JSON.stringify({ jobId, taskType: "CASHIER" })
       });
       if (res.ok) {
@@ -65,7 +66,7 @@ export const CashierWorkspace: React.FC<CashierWorkspaceProps> = ({ currentUser 
     try {
       const res = await fetch("/api/gate-out/record-payment", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("dwip_token") || localStorage.getItem("token") || currentUser?.token || ""}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getStaffToken()}` },
         body: JSON.stringify({ 
           jobId: selectedJob.job_id, 
           amount: amountReceived, 
@@ -92,7 +93,7 @@ export const CashierWorkspace: React.FC<CashierWorkspaceProps> = ({ currentUser 
     try {
       const res = await fetch("/api/gate-out/request-credit", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("dwip_token") || localStorage.getItem("token") || currentUser?.token || ""}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getStaffToken()}` },
         body: JSON.stringify({ 
           jobId: selectedJob.job_id, 
           amount: amountReceived, 
@@ -116,7 +117,7 @@ export const CashierWorkspace: React.FC<CashierWorkspaceProps> = ({ currentUser 
     try {
       const res = await fetch("/api/gate-out/create-gate-pass", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("dwip_token") || localStorage.getItem("token") || currentUser?.token || ""}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getStaffToken()}` },
         body: JSON.stringify({ jobId })
       });
       if (res.ok) {

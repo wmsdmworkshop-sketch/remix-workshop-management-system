@@ -2,17 +2,19 @@ import React, { useMemo } from "react";
 import { DollarSign, TrendingUp, Target, CreditCard, Sparkles } from "lucide-react";
 
 export interface FinancialRibbonProps {
-  todayRevenue?: number;
-  targetRevenue?: number;
+  todayRevenue?: number;        // ACTUAL invoiced revenue today
+  forecastEodRevenue?: number | null; // FORECAST (projected EOD) — never shown as actual
+  targetRevenue?: number;       // TARGET (configured)
   labourRevenue?: number;
   partsRevenue?: number;
-  avgJobCardVal?: number;
+  avgJobCardVal?: number | null; // null → "No data"
   isLoading?: boolean;
   hasError?: boolean;
 }
 
 export const FinancialRibbon: React.FC<FinancialRibbonProps> = React.memo(({
   todayRevenue,
+  forecastEodRevenue,
   targetRevenue,
   labourRevenue,
   partsRevenue,
@@ -27,10 +29,11 @@ export const FinancialRibbon: React.FC<FinancialRibbonProps> = React.memo(({
     const achievement = today > 0 && target > 0 ? Math.round((today / target) * 100) : 0;
     const labour = labourRevenue ?? 0;
     const parts = partsRevenue ?? 0;
-    const avgJc = avgJobCardVal ?? 0;
+    const avgJc = avgJobCardVal ?? null;
+    const forecastEod = forecastEodRevenue ?? null;
 
-    return { today, target, remaining, achievement, labour, parts, avgJc };
-  }, [todayRevenue, targetRevenue, labourRevenue, partsRevenue, avgJobCardVal]);
+    return { today, target, remaining, achievement, labour, parts, avgJc, forecastEod };
+  }, [todayRevenue, forecastEodRevenue, targetRevenue, labourRevenue, partsRevenue, avgJobCardVal]);
 
   if (hasError) {
     return (
@@ -55,7 +58,7 @@ export const FinancialRibbon: React.FC<FinancialRibbonProps> = React.memo(({
       {/* Today's Revenue & Achievement */}
       <div className="ds-card   border   rounded-xl p-4 flex flex-col justify-between">
         <div className="flex items-center justify-between text-slate-400 text-[10px] uppercase font-bold tracking-wider">
-          <span>Today's Revenue</span>
+          <span>Today's Revenue <span className="text-emerald-500/70">· Actual</span></span>
           <DollarSign className="h-3.5 w-3.5 text-emerald-400" />
         </div>
         <div className="mt-2 flex items-baseline gap-2">
@@ -63,11 +66,16 @@ export const FinancialRibbon: React.FC<FinancialRibbonProps> = React.memo(({
           <span className="text-xs text-emerald-400 font-bold">({values.achievement}%)</span>
         </div>
         <div className="mt-1 h-1 w-full bg-slate-800 rounded-full overflow-hidden">
-          <div 
-            className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-full" 
-            style={{ width: `${Math.min(100, values.achievement)}%` }} 
+          <div
+            className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-full"
+            style={{ width: `${Math.min(100, values.achievement)}%` }}
           />
         </div>
+        {values.forecastEod != null && (
+          <p className="text-[9px] text-slate-500 font-semibold uppercase mt-1">
+            Forecast EOD: <span className="text-cyan-400 font-mono">₹{values.forecastEod.toLocaleString()}</span>
+          </p>
+        )}
       </div>
 
       {/* Target & Remaining */}
@@ -109,7 +117,9 @@ export const FinancialRibbon: React.FC<FinancialRibbonProps> = React.memo(({
           <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
         </div>
         <div className="mt-2">
-          <span className="text-xl font-extrabold text-slate-100">₹{values.avgJc.toLocaleString()}</span>
+          <span className="text-xl font-extrabold text-slate-100">
+            {values.avgJc == null ? <span className="text-slate-500 text-sm">No data</span> : `₹${values.avgJc.toLocaleString()}`}
+          </span>
         </div>
         <p className="text-[9px] text-slate-500 font-semibold uppercase mt-1">Based on active floor count</p>
       </div>

@@ -48,78 +48,28 @@ export default function ProductivityCalculator({
   const [autoFilledData, setAutoFilledData] = useState<any>(null);
 
   // Extracted/Parsed Invoice State
-  const [invoiceNo, setInvoiceNo] = useState("INV-2026-9042");
-  const [jcNo, setJcNo] = useState("JC084");
-  const [labourAmount, setLabourAmount] = useState("3500");
-  const [partsAmount, setPartsAmount] = useState("5400");
-  const [customerName, setCustomerName] = useState("John Doe");
-  const [customerMobile, setCustomerMobile] = useState("9876543210");
-  const [vrn, setVrn] = useState("KA-03-MG-5678");
-  const [chassisNo, setChassisNo] = useState("MAT451092M819042");
-  const [engineNo, setEngineNo] = useState("TATA312N9042");
-  const [mileage, setMileage] = useState("48500");
+  // Form opens blank — real invoice data is entered by the user (no demo pre-fill).
+  const [invoiceNo, setInvoiceNo] = useState("");
+  const [jcNo, setJcNo] = useState("");
+  const [labourAmount, setLabourAmount] = useState("");
+  const [partsAmount, setPartsAmount] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [customerMobile, setCustomerMobile] = useState("");
+  const [vrn, setVrn] = useState("");
+  const [chassisNo, setChassisNo] = useState("");
+  const [engineNo, setEngineNo] = useState("");
+  const [mileage, setMileage] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split("T")[0]);
   const [selectedTechs, setSelectedTechs] = useState<number[]>([1, 2]); // default IDs
 
-  // Sample templates representing CRM DMS CRM invoices
-  const sampleInvoices = [
-    {
-      label: "Sample 1: Single Tech (Mohsin)",
-      invoice_no: "INV-2026-1011",
-      job_card_no: "JC101",
-      labour_amount: "1500",
-      parts_amount: "2800",
-      customer_name: "Anand Devanand",
-      customer_mobile: "9448012345",
-      vrn: "KA-01-AB-1234",
-      chassis_no: "MAT451092M811011",
-      engine_no: "TATA312N1011",
-      mileage: "12400",
-      techs: ["Mohsin Nawaz"] // Jr. Electrician
-    },
-    {
-      label: "Sample 2: Two Techs Equal Split",
-      invoice_no: "INV-2026-1022",
-      job_card_no: "JC102",
-      labour_amount: "3200",
-      parts_amount: "4500",
-      customer_name: "Amit Sharma",
-      customer_mobile: "9880198765",
-      vrn: "MH-12-PQ-9876",
-      chassis_no: "MAT451092M811022",
-      engine_no: "TATA312N1022",
-      mileage: "35400",
-      techs: ["Muzamill", "Srinath M. N"]
-    },
-    {
-      label: "Sample 3: Triple Techs with Senior (Loku)",
-      invoice_no: "INV-2026-1033",
-      job_card_no: "JC103",
-      labour_amount: "5000",
-      parts_amount: "12800",
-      customer_name: "Ramesh Gowda",
-      customer_mobile: "9900112233",
-      vrn: "DL-3C-AS-5555",
-      chassis_no: "MAT451092M811033",
-      engine_no: "TATA312N1033",
-      mileage: "62100",
-      techs: ["Loku", "Fakiraapa", "Umakanta"]
-    },
-    {
-      label: "Sample 4: Four Techs Equal Split",
-      invoice_no: "INV-2026-1044",
-      job_card_no: "JC104",
-      labour_amount: "8000",
-      parts_amount: "18500",
-      customer_name: "Vijay Mallya",
-      customer_mobile: "9741004455",
-      vrn: "KA-05-MM-7777",
-      chassis_no: "MAT451092M811044",
-      engine_no: "TATA312N1044",
-      mileage: "98200",
-      techs: ["Loku", "Fakiraapa", "Muzamill", "Umakanta"]
-    }
-  ];
+  // Demo sample invoices were removed for production (RC1: no demo/customer data
+  // in the shipped bundle). This stays empty so the "Load Sample" affordance renders
+  // nothing; real invoice data is entered by the user or ingested from the DMS.
+  const sampleInvoices: Array<{
+    label: string; invoice_no: string; job_card_no: string; labour_amount: string;
+    parts_amount: string; customer_name: string; customer_mobile: string; vrn: string;
+    chassis_no: string; engine_no: string; mileage: string; techs: string[];
+  }> = [];
 
   const handleLoadSample = (sample: typeof sampleInvoices[0]) => {
     setInvoiceNo(sample.invoice_no);
@@ -380,8 +330,8 @@ export default function ProductivityCalculator({
             <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{aiModeEnabled ? "Upload completed invoices for processing" : "Enter completed invoice details manually"}</p>
           </div>
 
-          {/* Quick Sample Buttons */}
-          {aiModeEnabled && (
+          {/* Quick Sample Buttons — renders only when sample templates exist (none in production). */}
+          {aiModeEnabled && sampleInvoices.length > 0 && (
             <div className="space-y-2">
               <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Click a Sample Invoice to Load Instantly</label>
               <div className="grid grid-cols-2 gap-2">

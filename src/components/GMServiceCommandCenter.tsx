@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { getStaffToken } from "../lib/authToken";
 import { 
   Building2, Sparkles, BarChart3, AlertOctagon, RefreshCw, 
   Clock, DollarSign, Activity, FileText, CheckCircle2 
@@ -161,7 +162,7 @@ const GMCreditApprovals: React.FC<{ currentUser?: any }> = ({ currentUser }) => 
   const fetchCredits = async () => {
     try {
       const res = await fetch("/api/gate-out/gm-pending-credits", {
-        headers: { Authorization: `Bearer ${localStorage.getItem("dwip_token") || localStorage.getItem("token") || currentUser?.token || ""}` }
+        headers: { Authorization: `Bearer ${getStaffToken()}` }
       });
       if (res.ok) setPendingCredits(await res.json());
     } catch (e) {
@@ -179,7 +180,7 @@ const GMCreditApprovals: React.FC<{ currentUser?: any }> = ({ currentUser }) => 
     try {
       const res = await fetch("/api/gate-out/decide-credit", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("dwip_token") || localStorage.getItem("token") || currentUser?.token || ""}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getStaffToken()}` },
         body: JSON.stringify({ creditRequestId, decision })
       });
       if (res.ok) {

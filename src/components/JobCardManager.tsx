@@ -1323,9 +1323,14 @@ export default function JobCardManager({
 
   const handleReworkSubmit = () => {
     if (!selectedJob || !reworkReason) return;
-    // Find the original primary technician
+    // Find the original primary technician. Do NOT fabricate a fallback technician
+    // id — if none is on record, block the rework rather than assign an arbitrary one.
     const primaryTech = allocations.find(a => a.job_id === selectedJob.job_id && a.tech_role === "Primary Technician");
-    const techId = primaryTech ? primaryTech.employee_id : 3; // fallback default technician Alex Carter
+    if (!primaryTech || primaryTech.employee_id == null) {
+      alert("Cannot raise rework: no primary technician is assigned to this job.");
+      return;
+    }
+    const techId = primaryTech.employee_id;
 
     onRaiseRework(selectedJob.job_id, reworkReason, techId);
     setReworkReason("");

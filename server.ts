@@ -102,7 +102,24 @@ import {
 // In-memory file-backed database path
 const DATA_FILE = path.join(process.cwd(), "workshop_db.json");
 
-// Default initial data to mirror the SQL tables
+// CONTAMINATION GUARD (AIVAAHAN-DWIP-CONTAMINATION-REMEDIATION-001):
+// Demo/fixture operational data and the local DATA_FILE snapshot must NEVER be
+// served in production. They are available ONLY when a developer explicitly opts
+// in on a non-production build. Production fails closed → empty state, never demo.
+const ALLOW_DEV_FIXTURES =
+  process.env.NODE_ENV !== "production" && process.env.DWIP_DEV_FIXTURES === "1";
+
+// Canonical empty operational dataset (same shape consumers expect from getDB()).
+// Returned instead of INITIAL_DATA whenever fixtures are not explicitly enabled.
+const emptyDataset = () => ({
+  employees: [], bays: [], srTypes: [], revenueSplits: [], alertConfigs: [],
+  jobCards: [], jobTechnicianMaps: [], jobRevenues: [], jobRevenueSplitDetails: [],
+  carryForwardLogs: [], reworkLogs: [], alertLogs: [], dmsImportBatches: [],
+  dmsImportRows: [], workforceAttendance: [], workflowHistory: [],
+});
+
+// Default initial data — DEVELOPMENT/TEST FIXTURES ONLY (gated by ALLOW_DEV_FIXTURES).
+// Never reaches production operational state.
 const INITIAL_DATA = {
   employees: [
     { employee_id: 1, full_name: "Jane Smith", employee_code: "EMP001", role: "Service Manager", employee_grade: "Senior", basic_salary: 60000, mobile: "+919876543211", is_active: true },
@@ -271,8 +288,14 @@ const INITIAL_DATA = {
   ] as WorkforceAttendance[]
 };
 
-// Load database from file or initial data
+// Load database from file or initial data.
+// PRODUCTION: never reads the local DATA_FILE snapshot and never seeds demo
+// fixtures — returns an empty dataset so an empty DB shows empty, not demo data.
+// DEV/TEST (ALLOW_DEV_FIXTURES): may use the local snapshot / seed fixtures.
 function loadDB() {
+  if (!ALLOW_DEV_FIXTURES) {
+    return emptyDataset();
+  }
   try {
     if (fs.existsSync(DATA_FILE)) {
       const content = fs.readFileSync(DATA_FILE, "utf-8");
@@ -281,7 +304,7 @@ function loadDB() {
   } catch (error) {
     console.error("Error reading data file, using default data:", error);
   }
-  // Save initial data
+  // Dev-only: seed initial fixtures
   saveDB(INITIAL_DATA);
   return INITIAL_DATA;
 }
@@ -291,6 +314,12 @@ let _saveDBTimer: ReturnType<typeof setTimeout> | null = null;
 let _pendingSaveData: any = null;
 
 function saveDB(data: any) {
+  // PRODUCTION: never persist operational state to the local fixture snapshot.
+  // Cloud SQL (via syncSave) is the sole authoritative store. The local
+  // workshop_db.json is a dev/test convenience only.
+  if (!ALLOW_DEV_FIXTURES) {
+    return;
+  }
   _pendingSaveData = data;
   if (_saveDBTimer) {
     clearTimeout(_saveDBTimer);
@@ -310,9 +339,17 @@ function saveDB(data: any) {
 // Get or initialize local users
 async function getLocalUsers() {
   if (!cachedDB) {
-    cachedDB = { ...INITIAL_DATA };
+    // Never seed demo fixtures into the operational cache in production.
+    cachedDB = ALLOW_DEV_FIXTURES ? { ...INITIAL_DATA } : emptyDataset();
   }
   if (!cachedDB.users) {
+    // PRODUCTION: fail closed — authentication must use the authoritative user
+    // store (user_access_master / users). No developer/admin fallback accounts.
+    if (!ALLOW_DEV_FIXTURES) {
+      cachedDB.users = [];
+      return cachedDB.users;
+    }
+    // DEV/TEST ONLY: local developer/admin accounts (gated).
     const devHash = await bcrypt.hash(resolveSeedPassword("SEED_DEVELOPER_PASSWORD", "developer").password, 10);
     const adminHash = await bcrypt.hash(resolveSeedPassword("SEED_ADMIN_PASSWORD", "admin").password, 10);
     cachedDB.users = [
@@ -3748,7 +3785,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         role: opts.role || "System",
         workshop_id: jc?.workshop_id || 1,
         source: "MANUAL",
-        event_category: "GateOut",
+        event_category: "Operational",
         event_type: eventType,
         remarks: opts.remarks || eventType,
         correlation_id: `CORR-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
@@ -3774,7 +3811,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         LEFT JOIN tbl_gate_pass gp ON gp.job_id = i.job_id AND gp.status <> 'REVOKED'
         LEFT JOIN tbl_task_claims tc ON tc.job_id = i.job_id AND tc.task_type = 'CASHIER'
         WHERE gp.gate_pass_id IS NULL AND i.status <> 'CANCELLED'`);
-      const jcById = new Map((getDB().jobCards || []).map((j: any) => [Number(j.job_id), j]));
+      const jcById = new Map<number, any>((getDB().jobCards || []).map((j: any) => [Number(j.job_id), j]));
       const rows = (invoices || []).map((inv: any) => {
         const j = jcById.get(Number(inv.job_id)) || {};
         return {
@@ -4103,10 +4140,10 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       const [outs]: any = await dbPool.execute(`SELECT job_id, gate_out_time FROM tbl_gate_out WHERE job_id IN (${ph})`, ids);
       const [pays]: any = await dbPool.execute(`SELECT job_id, payment_mode FROM tbl_payments WHERE status='COMPLETED' AND job_id IN (${ph})`, ids);
       const [invs]: any = await dbPool.execute(`SELECT job_id, invoice_no, amount FROM tbl_invoice WHERE job_id IN (${ph})`, ids);
-      const passBy = new Map((passes || []).map((p: any) => [String(p.job_id), p]));
-      const outBy = new Map((outs || []).map((o: any) => [String(o.job_id), o]));
-      const payBy = new Map((pays || []).map((p: any) => [String(p.job_id), p]));
-      const invBy = new Map((invs || []).map((i: any) => [String(i.job_id), i]));
+      const passBy = new Map<string, any>((passes || []).map((p: any) => [String(p.job_id), p]));
+      const outBy = new Map<string, any>((outs || []).map((o: any) => [String(o.job_id), o]));
+      const payBy = new Map<string, any>((pays || []).map((p: any) => [String(p.job_id), p]));
+      const invBy = new Map<string, any>((invs || []).map((i: any) => [String(i.job_id), i]));
       res.json(myJobs.map((j: any) => ({
         job_id: j.job_id, job_card_no: j.job_card_no, vrn: j.vrn, customer_name: j.customer_name,
         invoice_no: invBy.get(String(j.job_id))?.invoice_no || null,
@@ -4153,7 +4190,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
          LEFT JOIN tbl_invoice i ON i.job_id = s.job_id
          LEFT JOIN tbl_gate_pass gp ON gp.job_id = s.job_id AND gp.status <> 'REVOKED'
          WHERE ${where} ORDER BY s.sla_due_at ASC LIMIT 500`, params);
-      const jcById = new Map((getDB().jobCards || []).map((j: any) => [Number(j.job_id), j]));
+      const jcById = new Map<number, any>((getDB().jobCards || []).map((j: any) => [Number(j.job_id), j]));
       res.json((rows || []).map((r: any) => {
         const j = jcById.get(Number(r.job_id)) || {};
         return { ...r, vrn: j.vrn, customer_name: j.customer_name, job_card_no: j.job_card_no };

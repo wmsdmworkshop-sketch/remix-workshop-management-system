@@ -26,12 +26,8 @@ export const CarryForwardPanel: React.FC<CarryForwardPanelProps> = React.memo(({
   isLoading = false,
   hasError = false,
 }) => {
-  const defaultItems = useMemo<CarryForwardItem[]>(() => [
-    { id: "cf-1", vehicle: "Tata Safari (MH12TM9090)", advisor: "Arnaud Kumar", technician: "Sanjay Patel", reason: "Engine block alignment calibration issue - requires specialized diagnostic machine tool setup tomorrow morning.", expectedCompletion: "Tomorrow 11:30 AM", priority: "Express" },
-    { id: "cf-2", vehicle: "Tata Harrier (KA03MM1234)", advisor: "Vihan Sharma", technician: "Alex Carter", reason: "Waiting for specialized suspension component shipment from OEM hub.", expectedCompletion: "July 12, 14:00 PM", priority: "Normal" }
-  ], []);
-
-  const activeItems = items.length > 0 ? items : defaultItems;
+  // Real carry-forward items only — no demo fallback. Empty renders the empty state.
+  const activeItems = items;
 
   if (hasError) {
     return (

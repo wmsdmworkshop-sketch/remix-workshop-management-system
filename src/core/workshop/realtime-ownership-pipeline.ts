@@ -60,15 +60,9 @@ export class RealtimeOwnershipPipeline {
     if (customDb && typeof customDb.execute === 'function') {
       return customDb.execute(sql, params);
     }
-    try {
-      return await db.execute(sql, params);
-    } catch (err: any) {
-      if (err.message && err.message.includes("doesn't exist")) {
-        // Offline / in-memory fallback for test environment
-        return [[], { affectedRows: 1 }];
-      }
-      throw err;
-    }
+    // A missing table or any DB failure MUST surface as an error — never a fabricated
+    // "success" ([[], {affectedRows:1}]). Concealing infra failures corrupts state.
+    return await db.execute(sql, params);
   }
   // Master categories for preliminary visit classification
   public static readonly MASTER_VISIT_CATEGORIES = [
@@ -184,20 +178,23 @@ export class RealtimeOwnershipPipeline {
     const visits = Array.isArray(rows) ? rows : [];
     const latestVisit = visits[0] || null;
 
+    // Return ONLY authoritative on-record values. When a VRN cannot be resolved,
+    // report an unresolved state — never a manufactured VIN, customer, or vehicle
+    // identity, and never an always-on campaign/warranty status.
     return {
       vrn: vrnClean,
       found: !!latestVisit,
       sourceTag: latestVisit ? "LOCAL_CACHE" : "UNAVAILABLE",
-      vin: latestVisit?.chassis_no || `VIN-${vrnClean}`,
-      customerName: latestVisit?.customer_name || "Retail Client",
-      customerMobile: latestVisit?.customer_mobile || "",
-      vehicleMake: latestVisit?.vehicle_make || "TATA",
-      vehicleModel: latestVisit?.vehicle_model || "Tata Heavy Commercial",
+      vin: latestVisit?.chassis_no || null,
+      customerName: latestVisit?.customer_name || null,
+      customerMobile: latestVisit?.customer_mobile || null,
+      vehicleMake: latestVisit?.vehicle_make || null,
+      vehicleModel: latestVisit?.vehicle_model || null,
       previousVisitCount: visits.length,
       lastVisitDate: latestVisit?.created_at || null,
-      lastOdometer: latestVisit?.odometer_reading || 0,
-      openCampaigns: ["FSB-2026-EV-COOLANT-CHECK"],
-      warrantyStatus: "ELIGIABLE_ACTIVE_COVERAGE"
+      lastOdometer: latestVisit?.odometer_reading ?? null,
+      openCampaigns: [],          // authoritative campaign source not wired → none (not fabricated)
+      warrantyStatus: "UNKNOWN"   // authoritative warranty source not wired → unknown (not fabricated)
     };
   }
 
@@ -380,22 +377,53 @@ export class RealtimeOwnershipPipeline {
    * STAGE 08: AI / Rule Service Advisor Recommendation Engine
    */
   public static async generateAdvisorRecommendation(intakeId: string, branchId: string) {
-    // Audit active workload per SA
-    const availableAdvisors = [
-      { id: "usr_service_advisor", name: "Shashi Kumar", role: "service_advisor", activeJcs: 2, competency: "EV & Heavy Commercial", fleetContinuityScore: 0.92 },
-      { id: "usr_sa_2", name: "Rajesh Sharma", role: "service_advisor", activeJcs: 5, competency: "General Repair", fleetContinuityScore: 0.65 },
-      { id: "usr_sa_3", name: "Anand Verma", role: "service_advisor", activeJcs: 4, competency: "Warranty & FSB", fleetContinuityScore: 0.70 }
-    ];
+    // Advisor availability MUST come from the authoritative staff store — never a
+    // hardcoded list. Workload is the real count of open job cards per advisor.
+    // If no advisors can be resolved, return an empty list and NO recommendation
+    // (do not fabricate names, competencies, workloads, or confidence scores).
+    let availableAdvisors: Array<{ id: any; name: string; role: string; activeJcs: number }> = [];
+    try {
+      const [rows]: any = await RealtimeOwnershipPipeline.execute(
+        `SELECT user_id AS id, full_name AS name, user_role AS role
+           FROM user_access_master
+          WHERE user_role = 'service_advisor' AND is_active = 1`
+      );
+      const advisors = Array.isArray(rows) ? rows : [];
+      availableAdvisors = await Promise.all(advisors.map(async (a: any) => {
+        let activeJcs = 0;
+        try {
+          const [cnt]: any = await RealtimeOwnershipPipeline.execute(
+            `SELECT COUNT(*) AS cnt FROM tbl_job_card
+              WHERE service_advisor = ? AND status NOT IN ('Completed','Invoiced','Cancelled')`,
+            [a.name]
+          );
+          activeJcs = Number(cnt?.[0]?.cnt || 0);
+        } catch { activeJcs = 0; }
+        return { id: a.id, name: a.name, role: a.role, activeJcs };
+      }));
+    } catch {
+      availableAdvisors = [];
+    }
 
-    // Pick top recommended SA based on lowest workload & highest fleet continuity score
+    if (availableAdvisors.length === 0) {
+      return {
+        intakeId,
+        recommendedSaId: null,
+        recommendedSaName: null,
+        confidenceScore: null,
+        reason: "No authoritative advisor-availability data.",
+        availableAdvisors: []
+      };
+    }
+
+    // Recommend the advisor with the lowest real active workload.
     const recommended = availableAdvisors.reduce((prev, curr) => (curr.activeJcs < prev.activeJcs ? curr : prev), availableAdvisors[0]);
-
     return {
       intakeId,
       recommendedSaId: recommended.id,
       recommendedSaName: recommended.name,
-      confidenceScore: 0.94,
-      reason: `Lowest active workload (${recommended.activeJcs} active JCs) + High fleet continuity score for ${recommended.competency} vehicles.`,
+      confidenceScore: null, // no calibrated model → omit rather than fabricate a score
+      reason: `Lowest active workload (${recommended.activeJcs} open job cards).`,
       availableAdvisors
     };
   }

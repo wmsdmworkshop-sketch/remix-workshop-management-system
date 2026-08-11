@@ -22,13 +22,8 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = React.memo(
   isLoading = false,
   hasError = false,
 }) => {
-  const defaultNotifications = useMemo<MockNotification[]>(() => [
-    { id: "1", type: "critical", message: "SLA Breach imminent: Tata Nexon EV (MH12TM9090) elapsed 55 mins in DIAGNOSTIC_WIP.", timestamp: "2 mins ago", isRead: false },
-    { id: "2", type: "warning", message: "Technician Overload: Sanjay Patel has 3 active tasks assigned.", timestamp: "10 mins ago", isRead: false },
-    { id: "3", type: "info", message: "Bay 4 status changed to IDLE.", timestamp: "15 mins ago", isRead: true }
-  ], []);
-
-  const activeList = notifications.length > 0 ? notifications : defaultNotifications;
+  // Real notifications only — no demo fallback. Empty renders the empty state.
+  const activeList = notifications;
 
   if (hasError) {
     return (

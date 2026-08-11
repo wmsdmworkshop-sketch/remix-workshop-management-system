@@ -5,13 +5,17 @@ export interface KPIMetrics {
   received: number;
   delivered: number;
   openJcs: number;
-  utilization: number;
-  productivity: number;
-  ftr: number;
-  csi: number;
-  avgTatMinutes: number;
+  // Ratio/quality metrics: null when there is no authoritative source → render "No data"
+  // rather than a fabricated or misleading zero.
+  utilization: number | null;
+  productivity: number | null;
+  ftr: number | null;
+  csi: number | null;
+  avgTatMinutes: number | null;
   slaBreaches: number;
 }
+
+const pctOrNoData = (v: number | null) => (v == null ? "—" : `${v}%`);
 
 export interface KPIHeaderProps {
   metrics?: KPIMetrics;
@@ -26,15 +30,16 @@ export const KPIHeader: React.FC<KPIHeaderProps> = React.memo(({
 }) => {
   const activeMetrics = useMemo<KPIMetrics>(() => {
     if (metrics) return metrics;
+    // No metrics supplied → empty state, not fabricated values.
     return {
       received: 0,
       delivered: 0,
       openJcs: 0,
-      utilization: 0,
-      productivity: 0,
-      ftr: 100,
-      csi: 5.0,
-      avgTatMinutes: 0,
+      utilization: null,
+      productivity: null,
+      ftr: null,
+      csi: null,
+      avgTatMinutes: null,
       slaBreaches: 0
     };
   }, [metrics]);
@@ -102,7 +107,7 @@ export const KPIHeader: React.FC<KPIHeaderProps> = React.memo(({
           <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
         </div>
         <div className="mt-2 flex items-baseline justify-between">
-          <span className="text-xl font-extrabold text-slate-100">{activeMetrics.utilization}%</span>
+          <span className="text-xl font-extrabold text-slate-100">{pctOrNoData(activeMetrics.utilization)}</span>
           <span className="text-[10px] text-cyan-400 font-bold">Average</span>
         </div>
       </div>
@@ -114,7 +119,7 @@ export const KPIHeader: React.FC<KPIHeaderProps> = React.memo(({
           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
         </div>
         <div className="mt-2 flex items-baseline justify-between">
-          <span className="text-xl font-extrabold text-slate-100">{activeMetrics.ftr}%</span>
+          <span className="text-xl font-extrabold text-slate-100">{pctOrNoData(activeMetrics.ftr)}</span>
           <span className="text-[10px] text-emerald-400 font-bold">Goal 95%</span>
         </div>
       </div>

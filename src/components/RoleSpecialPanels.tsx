@@ -674,49 +674,8 @@ export function TechnicianJobsPanel({ jobCards, employeeId, onUpdateJobStatus, o
               <span>My Active Assignments Ledger</span>
             </h2>
             <div className="flex items-center gap-3">
+              {/* Demo assignment-toast trigger removed for production (RC1: no demo data). */}
               <button
-                onClick={() => {
-                  const id = Math.random().toString(36).substring(2, 9);
-                  const demoJob: JobCard = {
-                    job_id: Math.floor(Math.random() * 100000),
-                    job_card_no: `JC-DEMO-${Math.floor(1000 + Math.random() * 9000)}`,
-                    vrn: "DL3C-AB-1234",
-                    customer_name: "John Doe (Demo)",
-                    customer_mobile: "+91 98765 43210",
-                    vehicle_make: "TATA",
-                    vehicle_model: "Nexon",
-                    vehicle_year: 2022,
-                    km_reading: 12450,
-                    sr_type_id: 1,
-                    job_description: "General service & brake check. Demo assignment notification.",
-                    priority: Math.random() > 0.5 ? "Express" : "Normal",
-                    bay_id: null,
-                    status: "Waiting",
-                    etd: "2026-06-30T18:00:00Z",
-                    started_at: null,
-                    completed_at: null,
-                    invoiced_at: null,
-                    created_by: 1,
-                    created_at: new Date().toISOString()
-                  };
-                  setToasts(prev => [...prev, {
-                    id,
-                    jobId: demoJob.job_id,
-                    jobCardNo: demoJob.job_card_no,
-                    title: "Demo Job Assigned",
-                    description: `${demoJob.vehicle_make} ${demoJob.vehicle_model} (${demoJob.vrn})`,
-                    priority: demoJob.priority,
-                    job: demoJob
-                  }]);
-                  playToastChime();
-                }}
-                title="Trigger Demo Assignment Toast"
-                className="text-slate-400 hover:text-orange-500 focus:outline-none cursor-pointer flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider"
-              >
-                <Bell className="h-3.5 w-3.5" />
-                <span>Test Alert</span>
-              </button>
-              <button 
                 onClick={onRefresh}
                 className="text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
               >

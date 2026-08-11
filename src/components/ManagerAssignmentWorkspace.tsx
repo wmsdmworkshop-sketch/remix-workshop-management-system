@@ -278,11 +278,10 @@ export const ManagerAssignmentWorkspace: React.FC<ManagerAssignmentWorkspaceProp
                   }}
                   className="w-full bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-xs text-slate-200 outline-none"
                 >
-                  {(recommendation?.availableAdvisors || [
-                    { id: "usr_service_advisor", name: "Shashi Kumar" },
-                    { id: "usr_sa_2", name: "Rajesh Sharma" },
-                    { id: "usr_sa_3", name: "Anand Verma" }
-                  ]).map((a: any) => (
+                  {(recommendation?.availableAdvisors || []).length === 0 && (
+                    <option value="" disabled>No advisors available</option>
+                  )}
+                  {(recommendation?.availableAdvisors || []).map((a: any) => (
                     <option key={a.id} value={a.id}>{a.name} ({a.activeJcs || 0} active JCs)</option>
                   ))}
                 </select>
