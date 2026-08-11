@@ -27,7 +27,7 @@ try {
     newEnv.push(line);
   }
   newEnv.push('NODE_ENV=test');
-  newEnv.push('DB_DATABASE=railway_test');
+  newEnv.push('DB_DATABASE=wms_test');
 
   fs.writeFileSync(envPath, newEnv.join('\n'));
   process.env.NODE_ENV = 'test';

@@ -17,8 +17,8 @@ export async function verifyTestIsolation(): Promise<void> {
     failReason = "process.env.DB_DATABASE is missing/empty";
   } else if (configuredDb === "railway") {
     failReason = "process.env.DB_DATABASE is 'railway'";
-  } else if (configuredDb !== "railway_test") {
-    failReason = `process.env.DB_DATABASE is '${configuredDb}', expected 'railway_test'`;
+  } else if (configuredDb !== "wms_test") {
+    failReason = `process.env.DB_DATABASE is '${configuredDb}', expected 'wms_test'`;
   }
 
   let connectedDb = "UNKNOWN";
@@ -30,8 +30,8 @@ export async function verifyTestIsolation(): Promise<void> {
 
       if (connectedDb === "railway") {
         failReason = "Actually connected to 'railway' application database";
-      } else if (connectedDb !== "railway_test") {
-        failReason = `Actually connected to '${connectedDb}', expected 'railway_test'`;
+      } else if (connectedDb !== "wms_test") {
+        failReason = `Actually connected to '${connectedDb}', expected 'wms_test'`;
       }
     } catch (err: any) {
       failReason = `Failed to execute SELECT DATABASE(): ${err.message}`;
@@ -39,7 +39,7 @@ export async function verifyTestIsolation(): Promise<void> {
   }
 
   // Determine classification for the output
-  const isTestDb = connectedDb === "railway_test";
+  const isTestDb = connectedDb === "wms_test";
   const isAppDb = connectedDb === "railway" || configuredDb === "railway";
 
   console.log("==========================================");

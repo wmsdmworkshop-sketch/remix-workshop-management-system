@@ -2,7 +2,7 @@ import * as dotenv from "dotenv";
 
 // Load environment variables before doing any checks.
 // When running under NODE_ENV=test, load .env.test so integration tests target
-// the isolated test database (railway_test) instead of the production .env.
+// the isolated test database (wms_test) instead of the production .env.
 // NODE_ENV must be exported by the caller before this module is imported.
 const envFile = process.env.NODE_ENV === "test" ? ".env.test" : ".env";
 dotenv.config({ path: envFile, override: true });
@@ -64,13 +64,39 @@ export function validateEnvironment(): void {
   const report: string[] = [];
   report.push("=== Environment Check ===");
 
-  if (envConfig.NODE_ENV === "test") {
-    if (
-      envConfig.DB_DATABASE === "railway" ||
-      envConfig.DB_HOST === "35.200.150.167" ||
-      envConfig.DB_DATABASE !== "railway_test"
-    ) {
-      console.error("[SECURITY] CRITICAL: Test execution blocked! Attempted to connect to production database or missing 'railway_test' configuration.");
+  // FAIL-CLOSED TEST-DB ISOLATION GATE.
+  // Detect a test context by NODE_ENV *or* by the Vitest runner's own env vars, so
+  // a test run that forgot to set NODE_ENV=test (the original P0 cause) is still
+  // caught. In any test context the DB identity MUST be the isolated test schema
+  // ("wms_test"); a production identity (name or host) hard-stops the process
+  // before a single query can reach production.
+  // NOTE: "railway" is the legacy name of the PRODUCTION schema (a fossil from the
+  // app's original Railway.app hosting — the data now lives in Google Cloud SQL).
+  // It is denylisted below; the isolated test schema is the separate "wms_test".
+  const isTestContext =
+    envConfig.NODE_ENV === "test" ||
+    !!process.env.VITEST ||
+    !!process.env.VITEST_WORKER_ID ||
+    !!process.env.VITEST_POOL_ID;
+
+  if (isTestContext) {
+    const PROD_DB_NAMES = ["railway"];
+    const PROD_DB_HOSTS = ["35.200.150.167"];
+    const dbName = envConfig.DB_DATABASE;
+    const dbHost = envConfig.DB_HOST;
+    const isProductionIdentity =
+      !dbName ||
+      dbName !== "wms_test" ||
+      PROD_DB_NAMES.includes(dbName) ||
+      (!!dbHost && PROD_DB_HOSTS.includes(dbHost));
+
+    if (isProductionIdentity) {
+      console.error(
+        `[SECURITY] CRITICAL: Test execution blocked! Test context detected but the ` +
+        `database identity is not the isolated 'wms_test' schema ` +
+        `(DB_DATABASE='${dbName || "MISSING"}', DB_HOST='${dbHost || "MISSING"}'). ` +
+        `Refusing to connect — a production database must never be used by tests.`
+      );
       process.exit(1);
     }
   }
