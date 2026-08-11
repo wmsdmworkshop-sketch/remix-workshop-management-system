@@ -65,7 +65,7 @@ export class QrtDispatchService {
         const qrtConnector = integrationRegistry.getConnector('QRT_EXTERNAL');
         if (qrtConnector.qrtService) {
           // Send internal breakdownId to external QRT system (this may need to map to an external ID later)
-          await qrtConnector.qrtService.startServiceRequest(params.breakdownId, params.teamMembers[0]?.id || 'UNKNOWN_TECH');
+          await qrtConnector.qrtService.startServiceRequest(params.breakdownId, params.teamMembers[0]?.memberId || 'UNKNOWN_TECH');
           console.log(`[QrtDispatchService] Successfully synced startServiceRequest with external QRT API for ${params.breakdownId}`);
         }
       }
