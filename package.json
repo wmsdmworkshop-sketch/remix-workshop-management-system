@@ -16,8 +16,9 @@
         "lint": "tsc --noEmit",
         "type-check": "tsc --noEmit",
         "db:setup:test": "dotenv -e .env.test -- tsx test-infra/setup_test_db.ts",
-        "test": "npm run test:unit && npm run test:integration",
+        "test": "npm run test:unit && npm run test:legacy && npm run test:integration",
         "test:unit": "dotenv -e .env.test -- vitest run --exclude src/tests/e2e",
+        "test:legacy": "dotenv -e .env.test -- node test-infra/run_legacy_tests.cjs",
         "test:integration": "dotenv -e .env.test -- vitest run src/tests/integration",
         "test:e2e": "dotenv -e .env.test -- playwright test"
     },
