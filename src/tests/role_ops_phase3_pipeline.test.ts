@@ -191,8 +191,12 @@ describe("Phase 3 — Gate-In → Reception → Manager Assignment Real-Time Own
   it("2. STAGE 02: Performs Vehicle Passport Lookup from historical visits", async () => {
     const passport = await RealtimeOwnershipPipeline.lookupVehiclePassport("KA32M9988");
     expect(passport.vrn).toBe("KA32M9988");
-    expect(passport.warrantyStatus).toBe("ELIGIABLE_ACTIVE_COVERAGE");
-    expect(passport.openCampaigns).toContain("FSB-2026-EV-COOLANT-CHECK");
+    // Real-data-only contract: the hardcoded warranty/campaign fabrications
+    // ("ELIGIABLE_ACTIVE_COVERAGE" / "FSB-2026-EV-COOLANT-CHECK") were removed from
+    // the pipeline. With no authoritative warranty/campaign source wired, the
+    // passport reports honest "UNKNOWN"/empty instead of manufactured demo values.
+    expect(passport.warrantyStatus).toBe("UNKNOWN");
+    expect(passport.openCampaigns).toEqual([]);
   });
 
   it("3. STAGE 03-06: Accepts Reception Intake, generates branch-scoped token & preserves original OCR odometer", async () => {
@@ -220,9 +224,14 @@ describe("Phase 3 — Gate-In → Reception → Manager Assignment Real-Time Own
     expect(queue).toBeDefined();
 
     const rec = await RealtimeOwnershipPipeline.generateAdvisorRecommendation("INT-TEST-001", "BR-SEDAM");
-    expect(rec.recommendedSaId).toBeDefined();
-    expect(rec.confidenceScore).toBeGreaterThan(0.8);
-    expect(rec.reason).toContain("active JCs");
+    expect(rec).toHaveProperty("recommendedSaId");
+    // Real-data-only contract: the fabricated 0.94 confidence was removed. With no
+    // calibrated model, confidenceScore is ALWAYS null (never a manufactured score),
+    // and the reason is a real, non-empty explanation derived from live workload /
+    // advisor-availability data (not a hardcoded string).
+    expect(rec.confidenceScore).toBeNull();
+    expect(typeof rec.reason).toBe("string");
+    expect(rec.reason.length).toBeGreaterThan(0);
   });
 
   it("5. STAGE 09: Manager assigns Service Advisor and transfers ownership", async () => {
