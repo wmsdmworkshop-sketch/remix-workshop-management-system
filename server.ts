@@ -419,7 +419,8 @@ async function startServer() {
 
   // Security: CORS — restrict to known origins
   const allowedOrigins = [
-    "https://wms-workshop-app-772298398554.asia-south1.run.app",
+    "https://devanand.aivaahan.com",
+    "https://dwip-enterprise-npoyvb3q7a-el.a.run.app",
     ...(process.env.ADDITIONAL_CORS_ORIGINS ? process.env.ADDITIONAL_CORS_ORIGINS.split(",") : [])
   ];
   app.use((req, res, next) => {
