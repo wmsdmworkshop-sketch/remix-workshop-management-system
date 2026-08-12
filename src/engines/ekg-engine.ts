@@ -77,7 +77,7 @@ export class EkgEngine {
 
     // 2. Insert Node if not existing
     try {
-      const [existing] = await db.query("SELECT node_id FROM graph_nodes WHERE node_id = ?", [nodeId]) as any[];
+      const [existing] = await db.query("SELECT node_id, properties_json FROM graph_nodes WHERE node_id = ?", [nodeId]) as any[];
       if (existing.length === 0) {
         await db.execute(
           `INSERT INTO graph_nodes (node_id, node_type, node_name, properties_json) VALUES (?, ?, ?, ?)`,
@@ -85,7 +85,8 @@ export class EkgEngine {
         );
       } else {
         // Update properties
-        const mergedProps = { ...JSON.parse(existing[0].properties_json || "{}"), ...properties };
+        const existingProps = typeof existing[0].properties_json === "string" ? JSON.parse(existing[0].properties_json) : (existing[0].properties_json || {});
+        const mergedProps = { ...existingProps, ...properties };
         await db.execute(
           `UPDATE graph_nodes SET properties_json = ?, node_name = ? WHERE node_id = ?`,
           [JSON.stringify(mergedProps), nodeName, nodeId]
@@ -106,7 +107,7 @@ export class EkgEngine {
     try {
       const [rows] = await db.query("SELECT node_id, properties_json FROM graph_nodes WHERE node_type = ?", [nodeType]) as any[];
       for (const row of rows) {
-        const props = JSON.parse(row.properties_json || "{}");
+        const props = typeof row.properties_json === "string" ? JSON.parse(row.properties_json) : (row.properties_json || {});
         
         // Match conditions:
         // Customer: matching contact_phone, gstin or pan_number
@@ -150,8 +151,8 @@ export class EkgEngine {
       const primaryNode = nodes.find(n => n.node_id === primaryId);
       const duplicateNode = nodes.find(n => n.node_id === duplicateId);
 
-      const primaryProps = primaryNode ? JSON.parse(primaryNode.properties_json || "{}") : {};
-      const duplicateProps = duplicateNode ? JSON.parse(duplicateNode.properties_json || "{}") : {};
+      const primaryProps = primaryNode ? (typeof primaryNode.properties_json === "string" ? JSON.parse(primaryNode.properties_json) : (primaryNode.properties_json || {})) : {};
+      const duplicateProps = duplicateNode ? (typeof duplicateNode.properties_json === "string" ? JSON.parse(duplicateNode.properties_json) : (duplicateNode.properties_json || {})) : {};
 
       const consolidatedProps = { ...duplicateProps, ...primaryProps, ...extraProperties };
 
@@ -165,13 +166,15 @@ export class EkgEngine {
       // Edges where duplicate was the source
       const [srcEdges] = await db.query("SELECT * FROM graph_edges WHERE source_node_id = ?", [duplicateId]) as any[];
       for (const edge of srcEdges) {
-        await this.addEdge(primaryId, edge.target_node_id, edge.relationship_type, JSON.parse(edge.properties_json || "{}"));
+        const edgeProps = typeof edge.properties_json === "string" ? JSON.parse(edge.properties_json) : (edge.properties_json || {});
+        await this.addEdge(primaryId, edge.target_node_id, edge.relationship_type, edgeProps);
       }
 
       // Edges where duplicate was the target
       const [tgtEdges] = await db.query("SELECT * FROM graph_edges WHERE target_node_id = ?", [duplicateId]) as any[];
       for (const edge of tgtEdges) {
-        await this.addEdge(edge.source_node_id, primaryId, edge.relationship_type, JSON.parse(edge.properties_json || "{}"));
+        const edgeProps = typeof edge.properties_json === "string" ? JSON.parse(edge.properties_json) : (edge.properties_json || {});
+        await this.addEdge(edge.source_node_id, primaryId, edge.relationship_type, edgeProps);
       }
 
       // 4. Delete duplicate node (cascade deletes old edges)
@@ -203,7 +206,7 @@ export class EkgEngine {
       ) as any[];
 
       if (existing.length > 0) {
-        const currentProps = JSON.parse(existing[0].properties_json || "{}");
+        const currentProps = typeof existing[0].properties_json === "string" ? JSON.parse(existing[0].properties_json) : (existing[0].properties_json || {});
         const currentVersion = Number(existing[0].version || 1);
 
         // Versioning check: If properties changed, save history

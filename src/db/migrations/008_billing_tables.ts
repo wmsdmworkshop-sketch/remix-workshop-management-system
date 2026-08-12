@@ -17,10 +17,14 @@
  * Existing engines (InvoiceEngine, GSTEngine, etc.) NOT invoked — RESERVED.
  */
 
-import { pool } from '../../db/index';
+import type { Migration } from "../migrate.ts";
+import { pool } from '../index.ts';
 
-async function runMigration() {
-  const conn = await (pool as any).getConnection();
+const migration: Migration = {
+  version: 8,
+  name: "billing_tables",
+  up: async (dbPool: typeof pool) => {
+    const conn = await (dbPool as any).getConnection();
   try {
     await conn.beginTransaction();
 
@@ -279,11 +283,11 @@ async function runMigration() {
   } catch (err: any) {
     await conn.rollback();
     console.error('✗ Migration FAILED — rolled back:', err.message);
-    process.exit(1);
+    throw err;
   } finally {
     conn.release();
-    process.exit(0);
   }
-}
+  }
+};
 
-runMigration();
+export default migration;

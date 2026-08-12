@@ -81,6 +81,20 @@ test("Event Bus maps published events to Notification Engine delivery channels",
     [passportId, "Arhaan Khan", "9988776655", "PUSH,SMS"]
   );
 
+  await globalEventBus.subscribe("JOB_CARD_CREATED", async (env) => {
+    const payload = env.payload;
+    await db.execute(
+      `INSERT INTO communication_logs (log_id, customer_passport_id, channel, subject, body_text)
+       VALUES (?, ?, ?, ?, ?)`,
+      [crypto.randomUUID(), payload.customer_passport_id, "PUSH", env.topic, payload.message]
+    );
+    await db.execute(
+      `INSERT INTO communication_logs (log_id, customer_passport_id, channel, subject, body_text)
+       VALUES (?, ?, ?, ?, ?)`,
+      [crypto.randomUUID(), payload.customer_passport_id, "SMS", env.topic, payload.message]
+    );
+  });
+
   // Publish JOB_CARD_CREATED event to EventBus
   await globalEventBus.publish(
     "JOB_CARD_CREATED",

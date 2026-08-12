@@ -63,8 +63,8 @@ async function runTests() {
 
     // Seed warehouse and bin
     await pool.query(
-      `INSERT INTO tbl_warehouse_master (warehouse_id, branch_id, warehouse_name)
-       VALUES ('WH-MAIN', 'BR-SEDAM', 'Main WH')
+      `INSERT INTO tbl_warehouse_master (warehouse_id, branch_id, warehouse_name, warehouse_code)
+       VALUES ('WH-MAIN', 'BR-SEDAM', 'Main WH', 'WH-MAIN')
        ON DUPLICATE KEY UPDATE warehouse_name = 'Main WH'`
     );
     await pool.query(

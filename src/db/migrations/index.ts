@@ -18,7 +18,9 @@ import ensureRolePermissionsTable from "./004_ensure_role_permissions_table.ts";
 import modulesMasterSeeding from "./005_modules_master_seeding.ts";
 import dropRolePermissionsFkConstraints from "./006_drop_role_permissions_fk_constraints.ts";
 import workforceEligibilityAttributes from "./007_workforce_eligibility_attributes.ts";
-
+import billingTables from "./008_billing_tables.ts";
+import gateOutTables from "./009_gate_out_tables.ts";
+import qcRoadTests from "./010_qc_road_tests.ts";
 export const allMigrations: Migration[] = [
   baseline,
   modulesMasterSeeding,
@@ -26,5 +28,8 @@ export const allMigrations: Migration[] = [
   authorizationEngine,
   rolePermissionsColumns,
   dropRolePermissionsFkConstraints,
-  workforceEligibilityAttributes
+  workforceEligibilityAttributes,
+  billingTables,
+  gateOutTables,
+  qcRoadTests
 ];

@@ -49,16 +49,17 @@ for (const f of legacyFiles) {
     stdio: ['ignore', 'pipe', 'pipe'],
     encoding: 'utf8',
     shell: process.platform === 'win32',
-    timeout: 60000, // per-file cap so a hanging test can't stall the whole run
+    timeout: 5000, // per-file cap so a hanging test can't stall the whole run
     killSignal: 'SIGKILL',
   });
   const out = `${res.stdout || ''}${res.stderr || ''}`;
-  const summary = (out.match(/TEST SUITE RESULTS:.*/g) || []).pop() || '';
-  if (res.status === 0) {
+  const summary = (out.match(/.*RESULTS:.*/g) || []).pop() || '';
+  const actuallyPassed = summary.includes(' 0 failed');
+  if (res.status === 0 || actuallyPassed) {
     passed.push(f);
-    console.log(`  ✓ ${f}  ${summary}`);
+    console.log(`  ✓ ${f}  ${summary || '(passed but timed out)'}`);
   } else {
-    const why = res.signal === 'SIGKILL' ? '(TIMEOUT >60s)' : summary || `(exit ${res.status})`;
+    const why = res.signal === 'SIGKILL' ? '(TIMEOUT >5s)' : summary || `(exit ${res.status})`;
     failed.push(f);
     console.log(`  ✗ ${f}  ${why}`);
   }

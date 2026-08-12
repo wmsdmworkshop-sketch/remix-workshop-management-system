@@ -93,9 +93,9 @@ test("Node Merge Engine: duplicate node merging consolidates properties and edge
   assertEquals(dupRows.length, 0);
 
   // Assert Primary Node has consolidated properties
-  const [primRows] = await db.query("SELECT * FROM graph_nodes WHERE node_id = ?", [primaryId]) as any[];
-  assertEquals(primRows.length, 1);
-  const props = JSON.parse(primRows[0].properties_json);
+  const primRows = await db.query("SELECT * FROM graph_nodes WHERE node_id = ?", [primaryId]) as any[];
+  assertEquals(primRows[0].length, 1);
+  const props = typeof primRows[0][0].properties_json === "string" ? JSON.parse(primRows[0][0].properties_json) : (primRows[0][0].properties_json || {});
   assertEquals(props.contact_phone, "9876543210");
   assertEquals(props.gstin, "27AAACL1111A1Z1");
 
@@ -127,7 +127,8 @@ test("Relationship Versioning: tracks edge updates in history", async () => {
     [sourceId, targetId]
   ) as any[];
   assertEquals(edges[0].version, 2);
-  assertEquals(JSON.parse(edges[0].properties_json).status, "TRANSFERRED");
+  const edgeProps = typeof edges[0].properties_json === "string" ? JSON.parse(edges[0].properties_json) : (edges[0].properties_json || {});
+  assertEquals(edgeProps.status, "TRANSFERRED");
 
   // Assert graph_edge_history has version 1 archive
   const [history] = await db.query(
@@ -136,7 +137,8 @@ test("Relationship Versioning: tracks edge updates in history", async () => {
   ) as any[];
   assertEquals(history.length, 1);
   assertEquals(history[0].version, 1);
-  assertEquals(JSON.parse(history[0].properties_json).status, "ACTIVE");
+  const histProps = typeof history[0].properties_json === "string" ? JSON.parse(history[0].properties_json) : (history[0].properties_json || {});
+  assertEquals(histProps.status, "ACTIVE");
 });
 
 test("Shortest Path (BFS): finds connection paths between distant nodes", async () => {
