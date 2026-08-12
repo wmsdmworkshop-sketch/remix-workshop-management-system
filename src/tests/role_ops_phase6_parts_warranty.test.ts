@@ -75,8 +75,8 @@ async function runTests() {
 
     // Seed stock
     await pool.query(
-      `INSERT INTO tbl_inventory_stock (branch_id, warehouse_id, bin_id, part_number, available_quantity)
-       VALUES ('BR-SEDAM', 'WH-MAIN', 'BIN-01', 'P-TEST', 20)
+      `INSERT INTO tbl_inventory_stock (stock_id, branch_id, warehouse_id, bin_id, part_number, available_quantity)
+       VALUES ('STOCK-01', 'BR-SEDAM', 'WH-MAIN', 'BIN-01', 'P-TEST', 20)
        ON DUPLICATE KEY UPDATE available_quantity = 20`
     );
 

@@ -120,7 +120,7 @@ async function getMgpStatus(mgpId: number): Promise<string> {
 
 async function getSlaStatus(entityId: string, stageName: string): Promise<string> {
   const [rows]: any = await pool.execute(
-    `SELECT status FROM tbl_handoff_sla WHERE entity_id = ? AND stage_name = ? ORDER BY sla_id DESC LIMIT 1`,
+    `SELECT status FROM tbl_handoff_sla WHERE entity_id = ? AND stage_name = ? ORDER BY created_at DESC LIMIT 1`,
     [entityId, stageName]
   );
   return rows[0]?.status ?? 'NOT_FOUND';

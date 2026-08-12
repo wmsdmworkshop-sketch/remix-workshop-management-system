@@ -114,9 +114,10 @@ export const users = mysqlTable("users", {
 // Role Permissions Table
 export const rolePermissions = mysqlTable("role_permissions", {
   permission_id: int("permission_id").primaryKey().autoincrement(),
-  role_id: int("role_id").notNull(),
-  module_id: int("module_id").notNull(),
+  role_name: varchar("role_name", { length: 50 }).notNull(),
+  module_name: varchar("module_name", { length: 50 }).notNull(),
   can_view: boolean("can_view"),
+  can_comment: boolean("can_comment"),
   can_create: boolean("can_create"),
   can_edit: boolean("can_edit"),
   can_delete: boolean("can_delete"),
@@ -239,7 +240,7 @@ export const revenueSplits = mysqlTable("revenue_splits", {
 
 // JobCards (EXTENDED for WOS v1.0)
 export const jobCards = mysqlTable("job_cards", {
-  job_id: int("job_id").primaryKey(),
+  job_id: int("job_id").primaryKey().autoincrement(),
   job_card_no: text("job_card_no").notNull(),
   crm_job_card_no: text("crm_job_card_no"),
   vrn: text("vrn").notNull(),
@@ -726,7 +727,7 @@ export const tblAuditTrail = mysqlTable("tbl_audit_trail", {
   user_id: int("user_id"),
 
   // Purpose: Target polymorphic entity classifications (e.g. 'job_cards').
-  entity_type: text("entity_type").notNull(),
+  entity_type: varchar("entity_type", { length: 50 }).notNull(),
   entity_id: int("entity_id").notNull(),
 
   // Purpose: Log action key (e.g., 'STATUS_CHANGE', 'RECORD_CREATE').
@@ -768,7 +769,7 @@ export const rptQcChecklists = mysqlTable("rpt_qc_checklists", {
   inspector_id: int("inspector_id").notNull(),
 
   // Purpose: Quality check result: 'PASS' or 'FAIL'.
-  result: text("result").notNull(),
+  result: varchar("result", { length: 50 }).notNull(),
 
   // Purpose: Checklist checklist items parameters in JSON.
   check_items_json: text("check_items_json"),
@@ -808,7 +809,7 @@ export const rptDigitalApprovals = mysqlTable("rpt_digital_approvals", {
   signature_url: text("signature_url"),
 
   // Purpose: Method selected: 'SIGNATURE_PAD', 'OTP', 'WHATSAPP'.
-  approval_method: text("approval_method").notNull(),
+  approval_method: varchar("approval_method", { length: 50 }).notNull(),
 
   // Purpose: SHA-256 OTP verification code.
   otp_hash: text("otp_hash"),
@@ -927,10 +928,10 @@ export const tblDecisionLog = mysqlTable("tbl_decision_log", {
   job_id: int("job_id").notNull(),
 
   // Purpose: Decision classification (e.g. 'AI_OVERRIDE', 'QC_OVERRIDE').
-  decision_type: text("decision_type").notNull(),
+  decision_type: varchar("decision_type", { length: 50 }).notNull(),
 
   // Purpose: Polymorphic entity reference type.
-  entity_type: text("entity_type").notNull().default("job_card"),
+  entity_type: varchar("entity_type", { length: 50 }).notNull().default("job_card"),
 
   // Purpose: Polymorphic entity record ID.
   entity_id: int("entity_id").notNull(),
@@ -982,7 +983,7 @@ export const tblValidationRun = mysqlTable("tbl_validation_run", {
   run_id: serial("run_id").primaryKey(),
 
   // Purpose: Distinct run key identifier.
-  validation_run_id: text("validation_run_id").notNull(),
+  validation_run_id: varchar("validation_run_id", { length: 255 }).notNull(),
 
   dwip_version: text("dwip_version"),
   etl_version: text("etl_version"),
@@ -1028,10 +1029,10 @@ export const tblWorkflowHistory = mysqlTable("tbl_workflow_history", {
   job_id: int("job_id").notNull(),
 
   // Purpose: Previous workflow state.
-  old_state: text("old_state"),
+  old_state: varchar("old_state", { length: 50 }),
 
   // Purpose: Active workflow state transitioned to.
-  new_state: text("new_state").notNull(),
+  new_state: varchar("new_state", { length: 50 }).notNull(),
 
   // Purpose: Queue assigned (e.g. 'WIP_QUEUE').
   queue: text("queue"),
@@ -1756,7 +1757,7 @@ export const tbl_parts_master = mysqlTable('tbl_parts_master', {
   part_number: varchar('part_number', { length: 100 }).primaryKey(),
   part_description: text('part_description'),
   oem_part_number: varchar('oem_part_number', { length: 100 }),
-  category: varchar('category', { length: 50 }),
+  part_category: varchar('part_category', { length: 50 }),
   sub_category: varchar('sub_category', { length: 50 }),
   uom: varchar('uom', { length: 20 }),
   hsn_code: varchar('hsn_code', { length: 20 }),
@@ -1785,6 +1786,7 @@ export const tbl_part_supersession = mysqlTable('tbl_part_supersession', {
 export const tbl_warehouse_master = mysqlTable('tbl_warehouse_master', {
   warehouse_id: varchar('warehouse_id', { length: 50 }).primaryKey(),
   branch_id: varchar('branch_id', { length: 50 }),
+  warehouse_name: varchar('warehouse_name', { length: 100 }),
   location: varchar('location', { length: 100 }),
   type: varchar('type', { length: 50 }),
   status: varchar('status', { length: 50 })
@@ -1802,6 +1804,7 @@ export const tbl_bin_master = mysqlTable('tbl_bin_master', {
 
 export const tbl_inventory_stock = mysqlTable('tbl_inventory_stock', {
   stock_id: varchar('stock_id', { length: 50 }).primaryKey(),
+  branch_id: varchar('branch_id', { length: 50 }),
   part_number: varchar('part_number', { length: 100 }).notNull(),
   warehouse_id: varchar('warehouse_id', { length: 50 }).notNull(),
   bin_id: varchar('bin_id', { length: 50 }),
@@ -1863,8 +1866,10 @@ export const tbl_stock_transaction = mysqlTable('tbl_stock_transaction', {
   transaction_id: varchar('transaction_id', { length: 50 }).primaryKey(),
   transaction_type: varchar('transaction_type', { length: 50 }), // GRN, ISSUE, RETURN, TRANSFER, ADJUSTMENT
   part_number: varchar('part_number', { length: 100 }).notNull(),
+  branch_id: varchar('branch_id', { length: 50 }),
   warehouse_id: varchar('warehouse_id', { length: 50 }),
   bin_id: varchar('bin_id', { length: 50 }),
+  from_bin_id: varchar('from_bin_id', { length: 50 }),
   reference_type: varchar('reference_type', { length: 50 }), // e.g. GRN_NO, ISSUE_NO, TRANSFER_NO
   reference_id: varchar('reference_id', { length: 50 }),
   quantity: decimal('quantity', { precision: 12, scale: 2 }),
@@ -1878,6 +1883,7 @@ export const tbl_stock_transaction = mysqlTable('tbl_stock_transaction', {
 export const tbl_stock_reservation = mysqlTable('tbl_stock_reservation', {
   reservation_number: varchar('reservation_number', { length: 50 }).primaryKey(),
   job_card_id: varchar('job_card_id', { length: 50 }),
+  branch_id: varchar('branch_id', { length: 50 }),
   part_number: varchar('part_number', { length: 100 }).notNull(),
   reserved_quantity: decimal('reserved_quantity', { precision: 12, scale: 2 }),
   issued_quantity: decimal('issued_quantity', { precision: 12, scale: 2 }).default('0'),
@@ -1890,6 +1896,8 @@ export const tbl_goods_issue = mysqlTable('tbl_goods_issue', {
   job_card_id: varchar('job_card_id', { length: 50 }),
   part_number: varchar('part_number', { length: 100 }).notNull(),
   issued_quantity: decimal('issued_quantity', { precision: 12, scale: 2 }),
+  issued_by: varchar('issued_by', { length: 50 }),
+  branch_id: varchar('branch_id', { length: 50 }),
   warehouse_id: varchar('warehouse_id', { length: 50 }),
   bin_id: varchar('bin_id', { length: 50 }),
   technician_id: varchar('technician_id', { length: 50 }),

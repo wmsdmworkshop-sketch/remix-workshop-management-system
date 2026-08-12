@@ -2,7 +2,11 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
-dotenv.config({ override: true });
+if (process.env.NODE_ENV === "test") {
+  dotenv.config({ path: ".env.test", override: true });
+} else {
+  dotenv.config({ override: true });
+}
 import { GoogleGenAI, ThinkingLevel, Modality, Type, GenerateVideosOperation } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { syncLoad, syncSave, clearJobCardsInDB } from "./src/db/sync.ts";
@@ -8555,7 +8559,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // --- VITE MIDDLEWARE SETUP ---
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

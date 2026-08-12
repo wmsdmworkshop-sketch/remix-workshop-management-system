@@ -71,7 +71,7 @@ async function seedJobWithCardNo(tag: string): Promise<{ jobId: number; jobCardN
 
 async function seedFloorToQcSla(jobId: number) {
   await pool.execute(
-    `INSERT INTO tbl_handoff_sla (entity_id, stage_name, status) VALUES (?, 'SLA_FLOOR_TO_QC', 'ON_TRACK')`,
+    `INSERT INTO tbl_handoff_sla (handoff_id, branch_id, entity_id, stage_name, status, owner_id, owner_role, sla_due_at) VALUES (UUID(), 'BR-SEDAM', ?, 'SLA_FLOOR_TO_QC', 'ON_TRACK', 'EMP01', 'QC', NOW())`,
     [jobId]
   );
 }

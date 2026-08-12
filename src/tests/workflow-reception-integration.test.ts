@@ -194,8 +194,11 @@ async function runTestSuite() {
   console.log(`TEST SUITE RESULTS: ${passed} passed, ${failed} failed`);
   console.log("=============================================================================");
 
+  db.end();
   if (failed > 0) {
     process.exit(1);
+  } else {
+    process.exit(0);
   }
 }
 

@@ -320,6 +320,9 @@ async function runTestSuite() {
   console.log("=============================================================================");
 
   db.end(); // close db pool
+  if (failed > 0) {
+    process.exit(1);
+  }
 }
 
 runTestSuite();

@@ -470,10 +470,10 @@ export class QcExecutionEngine {
         await conn.execute(`UPDATE job_cards SET status = 'QC_FAILED_REWORK' WHERE job_id = ?`, [jobId]);
       } else {
         await conn.execute(`UPDATE job_cards SET status = 'QC_PASSED' WHERE job_id = ?`, [jobId]);
-        await conn.execute(
-          `INSERT INTO tbl_handoff_sla (entity_id, stage_name, status, branch_id) VALUES (?, 'SLA_QC_TO_SA', 'ON_TRACK', ?)`,
-          [jobId.toString(), branchId.toString()]
-        );
+          await conn.execute(
+            `INSERT INTO tbl_handoff_sla (handoff_id, entity_id, stage_name, status, branch_id, owner_id, owner_role, sla_due_at) VALUES (UUID(), ?, 'SLA_QC_TO_SA', 'ON_TRACK', ?, 'SYSTEM', 'SYSTEM', NOW())`,
+            [jobId.toString(), branchId.toString()]
+          );
       }
 
       await conn.commit();
@@ -652,7 +652,7 @@ export class QcExecutionEngine {
     }
 
     const [sla]: any = await this.execute(
-      `SELECT status FROM tbl_handoff_sla WHERE entity_id = ? AND stage_name = 'SLA_QC_TO_SA' ORDER BY sla_id DESC LIMIT 1`,
+      `SELECT status FROM tbl_handoff_sla WHERE entity_id = ? AND stage_name = 'SLA_QC_TO_SA' ORDER BY created_at DESC LIMIT 1`,
       [jobId.toString()]
     );
     if (!sla || sla.length === 0 || sla[0].status !== "COMPLETED") {

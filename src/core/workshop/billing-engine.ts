@@ -440,11 +440,11 @@ export class BillingEngine {
       );
 
       // SLA: SLA_PREINVOICE_SA_REVIEW
-      await conn.execute(
-        `INSERT INTO tbl_handoff_sla (entity_id, stage_name, status, branch_id, target_sla_minutes)
-         VALUES (?, 'SLA_PREINVOICE_SA_REVIEW', 'ON_TRACK', ?, 60)`,
-        [String(preInvoiceId), String(branchId)]
-      );
+        await conn.execute(
+          `INSERT INTO tbl_handoff_sla (handoff_id, entity_id, stage_name, status, branch_id, target_sla_minutes, owner_id, owner_role, sla_due_at)
+         VALUES (UUID(), ?, 'SLA_PREINVOICE_SA_REVIEW', 'ON_TRACK', ?, 60, 'SYSTEM', 'SYSTEM', DATE_ADD(NOW(), INTERVAL 60 MINUTE))`,
+          [String(preInvoiceId), String(branchId)]
+        );
 
       await conn.commit();
 
@@ -533,11 +533,11 @@ export class BillingEngine {
     );
 
     // SLA: SLA_CUSTOMER_CONFIRMATION
-    await this.execute(
-      `INSERT INTO tbl_handoff_sla (entity_id, stage_name, status, branch_id, target_sla_minutes)
-       VALUES (?, 'SLA_CUSTOMER_CONFIRMATION', 'ON_TRACK', ?, 120)`,
-      [String(preInvoiceId), String(branchId)]
-    );
+      await this.execute(
+        `INSERT INTO tbl_handoff_sla (handoff_id, entity_id, stage_name, status, branch_id, target_sla_minutes, owner_id, owner_role, sla_due_at)
+         VALUES (UUID(), ?, 'SLA_CUSTOMER_CONFIRMATION', 'ON_TRACK', ?, 120, 'SYSTEM', 'SYSTEM', DATE_ADD(NOW(), INTERVAL 120 MINUTE))`,
+        [String(preInvoiceId), String(branchId)]
+      );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -668,8 +668,8 @@ export class BillingEngine {
 
       // SLA: SLA_SA_TO_BILLING
       await conn.execute(
-        `INSERT INTO tbl_handoff_sla (entity_id, stage_name, status, branch_id, target_sla_minutes)
-         VALUES (?, 'SLA_SA_TO_BILLING', 'ON_TRACK', ?, 30)`,
+        `INSERT INTO tbl_handoff_sla (handoff_id, entity_id, stage_name, status, branch_id, target_sla_minutes, owner_id, owner_role, sla_due_at)
+         VALUES (UUID(), ?, 'SLA_SA_TO_BILLING', 'ON_TRACK', ?, 30, 'SYSTEM', 'SYSTEM', DATE_ADD(NOW(), INTERVAL 30 MINUTE))`,
         [String(preInvoiceId), String(branchId)]
       );
 
@@ -729,8 +729,8 @@ export class BillingEngine {
 
       // SLA: SLA_BILLING_VALIDATION
       await conn.execute(
-        `INSERT INTO tbl_handoff_sla (entity_id, stage_name, status, branch_id, target_sla_minutes)
-         VALUES (?, 'SLA_BILLING_VALIDATION', 'ON_TRACK', ?, 120)`,
+        `INSERT INTO tbl_handoff_sla (handoff_id, entity_id, stage_name, status, branch_id, target_sla_minutes, owner_id, owner_role, sla_due_at)
+         VALUES (UUID(), ?, 'SLA_BILLING_VALIDATION', 'ON_TRACK', ?, 120, 'SYSTEM', 'SYSTEM', DATE_ADD(NOW(), INTERVAL 120 MINUTE))`,
         [String(preInvoiceId), String(branchId)]
       );
 
@@ -948,8 +948,8 @@ export class BillingEngine {
 
       // SLA: SLA_BILLING_RETURN_TO_SA (5-minute)
       await conn.execute(
-        `INSERT INTO tbl_handoff_sla (entity_id, stage_name, status, branch_id, target_sla_minutes)
-         VALUES (?, 'SLA_BILLING_RETURN_TO_SA', 'ON_TRACK', ?, 5)`,
+        `INSERT INTO tbl_handoff_sla (handoff_id, entity_id, stage_name, status, branch_id, target_sla_minutes, owner_id, owner_role, sla_due_at)
+         VALUES (UUID(), ?, 'SLA_BILLING_RETURN_TO_SA', 'ON_TRACK', ?, 5, 'SYSTEM', 'SYSTEM', DATE_ADD(NOW(), INTERVAL 5 MINUTE))`,
         [String(preInvoiceId), String(branchId)]
       );
 
@@ -1177,10 +1177,10 @@ export class BillingEngine {
     // Cross-reference against DMS imported invoices (non-blocking)
     let dmsMatchRef: string | null = null;
     const [dmsRows]: any = await this.execute(
-      `SELECT invoice_no FROM invoices WHERE invoice_no = ? LIMIT 1`,
+      `SELECT invoice_number FROM tbl_invoice WHERE invoice_number = ? LIMIT 1`,
       [payload.crm_invoice_number.trim()]
     );
-    if (dmsRows && dmsRows.length > 0) dmsMatchRef = dmsRows[0].invoice_no;
+    if (dmsRows && dmsRows.length > 0) dmsMatchRef = dmsRows[0].invoice_number;
 
     const conn = await this.getConn();
     try {
@@ -1258,8 +1258,8 @@ export class BillingEngine {
 
       // Create SLA_BILLING_TO_CASHIER
       await conn.execute(
-        `INSERT INTO tbl_handoff_sla (entity_id, stage_name, status, branch_id, target_sla_minutes)
-         VALUES (?, 'SLA_BILLING_TO_CASHIER', 'ON_TRACK', ?, 60)`,
+        `INSERT INTO tbl_handoff_sla (handoff_id, entity_id, stage_name, status, branch_id, target_sla_minutes, owner_id, owner_role, sla_due_at)
+         VALUES (UUID(), ?, 'SLA_BILLING_TO_CASHIER', 'ON_TRACK', ?, 60, 'SYSTEM', 'SYSTEM', DATE_ADD(NOW(), INTERVAL 60 MINUTE))`,
         [String(preInvoiceId), String(branchId)]
       );
 
@@ -1460,10 +1460,9 @@ export class BillingEngine {
 
         // SLA_MANUAL_RELEASE_TO_BILLING with EOD deadline
         await conn.execute(
-          `INSERT INTO tbl_handoff_sla
-             (entity_id, stage_name, status, branch_id, eod_deadline, target_sla_minutes)
-           VALUES (?, 'SLA_MANUAL_RELEASE_TO_BILLING', 'ON_TRACK', ?, ?, NULL)`,
-          [String(mgpId), String(branchId), eodDeadline]
+          `INSERT INTO tbl_handoff_sla (handoff_id, entity_id, stage_name, status, branch_id, eod_deadline, target_sla_minutes, owner_id, owner_role, sla_due_at)
+         VALUES (UUID(), ?, 'SLA_MANUAL_RELEASE_TO_BILLING', 'ON_TRACK', ?, ?, NULL, 'SYSTEM', 'SYSTEM', ?)`,
+          [String(mgpId), String(branchId), eodDeadline, eodDeadline]
         );
 
         await conn.commit();
@@ -1579,10 +1578,10 @@ export class BillingEngine {
 
     let dmsMatchRef: string | null = null;
     const [dmsRows]: any = await this.execute(
-      `SELECT invoice_no FROM invoices WHERE invoice_no = ? LIMIT 1`,
+      `SELECT invoice_number FROM tbl_invoice WHERE invoice_number = ? LIMIT 1`,
       [payload.crm_invoice_number.trim()]
     );
-    if (dmsRows && dmsRows.length > 0) dmsMatchRef = dmsRows[0].invoice_no;
+    if (dmsRows && dmsRows.length > 0) dmsMatchRef = dmsRows[0].invoice_number;
 
     const conn = await this.getConn();
     try {
@@ -1653,8 +1652,8 @@ export class BillingEngine {
 
       // SLA_BILLING_TO_CASHIER
       await conn.execute(
-        `INSERT INTO tbl_handoff_sla (entity_id, stage_name, status, branch_id, target_sla_minutes)
-         VALUES (?, 'SLA_BILLING_TO_CASHIER', 'ON_TRACK', ?, 60)`,
+        `INSERT INTO tbl_handoff_sla (handoff_id, entity_id, stage_name, status, branch_id, target_sla_minutes, owner_id, owner_role, sla_due_at)
+         VALUES (UUID(), ?, 'SLA_BILLING_TO_CASHIER', 'ON_TRACK', ?, 60, 'SYSTEM', 'SYSTEM', DATE_ADD(NOW(), INTERVAL 60 MINUTE))`,
         [String(preInvoiceId || mgpId), String(branchId)]
       );
 
