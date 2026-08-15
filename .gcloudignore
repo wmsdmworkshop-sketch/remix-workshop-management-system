@@ -34,3 +34,12 @@ railway_dump.sql
 
 android/
 
+# Transient / sensitive scratch files — keep out of the Cloud Build upload
+*.cjs
+bucket_iam_backup.json
+db_schema.txt
+dev/
+src/scripts/
+test_engine.js
+.artifacts/
+

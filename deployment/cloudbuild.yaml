@@ -1,0 +1,74 @@
+# ============================================================================
+# CORRECT production deploy pipeline for the LIVE dwip-enterprise Cloud Run
+# service (project giga-course-dp497, region asia-south1).
+#
+# Why this file exists: the previous cloudbuild deployed to a NON-EXISTENT
+# service (wms-workshop-app), which would have created a duplicate and never
+# touched prod. This pipeline targets the real live service by name.
+#
+# It builds with deployment/Dockerfile (node:22, PORT 3001, `build:rc1`) — the
+# image whose config matches live revision dwip-enterprise-00056-9tj — and then
+# deploys IMAGE-ONLY. No env/SA/port/scaling flags are passed, so ALL existing
+# runtime config is PRESERVED:
+#   env vars : DB_HOST DB_PORT DB_USER DB_PASSWORD DB_DATABASE
+#              JWT_SECRET CUSTOMER_JWT_SECRET NODE_ENV ADDITIONAL_CORS_ORIGINS
+#   SA       : 772298398554-compute@developer.gserviceaccount.com
+#   port     : 3001 (containerPort)   scaling: maxScale 3, concurrency 80
+#
+# DANGER: never add --set-env-vars to the deploy step. The live DB password and
+# JWT secrets exist ONLY on the running service (plaintext Cloud Run env vars,
+# not in this repo). Passing env flags would drop the ones you omit and take
+# prod down. Image-only deploy leaves them intact.
+#
+# Run:
+#   gcloud builds submit --config deployment/cloudbuild.yaml \
+#     --substitutions=_TAG=$(git rev-parse --short HEAD) \
+#     --project giga-course-dp497
+# ============================================================================
+
+substitutions:
+  _SERVICE: dwip-enterprise
+  _REGION: asia-south1
+  _REPO: cloud-run-source-deploy
+  _TAG: manual
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+images:
+  - 'asia-south1-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:${_TAG}'
+
+steps:
+  # 1 ── Build with the CORRECT Dockerfile (deployment/Dockerfile → port 3001).
+  #      The root ./Dockerfile is the WRONG one (node:20, port 8080, `build`).
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - deployment/Dockerfile
+      - -t
+      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:${_TAG}'
+      - .
+
+  # 2 ── Push the image to Artifact Registry (same repo the live image lives in).
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:${_TAG}'
+
+  # 3 ── Deploy IMAGE-ONLY to the existing service. Unspecified flags retain
+  #      their current live values, so env/SA/port/scaling are untouched.
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=asia-south1-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:${_TAG}
+      - --region=${_REGION}
+      - --project=$PROJECT_ID
+
+timeout: 1800s
