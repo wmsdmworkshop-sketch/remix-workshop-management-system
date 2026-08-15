@@ -140,6 +140,11 @@ async function run() {
   db.execute = originalExecute;
   if (failed > 0) {
     process.exit(1);
+  } else {
+    // Exit explicitly: without this the process hangs on open async handles
+    // and the legacy test runner's per-file timeout kills it before it's
+    // counted as passed.
+    process.exit(0);
   }
 }
 

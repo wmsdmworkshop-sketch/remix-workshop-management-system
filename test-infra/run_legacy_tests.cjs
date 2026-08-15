@@ -49,7 +49,17 @@ for (const f of legacyFiles) {
     stdio: ['ignore', 'pipe', 'pipe'],
     encoding: 'utf8',
     shell: process.platform === 'win32',
-    timeout: 5000, // per-file cap so a hanging test can't stall the whole run
+    // Per-file cap so a hanging test can't stall the whole run. 5000ms was way
+    // too tight: cold `npx tsx` transform overhead under full-suite load (78
+    // sequential spawns on Windows) pushed otherwise-fast files (e.g.
+    // ai-hardening, ~2.6s standalone) past it, producing flaky false
+    // TIMEOUTs — a different random subset failed on each of several clean
+    // reruns. 25s gives real headroom for that variance while still bounding
+    // genuinely-hung files (see the process.exit(0) fix applied to several
+    // legacy test files for the real fix to tests that never exit after
+    // printing results — this timeout is a backstop for the rest, not a
+    // substitute for fixing more of them the same way if they show up again).
+    timeout: 25000,
     killSignal: 'SIGKILL',
   });
   const out = `${res.stdout || ''}${res.stderr || ''}`;
@@ -59,7 +69,7 @@ for (const f of legacyFiles) {
     passed.push(f);
     console.log(`  ✓ ${f}  ${summary || '(passed but timed out)'}`);
   } else {
-    const why = res.signal === 'SIGKILL' ? '(TIMEOUT >5s)' : summary || `(exit ${res.status})`;
+    const why = res.signal === 'SIGKILL' ? '(TIMEOUT >25s)' : summary || `(exit ${res.status})`;
     failed.push(f);
     console.log(`  ✗ ${f}  ${why}`);
   }

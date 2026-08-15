@@ -221,6 +221,10 @@ async function main() {
     process.exit(1);
   } else {
     console.log("\n✅ ALL TESTS PASSED");
+    // Exit explicitly: the harness leaves async handles (timers/mock listeners)
+    // open, so without this Node waits on the event loop and the legacy test
+    // runner's per-file timeout kills it before it's counted as passed.
+    process.exit(0);
   }
 }
 

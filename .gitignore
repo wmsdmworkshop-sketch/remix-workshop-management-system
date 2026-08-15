@@ -26,3 +26,11 @@ blob-report/
 
 android/.gradle_home/
 
+# Artifacts and local scratch files
+.artifacts/
+bucket_iam_backup.json
+db_schema.txt
+describe_tables.cjs
+fix_route.cjs
+test_engine.js
+dev/

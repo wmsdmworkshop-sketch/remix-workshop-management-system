@@ -182,6 +182,11 @@ async function runTestSuite() {
 
   if (failed > 0) {
     process.exit(1);
+  } else {
+    // Exit explicitly: scheduleRenewalReminder's timer keeps the event loop
+    // alive, so without this Node never drains and the legacy test runner's
+    // per-file timeout kills it before it's counted as passed.
+    process.exit(0);
   }
 }
 

@@ -108,6 +108,10 @@ function runP0003Tests() {
   console.log(`\n📊 P0-003 TEST RESULTS: ${passedCount} / ${totalCount} PASSED.`);
   if (passedCount !== totalCount) {
     process.exit(1);
+  } else {
+    // Exit explicitly: without this Node may wait on the event loop and the
+    // legacy test runner's per-file timeout kills it before it's counted as passed.
+    process.exit(0);
   }
 }
 

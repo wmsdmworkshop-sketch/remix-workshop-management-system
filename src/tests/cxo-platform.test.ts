@@ -160,9 +160,9 @@ test("Epic 10: Feedback metrics capture CSI / NPS ratings and dynamically promot
 
   await db.execute(
     `INSERT INTO customer_feedback (
-      feedback_id, customer_passport_id, job_id, csi_score, nps_score, workshop_rating, comments
-     ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [feedbackId, passportId, 9012, 10, 10, 5, "Excellent service, completed early."]
+      feedback_id, customer_passport_id, job_id, csi_score, nps_score, workshop_rating, advisor_rating, technician_rating, comments, resolved_quality
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [feedbackId, passportId, 9012, 10, 10, 5, 5, 5, "Excellent service, completed early.", "EXCELLENT"]
   );
 
   // Compute mock promotion logic (NPS 10 + CSI 10 -> GOLD)

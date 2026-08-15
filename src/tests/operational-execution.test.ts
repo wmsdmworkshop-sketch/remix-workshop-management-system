@@ -166,6 +166,8 @@ async function run() {
   db.execute = originalExecute;
   if (failed > 0) {
     process.exit(1);
+  } else {
+    process.exit(0);
   }
 }
 

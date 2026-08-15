@@ -130,18 +130,7 @@ try {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
     `);
-    await pool.execute(`
-    CREATE TABLE IF NOT EXISTS ai_recommendations (
-      recommendation_id VARCHAR(100) PRIMARY KEY,
-      target_type VARCHAR(100) NOT NULL,
-      target_id VARCHAR(100) NOT NULL,
-      recommendation_type VARCHAR(100) NOT NULL,
-      confidence_score DECIMAL(5,2) DEFAULT 0,
-      status VARCHAR(50) DEFAULT 'NEW',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-  `);
-  
+
   await pool.execute(`DROP TABLE IF EXISTS tbl_warehouse_master`);
   await pool.execute(`
     CREATE TABLE tbl_warehouse_master (
@@ -406,6 +395,23 @@ try {
       feedback_comments TEXT,
       role_submitting VARCHAR(100) DEFAULT NULL,
       time_saved_sec INT DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  `);
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS ai_copilot_skills (
+      skill_id VARCHAR(100) PRIMARY KEY,
+      skill_name VARCHAR(255) NOT NULL UNIQUE,
+      description TEXT NOT NULL,
+      allowed_roles TEXT NOT NULL,
+      usage_count INT DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  `);
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS dealer_configurations (
+      config_key VARCHAR(100) PRIMARY KEY,
+      config_value TEXT NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   `);
@@ -737,39 +743,6 @@ try {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   `);
 
-  await pool.execute(`DROP TABLE IF EXISTS oem_queries`);
-  await pool.execute(`
-    CREATE TABLE oem_queries (
-      query_id VARCHAR(50) PRIMARY KEY,
-      claim_id VARCHAR(50),
-      query_text TEXT,
-      status VARCHAR(50),
-      evidence_requested TEXT
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-  `);
-
-  await pool.execute(`DROP TABLE IF EXISTS warranty_dna`);
-  await pool.execute(`
-    CREATE TABLE warranty_dna (
-      dna_id VARCHAR(50) PRIMARY KEY,
-      claim_no VARCHAR(50),
-      status VARCHAR(50),
-      approved BOOLEAN,
-      evidence_used TEXT,
-      circular_applied TEXT,
-      failure_pattern TEXT,
-      technician VARCHAR(100),
-      vehicle VARCHAR(100),
-      part VARCHAR(100),
-      oem_questions TEXT,
-      time_to_approval_sec INT,
-      lessons_learned TEXT,
-      ai_confidence DECIMAL(5,2),
-      golden_claim BOOLEAN,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-  `);
 
   console.log("[setup_test_db] ✓ genuinely-missing test tables created");
 

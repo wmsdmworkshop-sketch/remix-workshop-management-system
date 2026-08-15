@@ -1687,6 +1687,60 @@ LOCK TABLES `users` WRITE;
 UNLOCK TABLES;
 
 --
+-- Table structure for table `tbl_handoff_sla`
+--
+-- NOTE: Added to this baseline because it is a pre-existing production table
+-- that migration v8 (008_billing_tables) ALTERs (adds eod_deadline /
+-- target_sla_minutes). The original Railway dump this file was generated from
+-- did not include it, so a fresh wms_test DB had no table for v8 to ALTER.
+-- Column set sourced verbatim from live Cloud SQL prod (railway.tbl_handoff_sla).
+--
+
+DROP TABLE IF EXISTS `tbl_handoff_sla`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tbl_handoff_sla` (
+  `sla_id` int NOT NULL AUTO_INCREMENT,
+  `entity_id` varchar(100) DEFAULT NULL,
+  `stage_name` varchar(100) DEFAULT NULL,
+  `status` varchar(50) DEFAULT 'PENDING',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `accepted_at` timestamp NULL DEFAULT NULL,
+  `branch_id` varchar(50) DEFAULT NULL,
+  `eod_deadline` datetime DEFAULT NULL,
+  `target_sla_minutes` int DEFAULT NULL,
+  `escalation_level` int DEFAULT '0',
+  `escalated_at` timestamp NULL DEFAULT NULL,
+  `handoff_id` varchar(50) DEFAULT NULL,
+  `owner_role` varchar(50) DEFAULT NULL,
+  `owner_id` varchar(50) DEFAULT NULL,
+  `sla_due_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`sla_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `dealer_configurations`
+--
+-- NOTE: Pre-existing prod key/value config table. Migration v8 reads
+-- `workdayEnd` from it (SELECT ... WHERE config_key='workdayEnd') before the
+-- harness's post-migration table-creation runs, so it must exist in the
+-- baseline. Structure sourced verbatim from live Cloud SQL prod
+-- (railway.dealer_configurations): config_value is TEXT, not VARCHAR.
+--
+
+DROP TABLE IF EXISTS `dealer_configurations`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `dealer_configurations` (
+  `config_key` varchar(100) NOT NULL,
+  `config_value` text NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`config_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Temporary view structure for view `vw_bay_queue_display`
 --
 
