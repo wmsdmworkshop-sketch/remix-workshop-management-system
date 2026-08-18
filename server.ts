@@ -3701,22 +3701,35 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     });
   });
 
-  // Gate-In creation. Automatic path = /api/gate/anpr/ingest (device-keyed). When the
-  // ANPR camera fails, SECURITY logs in and captures plate + ODO by phone, then
-  // RECEPTION cross-checks and verifies. Only those two gate roles (plus admin/dev)
-  // may create a gate entry — managers and advisors do NOT gate-in.
-  app.post("/api/job-cards", requireRoles(["security_agent", "reception", "admin", "developer"]), async (req: any, res) => {
+  // Gate-In / Job Card intake creation. Supported for Security, Gate Personnel,
+  // Receptionists, Service Advisors, Supervisors, Managers, and Admins.
+  app.post("/api/job-cards", requireRoles([
+    "security_agent", 
+    "gate_personnel", 
+    "reception", 
+    "receptionist", 
+    "service_advisor", 
+    "supervisor", 
+    "floor_supervisor", 
+    "floor_incharge", 
+    "workshop_manager", 
+    "service_manager", 
+    "admin", 
+    "developer"
+  ]), async (req: any, res) => {
     const db = getDB();
     const newJob: JobCard = req.body;
     const nextId = db.jobCards.reduce((max: number, j: JobCard) => Math.max(max, j.job_id), 0) + 1;
     newJob.job_id = nextId;
-    newJob.job_card_no = `JC${String(nextId).padStart(3, "0")}`;
-    newJob.status = "Waiting";
+    newJob.job_card_no = newJob.job_card_no || `JC${String(nextId).padStart(3, "0")}`;
+    newJob.status = newJob.status || "Waiting";
+    newJob.current_workflow_state = newJob.current_workflow_state || "GATE_IN";
+    newJob.current_queue = newJob.current_queue || "INTAKE_QUEUE";
     newJob.started_at = null;
     newJob.completed_at = null;
     newJob.invoiced_at = null;
-    newJob.created_by = Number(newJob.created_by) || 1;
-    newJob.created_at = new Date().toISOString();
+    newJob.created_by = req.user?.user_id || Number(newJob.created_by) || 1;
+    newJob.created_at = newJob.created_at || new Date().toISOString();
 
     db.jobCards.push(newJob);
     setDB(db);
