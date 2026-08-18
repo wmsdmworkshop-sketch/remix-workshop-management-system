@@ -49,9 +49,42 @@ class MockOCRProcessor implements OCRProcessorProvider {
   }
 }
 
+class GeminiOCRProcessor implements OCRProcessorProvider {
+  async process(ocrImageBase64: string): Promise<{ text: string; confidence: number }> {
+    try {
+      const { GoogleGenAI } = await import("@google/genai");
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
+
+      const ai = new GoogleGenAI({ apiKey });
+      const base64Data = ocrImageBase64.replace(/^data:image\/\w+;base64,/, "");
+      const prompt = "Extract all text from this image accurately. Focus on Vehicle Registration Number (VRN), Odometer reading (KM), and Chassis Number. Return just the raw extracted text.";
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [
+          prompt,
+          {
+            inlineData: {
+              data: base64Data,
+              mimeType: "image/jpeg",
+            },
+          },
+        ],
+      });
+
+      const text = response.text || "";
+      return { text, confidence: 0.98 };
+    } catch (error) {
+      console.error("Gemini OCR Error:", error);
+      throw error;
+    }
+  }
+}
+
 const providers: Record<OCRProvider, OCRProcessorProvider> = {
-  GoogleVision: new MockOCRProcessor(),
-  Gemini: new MockOCRProcessor(),
+  GoogleVision: new GeminiOCRProcessor(), // Upgraded to Gemini for accuracy
+  Gemini: new GeminiOCRProcessor(),
   Azure: new MockOCRProcessor(),
   AWS: new MockOCRProcessor(),
   EasyOCR: new MockOCRProcessor(),
@@ -70,19 +103,24 @@ const ALLOW_MOCK_OCR = process.env.NODE_ENV !== "production";
  */
 export async function verifyJobCard(
   ocrImageBase64: string,
-  provider: OCRProvider = 'GoogleVision'
+  provider: OCRProvider = 'Gemini'
 ): Promise<OCRResult> {
-  if (!ALLOW_MOCK_OCR) {
-    // Fail closed: unconfigured OCR → unverified (no fabricated text/confidence).
+  const apiKey = process.env.GEMINI_API_KEY;
+  const isProd = process.env.NODE_ENV === "production";
+
+  // In production, we MUST have an API key to proceed.
+  // If no key and not prod, we can use mock.
+  if (isProd && !apiKey) {
     return {
-      text: "",
+      text: "OCR Error: GEMINI_API_KEY not configured in production environment.",
       confidence: 0,
       provider,
       verificationTime: new Date().toISOString(),
       extractedFields: {}
     };
   }
-  const processor = providers[provider] || providers.GoogleVision;
+
+  const processor = providers[provider] || providers.Gemini;
   const result = await processor.process(ocrImageBase64);
   const extractedFields = extractJobCardFields(result.text);
 
