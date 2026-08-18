@@ -2,7 +2,7 @@ import React from "react";
 import { 
   LayoutDashboard, Truck, Wrench, Package, Users, TrendingUp, Settings, 
   HelpCircle, User, LogOut, ChevronRight, Bell, Search, Activity, Sparkles, Building,
-  Menu, X, KeyRound
+  Menu, X, KeyRound, ClipboardCheck
 } from "lucide-react";
 import ChangePasswordModal from "./ChangePasswordModal";
 
@@ -13,6 +13,7 @@ export interface TabItem {
 }
 
 export const WORKSPACE_MAPPING: Record<string, string> = {
+  "my-workspace": "my-workspace",
   dashboard: "dashboard",
   "workshop-cockpit": "executive",
   "executive-cockpit": "executive",
@@ -22,21 +23,33 @@ export const WORKSPACE_MAPPING: Record<string, string> = {
   "bay-tat": "workshop",
   "delivery-workspace": "workshop",
   "billing-exit": "workshop",
+  "billing-workspace": "workshop",
+  "cashier-workspace": "workshop",
+  "receptionist-workspace": "workshop",
+  "manager-assignment-workspace": "workshop",
+  "security-workspace": "workshop",
   "advisor-workspace": "service",
   "supervisor-workspace": "service",
   "technician-workspace": "service",
   "qc-workspace": "service",
+  "customer-portal": "service",
   breakdown: "service",
   "vehicle-lookup": "service",
   "parts-command": "parts",
   "parts-warranty": "parts",
+  "parts-incharge-workspace": "parts",
+  "warranty-clerk-workspace": "parts",
   employees: "workforce",
   attendance: "workforce",
   productivity: "workforce",
   certification: "workforce",
+  "tech-kpi": "workforce",
+  "tech-profile": "workforce",
   "gm-command": "executive",
   "powerbi-analytics": "executive",
   "roi-tracker": "executive",
+  revenue: "executive",
+  "fleet-manager-workspace": "executive",
   users: "admin",
   google: "admin",
   assistant: "admin",
@@ -62,6 +75,7 @@ export const WORKSPACE_MAPPING: Record<string, string> = {
 };
 
 export const WORKSPACES = [
+  { id: "my-workspace", label: "My Workspace", icon: ClipboardCheck },
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "workshop", label: "Workshop Operations", icon: Truck },
   { id: "service", label: "Service Operations", icon: Wrench },

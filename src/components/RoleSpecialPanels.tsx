@@ -24,7 +24,9 @@ import {
   HelpCircle,
   Briefcase,
   Bell,
-  X
+  X,
+  UserX,
+  AlertCircle
 } from "lucide-react";
 import { JobCard, Employee, Bay, JobTechnicianMap, JobRevenueSplitDetail, JobRevenue } from "../types";
 import { 
@@ -780,13 +782,21 @@ interface TechnicianKpiProps {
 }
 
 export function TechnicianKpiPanel({ employees, employeeId }: TechnicianKpiProps) {
-  // Let's find current employee profile or use demo values if empty
   const currentEmp = useMemo(() => {
-    return employees.find(e => e.employee_id === employeeId) || employees[0];
+    if (!employeeId || employeeId <= 0) return null;
+    return employees.find(e => e.employee_id === employeeId) || null;
   }, [employees, employeeId]);
 
   if (!currentEmp) {
-    return <div className="text-slate-400 text-xs text-center py-12">Technician profile not found.</div>;
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center text-slate-400 space-y-3">
+        <AlertCircle className="h-10 w-10 text-amber-500 mx-auto" />
+        <h3 className="text-sm font-bold text-white uppercase tracking-wider">Employee Profile Not Linked</h3>
+        <p className="text-xs text-slate-400 max-w-md mx-auto">
+          Your login account is not currently linked to an active Employee Directory profile. KPI performance tracking requires a valid employee assignment. Please contact HR/Admin to link your account.
+        </p>
+      </div>
+    );
   }
 
   const target = currentEmp.target_revenue || 50000;
@@ -949,8 +959,9 @@ export function TechnicianProfilePanel({ employees, employeeId: propsEmployeeId 
     }
   };
 
-  // Fallback if loading
-  const currentEmp = employee || employees.find(e => e.employee_id === propsEmployeeId) || employees[0];
+  // Strict resolution: Only use the authenticated user's linked employee profile.
+  // NEVER fallback to employees[0] or another arbitrary employee.
+  const currentEmp = employee || (propsEmployeeId ? employees.find(e => e.employee_id === propsEmployeeId) : null);
 
   if (loading && !currentEmp) {
     return (
@@ -962,8 +973,25 @@ export function TechnicianProfilePanel({ employees, employeeId: propsEmployeeId 
 
   if (!currentEmp) {
     return (
-      <div className="bg-white rounded-2xl p-12 text-center text-slate-400 border border-slate-200 shadow-sm text-xs font-medium">
-        Profile details not mapped. Please contact administrator.
+      <div className="max-w-2xl mx-auto my-12 bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center space-y-4 shadow-2xl">
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto text-amber-400">
+          <UserX className="h-8 w-8" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-lg font-black text-white uppercase tracking-wider">Employee Profile Not Linked</h2>
+          <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+            This login account is not currently linked to an Employee Directory profile. Please contact your Workshop HR or System Administrator to map your user account to your employee record.
+          </p>
+        </div>
+        <div className="pt-4 border-t border-slate-800 flex justify-center gap-3">
+          <button
+            onClick={() => fetchProfile()}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span>Retry Profile Sync</span>
+          </button>
+        </div>
       </div>
     );
   }

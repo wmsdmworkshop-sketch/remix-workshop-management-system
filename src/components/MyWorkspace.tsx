@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  ClipboardList, Clock, AlertTriangle, TrendingUp, Gift, CalendarCheck, Loader2, RefreshCw,
+  ClipboardList, Clock, AlertTriangle, TrendingUp, Gift, CalendarCheck, Loader2, RefreshCw, Bell, CheckCircle2,
 } from "lucide-react";
 import { staffAuthHeaders } from "../lib/authToken";
 
@@ -35,15 +35,22 @@ function StatCard({ icon: Icon, label, value, tone }: { icon: any; label: string
 
 export default function MyWorkspace({ currentUser, onOpenJob }: Props) {
   const [data, setData] = useState<any>(null);
+  const [alerts, setAlerts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true); setErr(null);
     try {
-      const r = await fetch("/api/my/summary", { headers: authHeaders() });
-      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || "Failed to load."); }
-      setData(await r.json());
+      const [summaryResponse, alertsResponse] = await Promise.all([
+        fetch("/api/my/summary", { headers: authHeaders() }),
+        fetch("/api/my/alerts", { headers: authHeaders() }),
+      ]);
+      if (!summaryResponse.ok) { const d = await summaryResponse.json().catch(() => ({})); throw new Error(d.error || "Failed to load."); }
+      if (!alertsResponse.ok) { const d = await alertsResponse.json().catch(() => ({})); throw new Error(d.error || "Failed to load alerts."); }
+      setData(await summaryResponse.json());
+      const alertData = await alertsResponse.json();
+      setAlerts(Array.isArray(alertData?.alerts) ? alertData.alerts : []);
     } catch (e: any) { setErr(e.message); }
     setLoading(false);
   };
@@ -63,6 +70,18 @@ export default function MyWorkspace({ currentUser, onOpenJob }: Props) {
   const perf = data?.performance;
   const counts = data?.counts || {};
   const me = data?.me || {};
+
+  const acknowledgeAlert = async (alertId: number | string) => {
+    try {
+      const response = await fetch(`/api/my/alerts/${encodeURIComponent(String(alertId))}/acknowledge`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      if (response.ok) setAlerts((current) => current.filter((alert) => String(alert.alert_id) !== String(alertId)));
+    } catch {
+      // Alert acknowledgement is non-blocking; the item remains visible on failure.
+    }
+  };
 
   if (loading) {
     return <div className="flex items-center gap-2 text-slate-500 p-8 text-sm"><Loader2 className="h-4 w-4 animate-spin" /> Loading your workspace…</div>;
@@ -99,6 +118,45 @@ export default function MyWorkspace({ currentUser, onOpenJob }: Props) {
         <StatCard icon={Clock} label="My Pending" value={counts.pending ?? pendingJobs.length} tone="bg-amber-50 border-amber-200 text-amber-700" />
         <StatCard icon={AlertTriangle} label="My Breaches" value={counts.breaches ?? breachJobs.length} tone="bg-red-50 border-red-200 text-red-700" />
         <StatCard icon={CalendarCheck} label="Attendance (mo)" value={counts.attendance_days ?? 0} tone="bg-emerald-50 border-emerald-200 text-emerald-700" />
+      </div>
+
+      {/* Personal alerts */}
+      <div className="rounded-lg border border-red-200 bg-white p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-600 flex items-center gap-2">
+            <Bell className="h-4 w-4 text-red-600" /> My Alerts
+          </h3>
+          <span className="text-[10px] font-bold text-red-600">{alerts.length} active</span>
+        </div>
+        {alerts.length === 0 ? (
+          <div className="flex items-center gap-2 text-xs text-emerald-600">
+            <CheckCircle2 className="h-4 w-4" /> No active alerts assigned to you.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {alerts.map((alert) => (
+              <div key={String(alert.alert_id)} className="flex items-start justify-between gap-3 rounded-md border border-red-100 bg-red-50 px-3 py-2">
+                <button
+                  className="min-w-0 text-left"
+                  onClick={() => alert.job_id != null && onOpenJob?.(jobs.find((job) => Number(job.job_id) === Number(alert.job_id)) || { job_id: alert.job_id })}
+                >
+                  <p className="text-xs font-bold text-red-800">{alert.alert_message}</p>
+                  {(alert.job_card_no || alert.vrn) && (
+                    <p className="mt-0.5 text-[10px] text-red-600">{alert.job_card_no || "Job card"}{alert.vrn ? ` · ${alert.vrn}` : ""}</p>
+                  )}
+                </button>
+                {!alert.derived && (
+                  <button
+                    onClick={() => acknowledgeAlert(alert.alert_id)}
+                    className="shrink-0 rounded border border-red-200 bg-white px-2 py-1 text-[10px] font-bold text-red-700 hover:bg-red-100"
+                  >
+                    Acknowledge
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Performance & Incentives */}

@@ -354,6 +354,23 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
     return list;
   }, [dbRoles]);
 
+  // Employee Directory state for Single Source of Truth linking
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [selectedEmp, setSelectedEmp] = useState<any | null>(null);
+  const [empSearch, setEmpSearch] = useState("");
+
+  const fetchEmployees = async () => {
+    try {
+      const res = await fetch("/api/employees");
+      if (res.ok) {
+        const data = await res.json();
+        setEmployees(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.error("Failed to load employees for UserManagement:", e);
+    }
+  };
+
   // Add User Form State
   const [showAddForm, setShowAddForm] = useState(false);
   const [fullName, setFullName] = useState("");
@@ -401,16 +418,44 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
   useEffect(() => {
     if (token) {
       fetchUsers();
+      fetchEmployees();
     }
   }, [token]);
+
+  const handleSelectEmployee = (emp: any) => {
+    setSelectedEmp(emp);
+    setEmployeeId(String(emp.employee_id));
+    setFullName(emp.full_name);
+    setMobileNo(emp.mobile || "");
+    setEmail(emp.email || "");
+
+    // Suggested sanitized username
+    if (!username) {
+      if (emp.email && emp.email.includes("@")) {
+        setUsername(emp.email.split("@")[0].toLowerCase().replace(/[^a-z0-9._]/g, ""));
+      } else {
+        setUsername(emp.full_name.toLowerCase().replace(/\s+/g, ".").replace(/[^a-z0-9._]/g, ""));
+      }
+    }
+  };
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccess(null);
 
-    if (!fullName || !username || !password || !role) {
+    if (!employeeId || Number(employeeId) <= 0) {
+      setError("Please select an employee from the Employee Directory. Arbitrary user creation is prohibited.");
+      return;
+    }
+
+    if (!username || !password || !role) {
       setError("Please fill in all required fields.");
+      return;
+    }
+
+    if (selectedEmp && selectedEmp.has_login_account) {
+      setError(`Employee '${selectedEmp.full_name}' already has a linked active user account (@${selectedEmp.linked_username}). Duplicate accounts for the same employee are not permitted.`);
       return;
     }
 
@@ -424,11 +469,11 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
           "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({
-          full_name: fullName.trim(),
+          full_name: fullName.trim() || (selectedEmp ? selectedEmp.full_name : ""),
           username: username.trim().toLowerCase(),
           password,
           role,
-          employee_id: employeeId ? Number(employeeId) : null,
+          employee_id: Number(employeeId),
           mobile_no: mobileNo.trim() || undefined,
           email: email.trim() || undefined
         })
@@ -731,123 +776,226 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
         </div>
       )}
 
-      {/* Add User Section */}
+      {/* Add User Section — Authoritative Employee Directory Linking */}
       {showAddForm && (
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm animate-in zoom-in-95 duration-150">
-          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-2">
-            <UserPlus className="h-4 w-4 text-orange-500" />
-            <span>New Operator Information</span>
-          </h2>
+        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm animate-in zoom-in-95 duration-150 space-y-6">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+              <UserPlus className="h-4 w-4 text-orange-500" />
+              <span>Create User from Employee Directory</span>
+            </h2>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              Single Source of Truth
+            </span>
+          </div>
 
-          <form onSubmit={handleAddUser} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
-                Full Name *
-              </label>
-              <input
-                type="text"
-                required
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="e.g. John Doe"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
-              />
+          {/* 1. Employee Directory Selection */}
+          <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider">
+              Step 1: Select Employee from Directory *
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <input
+                  type="text"
+                  value={empSearch}
+                  onChange={(e) => setEmpSearch(e.target.value)}
+                  placeholder="Search by employee name or code..."
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                />
+              </div>
+              <div>
+                <select
+                  value={employeeId}
+                  onChange={(e) => {
+                    const emp = employees.find(em => String(em.employee_id) === e.target.value);
+                    if (emp) handleSelectEmployee(emp);
+                    else {
+                      setSelectedEmp(null);
+                      setEmployeeId("");
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                >
+                  <option value="">-- Choose Employee ({employees.length} available) --</option>
+                  {employees
+                    .filter(e => {
+                      if (!empSearch.trim()) return true;
+                      const q = empSearch.toLowerCase();
+                      return (
+                        e.full_name?.toLowerCase().includes(q) ||
+                        e.employee_code?.toLowerCase().includes(q) ||
+                        e.role?.toLowerCase().includes(q)
+                      );
+                    })
+                    .map(e => (
+                      <option key={e.employee_id} value={e.employee_id}>
+                        {e.employee_code || `EMP${e.employee_id}`} — {e.full_name} ({e.role || "Staff"}) {e.has_login_account ? `[Linked: @${e.linked_username}]` : "[No Account]"}
+                      </option>
+                    ))}
+                </select>
+              </div>
             </div>
 
-            <div>
-              <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
-                Username (Lower case) *
-              </label>
-              <input
-                type="text"
-                required
-                value={username}
-                onChange={(e) => setUsername(e.target.value.toLowerCase())}
-                placeholder="e.g. johndoe"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-mono"
-              />
+            {/* Selected Employee Preview Card */}
+            {selectedEmp && (
+              <div className="mt-3 p-4 bg-white rounded-xl border border-slate-200 shadow-sm space-y-3">
+                <div className="flex items-start justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-orange-500 text-white font-black text-sm flex items-center justify-center">
+                      {selectedEmp.full_name.charAt(0)}
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-800 uppercase">{selectedEmp.full_name}</h4>
+                      <p className="text-[10px] text-slate-400 font-mono">
+                        Code: {selectedEmp.employee_code || `EMP${selectedEmp.employee_id}`} | ID: #{selectedEmp.employee_id}
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    {selectedEmp.has_login_account ? (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-wider">
+                        Linked: @{selectedEmp.linked_username}
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
+                        Eligible for Account
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px] pt-2 border-t border-slate-100 font-medium text-slate-600">
+                  <div><span className="font-bold text-slate-400 uppercase text-[9px] block">Role / Designation</span>{selectedEmp.designation || selectedEmp.role || "Staff"}</div>
+                  <div><span className="font-bold text-slate-400 uppercase text-[9px] block">Department</span>{selectedEmp.department || "Operations"}</div>
+                  <div><span className="font-bold text-slate-400 uppercase text-[9px] block">Mobile</span>{selectedEmp.mobile || "—"}</div>
+                  <div><span className="font-bold text-slate-400 uppercase text-[9px] block">Status</span>{selectedEmp.is_active ? "Active Duty" : "Inactive"}</div>
+                </div>
+
+                {selectedEmp.has_login_account && (
+                  <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
+                    <span>This employee already has an active login account (@{selectedEmp.linked_username}). Duplicate user accounts for the same employee are prohibited.</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 2. Login Account Credentials */}
+          <form onSubmit={handleAddUser} className="space-y-4">
+            <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider">
+              Step 2: Define Login Credentials & Role
+            </label>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="ds-label block text-[10px] font-bold uppercase tracking-wider mb-1">
+                  Full Name (from Employee)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Auto-filled from Employee"
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="ds-label block text-[10px] font-bold uppercase tracking-wider mb-1">
+                  Username (Lower case) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                  placeholder="e.g. shashi.patil"
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-mono font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="ds-label block text-[10px] font-bold uppercase tracking-wider mb-1">
+                  Password *
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="ds-label block text-[10px] font-bold uppercase tracking-wider mb-1">
+                  System Role *
+                </label>
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as any)}
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-semibold text-slate-800"
+                >
+                  {allRoles.map((r) => (
+                    <option key={r.key} value={r.key}>{r.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="ds-label block text-[10px] font-bold uppercase tracking-wider mb-1">
+                  Mobile Number (for OTP/SMS)
+                </label>
+                <input
+                  type="text"
+                  value={mobileNo}
+                  onChange={(e) => setMobileNo(e.target.value)}
+                  placeholder="e.g. 9876543210"
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="ds-label block text-[10px] font-bold uppercase tracking-wider mb-1">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="e.g. employee@workshop.com"
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
-                Password *
-              </label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
-              />
-            </div>
-
-            <div>
-              <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
-                System Role *
-              </label>
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as any)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-semibold text-slate-800"
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddForm(false);
+                  setSelectedEmp(null);
+                  setEmployeeId("");
+                }}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
               >
-                {allRoles.map((r) => (
-                  <option key={r.key} value={r.key}>{r.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
-                Link to Employee ID (Optional)
-              </label>
-              <input
-                type="number"
-                value={employeeId}
-                onChange={(e) => setEmployeeId(e.target.value)}
-                placeholder="e.g. 1"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
-              />
-            </div>
-
-            <div>
-              <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
-                Authorised Mobile No (for OTP)
-              </label>
-              <input
-                type="text"
-                value={mobileNo}
-                onChange={(e) => setMobileNo(e.target.value)}
-                placeholder="e.g. 9876543210"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
-              />
-            </div>
-
-            <div>
-              <label className="ds-label block text-[10px] font-bold uppercase tracking-wider   mb-1">
-                Email (Optional)
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="e.g. operator@workshop.com"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
-              />
-            </div>
-
-            <div className="flex items-end">
+                Cancel
+              </button>
               <button
                 type="submit"
-                disabled={addLoading}
-                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                disabled={addLoading || !selectedEmp || selectedEmp.has_login_account}
+                className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5"
               >
                 {addLoading ? (
                   <FunnySpinner className="h-4 w-4" />
                 ) : (
                   <>
                     <UserPlus className="h-4 w-4" />
-                    <span>Create User</span>
+                    <span>Create & Link User Account</span>
                   </>
                 )}
               </button>
@@ -1010,17 +1158,42 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                         <td className="ds-td block md:table-cell p-0 md:p-4">
                           <span className="block md:hidden text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Linked Employee</span>
                           {isEditing ? (
-                            <input
-                              type="number"
+                            <select
                               value={editEmployeeId}
                               onChange={(e) => setEditEmployeeId(e.target.value)}
-                              className="w-20 px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs font-semibold text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 focus:outline-none block"
-                              placeholder="Emp ID"
-                            />
+                              className="px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs font-semibold text-slate-100 focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 focus:outline-none block w-full max-w-[200px]"
+                            >
+                              <option value="">-- No Employee Linked --</option>
+                              {employees.map((emp) => (
+                                <option key={emp.employee_id} value={emp.employee_id}>
+                                  {emp.employee_code || `EMP${emp.employee_id}`} - {emp.full_name}
+                                </option>
+                              ))}
+                            </select>
                           ) : (
-                            <span className="text-xs text-slate-500 font-mono">
-                              {user.employee_id ? `#${user.employee_id}` : "—"}
-                            </span>
+                            (() => {
+                              const linkedEmp = employees.find(e => Number(e.employee_id) === Number(user.employee_id));
+                              if (linkedEmp) {
+                                return (
+                                  <div className="space-y-0.5">
+                                    <span className="text-xs font-bold text-slate-200 block">
+                                      {linkedEmp.full_name}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 font-mono">
+                                      {linkedEmp.employee_code || `EMP${linkedEmp.employee_id}`}
+                                    </span>
+                                  </div>
+                                );
+                              }
+                              if (user.employee_id) {
+                                return <span className="text-xs text-slate-400 font-mono">#{user.employee_id}</span>;
+                              }
+                              return (
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-950/80 text-amber-400 border border-amber-800/40 uppercase tracking-wider">
+                                  Unlinked
+                                </span>
+                              );
+                            })()
                           )}
                         </td>
 

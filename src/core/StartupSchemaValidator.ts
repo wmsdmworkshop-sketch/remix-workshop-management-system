@@ -161,6 +161,81 @@ export class StartupSchemaValidator {
         adminAccountHealthy = true;
       }
 
+      // 6. Ensure employee_id indices exist and execute deterministic user-employee mapping backfill
+      try {
+        await dbPool.execute(`CREATE INDEX idx_users_employee_id ON users (employee_id)`);
+      } catch (idxErr) {
+        // Index may already exist
+      }
+      try {
+        await dbPool.execute(`CREATE INDEX idx_uam_employee_id ON user_access_master (employee_id)`);
+      } catch (idxErr) {
+        // Index may already exist
+      }
+
+      // Safe deterministic backfill (email/phone match, NEVER default to EMP001)
+      try {
+        const [unmapped] = await dbPool.query(
+          "SELECT user_id, username, email, mobile_no, full_name FROM user_access_master WHERE employee_id IS NULL OR employee_id = 0"
+        ) as any[];
+
+        if (unmapped && unmapped.length > 0) {
+          for (const u of unmapped) {
+            let matchedEmpId: number | null = null;
+            // A. Exact verified email match
+            if (u.email && u.email.trim().length > 0) {
+              const [byEmail] = await dbPool.query(
+                "SELECT employee_id FROM employees WHERE LOWER(email) = LOWER(?) LIMIT 1",
+                [u.email.trim()]
+              ) as any[];
+              if (byEmail && byEmail.length > 0) {
+                matchedEmpId = Number(byEmail[0].employee_id);
+              }
+            }
+            // B. Exact username as email match
+            if (!matchedEmpId && u.username && u.username.includes("@")) {
+              const [byUnameEmail] = await dbPool.query(
+                "SELECT employee_id FROM employees WHERE LOWER(email) = LOWER(?) LIMIT 1",
+                [u.username.trim()]
+              ) as any[];
+              if (byUnameEmail && byUnameEmail.length > 0) {
+                matchedEmpId = Number(byUnameEmail[0].employee_id);
+              }
+            }
+            // C. Exact verified mobile match
+            if (!matchedEmpId && u.mobile_no && u.mobile_no.replace(/\D/g, "").length >= 10) {
+              const cleanMobile = u.mobile_no.replace(/\D/g, "").slice(-10);
+              const [byMobile] = await dbPool.query(
+                "SELECT employee_id FROM employees WHERE REPLACE(mobile, '+91', '') LIKE ? LIMIT 1",
+                [`%${cleanMobile}`]
+              ) as any[];
+              if (byMobile && byMobile.length > 0) {
+                matchedEmpId = Number(byMobile[0].employee_id);
+              }
+            }
+            // D. Known confirmed mapping: patilshashi5558@gmail.com -> SHASHIKUMAR (EMP029)
+            if (!matchedEmpId && (u.username?.toLowerCase() === 'patilshashi5558@gmail.com' || u.email?.toLowerCase() === 'patilshashi5558@gmail.com')) {
+              const [shashi] = await dbPool.query(
+                "SELECT employee_id FROM employees WHERE employee_code = 'EMP029' OR LOWER(full_name) = 'shashikumar' LIMIT 1"
+              ) as any[];
+              if (shashi && shashi.length > 0) {
+                matchedEmpId = Number(shashi[0].employee_id);
+              }
+            }
+
+            if (matchedEmpId) {
+              await dbPool.execute("UPDATE user_access_master SET employee_id = ? WHERE user_id = ?", [matchedEmpId, u.user_id]);
+              await dbPool.execute("UPDATE users SET employee_id = ? WHERE username = ?", [matchedEmpId, u.username]);
+              diagnostics.push(`✅ Deterministically linked user '${u.username}' to employee ID ${matchedEmpId}.`);
+            } else {
+              diagnostics.push(`ℹ️ User '${u.username}' left explicitly unlinked (no deterministic employee match).`);
+            }
+          }
+        }
+      } catch (backfillErr: any) {
+        diagnostics.push(`⚠️ Deterministic backfill notice: ${backfillErr.message}`);
+      }
+
       console.log('✅ Startup Schema & Auth Single-Source-of-Truth Validation Complete.');
       return {
         success: usersTableExists && developerAccountHealthy && adminAccountHealthy && jwtSecretLoaded,

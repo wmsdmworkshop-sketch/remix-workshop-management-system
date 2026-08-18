@@ -1871,31 +1871,69 @@ async function startServer() {
     }
   });
 
-  // USER MANAGEMENT API: Create new user
+  // USER MANAGEMENT API: Create new user — Authoritative Employee Directory Linking
   app.post("/api/users", authenticateToken, requirePermission("User Management", "edit"), async (req: any, res) => {
     const { full_name, username, password, role, employee_id, email, mobile_no } = req.body;
-    if (!full_name || !username || !password || !role) {
-      return res.status(400).json({ error: "Missing required fields." });
+    
+    // Strict requirement: User MUST be selected and linked from Employee Directory
+    if (!username || !password || !role) {
+      return res.status(400).json({ error: "Username, password, and system role are required." });
     }
 
+    if (!employee_id || Number(employee_id) <= 0) {
+      return res.status(400).json({
+        error: "An employee from the Employee Directory must be selected. Creating arbitrary users without an employee identity is not permitted."
+      });
+    }
+
+    const empId = Number(employee_id);
+
     try {
-      // Check for duplicate username in user_access_master
+      // 1. Verify Employee exists in authoritative Employee Directory
+      const [empRows] = await dbPool.query("SELECT * FROM employees WHERE employee_id = ?", [empId]) as any[];
+      if (!empRows || empRows.length === 0) {
+        return res.status(400).json({ error: `Selected Employee (ID: ${empId}) does not exist in the Employee Directory.` });
+      }
+      const employee = empRows[0];
+
+      // 2. Verify Employee is active
+      const isEmpActive = employee.is_active === 1 || employee.is_active === true || employee.is_active === "1";
+      if (!isEmpActive) {
+        return res.status(400).json({ error: `Cannot create a login account for inactive employee '${employee.full_name}'.` });
+      }
+
+      // 3. Enforce 1:1 Employee-to-User relationship (prevent duplicate accounts for same employee)
+      const [existingLink] = await dbPool.query(
+        "SELECT user_id, username FROM user_access_master WHERE employee_id = ? AND is_active = 1",
+        [empId]
+      ) as any[];
+      if (existingLink && existingLink.length > 0) {
+        return res.status(400).json({
+          error: `Employee '${employee.full_name}' (${employee.employee_code || `EMP${empId}`}) is already linked to active user '@${existingLink[0].username}'. Each employee can only have one login account.`
+        });
+      }
+
+      // 4. Check for duplicate username
       let usernameTaken = false;
       try {
-        const [existing] = await dbPool.query("SELECT user_id FROM user_access_master WHERE username = ?", [username]) as any[];
+        const [existing] = await dbPool.query("SELECT user_id FROM user_access_master WHERE LOWER(username) = LOWER(?)", [username]) as any[];
         if (existing && existing.length > 0) {
           usernameTaken = true;
         }
       } catch (err) {
         const localUsers = await getLocalUsers();
-        if (localUsers.some((u: any) => u.username === username)) {
+        if (localUsers.some((u: any) => u.username?.toLowerCase() === username.toLowerCase())) {
           usernameTaken = true;
         }
       }
 
       if (usernameTaken) {
-        return res.status(400).json({ error: "Username already taken." });
+        return res.status(400).json({ error: `Username '${username}' is already taken.` });
       }
+
+      const finalFullName = (full_name && full_name.trim()) || employee.full_name;
+      const finalMobile = (mobile_no && mobile_no.trim()) || employee.mobile || "";
+      const finalEmail = (email && email.trim()) || employee.email || null;
 
       const password_hash = await bcrypt.hash(password, 10);
       let newUserId = Date.now();
@@ -1906,13 +1944,13 @@ async function startServer() {
             (full_name, employee_id, username, email, user_role, access_level, is_active, mobile_no, password_hash)
            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
           [
-            full_name,
-            employee_id || null,
-            username,
-            email || null,
-            role,          // maps to user_role column
-            role,          // access_level defaults to same as role
-            mobile_no || "",
+            finalFullName,
+            empId,
+            username.trim().toLowerCase(),
+            finalEmail,
+            role,
+            role,
+            finalMobile,
             password_hash
           ]
         ) as any;
@@ -1920,17 +1958,9 @@ async function startServer() {
 
         // Also insert into users table to keep in sync
         await dbPool.execute(
-          `INSERT INTO users (full_name, username, password_hash, role, employee_id, is_active) VALUES (?, ?, ?, ?, ?, 1)`,
-          [full_name, username, password_hash, role, employee_id || null]
+          `INSERT INTO users (full_name, username, password_hash, role, employee_id, is_active, mobile_no, created_at) VALUES (?, ?, ?, ?, ?, 1, ?, NOW())`,
+          [finalFullName, username.trim().toLowerCase(), password_hash, role, empId, finalMobile]
         );
-
-        // Also update employees table if employee_id is set
-        if (employee_id) {
-          await dbPool.execute(
-            "UPDATE employees SET role = ?, full_name = ? WHERE employee_id = ?",
-            [role, full_name, employee_id]
-          );
-        }
 
         // Audit log user creation
         const adminUserId = req.user.user_id || 999;
@@ -1939,7 +1969,7 @@ async function startServer() {
           adminUserId,
           adminUsername,
           "USER_CREATION",
-          `Created new user '${username}' with role '${role}' and linked to employee ID ${employee_id || "None"}`
+          `Created user '@${username}' (Role: ${role}) linked to Employee '${employee.full_name}' (${employee.employee_code || `EMP${empId}`})`
         );
       } catch (dbErr) {
         console.warn("MySQL user creation failed, saving to local cache only:", dbErr);
@@ -1948,39 +1978,27 @@ async function startServer() {
       const localUsers = await getLocalUsers();
       const newUser = {
         user_id: newUserId,
-        full_name,
-        username,
+        full_name: finalFullName,
+        username: username.trim().toLowerCase(),
         password_hash,
         role,
-        employee_id: employee_id || null,
+        employee_id: empId,
         is_active: 1,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        email: finalEmail,
+        mobile_no: finalMobile
       };
       localUsers.push(newUser);
 
-      // Sync local employees memory cache
-      if (employee_id) {
-        const empIdx = cachedDB.employees.findIndex((e: any) => Number(e.employee_id) === Number(employee_id));
-        if (empIdx !== -1) {
-          cachedDB.employees[empIdx] = {
-            ...cachedDB.employees[empIdx],
-            role,
-            full_name,
-            mobile: mobile_no || cachedDB.employees[empIdx].mobile,
-            email: email || cachedDB.employees[empIdx].email,
-            is_active: 1
-          };
-        }
-      }
-      saveDB(cachedDB);
-
       res.status(201).json({
         user_id: newUserId,
-        full_name,
-        username,
+        full_name: finalFullName,
+        username: username.trim().toLowerCase(),
         role,
-        employee_id,
+        employee_id: empId,
         is_active: 1,
+        email: finalEmail,
+        mobile_no: finalMobile
       });
     } catch (err: any) {
       console.error("Create user error:", err);
@@ -1989,7 +2007,7 @@ async function startServer() {
   });
 
   // USER MANAGEMENT API: Update user
-  app.put("/api/users/:user_id", authenticateToken, requirePermission("User Management", "edit"), async (req, res) => {
+  app.put("/api/users/:user_id", authenticateToken, requirePermission("User Management", "edit"), async (req: any, res) => {
     const userId = Number(req.params.user_id);
     const { full_name, role, employee_id, is_active, password, mobile_no, email } = req.body;
 
@@ -2015,6 +2033,33 @@ async function startServer() {
         return res.status(404).json({ error: "User not found." });
       }
 
+      let finalEmployeeId = existingUser.employee_id;
+      if (employee_id !== undefined && employee_id !== null && Number(employee_id) > 0) {
+        const empId = Number(employee_id);
+        // Verify Employee exists
+        const [empRows] = await dbPool.query("SELECT * FROM employees WHERE employee_id = ?", [empId]) as any[];
+        if (!empRows || empRows.length === 0) {
+          return res.status(400).json({ error: `Selected Employee (ID: ${empId}) does not exist in Employee Directory.` });
+        }
+        const emp = empRows[0];
+        const isEmpActive = emp.is_active === 1 || emp.is_active === true || emp.is_active === "1";
+        if (!isEmpActive) {
+          return res.status(400).json({ error: `Cannot link user to inactive employee '${emp.full_name}'.` });
+        }
+
+        // Verify 1:1 mapping uniqueness (no other user linked to this employee)
+        const [duplicateLink] = await dbPool.query(
+          "SELECT user_id, username FROM user_access_master WHERE employee_id = ? AND user_id != ? AND is_active = 1",
+          [empId, userId]
+        ) as any[];
+        if (duplicateLink && duplicateLink.length > 0) {
+          return res.status(400).json({
+            error: `Employee '${emp.full_name}' is already linked to active user '@${duplicateLink[0].username}'.`
+          });
+        }
+        finalEmployeeId = empId;
+      }
+
       let password_hash = existingUser.password_hash;
       if (password) {
         password_hash = await bcrypt.hash(password, 10);
@@ -2022,7 +2067,6 @@ async function startServer() {
 
       const finalFullName = full_name !== undefined ? full_name : existingUser.full_name;
       const finalRole = role !== undefined ? role : (existingUser.user_role || existingUser.role);
-      const finalEmployeeId = employee_id !== undefined ? employee_id : existingUser.employee_id;
       const finalIsActive = is_active !== undefined ? (is_active ? 1 : 0) : existingUser.is_active;
       const finalMobileNo = mobile_no !== undefined ? mobile_no : existingUser.mobile_no;
       const finalEmail = email !== undefined ? email : existingUser.email;
@@ -2035,17 +2079,9 @@ async function startServer() {
 
         // Keep users table in sync
         await dbPool.execute(
-          "UPDATE users SET role = ?, full_name = ?, password_hash = ?, is_active = ? WHERE username = ?",
-          [finalRole, finalFullName, password_hash, finalIsActive, existingUser.username]
+          "UPDATE users SET role = ?, full_name = ?, password_hash = ?, is_active = ?, employee_id = ? WHERE username = ?",
+          [finalRole, finalFullName, password_hash, finalIsActive, finalEmployeeId, existingUser.username]
         );
-
-        // Keep employees table in sync
-        if (finalEmployeeId) {
-          await dbPool.execute(
-            "UPDATE employees SET role = ?, full_name = ?, mobile = ? WHERE employee_id = ?",
-            [finalRole, finalFullName, finalMobileNo || "", finalEmployeeId]
-          );
-        }
 
         // Audit log the user details change
         const adminUserId = req.user.user_id || 999;
@@ -2054,7 +2090,7 @@ async function startServer() {
           adminUserId,
           adminUsername,
           "USER_PROFILE_UPDATE",
-          `Updated profile of user '${existingUser.username}' (ID: ${userId}): role=${finalRole}, employee_id=${finalEmployeeId}, is_active=${finalIsActive}`
+          `Updated user '@${existingUser.username}' (ID: ${userId}): role=${finalRole}, employee_id=${finalEmployeeId}, is_active=${finalIsActive}`
         );
       } catch (dbErr) {
         console.warn("MySQL user update failed, updating local cache only:", dbErr);
@@ -2128,22 +2164,34 @@ async function startServer() {
     return null;
   }
 
-  // GET Employee profile details (self only)
+  // GET Employee profile details (self only) — Single Source of Truth from Employee Directory
   app.get("/api/my-profile", authenticateToken, async (req: any, res) => {
     try {
       const employeeId = await resolveEmployeeId(req.user);
-      if (!employeeId) {
-        return res.status(400).json({ error: "No employee profile linked to this user account." });
+      if (!employeeId || employeeId <= 0) {
+        return res.json({
+          success: true,
+          user: req.user,
+          employee: null,
+          unlinked: true,
+          message: "No employee profile linked to this user account."
+        });
       }
 
-      // Query complete details from employees table
+      // Query complete details from employees table (authoritative master)
       const [employees] = await dbPool.query(
         "SELECT * FROM employees WHERE employee_id = ?",
         [employeeId]
       ) as any[];
 
       if (!employees || employees.length === 0) {
-        return res.status(404).json({ error: "Employee profile record not found." });
+        return res.json({
+          success: true,
+          user: req.user,
+          employee: null,
+          unlinked: true,
+          message: "Linked employee profile record not found in Employee Directory."
+        });
       }
 
       // Check if there is any pending update request
@@ -2154,12 +2202,43 @@ async function startServer() {
 
       res.json({
         success: true,
+        user: req.user,
         employee: employees[0],
+        unlinked: false,
         pendingRequest: pendingRequests && pendingRequests.length > 0 ? pendingRequests[0] : null
       });
     } catch (err: any) {
       console.error("Fetch profile error:", err);
       res.status(500).json({ error: "Failed to load profile details." });
+    }
+  });
+
+  // GET Current authenticated user profile with linked employee identity
+  app.get("/api/me", authenticateToken, async (req: any, res) => {
+    try {
+      const employeeId = await resolveEmployeeId(req.user);
+      let employee: any = null;
+      if (employeeId && employeeId > 0) {
+        const [rows] = await dbPool.query("SELECT * FROM employees WHERE employee_id = ?", [employeeId]) as any[];
+        if (rows && rows.length > 0) {
+          employee = rows[0];
+        }
+      }
+      res.json({
+        success: true,
+        user: {
+          user_id: req.user.user_id,
+          username: req.user.username,
+          full_name: req.user.full_name,
+          role: req.user.role,
+          employee_id: employeeId || null
+        },
+        employee,
+        unlinked: !employee
+      });
+    } catch (err: any) {
+      console.error("GET /api/me error:", err);
+      res.status(500).json({ error: "Failed to fetch user identity." });
     }
   });
 
@@ -2676,15 +2755,42 @@ async function startServer() {
     }
   });
 
-  // --- EMPLOYEES ENDPOINTS ---
+  // --- EMPLOYEES ENDPOINTS: Authoritative Employee Directory Master ---
   app.get("/api/employees", async (req, res) => {
     try {
       const includeLegacy = req.query.includeLegacy === "true";
       const employees = await EmployeeIdentityService.getEmployees(includeLegacy);
-      const employeesWithDefaults = employees.map((e: any) => ({
-        ...e,
-        target_revenue: e.target_revenue || ((e.basic_salary || 0) * 3)
-      }));
+
+      // Query active user accounts mapped to employees to attach login account status
+      let userMap = new Map<number, { user_id: number; username: string; user_role: string }>();
+      try {
+        const [userRows] = await dbPool.query(
+          "SELECT user_id, employee_id, username, user_role, is_active FROM user_access_master WHERE employee_id IS NOT NULL AND is_active = 1"
+        ) as any[];
+        if (userRows) {
+          for (const u of userRows) {
+            userMap.set(Number(u.employee_id), {
+              user_id: u.user_id,
+              username: u.username,
+              user_role: u.user_role
+            });
+          }
+        }
+      } catch (e) {
+        // Safe fallback
+      }
+
+      const employeesWithDefaults = employees.map((e: any) => {
+        const linked = userMap.get(Number(e.employee_id)) || null;
+        return {
+          ...e,
+          target_revenue: e.target_revenue || ((e.basic_salary || 0) * 3),
+          has_login_account: !!linked,
+          linked_user_id: linked?.user_id || null,
+          linked_username: linked?.username || null,
+          linked_user_role: linked?.user_role || null
+        };
+      });
       res.json(employeesWithDefaults);
     } catch (err: any) {
       res.status(500).json({ error: err.message || "Failed to fetch employees." });
@@ -3525,6 +3631,22 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
 
     res.json(Array.from(masterMap.values()));
+  });
+
+  // API: OCR Extraction for Gate-In
+  app.post("/api/ocr", async (req, res) => {
+    const { image, provider = "Gemini" } = req.body;
+    if (!image) {
+      return res.status(400).json({ error: "Missing image data" });
+    }
+
+    try {
+      const result = await verifyJobCard(image, provider);
+      res.json(result);
+    } catch (error: any) {
+      console.error("OCR API error:", error);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   app.get("/api/job-cards", async (req, res) => {
@@ -6789,6 +6911,105 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
+  // Personal alert feed. Explicit alerts are included only when they target the
+  // current user/role or belong to one of the user's relevant job cards. A
+  // derived SLA alert is generated for an overdue relevant job card so the
+  // personal workspace does not depend on a separate alert-generation job.
+  const getMyAlerts = (user: RelevanceUser, db: any) => {
+    const relevantJobs = (db.jobCards || []).filter((jc: any) => isOwnedBy(jc, user) || isInMyStage(jc, user.role));
+    const relevantJobIds = new Set(relevantJobs.map((jc: any) => Number(jc.job_id)));
+    const jobById = new Map<number, any>(relevantJobs.map((jc: any) => [Number(jc.job_id), jc] as [number, any]));
+    const role = String(user.role || "").toLowerCase();
+
+    const asList = (value: any): string[] => {
+      if (Array.isArray(value)) return value.map((v) => String(v).toLowerCase());
+      if (typeof value !== "string" || !value.trim()) return [];
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) return parsed.map((v) => String(v).toLowerCase());
+      } catch { /* plain comma-separated role list */ }
+      return value.split(",").map((v) => v.trim().toLowerCase()).filter(Boolean);
+    };
+
+    const explicitAlerts = (db.alertLogs || [])
+      .filter((alert: any) => String(alert.status || "").toLowerCase() === "active")
+      .filter((alert: any) => {
+        const entityType = String(alert.entity_type || "").toLowerCase();
+        const jobId = Number(alert.entity_id ?? alert.job_id);
+        const targetRoles = asList(alert.target_roles ?? alert.target_role);
+        const targetUserIds = [alert.target_user_id, alert.user_id, alert.assigned_user_id]
+          .filter((v) => v != null).map((v) => String(v));
+        const targetEmployeeIds = [alert.target_employee_id, alert.assigned_employee_id]
+          .filter((v) => v != null).map((v) => String(v));
+
+        if (user.user_id != null && targetUserIds.includes(String(user.user_id))) return true;
+        if (user.employee_id != null && targetEmployeeIds.includes(String(user.employee_id))) return true;
+        if (role && targetRoles.includes(role)) return true;
+        if (entityType === "jobcard" || entityType === "job_card") return relevantJobIds.has(jobId);
+        return isFullViewRole(role);
+      })
+      .map((alert: any) => {
+        const jobId = Number(alert.entity_id ?? alert.job_id);
+        const job = jobById.get(jobId);
+        return {
+          ...alert,
+          job_id: Number.isFinite(jobId) && jobId > 0 ? jobId : alert.job_id,
+          job_card_no: job?.job_card_no,
+          vrn: job?.vrn,
+          derived: false,
+        };
+      });
+
+    const explicitJobAlertIds = new Set(explicitAlerts.map((alert: any) => Number(alert.job_id)).filter(Number.isFinite));
+    const now = Date.now();
+    const derivedAlerts = relevantJobs
+      .filter((jc: any) => !["completed", "invoiced", "cancelled"].includes(String(jc.status || "").toLowerCase()))
+      .filter((jc: any) => {
+        const due = jc.promised_delivery || jc.promised_delivery_date || jc.expected_delivery || jc.due_date;
+        return due && !isNaN(new Date(due).getTime()) && new Date(due).getTime() < now && !explicitJobAlertIds.has(Number(jc.job_id));
+      })
+      .map((jc: any) => ({
+        alert_id: `derived-sla-${jc.job_id}`,
+        alert_type: "SLA_BREACH",
+        severity: "High",
+        status: "Active",
+        alert_message: `Job ${jc.job_card_no || jc.job_id} is overdue and needs your attention.`,
+        job_id: jc.job_id,
+        job_card_no: jc.job_card_no,
+        vrn: jc.vrn,
+        created_at: jc.updated_at || jc.created_at,
+        derived: true,
+      }));
+
+    return [...explicitAlerts, ...derivedAlerts].sort(
+      (a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    );
+  };
+
+  app.get("/api/my/alerts", authenticateToken, (req: any, res: any) => {
+    try {
+      res.json({ alerts: getMyAlerts(req.user, getDB()) });
+    } catch (err: any) {
+      console.error("[MY-ALERTS] failed:", err.message);
+      res.status(500).json({ error: "Failed to load your alerts." });
+    }
+  });
+
+  app.post("/api/my/alerts/:id/acknowledge", authenticateToken, (req: any, res: any) => {
+    const db = getDB();
+    const alertId = String(req.params.id);
+    const scopedAlert = getMyAlerts(req.user, db).find((alert: any) => String(alert.alert_id) === alertId && !alert.derived);
+    if (!scopedAlert) return res.status(404).json({ error: "Alert not found in your workspace." });
+
+    const alert = (db.alertLogs || []).find((item: any) => String(item.alert_id) === alertId);
+    if (!alert) return res.status(404).json({ error: "Alert not found." });
+    alert.status = "Acknowledged";
+    alert.acknowledged_by = req.user.user_id ?? null;
+    alert.acknowledged_at = new Date().toISOString();
+    setDB(db);
+    res.json({ success: true, alert });
+  });
+
   // --- CSV TEMPLATES DATA IMPORTER ENDPOINTS ---
   app.post("/api/import/vehicle-master", express.json({ limit: "50mb" }), async (req, res) => {
     const { rows } = req.body;
@@ -8557,6 +8778,25 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     } catch (e: any) {
       res.status(500).json({ success: false, error: e.message });
     }
+  });
+
+  // --- APK DOWNLOADS: Serve Android APK files ---
+  app.get("/downloads/:filename", (req: any, res: any) => {
+    const filename = req.params.filename;
+    if (!filename.endsWith(".apk") || filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+      return res.status(400).json({ error: "Invalid download request." });
+    }
+    const candidatePaths = [
+      path.join(process.cwd(), "public", "downloads", filename),
+      path.join(process.cwd(), "dist", "downloads", filename),
+    ];
+    let targetPath = candidatePaths.find(p => fs.existsSync(p));
+    if (!targetPath) {
+      return res.status(404).json({ error: `APK file '${filename}' not found on server.` });
+    }
+    res.setHeader("Content-Type", "application/vnd.android.package-archive");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.sendFile(targetPath);
   });
 
   // --- VITE MIDDLEWARE SETUP ---

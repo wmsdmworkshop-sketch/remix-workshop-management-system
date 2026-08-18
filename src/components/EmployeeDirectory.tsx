@@ -22,7 +22,8 @@ import {
   FileSpreadsheet,
   Settings,
   Shield,
-  HelpCircle
+  HelpCircle,
+  User
 } from "lucide-react";
 import { Employee, Bay, SRType, RevenueSplitMaster } from "../types";
 
@@ -1440,6 +1441,22 @@ export default function EmployeeDirectory({
                             </span>
                           )}
                         </div>
+                      </div>
+
+                      {/* Login Account Status Badge */}
+                      <div className="flex items-center justify-between text-xs pt-2 mt-2 border-t border-slate-100/50">
+                        <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px] flex items-center gap-1">
+                          <User className="h-3.5 w-3.5 text-slate-400 shrink-0" /> Login Account:
+                        </span>
+                        {(emp as any).has_login_account ? (
+                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
+                            Active: @{(emp as any).linked_username}
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 uppercase tracking-wider">
+                            No Login Account
+                          </span>
+                        )}
                       </div>
                     </div>
 

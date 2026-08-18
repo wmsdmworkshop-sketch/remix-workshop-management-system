@@ -198,7 +198,7 @@ export default function JobCardManager({
   const [etdHours, setEtdHours] = useState(2); // hours from now
   const [createdBy, setCreatedBy] = useState<number>(() => {
     const defaultAdvisor = employees.find(e => e.is_active && e.role && ["manager", "supervisor", "advisor", "admin"].some(role => e.role.toLowerCase().includes(role)));
-    return defaultAdvisor?.employee_id || employees[0]?.employee_id || 1;
+    return defaultAdvisor?.employee_id || 0;
   });
 
   // Helpers for formatting
@@ -781,12 +781,13 @@ export default function JobCardManager({
       )
     );
 
-    const defaultAdvisor = advisors[0] || employees.find(e => e.is_active && e.role && ["manager", "supervisor", "advisor", "admin"].some(role => e.role.toLowerCase().includes(role))) || employees[0];
+    const defaultAdvisor = advisors[0] || employees.find(e => e.is_active && e.role && ["manager", "supervisor", "advisor", "admin"].some(role => e.role.toLowerCase().includes(role))) || null;
 
     if (userObj) {
       const userFullName = userObj.full_name || userObj.displayName || "";
       const userUsername = userObj.username || "";
       const matchedEmp = employees.find(e => 
+        (userObj.employee_id && e.employee_id === userObj.employee_id) ||
         (userFullName && e.full_name.toLowerCase() === userFullName.toLowerCase()) ||
         (e.employee_code && userUsername && e.employee_code.toLowerCase() === userUsername.toLowerCase())
       );
@@ -826,7 +827,7 @@ export default function JobCardManager({
   const [assignedStaff, setAssignedStaff] = useState<{ employee_id: number; tech_role: string }[]>([]);
   const [tempEmpId, setTempEmpId] = useState<number>(() => {
     const firstActive = employees.find(e => e.is_active && isTechnicianRole(e.role));
-    return firstActive?.employee_id || employees[0]?.employee_id || 0;
+    return firstActive?.employee_id || 0;
   });
   const [tempRole, setTempRole] = useState<string>("Primary Technician");
 

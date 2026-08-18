@@ -130,6 +130,9 @@ import OperationsCommandCenter from "./components/OperationsCommandCenter";
 import PlatformControlCenter from "./components/platform/PlatformControlCenter";
 import { PartsInChargeWorkspace } from "./components/PartsInChargeWorkspace";
 import { WarrantyClerkWorkspace } from "./components/WarrantyClerkWorkspace";
+import ReceptionistWorkspace from "./components/ReceptionistWorkspace";
+import ManagerAssignmentWorkspace from "./components/ManagerAssignmentWorkspace";
+import FleetManagerWorkspace from "./components/FleetManagerWorkspace";
 
 function darkenColor(hex: string, percent: number): string {
   let num = parseInt(hex.replace("#", ""), 16),
@@ -331,7 +334,10 @@ export default function App() {
       { id: "parts-command", label: "Parts Command", icon: Package },
       { id: "billing-workspace", label: "Billing Workspace", icon: FileText },
       { id: "cashier-workspace", label: "Cashier Desk", icon: DollarSign },
+      { id: "receptionist-workspace", label: "Reception Intake", icon: ClipboardCheck },
+      { id: "manager-assignment-workspace", label: "SA Assignment", icon: Users },
       { id: "security-workspace", label: "Security Gate Out", icon: ShieldAlert },
+      { id: "fleet-manager-workspace", label: "Fleet Intelligence", icon: Truck },
       { id: "delivery-workspace", label: "Vehicle Delivery", icon: Truck },
       { id: "gm-command", label: "GM Command", icon: Building },
       { id: "dealer-principal-cockpit", label: "Dealer Principal", icon: Sparkles },
@@ -366,6 +372,8 @@ export default function App() {
       { id: "setup-wizard", label: "Setup Wizard", icon: Building },
       { id: "pilot-control-room", label: "Pilot Control Room", icon: Activity },
       { id: "roi-tracker", label: "Business ROI Tracker", icon: TrendingUp },
+      { id: "live-support", label: "Live Support", icon: HelpCircle },
+      { id: "devops-dashboard", label: "DevOps Dashboard", icon: Terminal },
     ],
     admin: [
       { id: "operations-console", label: "Operations Cockpit", icon: Activity },
@@ -377,7 +385,10 @@ export default function App() {
       { id: "parts-command", label: "Parts Command", icon: Package },
       { id: "billing-workspace", label: "Billing Workspace", icon: FileText },
       { id: "cashier-workspace", label: "Cashier Desk", icon: DollarSign },
+      { id: "receptionist-workspace", label: "Reception Intake", icon: ClipboardCheck },
+      { id: "manager-assignment-workspace", label: "SA Assignment", icon: Users },
       { id: "security-workspace", label: "Security Gate Out", icon: ShieldAlert },
+      { id: "fleet-manager-workspace", label: "Fleet Intelligence", icon: Truck },
       { id: "delivery-workspace", label: "Vehicle Delivery", icon: Truck },
       { id: "gm-command", label: "GM Command", icon: Building },
       { id: "dealer-principal-cockpit", label: "Dealer Principal", icon: Sparkles },
@@ -412,6 +423,8 @@ export default function App() {
       { id: "setup-wizard", label: "Setup Wizard", icon: Building },
       { id: "pilot-control-room", label: "Pilot Control Room", icon: Activity },
       { id: "roi-tracker", label: "Business ROI Tracker", icon: TrendingUp },
+      { id: "live-support", label: "Live Support", icon: HelpCircle },
+      { id: "devops-dashboard", label: "DevOps Dashboard", icon: Terminal },
     ],
     billing: [
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
@@ -448,6 +461,12 @@ export default function App() {
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "jobs", label: "Job Cards", icon: Wrench },
     ],
+    warranty_manager: [
+      { id: "warranty-clerk-workspace", label: "Warranty Desk", icon: ShieldAlert },
+      { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "jobs", label: "Job Cards", icon: Wrench },
+    ],
     floor_incharge: [
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -460,6 +479,7 @@ export default function App() {
       { id: "attendance", label: "Attendance", icon: ClipboardCheck },
     ],
     workshop_manager: [
+      { id: "manager-assignment-workspace", label: "SA Assignment", icon: Users },
       { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
       { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
       { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
@@ -475,6 +495,31 @@ export default function App() {
       { id: "certification", label: "CPSC Certification", icon: Shield },
       { id: "attendance", label: "Attendance", icon: ClipboardCheck },
       { id: "dms-import", label: "DMS Import", icon: FileDown },
+      { id: "revenue", label: "Revenue Split", icon: DollarSign },
+    ],
+    service_manager: [
+      { id: "manager-assignment-workspace", label: "SA Assignment", icon: Users },
+      { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
+      { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "jobs", label: "Job Cards", icon: Wrench },
+      { id: "bay-tat", label: "Bay Monitor", icon: Clock },
+      { id: "productivity", label: "Productivity", icon: TrendingUp },
+      { id: "revenue", label: "Revenue Split", icon: DollarSign },
+    ],
+    works_manager: [
+      { id: "manager-assignment-workspace", label: "SA Assignment", icon: Users },
+      { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "jobs", label: "Job Cards", icon: Wrench },
+      { id: "bay-tat", label: "Bay Monitor", icon: Clock },
+      { id: "productivity", label: "Productivity", icon: TrendingUp },
+    ],
+    general_manager: [
+      { id: "manager-assignment-workspace", label: "SA Assignment", icon: Users },
+      { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
+      { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "revenue", label: "Revenue Split", icon: DollarSign },
     ],
     gm_service: [
@@ -518,6 +563,7 @@ export default function App() {
     ],
     reception: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "receptionist-workspace", label: "Reception Intake", icon: ClipboardCheck },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "jobs", label: "Job Cards", icon: Wrench },
@@ -525,6 +571,7 @@ export default function App() {
     ],
     receptionist: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "receptionist-workspace", label: "Reception Intake", icon: ClipboardCheck },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "jobs", label: "Job Cards", icon: Wrench },
@@ -586,6 +633,12 @@ export default function App() {
       { id: "tech-kpi", label: "My KPI", icon: TrendingUp },
       { id: "tech-profile", label: "My Profile", icon: UserIcon },
       { id: "attendance", label: "Attendance", icon: ClipboardCheck },
+    ],
+    fleet_manager: [
+      { id: "fleet-manager-workspace", label: "Fleet Intelligence", icon: Truck },
+      { id: "breakdown", label: "Breakdowns", icon: AlertTriangle },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { id: "vehicle-lookup", label: "Vehicle History", icon: History },
     ],
   };
 
@@ -1563,6 +1616,20 @@ export default function App() {
             />
           )}
 
+          {activeTab === "receptionist-workspace" && (
+            <ReceptionistWorkspace
+              currentUser={user}
+              onRefresh={fetchAllData}
+            />
+          )}
+
+          {activeTab === "manager-assignment-workspace" && (
+            <ManagerAssignmentWorkspace
+              currentUser={user}
+              onRefresh={fetchAllData}
+            />
+          )}
+
           {activeTab === "technician-workspace" && (
             <TechnicianWorkspace 
               jobCards={jobCards}
@@ -1631,6 +1698,14 @@ export default function App() {
 
           {activeTab === "dealer-principal-cockpit" && (
             <DealerPrincipalCommandCenter 
+              jobCards={jobCards}
+              onRefresh={fetchAllData}
+              aiModeEnabled={aiModeEnabled}
+            />
+          )}
+
+          {activeTab === "fleet-manager-workspace" && (
+            <FleetManagerWorkspace
               jobCards={jobCards}
               onRefresh={fetchAllData}
               aiModeEnabled={aiModeEnabled}
