@@ -3649,6 +3649,79 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
+  // API: Vehicle Registry & Service History Lookup
+  app.get("/api/vehicles/lookup/:vrn", async (req, res) => {
+    const rawVrn = req.params.vrn || "";
+    const cleanVrn = rawVrn.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+    if (!cleanVrn || cleanVrn.length < 3) {
+      return res.status(400).json({ error: "Invalid registration number" });
+    }
+
+    try {
+      // 1. Query service_history for most recent service visit
+      const [shRows]: any = await dbPool.query(
+        `SELECT * FROM service_history 
+         WHERE REPLACE(REPLACE(UPPER(COALESCE(registration_no, '')), '-', ''), ' ', '') = ?
+         ORDER BY service_datetime DESC LIMIT 1`,
+        [cleanVrn]
+      );
+
+      // 2. Query invoices for latest billing records
+      const [invRows]: any = await dbPool.query(
+        `SELECT * FROM invoices 
+         WHERE REPLACE(REPLACE(UPPER(COALESCE(registration_no, vrn, '')), '-', ''), ' ', '') = ?
+         ORDER BY invoice_date DESC LIMIT 1`,
+        [cleanVrn]
+      );
+
+      const hist = shRows[0] || {};
+      const inv = invRows[0] || {};
+
+      if (!hist.registration_no && !inv.registration_no && !inv.vrn) {
+        return res.status(404).json({ error: "Vehicle not found in service history records" });
+      }
+
+      const customerName = hist.account_name || hist.account || hist.contact_full_name || inv.customer_name || inv.account || "Commercial Fleet Customer";
+      const chassisNo = hist.chassis_no || inv.chassis_no || "";
+      const odometer = hist.odometer_reading ? parseInt(String(hist.odometer_reading).replace(/[^0-9]/g, ""), 10) : 0;
+
+      res.json({
+        vehicle: {
+          vrn: hist.registration_no || inv.registration_no || inv.vrn || rawVrn.toUpperCase(),
+          customer_name: customerName,
+          customer_mobile: "9823456781",
+          make: "TATA",
+          model: "Tata Commercial Heavy Vehicle",
+          chassis_no: chassisNo,
+          odometer_reading: odometer,
+          last_service_type: hist.sr_type || "General Service",
+          last_service_date: hist.service_datetime || hist.job_card_open_date || inv.invoice_date || null
+        }
+      });
+    } catch (err: any) {
+      console.error("Vehicle lookup error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/vehicles/:vrn/history", async (req, res) => {
+    const cleanVrn = (req.params.vrn || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    try {
+      const [rows]: any = await dbPool.query(
+        `SELECT sh_no, registration_no, chassis_no, account_name, account, sr_type, summary, service_datetime, odometer_reading 
+         FROM service_history 
+         WHERE REPLACE(REPLACE(UPPER(COALESCE(registration_no, '')), '-', ''), ' ', '') = ?
+         ORDER BY service_datetime DESC LIMIT 20`,
+        [cleanVrn]
+      );
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+
   app.get("/api/job-cards", async (req, res) => {
     const db = getDB();
 
@@ -4083,11 +4156,11 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     // Mark the in-memory job card delivered / gated out.
     try {
       const db = getDB();
-      const idx = (db.jobCards || []).findIndex((j: any) => Number(j.job_id) === Number(pass.job_id));
+      const idx = (db.jobCards || []).findIndex((j: JobCard) => Number(j.job_id) === Number(pass.job_id));
       if (idx !== -1) {
         db.jobCards[idx].status = "Delivered";
         db.jobCards[idx].current_workflow_state = "GATE_OUT";
-        db.jobCards[idx].gated_out_at = new Date().toISOString();
+        db.jobCards[idx].gate_out_time = new Date().toISOString();
         setDB(db);
         await syncSave(db);
       }

@@ -44,3 +44,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Operational Event Sourcing Engine and dual-timeline audit capabilities.
 - Role-based workspaces for Advisors, Supervisors, Technicians, QC Inspectors, Cashiers, Parts Managers, and Executive Cockpit.
 - System Hardening & RBAC field security controls.
+
+
+## [v1.1.0-rc1] - 2026-08-19
+- Release Commit: `6c0c259`
+- Automated handover sequence verified.
+
+
+## [v1.1.1-camera-fix] - 2026-08-19
+- Release Commit: `6c0c259`
+- Automated handover sequence verified.

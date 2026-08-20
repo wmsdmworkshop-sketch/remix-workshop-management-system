@@ -18,7 +18,16 @@ export interface OCRProcessorProvider {
 }
 
 /**
- * Extracts structured commercial vehicle fields from raw OCR text using regular expressions.
+ * Extracts structured commercial vehicle fields from raw OCR text.
+ *
+ * Supported Indian VRN formats (BH series + state codes):
+ *   MH-12-AB-1234  (standard: 2-letter state, 2-digit district, 1-2 letter series, 4 digits)
+ *   DL-01-CAB-1234 (DL format with 3-letter series — rare but valid)
+ *   24-BH-1234-AB  (BH series bharat format)
+ *   Also handles formats without hyphens: MH12AB1234
+ *
+ * Constitution: Zero Duplicate Masters — do NOT fabricate or default a VRN.
+ * Returns undefined for any field that cannot be extracted from the image text.
  */
 export function extractJobCardFields(text: string): {
   vrn?: string;
@@ -26,101 +35,120 @@ export function extractJobCardFields(text: string): {
   odometer?: number;
   chassisNo?: string;
 } {
-  const vrnMatch = text.match(/\b([A-Z]{2}[-\s]?\d{2}[-\s]?[A-Z]{1,2}[-\s]?\d{4})\b/i);
+  // Primary: standard Indian VRN  — AA-00-AA-0000 or AA-00-A-0000
+  const vrnPatterns = [
+    // Standard: state-district-series-number (with or without hyphens/spaces)
+    /\b([A-Z]{2}[-\s]?\d{2}[-\s]?[A-Z]{1,3}[-\s]?\d{4})\b/i,
+    // BH series: 00-BH-0000-AA
+    /\b(\d{2}[-\s]?BH[-\s]?\d{4}[-\s]?[A-Z]{1,2})\b/i,
+  ];
+
+  let vrn: string | undefined;
+  for (const pattern of vrnPatterns) {
+    const m = text.match(pattern);
+    if (m) {
+      // Normalise: remove spaces, keep hyphens
+      vrn = m[1].toUpperCase().replace(/\s+/g, '');
+      break;
+    }
+  }
+
   const jcMatch = text.match(/\b(JC[-]?\d{3,7})\b/i);
-  const odoMatch = text.match(/\b(\d{4,6})\s*(?:km|kms|odometer)\b/i) || text.match(/odometer:\s*(\d{4,6})/i);
-  const chassisMatch = text.match(/\b(MST[A-Z0-9]{7,14})\b/i);
+  const odoMatch =
+    text.match(/\b(\d{4,6})\s*(?:km|kms|kilometers|odometer)\b/i) ||
+    text.match(/odometer\s*[:\-]?\s*(\d{4,6})/i);
+
+  // TATA chassis numbers typically start with MAT (manufacturer code)
+  const chassisMatch = text.match(/\b(MA[A-Z]\w{14})\b/i) || text.match(/\b(MST[A-Z0-9]{7,14})\b/i);
 
   return {
-    vrn: vrnMatch ? vrnMatch[1].toUpperCase() : undefined,
+    vrn,
     jobCardNo: jcMatch ? jcMatch[1].toUpperCase() : undefined,
     odometer: odoMatch ? parseInt(odoMatch[1], 10) : undefined,
     chassisNo: chassisMatch ? chassisMatch[1].toUpperCase() : undefined,
   };
 }
 
-class MockOCRProcessor implements OCRProcessorProvider {
-  async process(ocrImageBase64: string): Promise<{ text: string; confidence: number }> {
-    const confidence = 0.96;
-    return {
-      text: "Job Card Code: JC001, VRN: MH-12-AB-1234, Odometer: 34500 km, Chassis: MST9982421",
-      confidence,
-    };
-  }
-}
-
 class GeminiOCRProcessor implements OCRProcessorProvider {
   async process(ocrImageBase64: string): Promise<{ text: string; confidence: number }> {
-    try {
-      const { GoogleGenAI } = await import("@google/genai");
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
+    const { GoogleGenAI } = await import("@google/genai");
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
 
-      const ai = new GoogleGenAI({ apiKey });
-      const base64Data = ocrImageBase64.replace(/^data:image\/\w+;base64,/, "");
-      const prompt = "Extract all text from this image accurately. Focus on Vehicle Registration Number (VRN), Odometer reading (KM), and Chassis Number. Return just the raw extracted text.";
+    const ai = new GoogleGenAI({ apiKey });
+    const base64Data = ocrImageBase64.replace(/^data:image\/\w+;base64,/, "");
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [
-          prompt,
-          {
-            inlineData: {
-              data: base64Data,
-              mimeType: "image/jpeg",
-            },
+    // Targeted prompt for Indian commercial vehicle number plates.
+    // Gemini-flash is instructed to return only the raw OCR text — no summarization —
+    // so extractJobCardFields can parse it deterministically.
+    const prompt = [
+      "You are an OCR engine for an Indian commercial vehicle workshop management system.",
+      "Extract ALL visible text from this image exactly as it appears.",
+      "Focus on:",
+      "1. Vehicle Registration Number (VRN) — format like MH-12-AB-1234 or DL-01-CAB-0001",
+      "2. Odometer reading in km",
+      "3. Chassis Number (17-character VIN or TATA-format beginning with MAT or MST)",
+      "Return ONLY the raw extracted text. Do NOT summarize, interpret, or translate.",
+      "If the image is unclear or no plate is visible, return exactly: OCR_NO_TEXT_DETECTED"
+    ].join("\n");
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.6-flash",
+      contents: [
+        { text: prompt },
+        {
+          inlineData: {
+            data: base64Data,
+            mimeType: "image/jpeg",
           },
-        ],
-      });
+        },
+      ],
+    });
 
-      const text = response.text || "";
-      return { text, confidence: 0.98 };
-    } catch (error) {
-      console.error("Gemini OCR Error:", error);
-      throw error;
+    const text = (response.text || "").trim();
+    if (!text || text === "OCR_NO_TEXT_DETECTED") {
+      throw new Error("OCR could not detect any text in the captured image. Ensure the plate is clearly visible and well-lit.");
     }
+    return { text, confidence: 0.98 };
   }
 }
 
 const providers: Record<OCRProvider, OCRProcessorProvider> = {
-  GoogleVision: new GeminiOCRProcessor(), // Upgraded to Gemini for accuracy
+  GoogleVision: new GeminiOCRProcessor(),
   Gemini: new GeminiOCRProcessor(),
-  Azure: new MockOCRProcessor(),
-  AWS: new MockOCRProcessor(),
-  EasyOCR: new MockOCRProcessor(),
-  Custom: new MockOCRProcessor(),
+  // Azure/AWS/EasyOCR/Custom are not wired — they fail closed (no mock).
+  Azure: { process: async () => { throw new Error("Azure OCR not configured"); } },
+  AWS: { process: async () => { throw new Error("AWS OCR not configured"); } },
+  EasyOCR: { process: async () => { throw new Error("EasyOCR not configured"); } },
+  Custom: { process: async () => { throw new Error("Custom OCR not configured"); } },
 };
 
-// No real OCR provider is wired yet. PRODUCTION FAILS CLOSED: it must never
-// fabricate a passing extraction/confidence (a fabricated 0.90+ confidence would
-// silently satisfy the OT fast-track gate in overtime-rules.ts). Only non-production
-// (dev/test) may use the mock provider. Production returns an UNVERIFIED result
-// (confidence 0) so the document is treated as unverified, never as a fake success.
-const ALLOW_MOCK_OCR = process.env.NODE_ENV !== "production";
-
 /**
- * Processes job card photo and extracts OCR fields.
+ * Processes a number-plate or dashboard photo and extracts OCR fields.
+ *
+ * Constitution: Real-Data-Only Operational Contract
+ * - NEVER returns fabricated VRN, mock plates, or synthetic confidence scores.
+ * - If GEMINI_API_KEY is missing, returns a structured error (confidence 0, no extractedFields).
+ * - Callers (server route) must propagate this as an HTTP error so the client
+ *   can display the manual-entry fallback.
  */
 export async function verifyJobCard(
   ocrImageBase64: string,
   provider: OCRProvider = 'Gemini'
 ): Promise<OCRResult> {
   const apiKey = process.env.GEMINI_API_KEY;
-  const isProd = process.env.NODE_ENV === "production";
 
-  // In production, we MUST have an API key to proceed.
-  // If no key and not prod, we can use mock.
-  if (isProd && !apiKey) {
-    return {
-      text: "OCR Error: GEMINI_API_KEY not configured in production environment.",
-      confidence: 0,
-      provider,
-      verificationTime: new Date().toISOString(),
-      extractedFields: {}
-    };
+  // Fail closed regardless of NODE_ENV: no API key → no OCR.
+  // We never fall through to a mock processor in any environment because
+  // a fabricated plate (even in dev) can be accidentally committed to the DB.
+  if (!apiKey) {
+    throw new Error(
+      "GEMINI_API_KEY not configured on the server. " +
+      "Plate recognition is unavailable. Please enter the vehicle number manually."
+    );
   }
 
-  const processor = providers[provider] || providers.Gemini;
+  const processor = providers[provider] ?? providers.Gemini;
   const result = await processor.process(ocrImageBase64);
   const extractedFields = extractJobCardFields(result.text);
 
@@ -129,6 +157,6 @@ export async function verifyJobCard(
     confidence: result.confidence,
     provider,
     verificationTime: new Date().toISOString(),
-    extractedFields
+    extractedFields,
   };
 }

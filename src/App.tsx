@@ -115,6 +115,7 @@ import ExceptionReport from "./components/ExceptionReport";
 
 const GateEntryManager = React.lazy(() => import("./components/GateEntryManager"));
 const BillingExit = React.lazy(() => import("./components/billing-exit"));
+import ErrorBoundary from "./components/ErrorBoundary";
 
 import DealerSetupWizard from "./components/DealerSetupWizard";
 import UserOnboardingTour from "./components/UserOnboardingTour";
@@ -135,7 +136,11 @@ import ManagerAssignmentWorkspace from "./components/ManagerAssignmentWorkspace"
 import FleetManagerWorkspace from "./components/FleetManagerWorkspace";
 
 function darkenColor(hex: string, percent: number): string {
-  let num = parseInt(hex.replace("#", ""), 16),
+  let color = hex.replace("#", "");
+  if (color.length === 3) {
+    color = color.split('').map(c => c + c).join('');
+  }
+  let num = parseInt(color, 16),
       amt = Math.round(2.55 * percent),
       R = (num >> 16) - amt,
       G = (num >> 8 & 0x00FF) - amt,
@@ -144,7 +149,18 @@ function darkenColor(hex: string, percent: number): string {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<string>("dashboard");
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    // Restore tab after Android process-death during native camera capture.
+    // localStorage (not sessionStorage) persists across full process kills by
+    // Android lowmemorykiller — sessionStorage is in-memory only and is wiped
+    // when the DWIP process is terminated while the camera app is open.
+    // The stored tab is validated against auth / role guards on render.
+    try {
+      return localStorage.getItem("dwip_active_tab") || "dashboard";
+    } catch {
+      return "dashboard";
+    }
+  });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [lookupQuery, setLookupQuery] = useState<string>("");
 
@@ -200,12 +216,21 @@ export default function App() {
     }
   }, [activeTab, user]);
 
+  // Persist active tab to localStorage so it survives Android process-death
+  // caused by lowmemorykiller when the native camera app launches.
+  // sessionStorage is wiped with the process — localStorage is not.
+  useEffect(() => {
+    try {
+      localStorage.setItem("dwip_active_tab", activeTab);
+    } catch { /* ignore — storage may be unavailable */ }
+  }, [activeTab]);
+
 
   // --- Toast notification system ---
   const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: "success" | "error" | "info" }>>([]);
-  let toastCounter = 0;
+  const toastCounterRef = React.useRef(0);
   const showToast = (message: string, type: "success" | "error" | "info" = "info") => {
-    const id = ++toastCounter;
+    const id = ++toastCounterRef.current;
     setToasts(prev => [...prev, { id, message, type }]);
     const duration = type === "error" ? 8000 : 4000;
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
@@ -842,10 +867,21 @@ export default function App() {
     }
   }, []);
 
-  // Session Sync Engine: Poll /api/auth/me every 4 seconds.
-  // If the user's role or details changed in the DB (e.g., by an admin), update context instantly.
+  // Session Sync Engine: Poll /api/auth/me every 30 seconds.
+  // FIX: was polling every 4s and had an infinite loop caused by depending on
+  // [token, user?.role] — setUser() created a new object ref → user?.role
+  // re-evaluated → effect re-ran → role detected as "changed" on every tick.
+  // Fix: depend only on [token], use a ref for stable last-synced comparison.
+  const lastSyncedUserRef = React.useRef<{ role?: string; full_name?: string; is_active?: boolean } | null>(null);
+
   useEffect(() => {
     if (!token || !user) return;
+
+    lastSyncedUserRef.current = {
+      role: user.role,
+      full_name: user.full_name,
+      is_active: user.is_active,
+    };
 
     const syncSession = async () => {
       try {
@@ -865,20 +901,29 @@ export default function App() {
             setUserPermissions(freshPermissions);
           }
 
-          if (freshUser && (
-            freshUser.role !== user.role ||
-            freshUser.full_name !== user.full_name ||
-            freshUser.is_active !== user.is_active
-          )) {
-            console.log("[Session Sync] Role change detected. Refreshing context...", freshUser);
-            const updatedUser = { ...user, ...freshUser };
-            localStorage.setItem("wms_user", JSON.stringify(updatedUser));
-            setUser(updatedUser);
-            // Redirect to first valid tab if current tab is no longer accessible
+          const prev = lastSyncedUserRef.current;
+          const roleChanged   = freshUser?.role      !== prev?.role;
+          const nameChanged   = freshUser?.full_name !== prev?.full_name;
+          const activeChanged = freshUser?.is_active !== prev?.is_active;
+
+          if (freshUser && (roleChanged || nameChanged || activeChanged)) {
+            console.log("[Session Sync] Change detected. role:", prev?.role, "→", freshUser.role);
+            lastSyncedUserRef.current = {
+              role: freshUser.role,
+              full_name: freshUser.full_name,
+              is_active: freshUser.is_active,
+            };
+            setUser((prev: any) => {
+              const updated = { ...prev, ...freshUser };
+              localStorage.setItem("wms_user", JSON.stringify(updated));
+              return updated;
+            });
             const currentRoleTabs = ROLE_TABS[freshUser.role] || ROLE_TABS["reception"] || [];
-            if (!currentRoleTabs.some(t => t.id === activeTab)) {
-              setActiveTab(currentRoleTabs[0]?.id || "dashboard");
-            }
+            setActiveTab((cur: string) =>
+              currentRoleTabs.some((t: any) => t.id === cur)
+                ? cur
+                : (currentRoleTabs[0]?.id || "dashboard")
+            );
           }
         }
       } catch (e) {
@@ -886,11 +931,10 @@ export default function App() {
       }
     };
 
-    // Initial sync on mount + login
     syncSession();
-    const intervalId = setInterval(syncSession, 4000);
+    const intervalId = setInterval(syncSession, 30000);
     return () => clearInterval(intervalId);
-  }, [token, user?.role]);
+  }, [token]);
 
   const handleLogin = async () => {
     // Custom database JWT authentication is handled by AuthScreen
@@ -1773,15 +1817,17 @@ export default function App() {
           )}
 
           {activeTab === "gate-entry" && (
-            <React.Suspense fallback={<FunnyLoader message="Loading gate registry..." />}>
-              <GateEntryManager 
-                bays={bays} 
-                jobCards={jobCards} 
-                onCreateJob={handleCreateJob} 
-                onUpdateJob={handleUpdateJob}
-                onRefresh={fetchAllData} 
-              />
-            </React.Suspense>
+            <ErrorBoundary fallbackMessage="Gate Inward Registry encountered an issue. Tap retry to restore.">
+              <React.Suspense fallback={<FunnyLoader message="Loading gate registry..." />}>
+                <GateEntryManager 
+                  bays={bays} 
+                  jobCards={jobCards} 
+                  onCreateJob={handleCreateJob} 
+                  onUpdateJob={handleUpdateJob}
+                  onRefresh={fetchAllData} 
+                />
+              </React.Suspense>
+            </ErrorBoundary>
           )}
 
           {activeTab === "security-workspace" && (

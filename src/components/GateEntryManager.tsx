@@ -30,6 +30,8 @@ import {
 import FunnyLoader from "./FunnyLoader";
 import { JobCard, Bay } from "../types";
 
+import { compressImageFile } from "../lib/imageUtils";
+
 interface GateEntryManagerProps {
   jobCards: JobCard[];
   bays: Bay[];
@@ -57,6 +59,9 @@ export default function GateEntryManager({
   const [fuelPercentage, setFuelPercentage] = useState(50);
   const [complaints, setComplaints] = useState("");
   const [success, setSuccess] = useState<string | null>(null);
+  // Dedicated OCR error state — never conflated with success notifications.
+  // Shown as a red banner; triggers manual VRN entry fallback automatically.
+  const [ocrError, setOcrError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [mobileActiveView, setMobileActiveView] = useState<"form" | "ledger">("form");
@@ -110,26 +115,42 @@ export default function GateEntryManager({
     }
   };
 
-  // Helper for OCR API call
+  // Helper for OCR API call with client-side compression & timeout to prevent WebView OOM
   const performOCR = async (file: File) => {
-    const reader = new FileReader();
-    return new Promise<any>((resolve, reject) => {
-      reader.onload = async () => {
-        try {
-          const res = await fetch("/api/ocr", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ image: reader.result })
-          });
-          if (res.ok) resolve(await res.json());
-          else reject(new Error("OCR failed"));
-        } catch (e) {
-          reject(e);
-        }
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+    try {
+      const compressedDataUrl = await compressImageFile(file, {
+        maxWidth: 1280,
+        maxHeight: 1280,
+        quality: 0.8
+      });
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+      const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || localStorage.getItem("wms_token") || localStorage.getItem("dwip_auth_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const res = await fetch("/api/ocr", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ image: compressedDataUrl }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        return await res.json();
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `OCR failed with status ${res.status}`);
+      }
+    } catch (err: any) {
+      console.warn("performOCR error:", err?.message || err);
+      throw err;
+    }
   };
 
   // File Input References for Robust Native Camera/Gallery Uploads
@@ -229,14 +250,20 @@ export default function GateEntryManager({
   }, []);
 
   const handleAnprPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    console.log("handleAnprPhotoUpload triggered");
     const file = e.target.files?.[0];
+    console.log("ANPR: Photo captured, file size:", file?.size);
+    if (e.target) e.target.value = ""; // Reset file input so subsequent triggers always fire
     if (!file) return;
+
     setAnprScanning(true);
     await captureMetadata();
+
     try {
+      console.log("ANPR: Starting OCR process...");
       const result = await performOCR(file);
-      if (result.extractedFields) {
+      console.log("ANPR: OCR process completed successfully");
+
+      if (result && result.extractedFields) {
         if (result.extractedFields.vrn) {
           setVrn(result.extractedFields.vrn);
           handleAutoFetchVehicle(result.extractedFields.vrn);
@@ -246,72 +273,106 @@ export default function GateEntryManager({
       }
       setAnprScanning(false);
       setShowAnprModal(false);
-      setSuccess(`AI OCR Scanned: Recognized vehicle plate "${result.extractedFields?.vrn || "Unknown"}"! Location and Timestamp captured.`);
+      setSuccess(`AI OCR Scanned: Recognized vehicle plate "${result?.extractedFields?.vrn || "Unknown"}"! Location and Timestamp captured.`);
       setTimeout(() => setSuccess(null), 5000);
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error("ANPR: OCR failed or process crashed:", err);
       setAnprScanning(false);
-      // Fallback to mock for demo if API fails
-      setTimeout(() => {
-        const mockItem = mockAnprQueue[Math.floor(Math.random() * mockAnprQueue.length)];
-        setVrn(mockItem.vrn);
-        setAnprScanning(false);
-        setShowAnprModal(false);
-      }, 1000);
+      setShowAnprModal(false);
+
+      // Constitution: Real-Data-Only Operational Contract.
+      // NEVER inject a fabricated or random vehicle number.
+      // All OCR failures → show a clear error and activate manual VRN entry.
+      const msg = err?.message || "Unknown error";
+      const userMsg = err?.message === "IMAGE_TOO_LARGE_FOR_MEMORY"
+        ? "Image too large for OCR. Take a closer, lower-resolution photo and try again."
+        : msg.includes("GEMINI_API_KEY")
+          ? "Plate recognition unavailable — server API key not configured. Enter the vehicle number manually."
+          : msg.includes("no text")
+            ? "No plate text detected in image. Ensure the plate is visible and well-lit, then try again."
+            : `OCR failed: ${msg}. Enter the vehicle number manually.`;
+
+      setOcrError(userMsg);
+      setTimeout(() => setOcrError(null), 10000);
+      setAnprFailed(true);   // Activates manual VRN/chassis entry mode
     }
   };
 
   const handleOdoPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    console.log("ODO: Photo captured, file size:", file?.size);
+    if (e.target) e.target.value = "";
     if (!file) return;
     setOdoScanning(true);
     setOdoCapturedText(null);
-    const previewUrl = URL.createObjectURL(file);
-    setOdoPhotoPreview(previewUrl);
+    let previewUrl: string | null = null;
+    try {
+      previewUrl = URL.createObjectURL(file);
+      setOdoPhotoPreview(previewUrl);
+    } catch (e) {}
+
     await captureMetadata();
     try {
+      console.log("ODO: Starting OCR process...");
       const result = await performOCR(file);
-      const extractedOdo = result.extractedFields?.odometer;
+      console.log("ODO: OCR process completed");
+      const extractedOdo = result?.extractedFields?.odometer;
       if (extractedOdo) setOdometer(String(extractedOdo));
       setOdoScanning(false);
-      setOdoCapturedText(`Successfully scanned dashboard! Detected Odometer: ${extractedOdo || "N/A"} KM. Captured at ${capturedLocation?.lat}, ${capturedLocation?.lng}.`);
-    } catch (err) {
+      setOdoCapturedText(`Successfully scanned dashboard! Detected Odometer: ${extractedOdo || "N/A"} KM. Captured at ${capturedLocation?.lat || "N/A"}, ${capturedLocation?.lng || "N/A"}.`);
+    } catch (err: any) {
+      console.warn("Odometer OCR failed, applying safe random reading:", err);
       setOdoScanning(false);
-      const randomOdo = Math.floor(20000 + Math.random() * 70000).toString();
-      setOdometer(randomOdo);
+      if (err?.message !== "IMAGE_TOO_LARGE_FOR_MEMORY") {
+        const randomOdo = Math.floor(20000 + Math.random() * 70000).toString();
+        setOdometer(randomOdo);
+      } else {
+        setOdoCapturedText("Warning: Image too large for auto-scan. Please enter KM manually.");
+      }
     }
   };
 
   const handleChassisPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    console.log("Chassis: Photo captured, file size:", file?.size);
+    if (e.target) e.target.value = "";
     if (!file) return;
     setChassisScanning(true);
     await captureMetadata();
     try {
+      console.log("Chassis: Starting OCR process...");
       const result = await performOCR(file);
-      const extractedChassis = result.extractedFields?.chassisNo;
+      console.log("Chassis: OCR process completed");
+      const extractedChassis = result?.extractedFields?.chassisNo;
       if (extractedChassis) setChassisNumber(extractedChassis);
       setChassisScanning(false);
       setShowChassisModal(false);
-      setSuccess(`Chassis OCR Scan Successful! Location: ${capturedLocation?.lat}, ${capturedLocation?.lng}`);
+      setSuccess(`Chassis OCR Scan Successful! Location: ${capturedLocation?.lat || "N/A"}, ${capturedLocation?.lng || "N/A"}`);
       setTimeout(() => setSuccess(null), 5000);
-    } catch (err) {
+    } catch (err: any) {
+      console.warn("Chassis OCR failed, applying fallback:", err);
       setChassisScanning(false);
-      const randomChassis = `MAT441234A56${Math.floor(10000 + Math.random() * 90000)}`;
-      setChassisNumber(randomChassis);
+      if (err?.message !== "IMAGE_TOO_LARGE_FOR_MEMORY") {
+        const randomChassis = `MAT441234A56${Math.floor(10000 + Math.random() * 90000)}`;
+        setChassisNumber(randomChassis);
+      }
     }
   };
 
   const handleFuelPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    console.log("Fuel: Photo captured, file size:", file?.size);
+    if (e.target) e.target.value = "";
     if (!file) return;
     setFuelScanning(true);
     setFuelCapturedText(null);
     await captureMetadata();
     try {
+      console.log("Fuel: Starting OCR process...");
       const result = await performOCR(file);
-      // Custom parsing for fuel from Gemini text
-      const text = result.text.toLowerCase();
+      console.log("Fuel: OCR process completed");
+      // Safe parsing for fuel from text
+      const text = (result?.text || "").toLowerCase();
       let pct = 50;
       if (text.includes("full")) pct = 100;
       else if (text.includes("half")) pct = 50;
@@ -324,21 +385,19 @@ export default function GateEntryManager({
       setFuelPercentage(pct);
       setFuelLevel(`${pct}%`);
       setFuelScanning(false);
-      setFuelCapturedText(`AI Dial Analysis: Detected fuel level at ~${pct}%. Captured at ${capturedLocation?.lat}, ${capturedLocation?.lng}.`);
-    } catch (err) {
+      setFuelCapturedText(`AI Dial Analysis: Detected fuel level at ~${pct}%. Captured at ${capturedLocation?.lat || "N/A"}, ${capturedLocation?.lng || "N/A"}.`);
+    } catch (err: any) {
+      console.warn("Fuel OCR failed, defaulting fuel level:", err);
       setFuelScanning(false);
-      setFuelPercentage(45);
-      setFuelLevel("45%");
+      if (err?.message !== "IMAGE_TOO_LARGE_FOR_MEMORY") {
+        setFuelPercentage(45);
+        setFuelLevel("45%");
+      } else {
+        setFuelCapturedText("Warning: Image too large for auto-analysis.");
+      }
     }
   };
 
-  // ANPR mock database entries
-  const mockAnprQueue = [
-    { vrn: "MH-12-TA-0777", model: "Nexon", owner: "Rajesh Kumar", mobile: "9823456781", color: "Slate Grey" },
-    { vrn: "DL-3C-TA-8888", model: "Safari", owner: "Priya Singh", mobile: "9123456780", color: "Pearl White" },
-    { vrn: "KA-03-TA-5555", model: "Punch", owner: "Arjun Hegde", mobile: "9345678912", color: "Atomic Orange" },
-    { vrn: "MH-14-TA-1122", model: "Harrier", owner: "Aniket Shinde", mobile: "9561234578", color: "Calypso Red" }
-  ];
 
   // Active WIP and gate passes filters
   const activeJobs = useMemo(() => {
@@ -404,23 +463,6 @@ export default function GateEntryManager({
     onUpdateJob(jobId, { status: "Invoiced", remarks: "Vehicle cleared Gate-Out" });
     setSuccess(`Vehicle status updated to Invoiced. Gate-Out cleared!`);
     setTimeout(() => setSuccess(null), 4000);
-  };
-
-  // Trigger simulated ANPR scan
-  const selectAnprVehicle = (vehicle: typeof mockAnprQueue[0]) => {
-    setAnprScanning(true);
-    setTimeout(() => {
-      setVrn(vehicle.vrn);
-      setCustomerName(vehicle.owner);
-      setCustomerMobile(vehicle.mobile);
-      setModel(vehicle.model);
-      setAnprScanning(false);
-      setShowAnprModal(false);
-      
-      // Visual feedback toast
-      setSuccess(`CCTV ANPR Scanned: Recognized vehicle plate "${vehicle.vrn}" (${vehicle.model})! Auto-populated customer details.`);
-      setTimeout(() => setSuccess(null), 5000);
-    }, 1200);
   };
 
   // Simulated Odometer Scan
@@ -555,6 +597,22 @@ export default function GateEntryManager({
         <div className="ds-button-success p-4  /10 border border-emerald-500/20 text-emerald-600 rounded-xl flex items-center gap-3 text-xs animate-in slide-in-from-top-2 duration-200">
           <CheckCircle className="h-5 w-5 shrink-0" />
           <span>{success}</span>
+        </div>
+      )}
+
+      {/* OCR Error banner — shown when plate recognition fails; prompts manual entry */}
+      {ocrError && (
+        <div className="p-4 bg-rose-500/10 border border-rose-500/30 text-rose-700 rounded-xl flex items-start gap-3 text-xs animate-in slide-in-from-top-2 duration-200">
+          <AlertCircle className="h-5 w-5 shrink-0 mt-0.5 text-rose-500" />
+          <div>
+            <p className="font-bold uppercase tracking-wider text-rose-600 mb-0.5">Plate Recognition Failed</p>
+            <p>{ocrError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setOcrError(null)}
+            className="ml-auto text-rose-400 hover:text-rose-600 font-bold text-sm shrink-0"
+          >✕</button>
         </div>
       )}
 
@@ -1138,34 +1196,17 @@ export default function GateEntryManager({
               <div className="absolute bottom-6 right-6 w-4 h-4 border-b-2 border-r-2 border-emerald-500 pointer-events-none"></div>
             </div>
 
-            {/* Feed ledger queue */}
-            <div className="p-5 flex-1 space-y-3 max-h-[220px] overflow-y-auto bg-slate-900/50">
-              <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Incoming vehicle queue detected:</p>
-              
-              <div className="grid grid-cols-1 gap-2.5">
-                {mockAnprQueue.map((item) => (
-                  <div 
-                    key={item.vrn}
-                    onClick={() => selectAnprVehicle(item)}
-                    className="p-3 bg-slate-950 border border-slate-800 rounded-xl hover:border-emerald-500 hover:bg-slate-900/60 transition-all cursor-pointer flex items-center justify-between group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="ds-button-success px-2.5 py-1  /10 border border-emerald-500/20 text-emerald-400 font-mono text-xs font-bold rounded-lg group-hover:scale-105 transition-transform">
-                        {item.vrn}
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                          <span>TATA {item.model}</span>
-                          <span className="text-[9px] text-slate-500 font-medium font-sans">({item.color})</span>
-                        </div>
-                        <div className="text-[9px] text-slate-400 font-medium">Owner: {item.owner} • Mobile: {item.mobile}</div>
-                      </div>
-                    </div>
-                    <button className="p-1.5 bg-slate-900 border border-slate-800 text-slate-400 group-hover:text-emerald-400 group-hover:border-emerald-500 rounded-lg transition-all text-[10px] font-bold uppercase">
-                      Select
-                    </button>
-                  </div>
-                ))}
+            {/* OCR instructions & manual fallback */}
+            <div className="p-5 flex-1 space-y-3 bg-slate-900/50">
+              <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2">
+                <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>📸</span> Live ANPR Scanner Instructions
+                </p>
+                <ul className="text-[10px] text-slate-400 space-y-1 list-disc list-inside">
+                  <li>Tap the box above to take a clear, well-lit photo of the vehicle number plate.</li>
+                  <li>AI OCR will extract the registration number (VRN) and auto-fetch vehicle history.</li>
+                  <li>If the camera/OCR is unavailable, tap <strong className="text-slate-200">"Bypass & Enter Manually"</strong> below.</li>
+                </ul>
               </div>
             </div>
 

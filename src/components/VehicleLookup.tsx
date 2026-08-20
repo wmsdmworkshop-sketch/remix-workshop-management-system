@@ -92,9 +92,9 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
   const performLookup = async (queryText: string) => {
     if (!queryText.trim()) return;
     setLoading(true);
-    setError(null);
     try {
-      const token = localStorage.getItem("wms_token");
+      setError(null);
+      const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || localStorage.getItem("wms_token") || "";
       const response = await fetch(`/api/vehicle/history?query=${encodeURIComponent(queryText.trim())}`, {
         headers: {
           ...(token ? { "Authorization": `Bearer ${token}` } : {})

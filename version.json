@@ -1,9 +1,11 @@
 {
-    "version":  "1.1.0-rc.1",
-    "release":  "DWIP-v2.0.0-GA",
-    "tag":  "DWIP-v2.0.0-GA",
-    "enterprise":  "Devanand Automobiles (Motors) LLP",
-    "buildTime":  "2026-07-27T14:40:00.000+05:30",
-    "environment":  "production",
-    "buildNumber":  "101"
+  "version": "v1.1.2-passport-history-fix",
+  "release": "DWIP-v2.0.0-GA",
+  "tag": "v1.1.2-passport-history-fix",
+  "enterprise": "Devanand Automobiles (Motors) LLP",
+  "buildTime": "2026-08-19T19:00:00.000+05:30",
+  "environment": "production",
+  "buildNumber": "102",
+  "commit": "HEAD",
+  "updatedAt": "2026-08-19T13:31:00.000Z"
 }
