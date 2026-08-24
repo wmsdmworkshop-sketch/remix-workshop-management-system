@@ -23,7 +23,9 @@
         "test:e2e": "dotenv -e .env.test -- playwright test"
     },
     "dependencies": {
+        "@azure-rest/ai-document-intelligence": "^1.1.0",
         "@capacitor/android": "^8.5.0",
+        "@capacitor/camera": "^8.2.3",
         "@capacitor/cli": "^8.5.0",
         "@capacitor/core": "^8.5.0",
         "@google/genai": "^2.4.0",

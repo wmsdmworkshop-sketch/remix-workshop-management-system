@@ -1,22 +1,39 @@
 import React, { useState, useEffect } from "react";
-import { TrendingUp, Clock, DollarSign, Activity, Percent, Award, ShieldAlert } from "lucide-react";
+import { TrendingUp, Clock, DollarSign, Activity, Percent, Award, ShieldAlert, AlertCircle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { staffAuthHeaders } from "../lib/authToken";
 
 export default function BusinessImpactTracker() {
   const [loading, setLoading] = useState(true);
   const [metrics, setMetrics] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/v1/pilot/roi")
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
+    fetch("/api/v1/pilot/roi", { headers: staffAuthHeaders() })
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (ok && data.success) {
           setMetrics(data.metrics);
+        } else {
+          setError(data.error || data.message || "Failed to load business impact metrics.");
         }
         setLoading(false);
       })
-      .catch(err => console.error("ROI fetch failed:", err));
+      .catch(err => {
+        console.error("ROI fetch failed:", err);
+        setError("Network error while loading business impact metrics.");
+        setLoading(false);
+      });
   }, []);
+
+  if (!loading && error) {
+    return (
+      <div className="flex items-center justify-center p-12 bg-slate-900 border border-slate-800 rounded-2xl text-rose-400">
+        <AlertCircle className="w-6 h-6 mr-2" />
+        <span>{error}</span>
+      </div>
+    );
+  }
 
   const dummyGrowthData = [
     { name: "Labour Revenue", current: 48000, target: 40000 },

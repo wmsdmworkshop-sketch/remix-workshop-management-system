@@ -41,9 +41,9 @@ import {
   Building,
   Smartphone,
   FileSpreadsheet,
-  Server,
   Terminal,
-  Activity
+  Activity,
+  Brain
 } from "lucide-react";
 import UserManagement from "./components/UserManagement";
 import { 
@@ -72,7 +72,6 @@ import DealerPrincipalCommandCenter from "./components/DealerPrincipalCommandCen
 import CustomerExperiencePlatform from "./components/CustomerExperiencePlatform";
 import MobilePlatformWorkspace from "./components/MobilePlatformWorkspace";
 import PowerBiAnalytics from "./components/PowerBiAnalytics";
-import SystemHardeningMetrics from "./components/SystemHardeningMetrics";
 import SecurityWorkspace from "./components/SecurityWorkspace";
 import { 
   Employee, 
@@ -120,6 +119,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import DealerSetupWizard from "./components/DealerSetupWizard";
 import UserOnboardingTour from "./components/UserOnboardingTour";
 import PilotControlRoom from "./components/PilotControlRoom";
+import AiBrainsPanel from "./components/AiBrainsPanel";
 import StaffFeedbackWidget from "./components/StaffFeedbackWidget";
 import BusinessImpactTracker from "./components/BusinessImpactTracker";
 import LiveSupportPanel from "./components/LiveSupportPanel";
@@ -205,7 +205,6 @@ export default function App() {
         "pilot-control-room",
         "roi-tracker",
         "live-support",
-        "system-hardening",
         "mobile-platform",
         "certification"
       ];
@@ -259,6 +258,10 @@ export default function App() {
   });
   const [showSettingsDrawer, setShowSettingsDrawer] = useState<boolean>(false);
   const [showMobileMoreTabs, setShowMobileMoreTabs] = useState<boolean>(false);
+  // AI Mode is workshop-wide server state, not a per-browser preference: it
+  // gates real outbound AI calls (and API-key spend), so it must read the same
+  // for everyone. The localStorage value is only a first paint hint until the
+  // authoritative server value arrives.
   const [aiModeEnabled, setAiModeEnabled] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
       const val = localStorage.getItem("wms_ai_mode");
@@ -266,6 +269,71 @@ export default function App() {
     }
     return true;
   });
+  const [aiModeCanToggle, setAiModeCanToggle] = useState(false);
+  const [aiModeCanRequest, setAiModeCanRequest] = useState(false);
+  const [aiModePending, setAiModePending] = useState(0);
+
+  const refreshAiMode = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/v1/ai-mode", { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      setAiModeEnabled(Boolean(data.enabled));
+      setAiModeCanToggle(Boolean(data.canToggle));
+      setAiModeCanRequest(Boolean(data.canRequest));
+      setAiModePending(Number(data.pendingRequests || 0));
+    } catch {
+      /* non-fatal: keep the last known value */
+    }
+  }, []);
+
+  // Handles a click on the AI Mode control. Approvers flip it directly;
+  // managers / advisors raise an activation request instead; anyone else is
+  // told plainly that they cannot change it.
+  const handleAiModeClick = async () => {
+    if (aiModeCanToggle) {
+      const next = !aiModeEnabled;
+      try {
+        const res = await fetch("/api/v1/ai-mode", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ enabled: next })
+        });
+        if (res.ok) {
+          setAiModeEnabled(next);
+          showToast(`AI Mode ${next ? "enabled" : "disabled"} for the whole workshop.`, "success");
+        } else {
+          const err = await res.json().catch(() => ({}));
+          showToast(err.error || "Could not change AI Mode.", "error");
+        }
+      } catch {
+        showToast("Network error changing AI Mode.", "error");
+      }
+      return;
+    }
+
+    if (aiModeCanRequest) {
+      if (aiModeEnabled) {
+        showToast("AI Mode is already on. Only a GM, Admin or Developer can switch it off.", "info");
+        return;
+      }
+      try {
+        const res = await fetch("/api/v1/ai-mode/request", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({})
+        });
+        const data = await res.json().catch(() => ({}));
+        showToast(data.message || "AI Mode activation requested.", "info");
+        refreshAiMode();
+      } catch {
+        showToast("Network error requesting AI Mode activation.", "error");
+      }
+      return;
+    }
+
+    showToast("Only a GM, Admin or Developer can change AI Mode.", "info");
+  };
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -369,7 +437,6 @@ export default function App() {
       { id: "customer-portal", label: "Customer Portal", icon: UserIcon },
       { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
       { id: "powerbi-analytics", label: "Power BI Analytics", icon: FileSpreadsheet },
-      { id: "system-hardening", label: "System Hardening", icon: Server },
       { id: "cctv-safety", label: "CCTV & Safety", icon: Video },
       { id: "oem-integrations", label: "External Integrations", icon: Share2 },
       { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
@@ -399,6 +466,7 @@ export default function App() {
       { id: "roi-tracker", label: "Business ROI Tracker", icon: TrendingUp },
       { id: "live-support", label: "Live Support", icon: HelpCircle },
       { id: "devops-dashboard", label: "DevOps Dashboard", icon: Terminal },
+      { id: "ai-brains", label: "AI Brains", icon: Brain },
     ],
     admin: [
       { id: "operations-console", label: "Operations Cockpit", icon: Activity },
@@ -420,7 +488,6 @@ export default function App() {
       { id: "customer-portal", label: "Customer Portal", icon: UserIcon },
       { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
       { id: "powerbi-analytics", label: "Power BI Analytics", icon: FileSpreadsheet },
-      { id: "system-hardening", label: "System Hardening", icon: Server },
       { id: "cctv-safety", label: "CCTV & Safety", icon: Video },
       { id: "oem-integrations", label: "External Integrations", icon: Share2 },
       { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
@@ -591,16 +658,12 @@ export default function App() {
       { id: "receptionist-workspace", label: "Reception Intake", icon: ClipboardCheck },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
-      { id: "jobs", label: "Job Cards", icon: Wrench },
-      { id: "bay-tat", label: "Bay Monitor", icon: Clock },
     ],
     receptionist: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "receptionist-workspace", label: "Reception Intake", icon: ClipboardCheck },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
-      { id: "jobs", label: "Job Cards", icon: Wrench },
-      { id: "bay-tat", label: "Bay Monitor", icon: Clock },
     ],
     tools_incharge: [
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
@@ -936,6 +999,16 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, [token]);
 
+  // AI Mode is global server state — pull it (and this user's rights over it)
+  // whenever the session changes, and poll so a GM switching it off elsewhere
+  // reaches every open session without a reload.
+  useEffect(() => {
+    if (!token) return;
+    refreshAiMode();
+    const id = setInterval(refreshAiMode, 60000);
+    return () => clearInterval(id);
+  }, [token, refreshAiMode]);
+
   const handleLogin = async () => {
     // Custom database JWT authentication is handled by AuthScreen
   };
@@ -964,15 +1037,23 @@ export default function App() {
         body: JSON.stringify(jobData)
       });
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
         fetchAllData();
+        if (data?.pendingApproval) {
+          showToast(data.message || "Same-day re-entry sent for GM approval.", "info");
+          return { success: false, pendingApproval: true, message: data.message };
+        }
         showToast("Job card created successfully.", "success");
+        return { success: true };
       } else {
         const err = await res.json().catch(() => ({ error: "Unknown error" }));
         showToast(`Failed to create job card: ${err.error || res.statusText}`, "error");
+        return { success: false, message: err.error || res.statusText };
       }
     } catch (e: any) {
       console.error(e);
       showToast("Network error creating job card. Please try again.", "error");
+      return { success: false, message: "Network error creating job card." };
     }
   };
 
@@ -992,6 +1073,26 @@ export default function App() {
     } catch (e: any) {
       console.error(e);
       showToast("Network error updating job status.", "error");
+    }
+  };
+
+  const handleDeleteJob = async (id: number, reason: string) => {
+    try {
+      const res = await fetch(`/api/job-cards/${id}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+        body: JSON.stringify({ reason })
+      });
+      if (res.ok) {
+        fetchAllData();
+        showToast("Job card permanently deleted.", "success");
+      } else {
+        const err = await res.json().catch(() => ({ error: "Unknown error" }));
+        showToast(`Failed to delete job card: ${err.error || res.statusText}`, "error");
+      }
+    } catch (e: any) {
+      console.error(e);
+      showToast("Network error deleting job card.", "error");
     }
   };
 
@@ -1364,7 +1465,6 @@ export default function App() {
           "pilot-control-room",
           "roi-tracker",
           "live-support",
-          "system-hardening",
           "mobile-platform",
           "certification"
         ];
@@ -1387,7 +1487,10 @@ export default function App() {
       setActiveTab={setActiveTab}
       handleLogout={handleLogout}
       aiModeEnabled={aiModeEnabled}
-      onToggleAiMode={() => setAiModeEnabled(prev => !prev)}
+      onToggleAiMode={handleAiModeClick}
+      aiModeCanToggle={aiModeCanToggle}
+      aiModeCanRequest={aiModeCanRequest}
+      aiModePendingRequests={aiModePending}
     >
 
           {activeTab === "my-workspace" && (
@@ -1457,6 +1560,7 @@ export default function App() {
               onCalculateRevenue={handleCalculateRevenue}
               onRaiseCarryForward={handleRaiseCarryForward}
               onRaiseRework={handleRaiseRework}
+              onDeleteJob={handleDeleteJob}
               selectedJobExternal={dashboardSelectedJob}
               currentUserRole={userRole}
               currentUser={user}
@@ -1777,14 +1881,8 @@ export default function App() {
             />
           )}
 
-           {activeTab === "system-hardening" && (
-            <SystemHardeningMetrics 
-              onRefresh={fetchAllData}
-            />
-          )}
-
           {activeTab === "setup-wizard" && (
-            <DealerSetupWizard 
+            <DealerSetupWizard
               onSetupComplete={fetchAllData}
               showToast={showToast}
             />
@@ -1794,12 +1892,16 @@ export default function App() {
             <PilotControlRoom />
           )}
 
+          {activeTab === "ai-brains" && user?.role === "developer" && (
+            <AiBrainsPanel />
+          )}
+
           {activeTab === "roi-tracker" && (
             <BusinessImpactTracker />
           )}
 
           {activeTab === "live-support" && (
-            <LiveSupportPanel 
+            <LiveSupportPanel
               showToast={showToast}
             />
           )}
@@ -2118,16 +2220,26 @@ export default function App() {
               <div className="space-y-4">
                 <h4 className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest border-b border-slate-850 pb-1">AI Co-Pilot Settings</h4>
 
+                {/* AI Mode is workshop-wide and RBAC-gated — this control routes
+                    through the same handler as the header toggle so it cannot be
+                    used to bypass the GM/Admin/Developer restriction. */}
                 <div className="flex items-center justify-between py-2 border-b border-slate-800/40">
                   <div>
                     <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wide">Enable AI features</label>
-                    <p className="text-[9px] text-slate-500 font-medium">Toggle suggestion widgets & OCR uploaders</p>
+                    <p className="text-[9px] text-slate-500 font-medium">
+                      {aiModeCanToggle
+                        ? "Workshop-wide. Turning this off stops all AI calls and API-key spend."
+                        : aiModeCanRequest
+                          ? "Workshop-wide. You can request activation; a GM/Admin approves."
+                          : "Workshop-wide. Only a GM, Admin or Developer can change this."}
+                    </p>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={aiModeEnabled} 
-                      onChange={(e) => setAiModeEnabled(e.target.checked)} 
+                  <label className={`relative inline-flex items-center ${aiModeCanToggle || aiModeCanRequest ? "cursor-pointer" : "cursor-not-allowed opacity-60"}`}>
+                    <input
+                      type="checkbox"
+                      checked={aiModeEnabled}
+                      onChange={handleAiModeClick}
+                      disabled={!aiModeCanToggle && !aiModeCanRequest}
                       className="sr-only peer"
                     />
                     <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand"></div>

@@ -34,3 +34,6 @@ describe_tables.cjs
 fix_route.cjs
 test_engine.js
 dev/
+
+# Quarantined by file audit 2026-08-18 - see _quarantine/MANIFEST.md
+_quarantine/

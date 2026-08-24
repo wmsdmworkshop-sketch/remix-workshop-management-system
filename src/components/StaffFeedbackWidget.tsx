@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { MessageSquare, Bug, Star, FileImage, Send, X, Lightbulb, UserPlus } from "lucide-react";
+import { staffAuthHeaders } from "../lib/authToken";
 
 interface StaffFeedbackWidgetProps {
   employeeId: number;
@@ -7,6 +8,10 @@ interface StaffFeedbackWidgetProps {
   activeScreen: string;
   showToast: (msg: string, type: "success" | "error" | "info") => void;
 }
+
+// Panel is draggable by its header so it can be pulled off whatever it's
+// covering; the chosen spot is remembered per-browser across opens.
+const DRAG_POSITION_KEY = "dwip_feedback_panel_pos";
 
 export default function StaffFeedbackWidget({ employeeId, role, activeScreen, showToast }: StaffFeedbackWidgetProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -17,6 +22,61 @@ export default function StaffFeedbackWidget({ employeeId, role, activeScreen, sh
 
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
+
+  // Drag state: offset (in px) from the panel's default top-right anchor.
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>(() => {
+    try {
+      const saved = localStorage.getItem(DRAG_POSITION_KEY);
+      return saved ? JSON.parse(saved) : { x: 0, y: 0 };
+    } catch {
+      return { x: 0, y: 0 };
+    }
+  });
+  const dragState = React.useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const panelRef = React.useRef<HTMLDivElement | null>(null);
+
+  const clampOffset = (x: number, y: number) => {
+    const panelWidth = panelRef.current?.offsetWidth || 400;
+    const panelHeight = panelRef.current?.offsetHeight || 400;
+    // Default anchor is top-right (x=0) — dragging left (negative x) moves it
+    // away from that edge; keep at least a sliver of the panel on-screen.
+    const minX = -(window.innerWidth - 60);
+    const maxX = panelWidth - 60;
+    const minY = -0;
+    const maxY = window.innerHeight - 60;
+    return {
+      x: Math.min(maxX, Math.max(minX, x)),
+      y: Math.min(maxY, Math.max(minY, y))
+    };
+  };
+
+  const handleDragStart = (e: React.PointerEvent) => {
+    // Ignore drags started on the close button.
+    if ((e.target as HTMLElement).closest("[data-no-drag]")) return;
+    dragState.current = { startX: e.clientX, startY: e.clientY, originX: dragOffset.x, originY: dragOffset.y };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const latestOffset = React.useRef(dragOffset);
+
+  const handleDragMove = (e: React.PointerEvent) => {
+    if (!dragState.current) return;
+    const dx = e.clientX - dragState.current.startX;
+    const dy = e.clientY - dragState.current.startY;
+    const next = clampOffset(dragState.current.originX + dx, dragState.current.originY + dy);
+    latestOffset.current = next;
+    setDragOffset(next);
+  };
+
+  const handleDragEnd = () => {
+    if (!dragState.current) return;
+    dragState.current = null;
+    try {
+      localStorage.setItem(DRAG_POSITION_KEY, JSON.stringify(latestOffset.current));
+    } catch {
+      /* ignore */
+    }
+  };
 
   const handleCaptureScreen = async () => {
     setCapturing(true);
@@ -72,9 +132,16 @@ export default function StaffFeedbackWidget({ employeeId, role, activeScreen, sh
     }
     setLoading(true);
     try {
+      const deviceInfo = {
+        viewport: `${window.innerWidth}x${window.innerHeight}`,
+        userAgent: navigator.userAgent,
+        currentPath: window.location.pathname + window.location.search,
+        timestamp: new Date().toISOString()
+      };
+
       const res = await fetch("/api/v1/pilot/feedback", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: staffAuthHeaders(),
         body: JSON.stringify({
           employee_id: employeeId,
           role,
@@ -82,15 +149,21 @@ export default function StaffFeedbackWidget({ employeeId, role, activeScreen, sh
           feedback_type: type,
           message,
           rating,
-          screenshot
+          screenshot,
+          device_info: deviceInfo
         })
       });
       const data = await res.json();
       if (data.success) {
-        showToast("Feedback submitted successfully with screenshot!", "success");
+        const triageMsg = data.aiTriage?.rootCause 
+          ? `⚡ DeepSeek Triaged [${data.aiTriage.severity}]: ${data.aiTriage.rootCause.slice(0, 60)}...`
+          : "Bug & screenshot recorded and triaged by DeepSeek!";
+        showToast(triageMsg, "success");
         setMessage("");
         setScreenshot(null);
         setIsOpen(false);
+      } else {
+        showToast(data.error || "Failed to submit feedback", "error");
       }
     } catch (err: any) {
       showToast(err.message, "error");
@@ -111,11 +184,23 @@ export default function StaffFeedbackWidget({ employeeId, role, activeScreen, sh
         <span className="text-xs md:text-sm">Feedback</span>
       </button>
 
-      {/* Slide-out Sidebar Panel */}
+      {/* Floating Panel — draggable by its header so it can be pulled off
+          whatever it's covering on a given screen; position is remembered. */}
       {isOpen && (
-        <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-slate-900 border-l border-slate-800 shadow-2xl text-slate-100 flex flex-col">
-          {/* Header */}
-          <div className="p-5 bg-slate-950 flex justify-between items-center border-b border-slate-800">
+        <div
+          ref={panelRef}
+          style={{ transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)` }}
+          className="fixed top-4 right-4 z-50 w-full max-w-md max-h-[90vh] bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl text-slate-100 flex flex-col"
+        >
+          {/* Header — drag handle */}
+          <div
+            onPointerDown={handleDragStart}
+            onPointerMove={handleDragMove}
+            onPointerUp={handleDragEnd}
+            onPointerCancel={handleDragEnd}
+            className="p-5 bg-slate-950 flex justify-between items-center border-b border-slate-800 rounded-t-2xl cursor-move select-none touch-none"
+            title="Drag to move this panel"
+          >
             <div className="flex items-center space-x-2">
               <MessageSquare className="w-6 h-6 text-orange-500" />
               <div>
@@ -123,7 +208,7 @@ export default function StaffFeedbackWidget({ employeeId, role, activeScreen, sh
                 <p className="text-xs text-slate-400">On-screen rating for screen: <span className="text-orange-400 font-bold">{activeScreen}</span></p>
               </div>
             </div>
-            <button onClick={() => setIsOpen(false)} className="text-slate-500 hover:text-slate-300">
+            <button data-no-drag onClick={() => setIsOpen(false)} className="text-slate-500 hover:text-slate-300">
               <X className="w-6 h-6" />
             </button>
           </div>

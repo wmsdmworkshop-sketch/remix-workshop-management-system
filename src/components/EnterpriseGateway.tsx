@@ -69,6 +69,15 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
   // Forgot Password Modal State
   const [showForgotModal, setShowForgotModal] = useState(false);
 
+  // Forced password change (first login on a default account). The temp
+  // password just used to log in is held in `password` above and reused as
+  // current_password — never persisted, never sent anywhere else.
+  const [pendingLogin, setPendingLogin] = useState<{ token: string; user: any } | null>(null);
+  const [forceNewPassword, setForceNewPassword] = useState('');
+  const [forceConfirmPassword, setForceConfirmPassword] = useState('');
+  const [forceChangeLoading, setForceChangeLoading] = useState(false);
+  const [forceChangeError, setForceChangeError] = useState<string | null>(null);
+
   // Initial Load & Keyboard Listeners
   useEffect(() => {
     const savedTheme = getStoredTheme();
@@ -117,6 +126,12 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
       const data = await res.json();
 
       if (res.ok && data.token && data.user) {
+        if (data.user.must_change_password) {
+          // Hold the session in memory only — nothing persisted to storage
+          // and no app access until a real password replaces the temp one.
+          setPendingLogin({ token: data.token, user: data.user });
+          return;
+        }
         if (rememberMe) {
           localStorage.setItem('dwip_auth_token', data.token);
           localStorage.setItem('dwip_auth_user', JSON.stringify(data.user));
@@ -132,6 +147,50 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
       setLoginError('Network connection error. AI Login Doctor available for diagnostics.');
     } finally {
       setLoginLoading(false);
+    }
+  };
+
+  const handleForceChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pendingLogin) return;
+    setForceChangeError(null);
+    if (forceNewPassword.length < 8) {
+      setForceChangeError('New password must be at least 8 characters.');
+      return;
+    }
+    if (forceNewPassword !== forceConfirmPassword) {
+      setForceChangeError('Passwords do not match.');
+      return;
+    }
+    if (forceNewPassword === password) {
+      setForceChangeError('New password must be different from the temporary one.');
+      return;
+    }
+    setForceChangeLoading(true);
+    try {
+      const res = await fetch('/api/my-profile/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${pendingLogin.token}` },
+        body: JSON.stringify({ current_password: password, new_password: forceNewPassword }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const updatedUser = { ...pendingLogin.user, must_change_password: false };
+        if (rememberMe) {
+          localStorage.setItem('dwip_auth_token', pendingLogin.token);
+          localStorage.setItem('dwip_auth_user', JSON.stringify(updatedUser));
+        } else {
+          sessionStorage.setItem('dwip_auth_token', pendingLogin.token);
+          sessionStorage.setItem('dwip_auth_user', JSON.stringify(updatedUser));
+        }
+        onLoginSuccess(pendingLogin.token, updatedUser);
+      } else {
+        setForceChangeError(data.error || 'Failed to change password.');
+      }
+    } catch (err: any) {
+      setForceChangeError('Network error while changing password.');
+    } finally {
+      setForceChangeLoading(false);
     }
   };
 
@@ -253,6 +312,60 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
 
       {/* ── GATEWAY CONTENT BODY ── */}
       <main className="w-full max-w-6xl mx-auto my-6 flex-1 flex flex-col justify-center">
+        {pendingLogin ? (
+          <div className="max-w-md mx-auto w-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl backdrop-blur-md space-y-6">
+            <div className="space-y-1 text-center">
+              <Lock className="h-8 w-8 text-orange-400 mx-auto mb-2" />
+              <h2 className="text-xl font-bold text-white tracking-tight">Set a New Password</h2>
+              <p className="text-xs text-slate-400">
+                Welcome, {pendingLogin.user.full_name || pendingLogin.user.username}. This account is using a temporary password and must set a real one before continuing.
+              </p>
+            </div>
+
+            {forceChangeError && (
+              <div className="p-3.5 rounded-xl bg-red-950/60 border border-red-800/80 text-red-200 text-xs flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-red-400 shrink-0" />
+                <span>{forceChangeError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleForceChangePassword} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">New Password</label>
+                <input
+                  type="password"
+                  required
+                  autoFocus
+                  minLength={8}
+                  value={forceNewPassword}
+                  onChange={(e) => setForceNewPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">Confirm New Password</label>
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={forceConfirmPassword}
+                  onChange={(e) => setForceConfirmPassword(e.target.value)}
+                  placeholder="Re-enter new password"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 transition-all"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={forceChangeLoading}
+                className="w-full h-11 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-orange-950/40 transition-all duration-200 cursor-pointer disabled:opacity-50"
+              >
+                {forceChangeLoading ? 'Saving...' : 'Set Password & Continue'}
+              </button>
+            </form>
+          </div>
+        ) : (
+        <>
         {/* ========================================================================= */}
         {/* 1. OPERATOR MODE */}
         {/* ========================================================================= */}
@@ -545,6 +658,8 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
               </div>
             </div>
           </div>
+        )}
+        </>
         )}
       </main>
 

@@ -32,8 +32,8 @@ android {
         applicationId "com.aivaahan.dwip"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10002
-        versionName "1.1.1"
+        versionCode 10004
+        versionName "1.1.4"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -47,14 +47,14 @@ android {
         staff {
             dimension "role"
             applicationId "com.aivaahan.dwip"
-            versionCode 10002
-            versionName "1.1.1"
+            versionCode 10004
+            versionName "1.1.4"
         }
         management {
             dimension "role"
             applicationId "com.aivaahan.dwip.management"
-            versionCode 10002
-            versionName "1.1.1"
+            versionCode 10004
+            versionName "1.1.4"
         }
     }
 

@@ -23,6 +23,12 @@ export const envConfig = {
   DB_SSL: process.env.DB_SSL === "true",
   PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 3001,
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+
+  // Azure AI Document Intelligence
+  AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT:
+    process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT,
+  AZURE_DOCUMENT_INTELLIGENCE_KEY:
+    process.env.AZURE_DOCUMENT_INTELLIGENCE_KEY,
   REDIS_URL: process.env.REDIS_URL || process.env.REDIS_PRIVATE_URL,
   ADDITIONAL_CORS_ORIGINS: process.env.ADDITIONAL_CORS_ORIGINS ? process.env.ADDITIONAL_CORS_ORIGINS.split(",") : [],
   DISABLE_HMR: process.env.DISABLE_HMR === "true",

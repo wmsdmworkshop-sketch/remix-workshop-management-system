@@ -616,22 +616,53 @@ export class VehiclePassportFacade {
           }));
         }
 
-        if (shRows.length > 0 || invRows.length > 0) {
+        // 3. Query vehicle_master table for authentic OEM sale, invoice, and warranty dates
+        const [mysqlVm]: any = await db.query(
+          `SELECT * FROM vehicle_master 
+           WHERE REPLACE(REPLACE(UPPER(COALESCE(registration_no, '')), '-', ''), ' ', '') = ? 
+              OR REPLACE(REPLACE(UPPER(COALESCE(chassis_no, chassis_number, '')), '-', ''), ' ', '') = ? 
+           LIMIT 1`,
+          [cleanSearch, cleanSearch]
+        );
+
+        const vmRow = Array.isArray(mysqlVm) && mysqlVm.length > 0 ? mysqlVm[0] : null;
+
+        if (shRows.length > 0 || invRows.length > 0 || vmRow) {
           const leadSh = mysqlSh[0] || {};
           const leadInv = mysqlInv[0] || {};
-          const customerAccount = leadSh.account_name || leadSh.account || leadInv.customer_name || leadInv.account || "Enterprise Client";
+          const customerAccount = (vmRow && vmRow.owner_account_name) || leadSh.account_name || leadSh.account || leadInv.customer_name || leadInv.account || "Enterprise Client";
+          
+          // Format authentic dates from vehicle_master or fallback to empty string
+          const fmtDate = (d: any) => {
+            if (!d) return "";
+            try {
+              const dt = new Date(d);
+              return !isNaN(dt.getTime()) ? dt.toISOString().slice(0, 10) : String(d).slice(0, 10);
+            } catch { return String(d).slice(0, 10); }
+          };
+
+          const actualSaleDate = vmRow ? fmtDate(vmRow.original_sale_date) : "";
+          const actualTmInvoiceDate = vmRow ? fmtDate(vmRow.tm_invoice_date) : "";
+          const actualRegDate = vmRow ? (fmtDate(vmRow.date_of_registration) || actualSaleDate) : "";
+          const actualWarrantyExpiry = vmRow ? fmtDate(vmRow.warranty_expiry_date) : "";
+          const actualWarrantyKm = vmRow && vmRow.warranty_expiry_km ? parseInt(String(vmRow.warranty_expiry_km).replace(/[^0-9]/g, ""), 10) : 300000;
+          const actualWarrantyHours = vmRow && vmRow.warranty_expiry_hours ? parseInt(String(vmRow.warranty_expiry_hours).replace(/[^0-9]/g, ""), 10) : 0;
+          const actualEngineNo = vmRow?.engine_no || leadSh?.engine_no || "";
+          const actualProductLine = vmRow?.product_line || "TATA Commercial Heavy Vehicle";
+
           vRows = [{
-            registration_no: leadSh.registration_no || leadInv.registration_no || leadInv.vrn || rawSearch,
-            chassis_number: leadSh.chassis_no || leadInv.chassis_no || rawSearch,
+            registration_no: (vmRow && vmRow.registration_no) || leadSh.registration_no || leadInv.registration_no || leadInv.vrn || rawSearch,
+            chassis_number: (vmRow && (vmRow.chassis_no || vmRow.chassis_number)) || leadSh.chassis_no || leadInv.chassis_no || rawSearch,
             owner_account_name: customerAccount,
-            product_line: "TATA Commercial Heavy Vehicle",
-            model: "TATA Commercial",
-            original_sale_date: "2022-04-15",
-            tm_invoice_date: "2022-04-10",
-            date_of_registration: "2022-04-20",
-            warranty_expiry_date: "2025-04-15",
-            warranty_expiry_km: 300000,
-            warranty_expiry_hours: 10000
+            product_line: actualProductLine,
+            model: actualProductLine,
+            engine_no: actualEngineNo,
+            original_sale_date: actualSaleDate,
+            tm_invoice_date: actualTmInvoiceDate,
+            date_of_registration: actualRegDate,
+            warranty_expiry_date: actualWarrantyExpiry,
+            warranty_expiry_km: actualWarrantyKm,
+            warranty_expiry_hours: actualWarrantyHours
           }];
         }
       } catch (dbErr) {
@@ -760,12 +791,6 @@ export class VehiclePassportFacade {
         if (isInvoiceGenerated) {
           labourCost = parseAmount(matchedInv.final_labour_amount);
           partsCost = parseAmount(matchedInv.final_spares_amount);
-
-          // Handle currency scaling for KA32AA4792 (IDEVAN2526004884: Rs.4,248.00 Labour + Rs.28,944.05 Spares = Rs.33,192.05 Total)
-          if (matchedInv.invoice_no === "IDEVAN2526004884" || (labourCost === 0.42 && partsCost === 0.29)) {
-            labourCost = 4248.00;
-            partsCost = 28944.05;
-          }
 
           const rawTotal = labourCost + partsCost;
           let invoiceAmount = parseAmount(matchedInv.final_consolidated_amount) || parseAmount(matchedInv.final_consolidated_amt);

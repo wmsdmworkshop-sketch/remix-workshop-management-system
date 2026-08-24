@@ -39,6 +39,7 @@ import {
   Legend
 } from "recharts";
 import { JobCard, Bay, AlertLog, Employee } from "../types";
+import GateProgressBar from "./GateProgressBar";
 
 interface DashboardProps {
   jobCards: JobCard[];
@@ -85,6 +86,8 @@ export default function Dashboard({
   const [activeSubView, setActiveSubView] = useState<"overview" | "workshop" | "workforce">("overview");
   const [warrantySearch, setWarrantySearch] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  // Bay drill-down: tapping a bay tile opens its detail + available actions.
+  const [selectedBay, setSelectedBay] = useState<Bay | null>(null);
 
   // Calculate KPIs from live props — no hardcoded values
   const vehiclesInsideCount = bays.filter(b => b.status === "Active").length;
@@ -313,10 +316,17 @@ export default function Dashboard({
               </div>
             </motion.div>
 
-            {/* Card 3: Open Job Cards */}
-            <motion.div 
+            {/* Card 3: Open Job Cards — the whole card navigates to the Job
+                Cards list so a manager landing here always has a page to act
+                from next; the two pills below drill into a specific filter
+                and take precedence over the card-level click. */}
+            <motion.div
               whileHover={{ y: -5, scale: 1.01 }}
-              className="ds-card group relative overflow-hidden rounded-[18px]   border  /80 p-5 backdrop-blur-md shadow-lg flex flex-col justify-between h-44"
+              onClick={() => onTabChange("jobs")}
+              role="button"
+              tabIndex={0}
+              title="Open Job Cards list"
+              className="ds-card group relative overflow-hidden rounded-[18px]   border  /80 p-5 backdrop-blur-md shadow-lg flex flex-col justify-between h-44 cursor-pointer"
             >
               <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-[#F59E0B] to-amber-400" />
               <div className="flex items-start justify-between">
@@ -331,7 +341,10 @@ export default function Dashboard({
               <div className="flex items-center gap-1.5 mt-4 flex-wrap">
                 <button
                   type="button"
-                  onClick={() => (onPendingAssignDrill ? onPendingAssignDrill("sa") : onTabChange?.("jobs"))}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPendingAssignDrill ? onPendingAssignDrill("sa") : onTabChange?.("jobs");
+                  }}
                   title="Open job cards with no service advisor assigned"
                   className="flex items-center gap-1 text-[11px] text-amber-400 font-bold bg-amber-500/10 hover:bg-amber-500/20 px-2 py-0.5 rounded-full transition-colors"
                 >
@@ -339,7 +352,10 @@ export default function Dashboard({
                 </button>
                 <button
                   type="button"
-                  onClick={() => (onPendingAssignDrill ? onPendingAssignDrill("tech") : onTabChange?.("jobs"))}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPendingAssignDrill ? onPendingAssignDrill("tech") : onTabChange?.("jobs");
+                  }}
                   title="Job cards with an advisor but no technician assigned"
                   className="flex items-center gap-1 text-[11px] text-orange-300 font-bold bg-orange-500/10 hover:bg-orange-500/20 px-2 py-0.5 rounded-full transition-colors"
                 >
@@ -660,7 +676,14 @@ export default function Dashboard({
               }
 
               return (
-                <div key={bay.bay_id} className={`rounded-[18px] border p-5 flex flex-col justify-between h-48 transition-all hover:scale-[1.01] ${cardStyle}`}>
+                <div
+                  key={bay.bay_id}
+                  onClick={() => setSelectedBay(bay)}
+                  role="button"
+                  tabIndex={0}
+                  title={`Open details for ${bay.bay_name}`}
+                  className={`rounded-[18px] border p-5 flex flex-col justify-between h-48 transition-all hover:scale-[1.01] cursor-pointer ${cardStyle}`}
+                >
                   <div className="flex items-start justify-between">
                     <div>
                       <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{bay.bay_type}</span>
@@ -672,8 +695,8 @@ export default function Dashboard({
                   </div>
 
                   {currentJob ? (
-                    <div 
-                      onClick={() => onSelectJob(currentJob)}
+                    <div
+                      onClick={(e) => { e.stopPropagation(); onSelectJob(currentJob); }}
                       className="bg-slate-950/70 border border-slate-800/60 rounded-xl p-3 hover:border-slate-700/80 cursor-pointer transition-all space-y-2"
                     >
                       <div className="flex items-center justify-between text-xs">
@@ -681,6 +704,7 @@ export default function Dashboard({
                         <span className="text-[10px] text-slate-500">ETD: {new Date(currentJob.etd).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                       </div>
                       <p className="text-[10px] text-slate-400 line-clamp-1 font-medium">{currentJob.customer_name} • {currentJob.vehicle_make} {currentJob.vehicle_model}</p>
+                      <GateProgressBar job={currentJob} />
                     </div>
                   ) : (
                     <div className="text-xs text-slate-500 italic py-4 flex items-center gap-2">
@@ -749,6 +773,96 @@ export default function Dashboard({
           </div>
         </div>
       )}
+
+      {/* ── BAY DETAIL DRILL-DOWN ──────────────────────────────────────────
+          Opened by tapping any bay tile. Single tap rather than double-click:
+          this app runs on workshop tablets/phones where a double-click has no
+          reliable equivalent. Shows the bay's real state plus the actions a
+          manager can actually take from here. */}
+      {selectedBay && (() => {
+        const bayJob = jobCards.find(
+          j => j.bay_id === selectedBay.bay_id && ["Active", "Carry Forward", "Rework", "Completed"].includes(j.status)
+        );
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4"
+            onClick={() => setSelectedBay(null)}
+          >
+            <div
+              className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-5 border-b border-slate-800 flex items-start justify-between">
+                <div>
+                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{selectedBay.bay_type}</span>
+                  <h3 className="text-lg font-black text-white">{selectedBay.bay_name}</h3>
+                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">{selectedBay.bay_code}</p>
+                </div>
+                <button
+                  onClick={() => setSelectedBay(null)}
+                  className="text-slate-500 hover:text-slate-200 text-sm font-mono p-1"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-3">
+                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Bay Status</p>
+                    <p className="font-bold text-slate-100 mt-0.5">{selectedBay.status}</p>
+                  </div>
+                  <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-3">
+                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Availability</p>
+                    <p className="font-bold text-slate-100 mt-0.5">{selectedBay.is_active ? "In Service" : "Out of Service"}</p>
+                  </div>
+                </div>
+
+                {bayJob ? (
+                  <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-bold text-orange-400">{bayJob.vrn}</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{bayJob.status}</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      {bayJob.customer_name} • {bayJob.vehicle_make} {bayJob.vehicle_model}
+                    </p>
+                    <p className="text-[10px] text-slate-500 font-mono">{bayJob.job_card_no}</p>
+                    <GateProgressBar job={bayJob} variant="full" />
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 italic py-2">
+                    No vehicle currently occupying this bay.
+                  </p>
+                )}
+              </div>
+
+              <div className="p-4 bg-slate-950 border-t border-slate-800 flex flex-wrap justify-end gap-2">
+                {bayJob && (
+                  <button
+                    onClick={() => { onSelectJob(bayJob); setSelectedBay(null); onTabChange("jobs"); }}
+                    className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-black uppercase tracking-wider"
+                  >
+                    Open Job Card
+                  </button>
+                )}
+                <button
+                  onClick={() => { setSelectedBay(null); onTabChange("bay-tat"); }}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-black uppercase tracking-wider"
+                >
+                  Bay Monitor
+                </button>
+                <button
+                  onClick={() => setSelectedBay(null)}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-xl text-xs font-bold"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useEscapeKey } from "../hooks/useEscapeKey";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { staffAuthHeaders } from "../lib/authToken";
 import { 
   Plus, 
   Users, 
@@ -82,6 +83,79 @@ export default function EmployeeDirectory({
   useEscapeKey(() => setShowAdminLogin(false), showAdminLogin);
   const [adminPin, setAdminPin] = useState("");
   const [pinError, setPinError] = useState(false);
+
+  // Login-account linkage, fetched from the real /api/users list (single
+  // source of truth: user_access_master / users). Never guessed per-employee.
+  const [accountsByEmployeeId, setAccountsByEmployeeId] = useState<Map<number, string>>(new Map());
+  const [creatingLoginFor, setCreatingLoginFor] = useState<number | null>(null);
+  const [bulkCreating, setBulkCreating] = useState(false);
+  const [loginCreationResult, setLoginCreationResult] = useState<{ username: string; temp_password: string; full_name: string }[] | null>(null);
+
+  const fetchAccountLinks = async () => {
+    try {
+      const res = await fetch("/api/users", { headers: staffAuthHeaders() });
+      if (res.ok) {
+        const users = await res.json();
+        const map = new Map<number, string>();
+        for (const u of Array.isArray(users) ? users : []) {
+          if (u.employee_id) map.set(Number(u.employee_id), u.username);
+        }
+        setAccountsByEmployeeId(map);
+      }
+    } catch (e) {
+      // Quiet fail — badges just show "No Login Account" until this loads.
+    }
+  };
+
+  useEffect(() => {
+    fetchAccountLinks();
+  }, []);
+
+  const handleCreateLogin = async (empId: number) => {
+    setCreatingLoginFor(empId);
+    try {
+      const res = await fetch(`/api/employees/${empId}/create-default-login`, {
+        method: "POST",
+        headers: staffAuthHeaders(),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setLoginCreationResult([{ username: data.username, temp_password: data.temp_password, full_name: data.full_name }]);
+        await fetchAccountLinks();
+      } else {
+        alert(data.error || "Failed to create login account.");
+      }
+    } catch (e: any) {
+      alert(e.message || "Network error while creating login account.");
+    } finally {
+      setCreatingLoginFor(null);
+    }
+  };
+
+  const handleBulkCreateLogins = async () => {
+    if (!confirm("Create a default login account for every active employee who doesn't have one yet? Existing accounts are never touched.")) return;
+    setBulkCreating(true);
+    try {
+      const res = await fetch("/api/employees/bulk-create-logins", {
+        method: "POST",
+        headers: staffAuthHeaders(),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setLoginCreationResult(data.created);
+        await fetchAccountLinks();
+        if (data.skippedCount > 0) {
+          console.warn("Bulk login creation skipped:", data.skipped);
+        }
+      } else {
+        alert(data.error || "Bulk login creation failed.");
+      }
+    } catch (e: any) {
+      alert(e.message || "Network error during bulk login creation.");
+    } finally {
+      setBulkCreating(false);
+    }
+  };
 
   // Standard Workshop Roles list
   const STANDARD_ROLES = [
@@ -511,12 +585,21 @@ export default function EmployeeDirectory({
                 <FileSpreadsheet className="h-4 w-4" />
                 Bulk Import CSV
               </button>
-              <button 
+              <button
                 onClick={() => setShowAddForm(!showAddForm)}
                 className="ds-button-primary   hover:bg-orange-600 text-white font-bold text-xs px-4 py-2.5 rounded transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
               >
                 <Plus className="h-4 w-4" />
                 {showAddForm ? "Hide Form" : "Add Employee"}
+              </button>
+              <button
+                onClick={handleBulkCreateLogins}
+                disabled={bulkCreating}
+                title="Creates a default login (username = employee code) for every active employee who doesn't have one yet. Never touches existing accounts."
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded transition-all flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                <User className="h-4 w-4" />
+                {bulkCreating ? "Creating Logins..." : "Create Logins for All"}
               </button>
               <button 
                 onClick={handleLogoutAdmin}
@@ -537,6 +620,40 @@ export default function EmployeeDirectory({
           )}
         </div>
       </div>
+
+      {/* Default Login Creation Results — temp passwords shown once, must be handed to the employee now */}
+      {loginCreationResult && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl border border-slate-200 p-6 max-w-lg w-full space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <User className="h-4.5 w-4.5 text-orange-500" />
+                {loginCreationResult.length} Login{loginCreationResult.length !== 1 ? "s" : ""} Created
+              </h3>
+              <button onClick={() => setLoginCreationResult(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-500">
+              Temporary passwords are shown only once. Share these with each employee — they'll be required to set a real password on first login.
+            </p>
+            <div className="max-h-80 overflow-y-auto space-y-2">
+              {loginCreationResult.map((r, i) => (
+                <div key={i} className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-700">{r.full_name}</span>
+                  <span className="font-mono text-slate-600">@{r.username} / {r.temp_password}</span>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setLoginCreationResult(null)}
+              className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold cursor-pointer"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Admin Login Modal / Panel */}
       {showAdminLogin && (
@@ -1443,15 +1560,23 @@ export default function EmployeeDirectory({
                         </div>
                       </div>
 
-                      {/* Login Account Status Badge */}
+                      {/* Login Account Status Badge — backed by the real /api/users list */}
                       <div className="flex items-center justify-between text-xs pt-2 mt-2 border-t border-slate-100/50">
                         <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px] flex items-center gap-1">
                           <User className="h-3.5 w-3.5 text-slate-400 shrink-0" /> Login Account:
                         </span>
-                        {(emp as any).has_login_account ? (
+                        {accountsByEmployeeId.has(emp.employee_id) ? (
                           <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
-                            Active: @{(emp as any).linked_username}
+                            Active: @{accountsByEmployeeId.get(emp.employee_id)}
                           </span>
+                        ) : isAdmin ? (
+                          <button
+                            onClick={() => handleCreateLogin(emp.employee_id)}
+                            disabled={creatingLoginFor === emp.employee_id}
+                            className="text-[9px] font-black px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200 uppercase tracking-wider cursor-pointer hover:bg-orange-100 disabled:opacity-50"
+                          >
+                            {creatingLoginFor === emp.employee_id ? "Creating..." : "+ Create Login"}
+                          </button>
                         ) : (
                           <span className="text-[9px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 uppercase tracking-wider">
                             No Login Account

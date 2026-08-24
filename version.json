@@ -1,11 +1,11 @@
 {
-  "version": "v1.1.2-passport-history-fix",
+  "version": "v1.1.5-role-relevance-advisor-fix",
   "release": "DWIP-v2.0.0-GA",
-  "tag": "v1.1.2-passport-history-fix",
+  "tag": "v1.1.5-role-relevance-advisor-fix",
   "enterprise": "Devanand Automobiles (Motors) LLP",
-  "buildTime": "2026-08-19T19:00:00.000+05:30",
+  "buildTime": "2026-08-21T17:05:00.000+05:30",
   "environment": "production",
-  "buildNumber": "102",
+  "buildNumber": "105",
   "commit": "HEAD",
-  "updatedAt": "2026-08-19T13:31:00.000Z"
+  "updatedAt": "2026-08-21T11:35:00.000Z"
 }

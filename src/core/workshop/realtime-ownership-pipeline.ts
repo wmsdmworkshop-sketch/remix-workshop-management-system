@@ -392,9 +392,12 @@ export class RealtimeOwnershipPipeline {
       availableAdvisors = await Promise.all(advisors.map(async (a: any) => {
         let activeJcs = 0;
         try {
+          // NOTE: tbl_job_card has no `service_advisor`/`status` columns (it has
+          // `advisor_id`/`workflow_state`) — the previous query silently errored
+          // on every call (caught below) and always returned 0, so the "lowest
+          // workload" recommendation was really just "first advisor, always".
           const [cnt]: any = await RealtimeOwnershipPipeline.execute(
-            `SELECT COUNT(*) AS cnt FROM tbl_job_card
-              WHERE service_advisor = ? AND status NOT IN ('Completed','Invoiced','Cancelled')`,
+            `SELECT COUNT(*) AS cnt FROM tbl_job_card WHERE advisor_id = ?`,
             [a.name]
           );
           activeJcs = Number(cnt?.[0]?.cnt || 0);
@@ -506,7 +509,7 @@ export class RealtimeOwnershipPipeline {
     const managerToSaDueAt = new Date(now.getTime() + 5 * 60000);
     await RealtimeOwnershipPipeline.execute(
       `INSERT INTO tbl_handoff_sla (
-        handoff_id, stage_name, entity_id, owner_id, owner_role, 
+        handoff_id, stage_name, entity_id, owner_id, owner_role,
         sla_due_at, status, branch_id
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -517,30 +520,64 @@ export class RealtimeOwnershipPipeline {
         'SERVICE_ADVISOR',
         managerToSaDueAt,
         'ON_TRACK',
-        payload.branchId
+        branchId
       ]
     );
 
     // 4. Create or update Job Card / VOS record for assigned SA
     const [geRows]: any = await RealtimeOwnershipPipeline.execute(`SELECT * FROM tbl_gate_entry WHERE gate_entry_id = ?`, [payload.gateEntryId]);
     const ge = Array.isArray(geRows) ? geRows[0] : null;
-    const vrnClean = ge ? ge.vin.replace("VIN-", "") : "KA32M9988";
+    // Real-Data-Only: never fabricate a VRN when the gate entry can't be
+    // resolved — that would corrupt whichever real vehicle happens to share
+    // the fake plate. Skip the job_cards bridge in that case instead.
+    const vrnClean = ge ? ge.vin.replace("VIN-", "") : null;
 
+    // tbl_job_card is a pipeline-internal tracking table only — nothing
+    // outside this pipeline reads it (the real bridge is 4b below, into the
+    // app-wide `job_cards` table). Best-effort, same as 4b: never fail the
+    // already-committed assignment (tbl_manager_assignment / tbl_reception_intake)
+    // over this internal record.
     const jobCardId = `JC-${randomUUID().substring(0, 8).toUpperCase()}`;
-    await RealtimeOwnershipPipeline.execute(
-      `INSERT INTO tbl_job_card (
-        job_card_id, gate_entry_id, service_type, advisor_id, customer_complaint, workflow_state, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        jobCardId,
-        payload.gateEntryId,
-        "Scheduled Maintenance",
-        payload.assignedSaName,
-        "Intake completed; pending advisor digital inspection",
-        "ESTIMATE_PENDING",
-        now
-      ]
-    );
+    try {
+      await RealtimeOwnershipPipeline.execute(
+        `INSERT INTO tbl_job_card (
+          job_card_id, gate_entry_id, service_type, advisor_id, customer_complaint, workflow_state, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          jobCardId,
+          payload.gateEntryId,
+          "Scheduled Maintenance",
+          payload.assignedSaName,
+          "Intake completed; pending advisor digital inspection",
+          "ESTIMATE_PENDING",
+          now
+        ]
+      );
+    } catch (e: any) {
+      console.error("Failed to write internal tbl_job_card tracking record:", e.message);
+    }
+
+    // 4b. Bridge into the app-wide `job_cards` table. Everything OUTSIDE this
+    // pipeline — JobCardManager, Dashboard, billing, QC, floor execution —
+    // reads `job_cards`, not tbl_job_card, so the assignment must land there
+    // too or the SA never sees the vehicle anywhere else in the app. Matched
+    // by VRN (job_cards has no gate_entry_id/intake_id column to join on) —
+    // best-effort: never fail the (already-committed) assignment on this.
+    if (vrnClean) {
+      try {
+        await RealtimeOwnershipPipeline.execute(
+          `UPDATE job_cards SET service_advisor = ?, current_workflow_state = 'WAITING_ADVISOR'
+            WHERE vrn = ? AND current_workflow_state = 'GATE_IN'
+              AND (service_advisor IS NULL OR service_advisor = '' OR service_advisor = 'Unassigned')
+            ORDER BY created_at DESC LIMIT 1`,
+          [payload.assignedSaName, vrnClean]
+        );
+      } catch (e: any) {
+        console.error("Failed to bridge SA assignment into job_cards:", e.message);
+      }
+    } else {
+      console.error(`Cannot bridge SA assignment into job_cards: gate entry ${payload.gateEntryId} not found, real VRN unknown.`);
+    }
 
     // 5. Transfer VOS ownership
     if (payload.vosId) {
@@ -625,6 +662,10 @@ export class RealtimeOwnershipPipeline {
             targetRole = targetEscalationLevel === 1 ? "service_manager" : (targetEscalationLevel === 2 ? "works_manager" : "general_manager");
           } else if (ownerRole === "RECEPTIONIST") {
             targetRole = targetEscalationLevel === 1 ? "service_manager" : "general_manager";
+          } else if (ownerRole === "SERVICE_MANAGER") {
+            // ADVISOR_ASSIGNMENT_PENDING: no SA assigned yet. L1 nudges the
+            // manager who owns the assignment; L2/L3 escalate up the chain.
+            targetRole = targetEscalationLevel === 1 ? "service_manager" : (targetEscalationLevel === 2 ? "works_manager" : "general_manager");
           } else if (ownerRole === "BILLING" || ownerRole === "CASHIER") {
             targetRole = targetEscalationLevel === 1 ? "accounts_manager" : "general_manager";
           }

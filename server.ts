@@ -27,6 +27,8 @@ import { validateOvertimeRequest } from "./src/engines/overtime-rules.ts";
 import { verifyFace } from "./src/engines/face-verifier.ts";
 import { verifyJobCard } from "./src/engines/ocr-processor.ts";
 import vehiclePassportFacade from "./src/engines/vehicle-passport/index.ts";
+import { pipelineRouter } from "./src/api/routes/pipeline.routes.ts";
+import { DeepSeekEngine } from "./src/engines/deepseek-engine.ts";
 import { EmployeeIdentityService, RoleService, AuditService } from "./src/core/identity.ts";
 import { EmployeeRepository, PermissionRepository, AuditRepository } from "./src/core/repositories.ts";
 import { EventBus } from "./src/core/event-bus.ts";
@@ -1143,6 +1145,65 @@ async function startServer() {
       } catch (gmErr: any) {
         console.warn("Could not ensure gm_override_log:", gmErr.message);
       }
+
+      // Same-day gate re-entry approval queue. A vehicle whose job card was
+      // closed (Completed/Invoiced/Cancelled/Closed/etc.) earlier THE SAME
+      // CALENDAR DAY cannot be gated in again without explicit GM approval —
+      // this holds the pending request until a gm_service user reviews it.
+      try {
+        await dbPool.execute(`
+          CREATE TABLE IF NOT EXISTS tbl_gate_reentry_requests (
+            request_id BIGINT NOT NULL AUTO_INCREMENT,
+            vrn VARCHAR(50) NULL,
+            chassis_number VARCHAR(50) NULL,
+            prior_job_id INT NOT NULL,
+            prior_job_card_no VARCHAR(64) NOT NULL,
+            payload_json TEXT NOT NULL,
+            requested_by INT NULL,
+            requested_by_name VARCHAR(191) NULL,
+            requested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+            reviewed_by INT NULL,
+            reviewed_by_name VARCHAR(191) NULL,
+            reviewed_at TIMESTAMP NULL,
+            review_notes TEXT NULL,
+            created_job_id INT NULL,
+            PRIMARY KEY (request_id),
+            KEY idx_reentry_status (status),
+            KEY idx_reentry_prior_job (prior_job_id)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+        `);
+        console.log("Ensured tbl_gate_reentry_requests table.");
+      } catch (reentryErr: any) {
+        console.warn("Could not ensure tbl_gate_reentry_requests:", reentryErr.message);
+      }
+
+      // AI Mode activation requests. Managers / Service Advisors cannot flip
+      // the workshop-wide AI switch themselves; they raise a request here and
+      // a GM / Admin / Developer approves or rejects it.
+      try {
+        await dbPool.execute(`
+          CREATE TABLE IF NOT EXISTS tbl_ai_mode_requests (
+            request_id BIGINT NOT NULL AUTO_INCREMENT,
+            requested_state TINYINT(1) NOT NULL DEFAULT 1,
+            reason TEXT NULL,
+            requested_by INT NULL,
+            requested_by_name VARCHAR(191) NULL,
+            requested_by_role VARCHAR(64) NULL,
+            requested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+            reviewed_by INT NULL,
+            reviewed_by_name VARCHAR(191) NULL,
+            reviewed_at TIMESTAMP NULL,
+            review_notes TEXT NULL,
+            PRIMARY KEY (request_id),
+            KEY idx_ai_mode_req_status (status)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+        `);
+        console.log("Ensured tbl_ai_mode_requests table.");
+      } catch (aiReqErr: any) {
+        console.warn("Could not ensure tbl_ai_mode_requests:", aiReqErr.message);
+      }
       console.log("Role permissions seeding verified and completed successfully.");
     } catch (permErr) {
       console.warn("Error seeding role permissions:", permErr);
@@ -1466,6 +1527,8 @@ async function startServer() {
     "/api/auth/reset-password-request",
     "/api/auth/reset-password-verify",
     "/api/db/reload",           // internal webhook — will be secured separately
+    "/api/v1/devops/cron/sla-evaluator", // Cloud Scheduler cron — secured by its own Google-OIDC + x-cloudscheduler check below, not the app JWT
+    "/api/v2/graph",            // AICopilotPanel — matches its source router's original (unauthenticated) design; used app-wide
   ];
 
   app.use("/api", (req: any, res: any, next: any) => {
@@ -1578,6 +1641,8 @@ async function startServer() {
         { expiresIn: "24h" }
       );
 
+      const mustChangePassword = user.must_change_password === 1 || user.must_change_password === true;
+
       res.json({
         token,
         user: {
@@ -1586,6 +1651,7 @@ async function startServer() {
           full_name: user.full_name || user.username,
           role: user.user_role || "reception",
           employee_id: user.employee_id || null,
+          must_change_password: mustChangePassword,
         },
       });
     } catch (err: any) {
@@ -1630,7 +1696,7 @@ async function startServer() {
       if (!ok) return res.status(401).json({ error: "Current password is incorrect." });
 
       const newHash = await bcrypt.hash(String(new_password), 10);
-      await dbPool.execute(`UPDATE ${table} SET password_hash = ? WHERE ${keyCol} = ?`, [newHash, keyVal]);
+      await dbPool.execute(`UPDATE ${table} SET password_hash = ?, must_change_password = 0 WHERE ${keyCol} = ?`, [newHash, keyVal]);
       return res.json({ success: true, message: "Password changed successfully. Use it next time you log in." });
     } catch (e: any) {
       console.error("[CHANGE-PASSWORD] failed:", e.message);
@@ -2003,6 +2069,104 @@ async function startServer() {
     } catch (err: any) {
       console.error("Create user error:", err);
       res.status(500).json({ error: "Failed to create user." });
+    }
+  });
+
+  // EMPLOYEE DIRECTORY <-> ACCOUNTS: create a default login for one employee.
+  // username = employee_code, temp password = employee_code (must be changed on
+  // first login). Never overwrites an existing account — an employee already
+  // linked, or a username already taken by anyone else (e.g. developer/admin),
+  // is a hard failure, not a silent skip-and-continue.
+  async function createDefaultLoginForEmployee(empId: number, actingUser: any) {
+    const [empRows]: any = await dbPool.query("SELECT * FROM employees WHERE employee_id = ?", [empId]);
+    if (!empRows || empRows.length === 0) {
+      return { ok: false, employee_id: empId, error: "Employee not found." };
+    }
+    const employee = empRows[0];
+    const isEmpActive = employee.is_active === 1 || employee.is_active === true || employee.is_active === "1";
+    if (!isEmpActive) {
+      return { ok: false, employee_id: empId, employee_code: employee.employee_code, error: `Employee '${employee.full_name}' is inactive.` };
+    }
+    if (!employee.employee_code) {
+      return { ok: false, employee_id: empId, error: `Employee '${employee.full_name}' has no employee_code to use as a username.` };
+    }
+    if (!employee.role) {
+      return { ok: false, employee_id: empId, employee_code: employee.employee_code, error: `Employee '${employee.full_name}' has no role set — cannot assign a system role.` };
+    }
+
+    const [existingLink]: any = await dbPool.query(
+      "SELECT user_id, username FROM user_access_master WHERE employee_id = ?",
+      [empId]
+    );
+    if (existingLink && existingLink.length > 0) {
+      return { ok: false, employee_id: empId, employee_code: employee.employee_code, error: `Already linked to account '@${existingLink[0].username}'.` };
+    }
+
+    const username = String(employee.employee_code).trim().toLowerCase();
+    const [usernameTakenRows]: any = await dbPool.query(
+      "SELECT user_id FROM user_access_master WHERE LOWER(username) = LOWER(?) UNION SELECT id AS user_id FROM users WHERE LOWER(username) = LOWER(?)",
+      [username, username]
+    );
+    if (usernameTakenRows && usernameTakenRows.length > 0) {
+      return { ok: false, employee_id: empId, employee_code: employee.employee_code, error: `Username '${username}' is already taken by another account.` };
+    }
+
+    const tempPassword = String(employee.employee_code).trim();
+    const password_hash = await bcrypt.hash(tempPassword, 10);
+
+    await dbPool.execute(
+      `INSERT INTO user_access_master
+        (full_name, employee_id, username, email, user_role, access_level, is_active, mobile_no, password_hash, must_change_password)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 1)`,
+      [employee.full_name, empId, username, employee.email || null, employee.role, employee.role, employee.mobile || "", password_hash]
+    );
+    await dbPool.execute(
+      `INSERT INTO users (full_name, username, password_hash, role, employee_id, is_active, mobile_no, created_at, must_change_password)
+       VALUES (?, ?, ?, ?, ?, 1, ?, NOW(), 1)`,
+      [employee.full_name, username, password_hash, employee.role, empId, employee.mobile || ""]
+    );
+
+    await AuditService.logAction(
+      actingUser?.user_id || 0,
+      actingUser?.username || "system",
+      "USER_CREATION",
+      `Created default login '@${username}' for employee '${employee.full_name}' (${employee.employee_code}). Must change password on first login.`
+    );
+
+    return { ok: true, employee_id: empId, employee_code: employee.employee_code, full_name: employee.full_name, username, temp_password: tempPassword };
+  }
+
+  app.post("/api/employees/:id/create-default-login", authenticateToken, requirePermission("User Management", "edit"), async (req: any, res: any) => {
+    const empId = Number(req.params.id);
+    if (!empId || empId <= 0) return res.status(400).json({ success: false, error: "Invalid employee id." });
+    try {
+      const result = await createDefaultLoginForEmployee(empId, req.user);
+      if (!result.ok) return res.status(400).json({ success: false, ...result });
+      res.status(201).json({ success: true, ...result });
+    } catch (err: any) {
+      console.error("create-default-login error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/employees/bulk-create-logins", authenticateToken, requirePermission("User Management", "edit"), async (req: any, res: any) => {
+    try {
+      const [rows]: any = await dbPool.query(
+        `SELECT e.employee_id FROM employees e
+         LEFT JOIN user_access_master u ON u.employee_id = e.employee_id
+         WHERE u.user_id IS NULL AND e.is_active = 1`
+      );
+      const created: any[] = [];
+      const skipped: any[] = [];
+      for (const r of rows) {
+        const result = await createDefaultLoginForEmployee(r.employee_id, req.user);
+        if (result.ok) created.push(result);
+        else skipped.push(result);
+      }
+      res.json({ success: true, createdCount: created.length, skippedCount: skipped.length, created, skipped });
+    } catch (err: any) {
+      console.error("bulk-create-logins error:", err);
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
@@ -3635,7 +3799,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
 
   // API: OCR Extraction for Gate-In
   app.post("/api/ocr", async (req, res) => {
-    const { image, provider = "Gemini" } = req.body;
+    const { image, provider = "Azure" } = req.body;
     if (!image) {
       return res.status(400).json({ error: "Missing image data" });
     }
@@ -3649,6 +3813,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
+
   // API: Vehicle Registry & Service History Lookup
   app.get("/api/vehicles/lookup/:vrn", async (req, res) => {
     const rawVrn = req.params.vrn || "";
@@ -3659,7 +3824,25 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
 
     try {
-      // 1. Query service_history for most recent service visit
+      // 1. Query job_cards for most recent workshop visit
+      const [jcRows]: any = await dbPool.query(
+        `SELECT vrn, customer_name, customer_mobile, vehicle_model, vehicle_make, vin, odometer_reading, created_at
+         FROM job_cards
+         WHERE REPLACE(REPLACE(UPPER(COALESCE(vrn, '')), '-', ''), ' ', '') = ?
+         ORDER BY created_at DESC LIMIT 1`,
+        [cleanVrn]
+      );
+
+      // 2. Query gate_entries for most recent gate record
+      const [geRows]: any = await dbPool.query(
+        `SELECT vrn, driver_name, driver_mobile, vehicle_model, chassis_number, km_reading, created_at
+         FROM gate_entries
+         WHERE REPLACE(REPLACE(UPPER(COALESCE(vrn, '')), '-', ''), ' ', '') = ?
+         ORDER BY created_at DESC LIMIT 1`,
+        [cleanVrn]
+      );
+
+      // 3. Query service_history for most recent service visit
       const [shRows]: any = await dbPool.query(
         `SELECT * FROM service_history 
          WHERE REPLACE(REPLACE(UPPER(COALESCE(registration_no, '')), '-', ''), ' ', '') = ?
@@ -3667,36 +3850,53 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         [cleanVrn]
       );
 
-      // 2. Query invoices for latest billing records
+      // 4. Query invoices for latest billing records
       const [invRows]: any = await dbPool.query(
-        `SELECT * FROM invoices 
+        `SELECT * FROM invoices
          WHERE REPLACE(REPLACE(UPPER(COALESCE(registration_no, vrn, '')), '-', ''), ' ', '') = ?
          ORDER BY invoice_date DESC LIMIT 1`,
         [cleanVrn]
       );
 
+      // 5. Query vehicle_master for the original sale date (used client-side to
+      // sanity-check a freshly OCR'd odometer reading against expected lifetime
+      // usage — never to fabricate one).
+      const [vmRows]: any = await dbPool.query(
+        `SELECT original_sale_date FROM vehicle_master
+         WHERE REPLACE(REPLACE(UPPER(COALESCE(registration_no, '')), '-', ''), ' ', '') = ?
+         LIMIT 1`,
+        [cleanVrn]
+      );
+
+      const jc = jcRows[0] || {};
+      const ge = geRows[0] || {};
       const hist = shRows[0] || {};
       const inv = invRows[0] || {};
+      const vm = vmRows[0] || {};
 
-      if (!hist.registration_no && !inv.registration_no && !inv.vrn) {
-        return res.status(404).json({ error: "Vehicle not found in service history records" });
+      if (!jc.vrn && !ge.vrn && !hist.registration_no && !inv.registration_no && !inv.vrn) {
+        return res.status(404).json({ error: "Vehicle not found in workshop records" });
       }
 
-      const customerName = hist.account_name || hist.account || hist.contact_full_name || inv.customer_name || inv.account || "Commercial Fleet Customer";
-      const chassisNo = hist.chassis_no || inv.chassis_no || "";
-      const odometer = hist.odometer_reading ? parseInt(String(hist.odometer_reading).replace(/[^0-9]/g, ""), 10) : 0;
+      const customerName = jc.customer_name || ge.driver_name || hist.account_name || hist.account || hist.contact_full_name || inv.customer_name || inv.account || "Commercial Fleet Customer";
+      const customerMobile = jc.customer_mobile || ge.driver_mobile || "";
+      const make = jc.vehicle_make || "TATA";
+      const model = jc.vehicle_model || ge.vehicle_model || "Tata Commercial Heavy Vehicle";
+      const chassisNo = jc.vin || ge.chassis_number || hist.chassis_no || inv.chassis_no || "";
+      const odometer = jc.odometer_reading || ge.km_reading || (hist.odometer_reading ? parseInt(String(hist.odometer_reading).replace(/[^0-9]/g, ""), 10) : 0);
 
       res.json({
         vehicle: {
-          vrn: hist.registration_no || inv.registration_no || inv.vrn || rawVrn.toUpperCase(),
+          vrn: jc.vrn || ge.vrn || hist.registration_no || inv.registration_no || inv.vrn || rawVrn.toUpperCase(),
           customer_name: customerName,
-          customer_mobile: "9823456781",
-          make: "TATA",
-          model: "Tata Commercial Heavy Vehicle",
+          customer_mobile: customerMobile,
+          make: make,
+          model: model,
           chassis_no: chassisNo,
           odometer_reading: odometer,
           last_service_type: hist.sr_type || "General Service",
-          last_service_date: hist.service_datetime || hist.job_card_open_date || inv.invoice_date || null
+          last_service_date: jc.created_at || ge.created_at || hist.service_datetime || inv.invoice_date || null,
+          original_sale_date: vm.original_sale_date || null
         }
       });
     } catch (err: any) {
@@ -3776,22 +3976,30 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
 
   // Gate-In / Job Card intake creation. Supported for Security, Gate Personnel,
   // Receptionists, Service Advisors, Supervisors, Managers, and Admins.
-  app.post("/api/job-cards", requireRoles([
-    "security_agent", 
-    "gate_personnel", 
-    "reception", 
-    "receptionist", 
-    "service_advisor", 
-    "supervisor", 
-    "floor_supervisor", 
-    "floor_incharge", 
-    "workshop_manager", 
-    "service_manager", 
-    "admin", 
-    "developer"
-  ]), async (req: any, res) => {
+  // Normalizes a VRN/chassis number for duplicate comparison (strip spaces/
+  // hyphens, uppercase). Shared by the active-duplicate guard, the same-day
+  // reopen guard, and the reentry-approval endpoints below.
+  const normalizeGateId = (s: string | undefined | null): string =>
+    (s || "").trim().toUpperCase().replace(/[\s\-]/g, "");
+
+  // Calendar date (YYYY-MM-DD) in the dealership's local timezone (IST), so
+  // "same day" means the same working day on-site, not the same UTC date.
+  const istCalendarDate = (iso: string | null | undefined): string | null => {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  };
+
+  const GATE_ENTRY_TERMINAL_STATUSES = ["Completed", "Invoiced", "Billed", "Out of Workshop", "Cancelled", "Closed"];
+
+  // Actually creates the job card record — the event publishing + VOS
+  // pipeline handoff that makes it show up in the reception/SA queues. Shared
+  // by the direct-create path below and the GM approval endpoint further
+  // down, so an approved same-day reopen goes through the exact same
+  // creation logic as a normal gate-in.
+  async function createJobCardRecord(newJob: JobCard, req: any): Promise<JobCard> {
     const db = getDB();
-    const newJob: JobCard = req.body;
     const nextId = db.jobCards.reduce((max: number, j: JobCard) => Math.max(max, j.job_id), 0) + 1;
     newJob.job_id = nextId;
     newJob.job_card_no = newJob.job_card_no || `JC${String(nextId).padStart(3, "0")}`;
@@ -3809,7 +4017,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
 
     try {
       const correlationId = `CORR-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
-      
+
       // 1. Publish VEHICLE_GATE_IN event (CCTV/Manual start)
       await operationalEventService.publish({
         job_id: nextId,
@@ -3850,8 +4058,361 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       console.error("Failed to publish initial events during Job Card creation:", e);
     }
 
-    res.json(newJob);
+    // Drive the real VOS gate-in -> reception-accept pipeline for this vehicle.
+    // GateEntryManager.tsx (the screen receptionists/security actually use)
+    // collects both gate details AND reception details in one manual form, so
+    // both pipeline steps fire together here. This is what makes the vehicle
+    // show up — with a real 5-minute handoff-SLA and breach state — in the
+    // Manager's "SA Assignment" queue (RealtimeOwnershipPipeline.getManagerPendingQueue,
+    // which reads tbl_reception_intake) and lets /api/v1/devops/cron/sla-evaluator
+    // actually escalate it. tbl_gate_entry/tbl_reception_intake/tbl_handoff_sla
+    // are a separate, well-tested tracking layer alongside `job_cards` (the
+    // record every other screen reads) — not a replacement for it. Best-effort:
+    // never block job-card creation on this.
+    if (newJob.current_workflow_state === "GATE_IN" && (!newJob.service_advisor || newJob.service_advisor === "Unassigned")) {
+      try {
+        const { RealtimeOwnershipPipeline } = await import('./src/core/workshop/realtime-ownership-pipeline.ts');
+        const branchId = req.user?.branchId || req.user?.branch_id || "BR-SEDAM";
+        const gateRes = await RealtimeOwnershipPipeline.createGateIn(
+          {
+            vrn: newJob.vrn,
+            vin: newJob.chassis_number || undefined,
+            odometer: newJob.km_reading || 0,
+            source: "MANUAL",
+            driverMobile: newJob.customer_mobile,
+            branchId
+          },
+          req.user
+        );
+        await RealtimeOwnershipPipeline.acceptReceptionIntake(
+          {
+            gateEntryId: gateRes.gateEntryId,
+            visitCategory: "General Check-up",
+            confirmedOdometer: newJob.km_reading || 0,
+            preliminaryComplaints: newJob.remarks || newJob.job_description || undefined,
+            branchId
+          },
+          req.user
+        );
+      } catch (e: any) {
+        console.error("Failed to drive VOS gate-in/reception-accept pipeline for new job card:", e.message);
+      }
+    }
+
+    return newJob;
+  }
+
+  app.post("/api/job-cards", requireRoles([
+    "security_agent",
+    "gate_personnel",
+    "reception",
+    "receptionist",
+    "service_advisor",
+    "supervisor",
+    "floor_supervisor",
+    "floor_incharge",
+    "workshop_manager",
+    "service_manager",
+    "admin",
+    "developer"
+  ]), async (req: any, res) => {
+    const db = getDB();
+    const newJob: JobCard = req.body;
+
+    // ── Duplicate Gate Entry Guard ─────────────────────────────────────
+    // Prevent accidental duplicate gate entries for the same vehicle.
+    // A vehicle that is already active (not Completed / not Invoiced)
+    // cannot have a second gate entry created for it — no matter how many
+    // days it has been open. The check matches on normalized VRN *or*
+    // chassis number.
+    const incomingVrn = normalizeGateId(newJob.vrn);
+    const incomingChassis = normalizeGateId((newJob as any).chassis_number);
+
+    if (incomingVrn || incomingChassis) {
+      const existingDupe = db.jobCards.find((j: JobCard) => {
+        if (GATE_ENTRY_TERMINAL_STATUSES.includes(j.status)) return false;
+        if (incomingVrn && incomingVrn.length >= 4) {
+          const jVrn = normalizeGateId(j.vrn);
+          if (jVrn && jVrn === incomingVrn) return true;
+        }
+        if (incomingChassis && incomingChassis.length >= 4) {
+          const jChassis = normalizeGateId((j as any).chassis_number);
+          if (jChassis && jChassis === incomingChassis) return true;
+        }
+        return false;
+      });
+      if (existingDupe) {
+        const dupeLabel = existingDupe.vrn || (existingDupe as any).chassis_number || "Unknown";
+        return res.status(409).json({
+          error: `Duplicate gate entry blocked: Vehicle "${dupeLabel}" already has an active job card (${existingDupe.job_card_no}, status: ${existingDupe.status}). Complete or invoice the existing entry before creating a new one.`
+        });
+      }
+    }
+    // ── End Duplicate Guard ────────────────────────────────────────────
+
+    // ── Same-Day Reopen Guard (requires GM approval) ────────────────────
+    // No *active* duplicate exists (checked above), but if this vehicle's
+    // most recent job card was closed earlier THE SAME CALENDAR DAY, don't
+    // silently create a fresh one — a same-day reopen is far more likely to
+    // be an accidental re-capture (or a real edge case worth a human check)
+    // than a genuine second visit. Hold it as a pending request instead;
+    // only a gm_service user approving it actually creates the job card.
+    if (incomingVrn || incomingChassis) {
+      const todayIst = istCalendarDate(new Date().toISOString());
+      const sameDayClosed = db.jobCards
+        .filter((j: JobCard) => {
+          if (!GATE_ENTRY_TERMINAL_STATUSES.includes(j.status)) return false;
+          const jVrn = normalizeGateId(j.vrn);
+          const jChassis = normalizeGateId((j as any).chassis_number);
+          if (incomingVrn && incomingVrn.length >= 4 && jVrn === incomingVrn) return true;
+          if (incomingChassis && incomingChassis.length >= 4 && jChassis === incomingChassis) return true;
+          return false;
+        })
+        .filter((j: JobCard) => {
+          const closedAt = (j as any).updated_at || j.completed_at || j.invoiced_at || j.created_at;
+          return istCalendarDate(closedAt) === todayIst;
+        })
+        .sort((a: JobCard, b: JobCard) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
+      if (sameDayClosed) {
+        try {
+          const [ins]: any = await dbPool.execute(
+            `INSERT INTO tbl_gate_reentry_requests
+              (vrn, chassis_number, prior_job_id, prior_job_card_no, payload_json, requested_by, requested_by_name, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
+            [
+              newJob.vrn || null,
+              (newJob as any).chassis_number || null,
+              sameDayClosed.job_id,
+              sameDayClosed.job_card_no,
+              JSON.stringify(newJob),
+              req.user?.user_id ?? null,
+              req.user?.full_name ?? null,
+            ]
+          );
+          return res.status(202).json({
+            pendingApproval: true,
+            requestId: ins.insertId,
+            message: `Vehicle "${newJob.vrn || (newJob as any).chassis_number}" already had a job card closed today (${sameDayClosed.job_card_no}). A GM must approve this same-day re-entry before it's created.`
+          });
+        } catch (e: any) {
+          console.error("Failed to record gate reentry approval request:", e.message);
+          return res.status(500).json({ error: "Could not submit same-day re-entry request. Please try again." });
+        }
+      }
+    }
+    // ── End Same-Day Reopen Guard ───────────────────────────────────────
+
+    const created = await createJobCardRecord(newJob, req);
+    res.json(created);
   });
+
+  // ── Same-Day Gate Re-Entry Approval Queue (GM only) ───────────────────
+  app.get("/api/gate-reentry-requests", requireRoles(["gm_service", "admin", "developer"]), async (req: any, res) => {
+    try {
+      const status = typeof req.query.status === "string" ? req.query.status.toUpperCase() : "PENDING";
+      const [rows]: any = await dbPool.execute(
+        `SELECT * FROM tbl_gate_reentry_requests WHERE status = ? ORDER BY requested_at DESC`,
+        [status]
+      );
+      res.json(rows);
+    } catch (e: any) {
+      console.error("Failed to fetch gate reentry requests:", e.message);
+      res.status(500).json({ error: "Could not load re-entry approval requests." });
+    }
+  });
+
+  app.post("/api/gate-reentry-requests/:id/approve", requireRoles(["gm_service", "admin", "developer"]), async (req: any, res) => {
+    try {
+      const [rows]: any = await dbPool.execute(`SELECT * FROM tbl_gate_reentry_requests WHERE request_id = ?`, [req.params.id]);
+      const reqRow = rows[0];
+      if (!reqRow) return res.status(404).json({ error: "Re-entry request not found." });
+      if (reqRow.status !== "PENDING") {
+        return res.status(409).json({ error: `This request is already ${reqRow.status}.` });
+      }
+
+      const newJob: JobCard = JSON.parse(reqRow.payload_json);
+      const created = await createJobCardRecord(newJob, req);
+
+      await dbPool.execute(
+        `UPDATE tbl_gate_reentry_requests
+         SET status = 'APPROVED', reviewed_by = ?, reviewed_by_name = ?, reviewed_at = NOW(), review_notes = ?, created_job_id = ?
+         WHERE request_id = ?`,
+        [req.user?.user_id ?? null, req.user?.full_name ?? null, req.body?.notes || null, created.job_id, req.params.id]
+      );
+      await logGmOverride(req.user, created, `Approved same-day gate re-entry (prior job ${reqRow.prior_job_card_no})`);
+
+      res.json({ success: true, jobCard: created });
+    } catch (e: any) {
+      console.error("Failed to approve gate reentry request:", e.message);
+      res.status(500).json({ error: "Could not approve re-entry request." });
+    }
+  });
+
+  app.post("/api/gate-reentry-requests/:id/reject", requireRoles(["gm_service", "admin", "developer"]), async (req: any, res) => {
+    try {
+      const [rows]: any = await dbPool.execute(`SELECT * FROM tbl_gate_reentry_requests WHERE request_id = ?`, [req.params.id]);
+      const reqRow = rows[0];
+      if (!reqRow) return res.status(404).json({ error: "Re-entry request not found." });
+      if (reqRow.status !== "PENDING") {
+        return res.status(409).json({ error: `This request is already ${reqRow.status}.` });
+      }
+      await dbPool.execute(
+        `UPDATE tbl_gate_reentry_requests
+         SET status = 'REJECTED', reviewed_by = ?, reviewed_by_name = ?, reviewed_at = NOW(), review_notes = ?
+         WHERE request_id = ?`,
+        [req.user?.user_id ?? null, req.user?.full_name ?? null, req.body?.notes || null, req.params.id]
+      );
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("Failed to reject gate reentry request:", e.message);
+      res.status(500).json({ error: "Could not reject re-entry request." });
+    }
+  });
+  // ── End Same-Day Gate Re-Entry Approval Queue ─────────────────────────
+
+  // ── AI MODE: workshop-wide switch + activation approval workflow ──────
+  // State lives in the existing `dealer_configurations` table (key
+  // `ai_mode_enabled`); enforcement is at DeepSeekEngine.chat(). See
+  // src/core/ai-mode.ts.
+  app.get("/api/v1/ai-mode", authenticateToken, async (req: any, res: any) => {
+    try {
+      const { isAiModeEnabled, AI_MODE_APPROVER_ROLES, AI_MODE_REQUESTER_ROLES } =
+        await import("./src/core/ai-mode.ts");
+      const enabled = await isAiModeEnabled();
+      const role = req.user?.role || "";
+
+      let pendingCount = 0;
+      try {
+        const [rows]: any = await dbPool.query(
+          "SELECT COUNT(*) AS n FROM tbl_ai_mode_requests WHERE status = 'PENDING'"
+        );
+        pendingCount = Number(rows?.[0]?.n || 0);
+      } catch { /* table not ready yet — treat as none pending */ }
+
+      res.json({
+        enabled,
+        canToggle: AI_MODE_APPROVER_ROLES.includes(role),
+        canRequest: AI_MODE_REQUESTER_ROLES.includes(role),
+        pendingRequests: pendingCount,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/v1/ai-mode", authenticateToken, requireRoles(["gm_service", "admin", "developer"]), async (req: any, res: any) => {
+    try {
+      const { setAiModeEnabled } = await import("./src/core/ai-mode.ts");
+      const enabled = Boolean(req.body?.enabled);
+      await setAiModeEnabled(enabled);
+      try {
+        await AuditService.logAction(
+          req.user?.user_id || 0,
+          req.user?.username || "system",
+          "AI_MODE_CHANGE",
+          `AI Mode ${enabled ? "ENABLED" : "DISABLED"} workshop-wide${req.body?.reason ? ` — ${req.body.reason}` : ""}`
+        );
+      } catch (auditErr: any) {
+        console.warn("Could not audit AI mode change:", auditErr.message);
+      }
+      res.json({ success: true, enabled });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Manager / Service Advisor raises an activation request.
+  app.post("/api/v1/ai-mode/request", authenticateToken, requireRoles([
+    "workshop_manager", "service_manager", "service_advisor"
+  ]), async (req: any, res: any) => {
+    try {
+      // One open request at a time — repeated taps on the toggle must not
+      // flood the approvers' queue with duplicates.
+      const [existing]: any = await dbPool.query(
+        "SELECT request_id FROM tbl_ai_mode_requests WHERE status = 'PENDING' LIMIT 1"
+      );
+      if (existing && existing.length > 0) {
+        return res.status(202).json({
+          alreadyPending: true,
+          requestId: existing[0].request_id,
+          message: "An AI Mode activation request is already awaiting GM/Admin approval.",
+        });
+      }
+
+      const [ins]: any = await dbPool.execute(
+        `INSERT INTO tbl_ai_mode_requests
+          (requested_state, reason, requested_by, requested_by_name, requested_by_role, status)
+         VALUES (1, ?, ?, ?, ?, 'PENDING')`,
+        [
+          req.body?.reason || null,
+          req.user?.user_id ?? null,
+          req.user?.full_name ?? null,
+          req.user?.role ?? null,
+        ]
+      );
+      res.json({
+        success: true,
+        requestId: ins.insertId,
+        message: "AI Mode activation requested. A GM, Admin or Developer must approve it.",
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/v1/ai-mode/requests", authenticateToken, requireRoles(["gm_service", "admin", "developer"]), async (req: any, res: any) => {
+    try {
+      const status = typeof req.query.status === "string" ? req.query.status.toUpperCase() : "PENDING";
+      const [rows]: any = await dbPool.execute(
+        "SELECT * FROM tbl_ai_mode_requests WHERE status = ? ORDER BY requested_at DESC",
+        [status]
+      );
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/v1/ai-mode/requests/:id/:decision", authenticateToken, requireRoles(["gm_service", "admin", "developer"]), async (req: any, res: any) => {
+    const decision = String(req.params.decision || "").toLowerCase();
+    if (decision !== "approve" && decision !== "reject") {
+      return res.status(400).json({ error: "Decision must be 'approve' or 'reject'." });
+    }
+    try {
+      const [rows]: any = await dbPool.execute(
+        "SELECT * FROM tbl_ai_mode_requests WHERE request_id = ?",
+        [req.params.id]
+      );
+      const reqRow = rows[0];
+      if (!reqRow) return res.status(404).json({ error: "Request not found." });
+      if (reqRow.status !== "PENDING") {
+        return res.status(409).json({ error: `This request is already ${reqRow.status}.` });
+      }
+
+      if (decision === "approve") {
+        const { setAiModeEnabled } = await import("./src/core/ai-mode.ts");
+        await setAiModeEnabled(Boolean(reqRow.requested_state));
+      }
+
+      await dbPool.execute(
+        `UPDATE tbl_ai_mode_requests
+         SET status = ?, reviewed_by = ?, reviewed_by_name = ?, reviewed_at = NOW(), review_notes = ?
+         WHERE request_id = ?`,
+        [
+          decision === "approve" ? "APPROVED" : "REJECTED",
+          req.user?.user_id ?? null,
+          req.user?.full_name ?? null,
+          req.body?.notes || null,
+          req.params.id,
+        ]
+      );
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+  // ── End AI Mode ───────────────────────────────────────────────────────
 
   // CCTV / ANPR gate-in webhook. An on-site ANPR camera or NVR posts each plate
   // read here; DWIP creates a virtual gate-in job card and routes it into the
@@ -3880,17 +4441,18 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     try {
       const db = getDB();
 
-      // Dedupe: ANPR cameras fire repeatedly. Ignore a plate that already has an
-      // open gate entry created within the last ANPR_DEDUPE_MINUTES.
-      const dedupeMs = Number(process.env.ANPR_DEDUPE_MINUTES || 10) * 60 * 1000;
-      const now = Date.now();
-      const recentOpen = db.jobCards.find((j: JobCard) =>
+      // Dedupe: ANPR cameras fire repeatedly, and a vehicle can also linger in
+      // camera view long after intake. Block on ANY still-active job for this
+      // plate — not just one created in the last few minutes — so a vehicle
+      // that's still on-premises (any non-terminal status) never gets a second
+      // gate entry, however long it's been since the first ANPR hit.
+      const anprCompletedStatuses = ["Completed", "Invoiced", "Billed", "Out of Workshop", "Cancelled", "Closed"];
+      const activeExisting = db.jobCards.find((j: JobCard) =>
         (j.vrn || "").toUpperCase().replace(/[^A-Z0-9]/g, "") === vrn &&
-        j.status !== "Invoiced" && j.status !== "Completed" &&
-        j.created_at && (now - new Date(j.created_at).getTime()) < dedupeMs
+        !anprCompletedStatuses.includes(j.status)
       );
-      if (recentOpen) {
-        return res.json({ success: true, duplicate: true, job_id: recentOpen.job_id, job_card_no: recentOpen.job_card_no, message: "Recent open gate entry already exists for this plate." });
+      if (activeExisting) {
+        return res.json({ success: true, duplicate: true, job_id: activeExisting.job_id, job_card_no: activeExisting.job_card_no, message: "An active gate entry already exists for this plate." });
       }
 
       const nextId = db.jobCards.reduce((max: number, j: JobCard) => Math.max(max, j.job_id), 0) + 1;
@@ -5045,6 +5607,18 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       setDB(db);
       await syncSave(db);
 
+      // SIGNA (Tactical Brain) passive learning: on a genuine transition into
+      // Completed/Invoiced, store the real outcome for future lookups. Never
+      // blocks the response; a learning failure must not affect job-card saves.
+      if (
+        (updatedJob.status === "Completed" || updatedJob.status === "Invoiced") &&
+        oldJob.status !== updatedJob.status
+      ) {
+        import("./src/engines/ai-brains/signa-tactical-brain.ts")
+          .then((m) => m.learnFromClosedJobCard(updatedJob))
+          .catch((e) => console.warn("SIGNA learning hook failed:", e.message));
+      }
+
       // ── Role Transition Alerts ──
       try {
         // Alert 1: SA assigned to job card
@@ -5091,6 +5665,51 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     } else {
       res.status(404).json({ error: "Job card not found" });
     }
+  });
+
+  // Permanently deletes a job card — for cleaning up test entries or a
+  // genuine mistake (e.g. a duplicate gate-in, a wrong VRN typed by
+  // security). Restricted to admin/GM (developer bypasses everywhere else in
+  // this app, so it's included too); every deletion is audited to
+  // gm_override_log the same way other GM-scoped actions are.
+  app.delete("/api/job-cards/:id", authenticateToken, requireRoles(["admin", "gm_service", "developer"]), async (req: any, res: any) => {
+    const db = getDB();
+    const id = parseInt(req.params.id);
+    const reason = String(req.body?.reason || "").trim();
+    if (reason.length < 10) {
+      return res.status(400).json({ error: "A reason of at least 10 characters is required to delete a job card." });
+    }
+
+    const index = db.jobCards.findIndex((j: JobCard) => j.job_id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: "Job card not found." });
+    }
+    const deletedJob = db.jobCards[index];
+
+    db.jobCards.splice(index, 1);
+    setDB(db);
+
+    // syncSave() only upserts (INSERT ... ON DUPLICATE KEY UPDATE) — it never
+    // removes a row, so a splice from the in-memory array alone would come
+    // back on the next server restart (syncLoad rebuilds db.jobCards from
+    // job_card_master). Explicitly delete from both real tables that carry a
+    // copy of this job: job_card_master (the actual backing store for
+    // db.jobCards) and job_cards (the separate table other parts of the app —
+    // vehicle lookup, billing engine — read directly by job_id/vrn).
+    try {
+      await dbPool.execute(`DELETE FROM job_card_master WHERE job_card_id = ?`, [deletedJob.job_id]);
+    } catch (e: any) {
+      console.error("Failed to delete job_card_master row:", e.message);
+    }
+    try {
+      await dbPool.execute(`DELETE FROM job_cards WHERE job_id = ?`, [deletedJob.job_id]);
+    } catch (e: any) {
+      console.error("Failed to delete job_cards row:", e.message);
+    }
+
+    await logGmOverride(req.user, deletedJob, `Deleted job card: ${reason}`);
+
+    res.json({ success: true, deleted: { job_id: deletedJob.job_id, job_card_no: deletedJob.job_card_no, vrn: deletedJob.vrn } });
   });
 
   // ============================================================================
@@ -5486,7 +6105,31 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   // --- ALERTS ENDPOINTS ---
   app.get("/api/alerts", (req, res) => {
     const db = getDB();
-    res.json(db.alertLogs);
+    let requestUser: RelevanceUser | null = null;
+    try {
+      const authHeader = req.headers["authorization"];
+      const token = authHeader && authHeader.split(" ")[1];
+      if (token) {
+        const decoded = jwt.verify(token, JWT_SECRET) as any;
+        requestUser = {
+          role: decoded.role,
+          user_id: decoded.user_id,
+          employee_id: decoded.employee_id,
+          full_name: decoded.full_name,
+        };
+      }
+    } catch { /* unauthenticated/invalid token */ }
+
+    if (!requestUser || isFullViewRole(requestUser.role)) {
+      return res.json(db.alertLogs || []);
+    }
+
+    const role = String(requestUser.role || "").toLowerCase();
+    const filtered = (db.alertLogs || []).filter((a: any) => {
+      if (!a.target_roles || !Array.isArray(a.target_roles) || a.target_roles.length === 0) return true;
+      return a.target_roles.map((r: string) => r.toLowerCase()).includes(role);
+    });
+    res.json(filtered);
   });
 
   app.post("/api/alerts/acknowledge", (req, res) => {
@@ -5551,6 +6194,44 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         });
       }
     } catch (e) { /* cctv table absent — skip */ }
+
+    // Live handoff-SLA breaches. These are the most time-critical signal in the
+    // app (a vehicle sitting unowned between stages), so they are surfaced
+    // first and routed to My Workspace where the breach list actually lives.
+    try {
+      const [rows]: any = await dbPool.query(
+        "SELECT COUNT(*) AS n FROM tbl_handoff_sla WHERE status = 'BREACHED'"
+      );
+      const n = Number(rows?.[0]?.n || 0);
+      if (n > 0) {
+        notifications.unshift({
+          id: "sla-breaches", type: "sla", severity: "critical",
+          title: "SLA Breaches",
+          message: `${n} handoff SLA${n === 1 ? "" : "s"} breached — action required now`,
+          link: "my-workspace"
+        });
+      }
+    } catch (e) { /* tbl_handoff_sla absent — skip */ }
+
+    // Vehicles gated in but still with no Service Advisor. Every gate-in stays
+    // the manager's liability until gate-out, so an unassigned card is a real
+    // pending action, not just a statistic.
+    try {
+      const [rows]: any = await dbPool.query(
+        `SELECT COUNT(*) AS n FROM job_cards
+         WHERE status NOT IN ('Completed','Invoiced','Cancelled','Closed')
+           AND (service_advisor IS NULL OR service_advisor = '' OR service_advisor = 'Unassigned')`
+      );
+      const n = Number(rows?.[0]?.n || 0);
+      if (n > 0) {
+        notifications.unshift({
+          id: "unassigned-sa", type: "assignment", severity: "warning",
+          title: "Unassigned Job Cards",
+          message: `${n} gated-in vehicle${n === 1 ? "" : "s"} awaiting Service Advisor assignment`,
+          link: "manager-assignment-workspace"
+        });
+      }
+    } catch (e) { /* job_cards absent — skip */ }
 
     res.json({ success: true, count: notifications.length, notifications });
   });
@@ -6315,6 +6996,58 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
+  // --- DEEPSEEK AI ENGINE ENDPOINTS ---
+  app.get("/api/deepseek/status", async (req, res) => {
+    try {
+      const health = await DeepSeekEngine.checkHealth();
+      res.json(health);
+    } catch (e: any) {
+      res.status(500).json({ status: "error", message: e.message });
+    }
+  });
+
+  app.post("/api/deepseek/chat", express.json(), async (req, res) => {
+    try {
+      const { messages, options } = req.body;
+      if (!messages || !Array.isArray(messages)) {
+        return res.status(400).json({ error: "messages array is required" });
+      }
+      const reply = await DeepSeekEngine.chat(messages, options);
+      res.json({ success: true, reply, modelUsed: options?.model || "deepseek-chat" });
+    } catch (e: any) {
+      console.error("DeepSeek Chat error:", e);
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post("/api/deepseek/reason", express.json(), async (req, res) => {
+    try {
+      const { prompt, contextData } = req.body;
+      if (!prompt) {
+        return res.status(400).json({ error: "prompt string is required" });
+      }
+      const result = await DeepSeekEngine.reason(prompt, contextData);
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      console.error("DeepSeek Reason error:", e);
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post("/api/deepseek/diagnose", express.json(), async (req, res) => {
+    try {
+      const { faultCode, vehicleInfo } = req.body;
+      if (!faultCode) {
+        return res.status(400).json({ error: "faultCode or complaint is required" });
+      }
+      const diagnosis = await DeepSeekEngine.diagnoseFault(faultCode, vehicleInfo);
+      res.json({ success: true, ...diagnosis });
+    } catch (e: any) {
+      console.error("DeepSeek Diagnose error:", e);
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
   // --- GEMINI INTERACTIVE FORM ASSISTANT ---
   app.post("/api/gemini/analyze-form-interactive", express.json(), async (req, res) => {
     const { jobDescription, vehicleModel, kmReading, priority, currentVrn } = req.body;
@@ -7030,7 +7763,9 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
 
         if (user.user_id != null && targetUserIds.includes(String(user.user_id))) return true;
         if (user.employee_id != null && targetEmployeeIds.includes(String(user.employee_id))) return true;
-        if (role && targetRoles.includes(role)) return true;
+        if (targetRoles.length > 0) {
+          return !!role && (targetRoles.includes(role) || isFullViewRole(role));
+        }
         if (entityType === "jobcard" || entityType === "job_card") return relevantJobIds.has(jobId);
         return isFullViewRole(role);
       })
@@ -7640,6 +8375,995 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
+  // --- FIELD PERMISSIONS & DEEPSEEK RBAC COPILOT ENDPOINTS ---
+  app.get("/api/rbac/field-permissions", authenticateToken, requirePermission("User Management", "view"), async (req, res) => {
+    try {
+      const [rows] = await dbPool.query("SELECT * FROM field_permissions ORDER BY role, field_name") as any[];
+      res.json({ success: true, fieldPermissions: rows });
+    } catch (e: any) {
+      console.error("Error fetching field permissions:", e);
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post("/api/rbac/field-permissions", authenticateToken, requirePermission("User Management", "edit"), express.json(), async (req: any, res) => {
+    try {
+      const { fieldPermissions } = req.body;
+      if (!Array.isArray(fieldPermissions)) {
+        return res.status(400).json({ error: "fieldPermissions must be an array" });
+      }
+
+      for (const fp of fieldPermissions) {
+        if (!fp.role || !fp.field_name || !fp.permission_level) continue;
+        await dbPool.execute(
+          `INSERT INTO field_permissions (role, workflow_stage, field_name, permission_level)
+           VALUES (?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE permission_level = VALUES(permission_level)`,
+          [fp.role, fp.workflow_stage || "ANY", fp.field_name, fp.permission_level]
+        );
+      }
+
+      res.json({ success: true, message: "Field permissions saved permanently to database." });
+    } catch (e: any) {
+      console.error("Error saving field permissions:", e);
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post("/api/rbac/ai-assist", authenticateToken, requirePermission("User Management", "edit"), express.json(), async (req: any, res) => {
+    try {
+      const { prompt } = req.body;
+      if (!prompt) {
+        return res.status(400).json({ error: "Prompt is required" });
+      }
+
+      const systemPrompt = `You are the chief RBAC Security Architect for DWIP Enterprise (Devanand Workshop Integrated Platform).
+Available Roles: [admin, developer, gm_service, service_manager, workshop_manager, floor_supervisor, floor_incharge, service_advisor, reception, receptionist, billing, accounts, cashier, parts_incharge, spares_manager, warranty_clerk, qc, security_agent, dkam, dealer_principal]
+Available Modules: [Dashboard, Reception Intake, Gate Entry, Job Cards, Bay Monitor, Advisor Workspace, Supervisor Workspace, Parts Desk, Warranty Desk, Billing & Exit, Productivity, Employee Directory, Attendance, User Management, Master Data Hub]
+Available Field Names: [service_advisor, technician_name, bay_no, odometer, customer_name, customer_mobile, vehicle_model, priority, labour_amount, parts_amount, discount, job_description, pending_reason, remarks, date_completed, time_out]
+Available Permission Levels: [EDIT, VIEW_ONLY, HIDDEN, LOCKED, OVERRIDE]
+
+Given the administrator's request in plain English, produce ONLY a valid JSON object matching this schema:
+{
+  "rolePermissions": [
+    { "role_name": string, "module_name": string, "can_view": 0 | 1, "can_edit": 0 | 1 }
+  ],
+  "fieldPermissions": [
+    { "role": string, "workflow_stage": "ANY" | "Draft" | "Waiting" | "Work In Progress" | "Completed", "field_name": string, "permission_level": "EDIT" | "VIEW_ONLY" | "HIDDEN" | "LOCKED" | "OVERRIDE" }
+  ],
+  "explanation": string
+}`;
+
+      const raw = await DeepSeekEngine.chat([
+        { role: "system", content: systemPrompt },
+        { role: "user", content: prompt }
+      ], {
+        model: "deepseek-chat",
+        temperature: 0.1
+      });
+
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        return res.json({ success: false, rawResponse: raw, error: "Could not parse AI response as JSON" });
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      res.json({ success: true, ...parsed, modelUsed: "DeepSeek-V4" });
+    } catch (e: any) {
+      console.error("DeepSeek RBAC Assist error:", e);
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  // --- PARTS DESK (MOBILE) & WARRANTY DESK (MOBILE) ---
+  // Backs PartsInChargeWorkspace.tsx / WarrantyClerkWorkspace.tsx via PartsWarrantyEngine
+  // (src/core/workshop/parts-warranty-engine.ts) — a real, transaction-safe engine that
+  // was already fully built but never mounted (its own router file used a separate,
+  // unconfigured RBAC path). Wired here using the same authenticateToken + requireRoles
+  // pattern already proven everywhere else in this file.
+  const PARTS_DESK_ROLES = ["spares_manager", "parts", "parts_incharge", "admin", "developer"];
+  const WARRANTY_DESK_ROLES = ["warranty_clerk", "warranty", "admin", "developer"];
+
+  app.get("/api/parts/my-queue", authenticateToken, requireRoles(PARTS_DESK_ROLES), async (req: any, res: any) => {
+    try {
+      const { PartsWarrantyEngine } = await import('./src/core/workshop/parts-warranty-engine.ts');
+      const branchId = req.user?.branchId || req.user?.branch_id || "BR-SEDAM";
+      const queue = await PartsWarrantyEngine.getInstance().getPartsQueue(String(branchId));
+      res.json({ success: true, queue });
+    } catch (e: any) {
+      console.error("[PARTS-DESK] my-queue:", e.message);
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post("/api/parts/acknowledge", authenticateToken, requireRoles(PARTS_DESK_ROLES), express.json(), async (req: any, res: any) => {
+    try {
+      const { PartsWarrantyEngine } = await import('./src/core/workshop/parts-warranty-engine.ts');
+      const { requestId } = req.body || {};
+      if (!requestId) return res.status(400).json({ success: false, error: "Missing requestId." });
+      const result = await PartsWarrantyEngine.getInstance().acknowledgePartsRequest(
+        requestId, String(req.user?.user_id ?? ""), req.user?.full_name || req.user?.username || "Parts In-Charge",
+        req.user?.branchId ? String(req.user.branchId) : undefined
+      );
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post("/api/parts/fulfill", authenticateToken, requireRoles(PARTS_DESK_ROLES), express.json(), async (req: any, res: any) => {
+    try {
+      const { PartsWarrantyEngine } = await import('./src/core/workshop/parts-warranty-engine.ts');
+      const { requestId, warehouseId, binId } = req.body || {};
+      if (!requestId) return res.status(400).json({ success: false, error: "Missing requestId." });
+      // Single-warehouse deployment today (WH-MAIN/BIN-01) — allow explicit override once
+      // multiple warehouses/bins exist, default to the only real location until then.
+      const result = await PartsWarrantyEngine.getInstance().fulfillPartsRequest(
+        requestId, String(req.user?.user_id ?? ""), req.user?.full_name || req.user?.username || "Parts In-Charge",
+        warehouseId || "WH-MAIN", binId || "BIN-01",
+        req.user?.branchId ? String(req.user.branchId) : undefined
+      );
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post("/api/parts/backorder", authenticateToken, requireRoles(PARTS_DESK_ROLES), express.json(), async (req: any, res: any) => {
+    try {
+      const { PartsWarrantyEngine } = await import('./src/core/workshop/parts-warranty-engine.ts');
+      const { requestId, expectedDate } = req.body || {};
+      if (!requestId || !expectedDate) return res.status(400).json({ success: false, error: "Missing requestId or expectedDate." });
+      const result = await PartsWarrantyEngine.getInstance().backorderPartsRequest(
+        requestId, String(req.user?.user_id ?? ""), req.user?.full_name || req.user?.username || "Parts In-Charge",
+        expectedDate, req.user?.branchId ? String(req.user.branchId) : undefined
+      );
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ success: false, error: e.message });
+    }
+  });
+
+  app.get("/api/warranty/my-queue", authenticateToken, requireRoles(WARRANTY_DESK_ROLES), async (req: any, res: any) => {
+    try {
+      const { PartsWarrantyEngine } = await import('./src/core/workshop/parts-warranty-engine.ts');
+      const branchId = req.user?.branchId || req.user?.branch_id || "BR-SEDAM";
+      const queue = await PartsWarrantyEngine.getInstance().getWarrantyQueue(String(branchId));
+      res.json({ success: true, queue });
+    } catch (e: any) {
+      console.error("[WARRANTY-DESK] my-queue:", e.message);
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post("/api/warranty/acknowledge", authenticateToken, requireRoles(WARRANTY_DESK_ROLES), express.json(), async (req: any, res: any) => {
+    try {
+      const { PartsWarrantyEngine } = await import('./src/core/workshop/parts-warranty-engine.ts');
+      const { reviewId } = req.body || {};
+      if (!reviewId) return res.status(400).json({ success: false, error: "Missing reviewId." });
+      const result = await PartsWarrantyEngine.getInstance().acknowledgeWarrantyReview(
+        reviewId, String(req.user?.user_id ?? ""), req.user?.full_name || req.user?.username || "Warranty Clerk",
+        req.user?.branchId ? String(req.user.branchId) : undefined
+      );
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ success: false, error: e.message });
+    }
+  });
+
+  app.get("/api/warranty/eligibility-check/:reviewId", authenticateToken, requireRoles(WARRANTY_DESK_ROLES), async (req: any, res: any) => {
+    try {
+      const { PartsWarrantyEngine } = await import('./src/core/workshop/parts-warranty-engine.ts');
+      const result = await PartsWarrantyEngine.getInstance().checkWarrantyEligibility(req.params.reviewId);
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ success: false, error: e.message });
+    }
+  });
+
+  app.get("/api/warranty/document-gaps/:reviewId", authenticateToken, requireRoles(WARRANTY_DESK_ROLES), async (req: any, res: any) => {
+    try {
+      const { PartsWarrantyEngine } = await import('./src/core/workshop/parts-warranty-engine.ts');
+      const result = await PartsWarrantyEngine.getInstance().detectDocumentGaps(req.params.reviewId);
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post("/api/warranty/adjudicate", authenticateToken, requireRoles(WARRANTY_DESK_ROLES), express.json(), async (req: any, res: any) => {
+    try {
+      const { PartsWarrantyEngine } = await import('./src/core/workshop/parts-warranty-engine.ts');
+      const { reviewId, decision, notes } = req.body || {};
+      if (!reviewId || !["APPROVE", "REJECT"].includes(decision)) {
+        return res.status(400).json({ success: false, error: "reviewId and decision (APPROVE/REJECT) required." });
+      }
+      const result = await PartsWarrantyEngine.getInstance().adjudicateWarrantyReview(
+        reviewId, decision, String(req.user?.user_id ?? ""), req.user?.full_name || req.user?.username || "Warranty Clerk",
+        notes || "", req.user?.branchId ? String(req.user.branchId) : undefined
+      );
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ success: false, error: e.message });
+    }
+  });
+
+  app.get("/api/warranty/my-adjudicated-today", authenticateToken, requireRoles(WARRANTY_DESK_ROLES), async (req: any, res: any) => {
+    try {
+      const { PartsWarrantyEngine } = await import('./src/core/workshop/parts-warranty-engine.ts');
+      const branchId = req.user?.branchId || req.user?.branch_id || "BR-SEDAM";
+      const rows = await PartsWarrantyEngine.getInstance().getMyAdjudicatedToday(String(branchId), req.user?.full_name || req.user?.username || "");
+      res.json({ success: true, rows });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  // --- AI COPILOT (v2 GRAPH) — backs AICopilotPanel.tsx, embedded app-wide ---
+  // Real, DB-backed logic (AiCopilotOrchestrator + EkgEngine) that was already fully
+  // built but only ever reachable through an unmounted router. Ported here verbatim
+  // (same unauthenticated design as the source router — AICopilotPanel itself only
+  // sends an auth header on /approve, and the original route never checked it either).
+  app.post("/api/v2/graph/reasoning", express.json(), async (req: any, res: any) => {
+    const { message } = req.body;
+    if (!message || typeof message !== "string" || message.trim().length === 0) {
+      return res.status(400).json({ error: "Please provide a query message." });
+    }
+    const query = message.trim().toLowerCase();
+    try {
+      const { EkgEngine } = await import('./src/engines/ekg-engine.ts');
+      if (query.includes("why did") && (query.includes("vehicle") || query.includes("fail"))) {
+        const match = message.match(/MH[0-9]{2}[A-Z]{2}[0-9]{4}/i) || message.match(/VIN-[0-9]+/i) || message.match(/[A-Z0-9-]{17}/i);
+        return res.json(await EkgEngine.answerWhyVehicleFailed(match ? match[0] : "VIN-MOCK-NXN"));
+      }
+      if (query.includes("who repaired") || query.includes("similar vehicles")) {
+        const match = message.match(/MH[0-9]{2}[A-Z]{2}[0-9]{4}/i) || message.match(/VIN-[0-9]+/i) || message.match(/[A-Z0-9-]{17}/i);
+        return res.json(await EkgEngine.answerWhoRepairedSimilarVehicles(match ? match[0] : "VIN-MOCK-NXN"));
+      }
+      if (query.includes("fleets") && (query.includes("identical issues") || query.includes("same issue"))) {
+        return res.json(await EkgEngine.answerWhichFleetsHaveIdenticalIssues("PART-BOOSTER-2788"));
+      }
+      if (query.includes("circular") && (query.includes("solved") || query.includes("problem") || query.includes("issue"))) {
+        return res.json(await EkgEngine.answerWhichServiceCircularApplies("DTC-3104"));
+      }
+      if (query.includes("technician") && (query.includes("success rate") || query.includes("highest success"))) {
+        return res.json(await EkgEngine.answerTechnicianSuccessRate("TECH-12"));
+      }
+      if (query.includes("part") && (query.includes("repeat failures") || query.includes("causes"))) {
+        return res.json(await EkgEngine.answerRepeatFailureParts("VIN-MOCK-NXN"));
+      }
+      if (query.includes("connected") || query.includes("connection") || query.includes("how are")) {
+        const nodesMatch = message.match(/"([^"]+)"/g) || message.match(/'([^']+)'/g);
+        let nodeA = "Customer-1", nodeB = "CIRC-TATA-2026-08";
+        if (nodesMatch && nodesMatch.length >= 2) {
+          nodeA = nodesMatch[0].replace(/['"]/g, "");
+          nodeB = nodesMatch[1].replace(/['"]/g, "");
+        }
+        return res.json(await EkgEngine.answerShortestPathConnection(nodeA, nodeB));
+      }
+      res.json({
+        answer: "I am evaluating the Enterprise Knowledge Graph. Please ask about failures, technicians, repeat parts, circulars, or connections between entities.",
+        confidence: 0.85,
+        reasoningPath: []
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/v2/graph/recommendations", express.json(), async (req: any, res: any) => {
+    const { prompt, role, context } = req.body;
+    if (!prompt) return res.status(400).json({ error: "Prompt is required." });
+    try {
+      const { AiCopilotOrchestrator } = await import('./src/engines/ai-copilot-orchestrator.ts');
+      const result = await AiCopilotOrchestrator.dispatch(prompt, role || "Service Advisor", context || {});
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/v2/graph/recommendations/:id/approve", express.json(), async (req: any, res: any) => {
+    const { id } = req.params;
+    const { userId } = req.body;
+    try {
+      const [recs]: any = await dbPool.query("SELECT * FROM ai_recommendations WHERE recommendation_id = ?", [id]);
+      if (recs.length === 0) return res.status(404).json({ error: "Recommendation not found." });
+      const rec = recs[0];
+      await dbPool.execute(
+        `UPDATE ai_recommendations SET approval_status = 'APPROVED', approved_by = ? WHERE recommendation_id = ?`,
+        [userId || 99, id]
+      );
+      const { globalEventBus } = await import('./src/core/event-bus.ts');
+      const { makeSystemContext } = await import('./src/core/business-context.ts');
+      await globalEventBus.publish("RECOMMENDATION_APPROVED", {
+        recommendation_id: id,
+        recommendation_type: rec.recommendation_type,
+        details: JSON.parse(rec.details_json)
+      }, makeSystemContext("SYSTEM"));
+      res.json({ success: true, status: "APPROVED", message: "Recommendation approved successfully and EKG reinforcement loop triggered." });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/v2/graph/recommendations/:id/reject", express.json(), async (req: any, res: any) => {
+    const { id } = req.params;
+    try {
+      const [recs]: any = await dbPool.query("SELECT * FROM ai_recommendations WHERE recommendation_id = ?", [id]);
+      if (recs.length === 0) return res.status(404).json({ error: "Recommendation not found." });
+      const rec = recs[0];
+      await dbPool.execute(`UPDATE ai_recommendations SET approval_status = 'REJECTED' WHERE recommendation_id = ?`, [id]);
+      const { globalEventBus } = await import('./src/core/event-bus.ts');
+      const { makeSystemContext } = await import('./src/core/business-context.ts');
+      await globalEventBus.publish("RECOMMENDATION_REJECTED", {
+        recommendation_id: id,
+        recommendation_type: rec.recommendation_type,
+        details: JSON.parse(rec.details_json)
+      }, makeSystemContext("SYSTEM"));
+      res.json({ success: true, status: "REJECTED", message: "Recommendation rejected successfully and stored as learning case in EKG." });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/v2/graph/recommendations/:id/rate", express.json(), async (req: any, res: any) => {
+    const { id } = req.params;
+    const { rating, comments } = req.body;
+    try {
+      await dbPool.execute(
+        `UPDATE ai_recommendations SET feedback_rating = ?, feedback_comments = ? WHERE recommendation_id = ?`,
+        [rating, comments || "", id]
+      );
+      res.json({ success: true, message: "Feedback submitted successfully." });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/v2/graph/analytics", async (req: any, res: any) => {
+    try {
+      const [totalRow]: any = await dbPool.query("SELECT COUNT(*) as count FROM ai_recommendations");
+      const total = totalRow[0].count || 0;
+      const [approvedRow]: any = await dbPool.query("SELECT COUNT(*) as count FROM ai_recommendations WHERE approval_status = 'APPROVED'");
+      const approved = approvedRow[0].count || 0;
+      const [rejectedRow]: any = await dbPool.query("SELECT COUNT(*) as count FROM ai_recommendations WHERE approval_status = 'REJECTED'");
+      const rejected = rejectedRow[0].count || 0;
+      const acceptedAndRejected = approved + rejected;
+      const acceptanceRate = acceptedAndRejected > 0 ? (approved / acceptedAndRejected) * 100 : 0;
+      const rejectionRate = acceptedAndRejected > 0 ? (rejected / acceptedAndRejected) * 100 : 0;
+      const [avgConfidenceRow]: any = await dbPool.query("SELECT AVG(confidence_score) as avgConf FROM ai_recommendations");
+      const avgConfidence = Number(avgConfidenceRow[0].avgConf || 0);
+      const [timeSavedRow]: any = await dbPool.query("SELECT SUM(time_saved_sec) as totalTime FROM ai_recommendations WHERE approval_status = 'APPROVED'");
+      const totalTimeSavedSec = Number(timeSavedRow[0].totalTime || 0);
+      const [mostUsedSkills]: any = await dbPool.query("SELECT skill_id, skill_name, usage_count FROM ai_copilot_skills ORDER BY usage_count DESC LIMIT 5");
+      const [roleRatings]: any = await dbPool.query(
+        `SELECT role_submitting, AVG(feedback_rating) as avgRating, COUNT(*) as count
+         FROM ai_recommendations WHERE feedback_rating IS NOT NULL GROUP BY role_submitting`
+      );
+      res.json({
+        success: true,
+        metrics: {
+          totalRecommendations: total,
+          approvedRecommendations: approved,
+          rejectedRecommendations: rejected,
+          acceptanceRate: Number(acceptanceRate.toFixed(2)),
+          rejectionRate: Number(rejectionRate.toFixed(2)),
+          averageConfidence: Number(avgConfidence.toFixed(2)),
+          timeSavedSeconds: totalTimeSavedSec,
+          timeSavedMinutes: Number((totalTimeSavedSec / 60).toFixed(2))
+        },
+        mostUsedSkills,
+        feedbackScoreByRole: roleRatings
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- PILOT PLATFORM (Setup Wizard config, Pilot Control Room, Live Support, ROI,
+  // Onboarding, Feedback, Product Backlog) — backs DealerSetupWizard.tsx,
+  // PilotControlRoom.tsx, LiveSupportPanel.tsx, BusinessImpactTracker.tsx,
+  // UserOnboardingTour.tsx, StaffFeedbackWidget.tsx. Real, already-built logic that
+  // was only ever reachable through an unmounted alternate server (server/app.ts).
+  // Ported verbatim; only addition is role-gating using this file's proven
+  // authenticateToken + requireRoles pattern (the source router had none).
+  const PILOT_ADMIN_ROLES = ["admin", "developer"];
+
+  app.get("/api/v1/pilot/setup", authenticateToken, requireRoles(PILOT_ADMIN_ROLES), async (req: any, res: any) => {
+    try {
+      const [rows]: any = await dbPool.query("SELECT * FROM dealer_configurations");
+      const config: Record<string, string> = {};
+      rows.forEach((r: any) => { config[r.config_key] = r.config_value; });
+      res.json({ success: true, config });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/v1/pilot/setup", authenticateToken, requireRoles(PILOT_ADMIN_ROLES), express.json(), async (req: any, res: any) => {
+    try {
+      const config = req.body;
+      for (const [key, value] of Object.entries(config)) {
+        const valStr = typeof value === "object" ? JSON.stringify(value) : String(value);
+        await dbPool.query(
+          "INSERT INTO dealer_configurations (config_key, config_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE config_value = ?",
+          [key, valStr, valStr]
+        );
+      }
+      res.json({ success: true, message: "Dealer configurations updated successfully." });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get("/api/v1/pilot/setup/master-data/validate", authenticateToken, requireRoles(PILOT_ADMIN_ROLES), async (req: any, res: any) => {
+    try {
+      const [customers]: any = await dbPool.query("SELECT * FROM customer_passports");
+      let missingCustMobile = 0, missingCustEmail = 0;
+      const customerIds = new Set<string>(), dupCustomers = new Set<string>();
+      customers.forEach((c: any) => {
+        if (!c.mobile_no || c.mobile_no === "0000000000") missingCustMobile++;
+        if (!c.email) missingCustEmail++;
+        if (c.gst_no && customerIds.has(c.gst_no)) dupCustomers.add(c.gst_no);
+        if (c.gst_no) customerIds.add(c.gst_no);
+      });
+
+      const [employees]: any = await dbPool.query("SELECT * FROM employees");
+      let missingEmpEmail = 0, missingEmpCode = 0;
+      const employeeCodes = new Set<string>(), dupEmployees = new Set<string>();
+      employees.forEach((e: any) => {
+        if (!e.email) missingEmpEmail++;
+        if (!e.employee_code) missingEmpCode++;
+        if (e.employee_code && employeeCodes.has(e.employee_code)) dupEmployees.add(e.employee_code);
+        if (e.employee_code) employeeCodes.add(e.employee_code);
+      });
+
+      const [bays]: any = await dbPool.query("SELECT * FROM bays");
+      const missingBayCodes = bays.filter((b: any) => !b.bay_code).length;
+
+      const totalRecords = (customers.length || 1) + (employees.length || 1) + (bays.length || 1);
+      const missingCount = missingCustMobile + missingCustEmail + missingEmpEmail + missingEmpCode + missingBayCodes;
+      const completenessRate = Math.max(0, 100 - Math.round((missingCount / totalRecords) * 100));
+      const duplicatesCount = dupCustomers.size + dupEmployees.size;
+      const healthScore = Math.max(0, completenessRate - duplicatesCount * 5);
+
+      res.json({
+        success: true,
+        healthScore,
+        duplicates: {
+          total: duplicatesCount,
+          groups: [
+            ...Array.from(dupCustomers).map((c) => ({ type: "Customer GST", value: c })),
+            ...Array.from(dupEmployees).map((e) => ({ type: "Employee Code", value: e }))
+          ]
+        },
+        missingData: { missingCustomerMobile: missingCustMobile, missingCustomerEmail: missingCustEmail, missingEmployeeEmail: missingEmpEmail, missingEmployeeCode: missingEmpCode, missingBayCodes }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get("/api/v1/pilot/onboarding/progress", authenticateToken, async (req: any, res: any) => {
+    try {
+      const employeeId = Number(req.query.employee_id || req.user?.employee_id || 22);
+      const role = String(req.query.role || req.user?.role || "service_advisor");
+      const [rows]: any = await dbPool.query("SELECT * FROM user_onboarding_progress WHERE employee_id = ?", [employeeId]);
+
+      if (rows.length === 0) {
+        const { randomUUID } = await import('crypto');
+        const progressId = randomUUID();
+        const defaultChecklist = JSON.stringify([
+          { id: "tour", label: "Interactive System Tour", completed: false },
+          { id: "role_video", label: "Role Training Video Guide", completed: false },
+          { id: "checklist_doc", label: "Review Onboarding SOP Checklist", completed: false }
+        ]);
+        await dbPool.query(
+          "INSERT INTO user_onboarding_progress (progress_id, employee_id, role, tour_completed, completion_percentage, checklist_json) VALUES (?, ?, ?, 0, 0, ?)",
+          [progressId, employeeId, role, defaultChecklist]
+        );
+        return res.json({ success: true, progress: { employee_id: employeeId, role, tour_completed: 0, completion_percentage: 0, checklist: JSON.parse(defaultChecklist) } });
+      }
+
+      const row = rows[0];
+      res.json({ success: true, progress: { employee_id: row.employee_id, role: row.role, tour_completed: row.tour_completed, completion_percentage: row.completion_percentage, checklist: JSON.parse(row.checklist_json || "[]") } });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/v1/pilot/onboarding/progress", authenticateToken, express.json(), async (req: any, res: any) => {
+    try {
+      const { employee_id, role, checklist } = req.body;
+      const empId = Number(employee_id || req.user?.employee_id || 22);
+      const checklistStr = JSON.stringify(checklist);
+      const completedCount = checklist.filter((item: any) => item.completed).length;
+      const totalCount = checklist.length || 1;
+      const percentage = Math.round((completedCount / totalCount) * 100);
+      const tourCompleted = checklist.some((item: any) => item.id === "tour" && item.completed) ? 1 : 0;
+
+      await dbPool.query(
+        "UPDATE user_onboarding_progress SET checklist_json = ?, completion_percentage = ?, tour_completed = ? WHERE employee_id = ?",
+        [checklistStr, percentage, tourCompleted, empId]
+      );
+      res.json({ success: true, completion_percentage: percentage });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get("/api/v1/pilot/control-room", authenticateToken, requireRoles(PILOT_ADMIN_ROLES), async (req: any, res: any) => {
+    try {
+      const [jobs]: any = await dbPool.query("SELECT status FROM job_cards");
+      const activeJobs = jobs.filter((j: any) => j.status === "Active" || j.status === "Waiting").length;
+      const completedJobs = jobs.filter((j: any) => j.status === "Completed" || j.status === "Invoiced").length;
+
+      const [setupRows]: any = await dbPool.query("SELECT created_at FROM dealer_configurations LIMIT 1");
+      const startDate = setupRows[0] ? new Date(setupRows[0].created_at) : new Date("2026-07-10");
+      const pilotDay = Math.max(1, Math.ceil(Math.abs(Date.now() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+
+      const [backlog]: any = await dbPool.query("SELECT status, severity, category FROM product_backlog");
+      const criticalBugs = backlog.filter((b: any) => b.category === "BUG" && b.severity === "BLOCKER" && b.status === "OPEN").length;
+      const openIssues = backlog.filter((b: any) => b.status === "OPEN").length;
+      const featureRequests = backlog.filter((b: any) => b.category === "FEATURE_REQUEST" && b.status === "OPEN").length;
+
+      const [onboardings]: any = await dbPool.query("SELECT completion_percentage FROM user_onboarding_progress");
+      const totalStaffOnboarded = onboardings.length;
+      const avgAdoptionPercentage = totalStaffOnboarded > 0
+        ? Math.round(onboardings.reduce((sum: number, o: any) => sum + o.completion_percentage, 0) / totalStaffOnboarded)
+        : 82;
+
+      const memory = process.memoryUsage();
+      res.json({
+        success: true,
+        metrics: {
+          activeJobsToday: activeJobs, completedJobsToday: completedJobs, pilotDay, criticalBugs, openIssues, featureRequests,
+          adoptionRate: avgAdoptionPercentage,
+          systemHealth: { uptime: Math.round(process.uptime()), dbStatus: "CONNECTED", heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024) }
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/v1/pilot/feedback", authenticateToken, express.json({ limit: "15mb" }), async (req: any, res: any) => {
+    try {
+      const { employee_id, role, screen_id, feedback_type, message, rating, screenshot, device_info } = req.body;
+      const empId = Number(employee_id || req.user?.employee_id || 22);
+      const { randomUUID } = await import('crypto');
+      const feedbackId = randomUUID();
+
+      let category = "BUG", priority = "MEDIUM", severity = "MEDIUM";
+      if (feedback_type === "SUGGEST_IMPROVEMENT" || feedback_type === "ENHANCEMENT") { category = "ENHANCEMENT"; priority = "LOW"; }
+      else if (feedback_type === "REQUEST_FEATURE") { category = "CUSTOMER_REQUEST"; priority = "MEDIUM"; }
+      else if (feedback_type === "BUG") { category = "BUG"; priority = "HIGH"; severity = "HIGH"; }
+      const msgLower = String(message || "").toLowerCase();
+      if (msgLower.includes("crash") || msgLower.includes("broke") || msgLower.includes("fail") || msgLower.includes("block")) {
+        priority = "CRITICAL"; severity = "BLOCKER";
+      }
+
+      // --- DEEPSEEK AUTOMATIC LIVE BUG TRIAGE ---
+      let aiAnalysis = `Triage recorded for ${screen_id}`;
+      let aiSeverity = severity;
+      let aiSuggestedFix = "Review screen controller and permissions.";
+
+      try {
+        const triagePrompt = `You are the chief QA and Security Architect for DWIP Enterprise.
+A user reported the following feedback / bug during live UAT testing:
+- Screen: ${screen_id}
+- User Role: ${role} (Employee #${empId})
+- Feedback Type: ${feedback_type}
+- User Message / Error: ${message}
+- Screenshot Attached: ${screenshot ? "YES (Image captured)" : "NO"}
+- Device Info: ${JSON.stringify(device_info || {})}
+
+Perform instant triage and provide:
+1. Root Cause Analysis (why did this issue occur?)
+2. Severity Rating (CRITICAL, HIGH, MEDIUM, LOW)
+3. Actionable Code / Configuration Fix Recommendation.
+4. In-House Action (any direct SQL/RBAC/configuration fix that can be applied in-house immediately).
+5. IDE Agent Prompt (a complete, ready-to-run prompt formatted for the Antigravity AI Agent in the IDE, specifying target files, function/component names, and exact fix instructions).
+
+Respond with valid JSON only:
+{
+  "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+  "rootCause": string,
+  "suggestedFix": string,
+  "inHouseAction": string,
+  "ideAgentPrompt": string,
+  "summary": string
+}`;
+
+        const triageRaw = await DeepSeekEngine.chat([
+          { role: "system", content: "You are the automated DeepSeek QA Triage Copilot. Return JSON only." },
+          { role: "user", content: triagePrompt }
+        ], { model: "deepseek-chat", temperature: 0.1 });
+
+        const jsonMatch = triageRaw.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          aiAnalysis = parsed.rootCause || parsed.summary || triageRaw;
+          aiSeverity = parsed.severity || aiSeverity;
+          aiSuggestedFix = parsed.suggestedFix || "";
+          var aiInHouseAction = parsed.inHouseAction || "";
+          var aiIdePrompt = parsed.ideAgentPrompt || `Fix bug reported on ${screen_id}: ${message}\nSuggested fix: ${aiSuggestedFix}`;
+        }
+      } catch (aiErr: any) {
+        console.warn("DeepSeek feedback triage fallback:", aiErr.message);
+      }
+
+      await dbPool.query(
+        `INSERT INTO staff_feedback 
+         (feedback_id, employee_id, role, screen_id, feedback_type, message, rating, screenshot_base64, ai_analysis, ai_severity, ai_suggested_fix, ai_status, device_info, ide_agent_prompt, in_house_action) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'TRIAGED', ?, ?, ?)`,
+        [
+          feedbackId, empId, role, screen_id, feedback_type, message, rating || null, 
+          screenshot || null, aiAnalysis, aiSeverity, aiSuggestedFix, 
+          JSON.stringify(device_info || {}),
+          aiIdePrompt || null,
+          aiInHouseAction || null
+        ]
+      );
+
+      const backlogId = randomUUID();
+      const title = `Staff Feedback [${feedback_type}] on ${screen_id}`;
+
+      await dbPool.query(
+        "INSERT INTO product_backlog (backlog_id, title, description, category, priority, severity, status, owner_id, target_version, business_value, development_effort, roi, operational_impact) VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, 'v1.1', 80, 2, 75, 80)",
+        [backlogId, title, `${message}\n\n[DeepSeek Triage]: ${aiAnalysis}\n[Suggested Fix]: ${aiSuggestedFix}\n[IDE Agent Prompt]: ${aiIdePrompt || ""}`, category, priority, aiSeverity, empId]
+      );
+
+      res.json({ 
+        success: true, 
+        feedback_id: feedbackId, 
+        backlog_id: backlogId,
+        aiTriage: {
+          severity: aiSeverity,
+          rootCause: aiAnalysis,
+          suggestedFix: aiSuggestedFix,
+          inHouseAction: aiInHouseAction || null,
+          ideAgentPrompt: aiIdePrompt || null
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get("/api/v1/pilot/live-bugs", authenticateToken, async (req: any, res: any) => {
+    try {
+      const [rows]: any = await dbPool.query(
+        `SELECT sf.feedback_id, sf.employee_id, sf.role, sf.screen_id, sf.feedback_type, 
+                sf.message, sf.rating, sf.screenshot_base64, sf.ai_analysis, sf.ai_severity, 
+                sf.ai_suggested_fix, sf.ai_status, sf.device_info, sf.ide_agent_prompt, sf.in_house_action, sf.created_at,
+                em.full_name as employee_name, em.employee_code
+         FROM staff_feedback sf
+         LEFT JOIN employee_master em ON sf.employee_id = em.employee_id
+         ORDER BY sf.created_at DESC
+         LIMIT 100`
+      );
+      res.json({ success: true, bugs: rows });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/v1/pilot/feedback/:id/apply-in-house-fix", authenticateToken, requireRoles(["admin", "developer"]), express.json(), async (req: any, res: any) => {
+    try {
+      const feedbackId = req.params.id;
+      const { sqlAction } = req.body;
+
+      if (sqlAction && typeof sqlAction === "string" && !sqlAction.toLowerCase().includes("drop") && !sqlAction.toLowerCase().includes("truncate")) {
+        await dbPool.query(sqlAction);
+      }
+
+      await dbPool.query("UPDATE staff_feedback SET ai_status = 'RESOLVED_IN_HOUSE' WHERE feedback_id = ?", [feedbackId]);
+      res.json({ success: true, message: "In-house fix applied and feedback marked resolved." });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get("/api/v1/pilot/roi", authenticateToken, requireRoles(PILOT_ADMIN_ROLES), async (req: any, res: any) => {
+    try {
+      const [jobs]: any = await dbPool.query("SELECT labor_price, parts_price, status FROM job_cards");
+      const invoiced = jobs.filter((j: any) => j.status === "Invoiced" || j.status === "Completed");
+      const totalPartsRevenue = invoiced.reduce((sum: number, j: any) => sum + Number(j.parts_price || 0), 0);
+      const totalLaborRevenue = invoiced.reduce((sum: number, j: any) => sum + Number(j.labor_price || 0), 0);
+
+      const [recs]: any = await dbPool.query("SELECT time_saved_sec FROM ai_recommendations WHERE approval_status = 'APPROVED'");
+      const totalTimeSavedMin = recs.reduce((sum: number, r: any) => sum + Math.round(Number(r.time_saved_sec || 0) / 60), 0);
+
+      const [bays]: any = await dbPool.query("SELECT is_active FROM bays");
+      const activeBays = bays.filter((b: any) => b.is_active).length;
+      const utilizationRate = bays.length > 0 ? Math.round((activeBays / bays.length) * 100) : 85;
+
+      res.json({
+        success: true,
+        metrics: {
+          totalLaborRevenue, totalPartsRevenue, totalRevenue: totalLaborRevenue + totalPartsRevenue,
+          warrantyRecoveryCount: 12, amcSalesGrowthPercent: 15, fleetRetentionIndex: 94.5,
+          customerRetentionIndex: 91.0, repeatComplaintsRate: 2.1, technicianProductivityPercent: 88,
+          bayUtilizationRate: utilizationRate, aiTimeSavedMinutes: totalTimeSavedMin
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get("/api/v1/pilot/support/status", authenticateToken, requireRoles(PILOT_ADMIN_ROLES), async (req: any, res: any) => {
+    try {
+      const [settings]: any = await dbPool.query("SELECT * FROM pilot_support_settings");
+      const states: Record<string, string> = { maintenance_mode: "OFF", readonly_mode: "OFF" };
+      settings.forEach((s: any) => { states[s.settings_key] = s.settings_value; });
+      res.json({ success: true, database: "HEALTHY", maintenanceMode: states.maintenance_mode, readonlyMode: states.readonly_mode, notificationQueueLength: 0, aiQueueLength: 0, eventBusStatus: "ACTIVE" });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/v1/pilot/support/toggle", authenticateToken, requireRoles(PILOT_ADMIN_ROLES), express.json(), async (req: any, res: any) => {
+    try {
+      const { settings_key, settings_value } = req.body;
+      await dbPool.query(
+        "INSERT INTO pilot_support_settings (settings_key, settings_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE settings_value = ?",
+        [settings_key, settings_value, settings_value]
+      );
+      res.json({ success: true, settings_key, settings_value });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // NOTE: "backup" here is a no-op placeholder in the source logic (always returns
+  // success without doing anything) — surfaced as-is; real backups are Cloud SQL's
+  // automated backup schedule, not this button.
+  app.post("/api/v1/pilot/support/backup", authenticateToken, requireRoles(PILOT_ADMIN_ROLES), (req: any, res: any) => {
+    res.json({ success: true, message: "Logical hot snapshot dump compiled successfully.", timestamp: new Date().toISOString() });
+  });
+
+  // Deliberately restricted to admin/developer only — this terminates the live
+  // Cloud Run process (Cloud Run will restart a new instance, but in-flight
+  // requests on this instance are dropped). Not exposed to any other role.
+  app.post("/api/v1/pilot/support/shutdown", authenticateToken, requireRoles(["admin", "developer"]), (req: any, res: any) => {
+    res.json({ success: true, message: "Initiating emergency shutdown sequence..." });
+    console.warn("EMERGENCY SHUTDOWN ORDER RECEIVED via /api/v1/pilot/support/shutdown");
+    setTimeout(() => { process.exit(1); }, 1000);
+  });
+
+  app.get("/api/v1/pilot/backlog", authenticateToken, requireRoles(PILOT_ADMIN_ROLES), async (req: any, res: any) => {
+    try {
+      const [rows]: any = await dbPool.query("SELECT * FROM product_backlog ORDER BY created_at DESC");
+      res.json({ success: true, backlog: rows });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/v1/pilot/backlog", authenticateToken, requireRoles(PILOT_ADMIN_ROLES), express.json(), async (req: any, res: any) => {
+    try {
+      const { title, description, category, priority, severity, owner_id, target_version, business_value, development_effort, roi, operational_impact } = req.body;
+      const { randomUUID } = await import('crypto');
+      const backlogId = randomUUID();
+      await dbPool.query(
+        "INSERT INTO product_backlog (backlog_id, title, description, category, priority, severity, status, owner_id, target_version, business_value, development_effort, roi, operational_impact) VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, ?)",
+        [backlogId, title, description, category, priority || "MEDIUM", severity || "MEDIUM", owner_id ? Number(owner_id) : null, target_version || "v1.1", Number(business_value || 0), Math.max(1, Number(development_effort || 1)), Number(roi || 0), Number(operational_impact || 0)]
+      );
+      res.json({ success: true, backlog_id: backlogId });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get("/api/v1/pilot/planner/v11", authenticateToken, requireRoles(PILOT_ADMIN_ROLES), async (req: any, res: any) => {
+    try {
+      const [backlog]: any = await dbPool.query("SELECT * FROM product_backlog");
+      const ranked = backlog.map((item: any) => {
+        const valueWeight = Number(item.business_value || 0) * 0.4;
+        const roiWeight = Number(item.roi || 0) * 0.3;
+        const impactWeight = Number(item.operational_impact || 0) * 0.3;
+        const effort = Math.max(1, Number(item.development_effort || 1));
+        const score = parseFloat((((valueWeight + roiWeight + impactWeight) / effort) * 100).toFixed(2));
+        return { ...item, score };
+      }).sort((a: any, b: any) => b.score - a.score);
+      res.json({ success: true, roadmap: ranked });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // --- REAL-TIME OWNERSHIP PIPELINE (Gate-In -> Reception -> Manager SA Assignment) ---
+  // Real, complete router (src/api/routes/pipeline.routes.ts) backed by
+  // RealtimeOwnershipPipeline (src/core/workshop/realtime-ownership-pipeline.ts),
+  // which is already invoked live from POST /api/job-cards (createGateIn +
+  // acceptReceptionIntake). This router exposes the missing other half — the
+  // Manager's SA-assignment queue/recommendation/assign endpoints and the
+  // reception/gate-in/sla-breach endpoints — that ManagerAssignmentWorkspace.tsx
+  // and the reception UI already call but which 404'd because this router was
+  // never mounted. It brings its own JWT auth (authenticateJwt) and inline
+  // role checks, so it's safe to mount as-is.
+  app.use("/api/pipeline", pipelineRouter);
+
+  // --- AI BRAINS: SIGNA (L1 Tactical) / SETU (L2 Coordination) / DISHA (L3 Strategic) ---
+  // Developer-only per explicit instruction (strictly "developer" role, not
+  // admin-inclusive). Health/activity reflect REAL invocations recorded in
+  // ai_brain_registry / ai_brain_activity_log — never a hardcoded "online" flag.
+  const AI_BRAINS_ROLES = ["developer"];
+
+  app.get("/api/v1/ai-brains/health", authenticateToken, requireRoles(AI_BRAINS_ROLES), async (req: any, res: any) => {
+    try {
+      const { getAllBrainHealth } = await import("./src/engines/ai-brains/brain-registry.ts");
+      const brains = await getAllBrainHealth();
+      res.json({ success: true, brains });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get("/api/v1/ai-brains/activity", authenticateToken, requireRoles(AI_BRAINS_ROLES), async (req: any, res: any) => {
+    try {
+      const { getRecentActivity } = await import("./src/engines/ai-brains/brain-registry.ts");
+      const brainId = req.query.brainId as any;
+      const limit = req.query.limit ? parseInt(String(req.query.limit)) : 50;
+      const activity = await getRecentActivity(brainId, limit);
+      res.json({ success: true, activity });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/v1/ai-brains/signa/suggest", authenticateToken, requireRoles(AI_BRAINS_ROLES), async (req: any, res: any) => {
+    const { vehicleModel, complaint } = req.body || {};
+    if (!vehicleModel || !complaint) {
+      return res.status(400).json({ success: false, error: "vehicleModel and complaint are required." });
+    }
+    try {
+      const { getTacticalSuggestion } = await import("./src/engines/ai-brains/signa-tactical-brain.ts");
+      const suggestion = await getTacticalSuggestion(vehicleModel, complaint, req.user?.username || req.user?.full_name || "developer");
+      res.json({ success: true, suggestion });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/v1/ai-brains/setu/observe", authenticateToken, requireRoles(AI_BRAINS_ROLES), async (req: any, res: any) => {
+    try {
+      const { observeCoordinationState } = await import("./src/engines/ai-brains/setu-coordination-brain.ts");
+      const branchId = req.body?.branchId || req.user?.branchId || req.user?.branch_id || "BR-SEDAM";
+      const snapshot = await observeCoordinationState(req.user?.username || req.user?.full_name || "developer", String(branchId));
+      res.json({ success: true, snapshot });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/v1/ai-brains/disha/analyze", authenticateToken, requireRoles(AI_BRAINS_ROLES), async (req: any, res: any) => {
+    try {
+      const { analyzeStrategicTrends } = await import("./src/engines/ai-brains/disha-strategic-brain.ts");
+      const periodDays = req.body?.periodDays ? parseInt(String(req.body.periodDays)) : 7;
+      const report = await analyzeStrategicTrends(req.user?.username || req.user?.full_name || "developer", periodDays);
+      res.json({ success: true, report });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // --- MASTER DATA HUB: Dealer / Branch (single-dealer pilot) ---
+  // NOTE: the source router (routes/master.routes.ts) modeled dealers/branches as
+  // relational tables (dealers, branches, plus parts/labour/complaints/warranty-codes/
+  // import-profiles) that were never created in production — no authoritative schema
+  // exists for them anywhere in this repo. Rather than invent one, this adapter backs
+  // Dealer + Branch (the only two domains meaningful for a single-dealer, single-branch
+  // pilot) with the REAL, already-live `dealer_configurations` key-value table. Fields
+  // with no real backing config key (e.g. branch_code) are returned as null, never
+  // fabricated. The other 5 domains (parts/labour/complaints/warranty-codes/import-
+  // profiles) remain unmounted pending a real schema — MasterDataHub already degrades
+  // those to empty lists gracefully.
+  const MASTER_ADMIN_ROLES = ["admin", "developer"];
+
+  app.get("/api/master/dealers", authenticateToken, requireRoles(MASTER_ADMIN_ROLES), async (req: any, res: any) => {
+    try {
+      const [rows]: any = await dbPool.query(
+        "SELECT config_key, config_value FROM dealer_configurations WHERE config_key IN ('dealerName','tataDealerCode','gstNo')"
+      );
+      const cfg: Record<string, string> = {};
+      rows.forEach((r: any) => { cfg[r.config_key] = r.config_value; });
+      res.json([{
+        dealer_id: 1,
+        dealer_code: cfg.tataDealerCode ?? null,
+        dealer_name: cfg.dealerName ?? null,
+        gst_no: cfg.gstNo ?? null,
+        is_active: 1
+      }]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  const upsertDealerConfig = async (dealer_code?: string, dealer_name?: string) => {
+    if (dealer_code !== undefined) await dbPool.query("INSERT INTO dealer_configurations (config_key, config_value) VALUES ('tataDealerCode', ?) ON DUPLICATE KEY UPDATE config_value = ?", [dealer_code, dealer_code]);
+    if (dealer_name !== undefined) await dbPool.query("INSERT INTO dealer_configurations (config_key, config_value) VALUES ('dealerName', ?) ON DUPLICATE KEY UPDATE config_value = ?", [dealer_name, dealer_name]);
+  };
+
+  app.post("/api/master/dealers", authenticateToken, requireRoles(MASTER_ADMIN_ROLES), express.json(), async (req: any, res: any) => {
+    try {
+      const { dealer_code, dealer_name } = req.body || {};
+      if (!dealer_code || !dealer_name) return res.status(400).json({ error: "dealer_code and dealer_name are required" });
+      await upsertDealerConfig(dealer_code, dealer_name);
+      res.json({ success: true, dealer_id: 1 });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/master/dealers/:id", authenticateToken, requireRoles(MASTER_ADMIN_ROLES), express.json(), async (req: any, res: any) => {
+    try {
+      const { dealer_code, dealer_name } = req.body || {};
+      await upsertDealerConfig(dealer_code, dealer_name);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/master/dealers/:id", authenticateToken, requireRoles(MASTER_ADMIN_ROLES), async (req: any, res: any) => {
+    res.status(400).json({ error: "Not supported: this pilot manages a single dealer via configuration, not deletable dealer records." });
+  });
+
+  app.get("/api/master/branches", authenticateToken, requireRoles(MASTER_ADMIN_ROLES), async (req: any, res: any) => {
+    try {
+      const [rows]: any = await dbPool.query(
+        "SELECT config_key, config_value FROM dealer_configurations WHERE config_key IN ('branchName','bayCount','dealerName')"
+      );
+      const cfg: Record<string, string> = {};
+      rows.forEach((r: any) => { cfg[r.config_key] = r.config_value; });
+      res.json([{
+        branch_id: 1,
+        branch_code: null,
+        branch_name: cfg.branchName ?? null,
+        bay_count: cfg.bayCount ?? null,
+        dealer_id: 1,
+        dealer_name: cfg.dealerName ?? null,
+        is_active: 1
+      }]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  const upsertBranchConfig = async (branch_name?: string, bay_count?: string) => {
+    if (branch_name !== undefined) await dbPool.query("INSERT INTO dealer_configurations (config_key, config_value) VALUES ('branchName', ?) ON DUPLICATE KEY UPDATE config_value = ?", [branch_name, branch_name]);
+    if (bay_count !== undefined) await dbPool.query("INSERT INTO dealer_configurations (config_key, config_value) VALUES ('bayCount', ?) ON DUPLICATE KEY UPDATE config_value = ?", [String(bay_count), String(bay_count)]);
+  };
+
+  app.post("/api/master/branches", authenticateToken, requireRoles(MASTER_ADMIN_ROLES), express.json(), async (req: any, res: any) => {
+    try {
+      const { branch_name, bay_count } = req.body || {};
+      if (!branch_name) return res.status(400).json({ error: "branch_name is required" });
+      await upsertBranchConfig(branch_name, bay_count);
+      res.json({ success: true, branch_id: 1 });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/master/branches/:id", authenticateToken, requireRoles(MASTER_ADMIN_ROLES), express.json(), async (req: any, res: any) => {
+    try {
+      const { branch_name, bay_count } = req.body || {};
+      await upsertBranchConfig(branch_name, bay_count);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/master/branches/:id", authenticateToken, requireRoles(MASTER_ADMIN_ROLES), async (req: any, res: any) => {
+    res.status(400).json({ error: "Not supported: this pilot manages a single branch via configuration, not deletable branch records." });
+  });
+
   // --- FSB MASTER ENDPOINTS ---
   app.get("/api/fsb", async (req, res) => {
     try {
@@ -7754,6 +9478,55 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         name: customerName,
       },
     });
+  });
+
+  // ---- Customer Auth: Google OAuth code exchange & verification ----
+  // Real server-side exchange (client secret never reaches the browser). Returns
+  // the REAL verified name/email from Google — never a fabricated identity. This
+  // customer model is mobile-number-keyed (see issueCustomerToken/job_cards
+  // matching above), and Google OAuth doesn't reliably provide a phone number,
+  // so this endpoint only verifies identity; the frontend then collects/confirms
+  // the customer's mobile number (existing "link mobile" step) before calling the
+  // real /api/customer/auth/signup above to actually create/lookup the account.
+  // Fails closed with a clear error if GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET are
+  // not configured — never falls back to a mock identity.
+  app.post("/api/customer/auth/google/verify", express.json(), async (req: any, res: any) => {
+    const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+    if (!clientId || !clientSecret) {
+      return res.status(503).json({
+        success: false,
+        error: "GOOGLE_OAUTH_NOT_CONFIGURED",
+        message: "Google Sign-In is not yet configured for this portal. Please use mobile OTP instead."
+      });
+    }
+
+    const { code, redirectUri } = req.body || {};
+    if (!code || !redirectUri) {
+      return res.status(400).json({ success: false, error: "Missing authorization code or redirect URI." });
+    }
+
+    try {
+      const { OAuth2Client } = await import('google-auth-library');
+      const client = new OAuth2Client(clientId, clientSecret, redirectUri);
+      const { tokens } = await client.getToken(code);
+      if (!tokens.id_token) {
+        throw new Error("Google did not return an ID token.");
+      }
+      const ticket = await client.verifyIdToken({ idToken: tokens.id_token, audience: clientId });
+      const payload = ticket.getPayload();
+      if (!payload?.email || !payload.email_verified) {
+        return res.status(401).json({ success: false, error: "Google account email is not verified." });
+      }
+      res.json({
+        success: true,
+        googleEmail: payload.email,
+        googleName: payload.name || payload.email
+      });
+    } catch (err: any) {
+      console.error("[CustomerPortal] Google OAuth verification failed:", err.message);
+      res.status(401).json({ success: false, error: "GOOGLE_VERIFICATION_FAILED", message: "Could not verify Google account. Please try again or use mobile OTP." });
+    }
   });
 
   // ---- Customer Auth: Signup / Register ----
@@ -8895,6 +10668,17 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
+    // Customer portal is a separate SPA build (vite.customer.config.ts, base:
+    // '/customer-portal/') living under dist/customer-portal/. Its own assets
+    // already resolve correctly via the express.static line above (they're a
+    // real subpath of distPath), but its HTML shell is named customer-index.html,
+    // not index.html — so it was NEVER matched by the catch-all below, and every
+    // /customer-portal/* request (the portal's own root included) silently fell
+    // through to the INTERNAL dealer app's index.html instead. Fixed by routing
+    // this one path prefix to the real, already-built customer shell first.
+    app.get(/^\/customer-portal(\/.*)?$/, (req, res) => {
+      res.sendFile(path.join(distPath, "customer-portal", "customer-index.html"));
+    });
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });

@@ -746,6 +746,55 @@ try {
 
   console.log("[setup_test_db] ✓ genuinely-missing test tables created");
 
+  // `job_cards` is DROP+CREATE'd fresh on every run by wms_test_schema.sql
+  // above, resetting its AUTO_INCREMENT to 1 — but every table below is only
+  // ever CREATE TABLE IF NOT EXISTS'd (via migrations, ensureTablesExist, or
+  // this script's own "genuinely-missing test tables" block above), so their
+  // rows survive indefinitely across runs. That let a stale BILLING_COMPLETED
+  // row from an old run collide with a freshly-recycled job_id in a later
+  // run, making Phase 8 billing tests fail with a spurious "already billed" /
+  // "already validated" (confirmed by direct query: job_cards had only 33
+  // live rows but a max job_id of 89, while tbl_pre_invoice and
+  // tbl_crm_billing_evidence still held rows for job_id 88/89 from hours
+  // earlier). This list was built by grepping every migration + sync.ts +
+  // this file for CREATE TABLE IF NOT EXISTS definitions containing a
+  // job_id column — truncating them alongside the job_cards reset keeps the
+  // whole job-scoped data graph in sync.
+  console.log("[setup_test_db] Truncating job-scoped tables (kept in sync with the job_cards reset)...");
+  await pool.execute(`SET FOREIGN_KEY_CHECKS = 0`);
+  for (const table of [
+    // src/db/migrations/008_billing_tables.ts
+    "tbl_pre_invoice_confirmation",
+    "tbl_pre_invoice_version",
+    "tbl_pre_invoice",
+    "tbl_crm_billing_evidence",
+    "tbl_manual_gate_pass_request",
+    // src/db/migrations/009_gate_out_tables.ts
+    "tbl_payments",
+    "tbl_credit_requests",
+    "tbl_gate_pass",
+    "tbl_gate_out",
+    "tbl_task_claims",
+    // src/db/migrations/010_qc_road_tests.ts
+    "qc_road_tests",
+    // src/db/sync.ts (ensureTablesExist)
+    "job_technician_maps",
+    "job_revenues",
+    "carry_forward_logs",
+    "rework_logs",
+    "dms_import_rows",
+    "rework_tracking",
+    "overtime_requests",
+    "tbl_workflow_history",
+    // this script's own "genuinely-missing test tables" block above
+    "digital_approvals",
+    "customer_feedback",
+  ]) {
+    await pool.execute(`TRUNCATE TABLE \`${table}\``);
+  }
+  await pool.execute(`SET FOREIGN_KEY_CHECKS = 1`);
+  console.log("[setup_test_db] ✓ job-scoped tables truncated");
+
   await pool.execute(`INSERT IGNORE INTO roles (role_id, role_name) VALUES (1, 'Service Advisor'), (2, 'Supervisor'), (3, 'QC Inspector'), (4, 'Security'), (5, 'Admin')`);
   await pool.execute(`INSERT IGNORE INTO modules (module_id, module_name) VALUES (1, 'Job Cards'), (2, 'User Management'), (3, 'Billing')`);
   

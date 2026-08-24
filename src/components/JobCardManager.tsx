@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { JobCard, Bay, SRType, Employee, JobTechnicianMap, JobRevenue, JobRevenueSplitDetail, User } from "../types";
 import JobCardPreview from "./reception/JobCardPreview";
+import GateProgressBar from "./GateProgressBar";
 
 
 interface JobCardManagerProps {
@@ -52,6 +53,8 @@ interface JobCardManagerProps {
   onCalculateRevenue: (id: number, labour: number, parts: number) => void;
   onRaiseCarryForward: (id: number, reason: string) => void;
   onRaiseRework: (id: number, reason: string, originalTechId: number) => void;
+  /** Permanently deletes a job card. Admin/GM/developer only — gated in the UI below too. */
+  onDeleteJob?: (id: number, reason: string) => void;
   selectedJobExternal: JobCard | null;
   currentUserRole?: string;
   currentUser?: User | null;
@@ -77,14 +80,27 @@ export default function JobCardManager({
   onCalculateRevenue,
   onRaiseCarryForward,
   onRaiseRework,
+  onDeleteJob,
   selectedJobExternal,
-  currentUserRole = "Workshop Manager",
+  currentUserRole = "workshop_manager",
   currentUser,
   onLookupVehicle,
   aiModeEnabled = true,
   initialAssignFilter = null,
   onClearAssignFilter
 }: JobCardManagerProps) {
+  // Shared across the create/edit/view sections below — must live at component
+  // scope, not inside a single effect/handler, since all three reference it.
+  const isAdvisorRole = (roleStr: string) => {
+    if (!roleStr) return false;
+    const lower = roleStr.toLowerCase().trim();
+    return lower === "service advisor" || lower === "service_advisor" || lower === "sa" || lower === "advisor";
+  };
+  // Only a Workshop Manager may reassign the Service Advisor on an existing
+  // job card (matches the "Workshop Manager"-gated actions elsewhere in this
+  // component, e.g. the Completed-status Manager actions below).
+  const canEditServiceAdvisor = currentUserRole === "workshop_manager";
+
   const [selectedJob, setSelectedJob] = useState<JobCard | null>(selectedJobExternal || jobCards[0] || null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showPreviewSlip, setShowPreviewSlip] = useState(false);
@@ -773,15 +789,8 @@ export default function JobCardManager({
       }
     })();
 
-    const advisors = employees.filter(e => 
-      e.is_active && e.role && (
-        e.role.toLowerCase().includes("advisor") || 
-        e.role.toLowerCase() === "service_advisor" ||
-        e.role.toLowerCase().includes("service")
-      )
-    );
-
-    const defaultAdvisor = advisors[0] || employees.find(e => e.is_active && e.role && ["manager", "supervisor", "advisor", "admin"].some(role => e.role.toLowerCase().includes(role))) || null;
+    const advisors = employees.filter(e => e.is_active && isAdvisorRole(e.role));
+    const defaultAdvisor = advisors[0] || null;
 
     if (userObj) {
       const userFullName = userObj.full_name || userObj.displayName || "";
@@ -793,7 +802,14 @@ export default function JobCardManager({
       );
       if (matchedEmp) {
         setCreatedBy(matchedEmp.employee_id);
-        setServiceAdvisor(matchedEmp.full_name);
+        // Only assign as service advisor IF the user is actually a Service Advisor
+        if (isAdvisorRole(matchedEmp.role)) {
+          setServiceAdvisor(matchedEmp.full_name);
+        } else if (defaultAdvisor) {
+          setServiceAdvisor(defaultAdvisor.full_name);
+        } else {
+          setServiceAdvisor("");
+        }
       } else if (defaultAdvisor) {
         setCreatedBy(defaultAdvisor.employee_id);
         setServiceAdvisor(defaultAdvisor.full_name);
@@ -1224,8 +1240,7 @@ export default function JobCardManager({
     setEditRemarks(job.remarks || "");
     
     setEditBayNo(job.bay_no || (job.bay_id ? String(job.bay_id) : "Queue"));
-    const emp = employees.find(e => e.employee_id === job.created_by);
-    setEditServiceAdvisor(job.service_advisor || emp?.full_name || "");
+    setEditServiceAdvisor(job.service_advisor || "");
     setEditTechnicianName(job.technician_name || "");
     setEditNoOfLaborers(job.no_of_laborers !== null && job.no_of_laborers !== undefined ? String(job.no_of_laborers) : "");
     setEditActualTimeTaken(job.actual_time_taken || "");
@@ -1483,6 +1498,13 @@ export default function JobCardManager({
                   </span>
                 </div>
 
+                {/* Gate-in → gate-out progress: every vehicle on site stays the
+                    manager's liability until it leaves, so the whole journey is
+                    visible at a glance from the list itself. */}
+                <div className="mt-2.5">
+                  <GateProgressBar job={job} />
+                </div>
+
                 <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-500 font-medium">
                   <p className="line-clamp-1">{job.vehicle_make} {job.vehicle_model} • {srType?.sr_type_name}</p>
                   <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
@@ -1498,6 +1520,12 @@ export default function JobCardManager({
         {selectedJob ? (
           <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-5">
             <TruckInfoCard job={selectedJob} className="mb-4" />
+
+            {/* Full gate-in → gate-out journey for the selected vehicle. */}
+            <div className="rounded-xl border border-slate-200 bg-slate-950 p-4">
+              <GateProgressBar job={selectedJob} variant="full" />
+            </div>
+
             {/* Header / Meta */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4 gap-4">
               <div className="space-y-1">
@@ -1537,7 +1565,7 @@ export default function JobCardManager({
 
               {/* Status Controls */}
               <div className="flex flex-wrap items-center gap-2">
-                {selectedJob.status === "Waiting" && currentUserRole !== "Service Advisor" && (
+                {selectedJob.status === "Waiting" && currentUserRole !== "service_advisor" && (
                   <div className="flex items-center gap-2">
                     <select 
                       onChange={(e) => {
@@ -1562,7 +1590,7 @@ export default function JobCardManager({
                   </div>
                 )}
  
-                {selectedJob.status === "Active" && currentUserRole !== "Service Advisor" && (
+                {selectedJob.status === "Active" && currentUserRole !== "service_advisor" && (
                   <div className="flex items-center gap-2">
                     <button 
                       onClick={() => onUpdateJobStatus(selectedJob.job_id, "Completed")}
@@ -1580,7 +1608,7 @@ export default function JobCardManager({
                   </div>
                 )}
  
-                {selectedJob.status === "Completed" && currentUserRole === "Workshop Manager" && (
+                {selectedJob.status === "Completed" && currentUserRole === "workshop_manager" && (
                   <button 
                     onClick={() => onUpdateJobStatus(selectedJob.job_id, "Invoiced")}
                     className="ds-button-primary   hover:bg-orange-600 text-white font-bold text-[10px] px-3 py-1.5 rounded uppercase tracking-wider shadow-sm cursor-pointer flex items-center gap-1"
@@ -1590,7 +1618,7 @@ export default function JobCardManager({
                   </button>
                 )}
  
-                {["Waiting", "Active"].includes(selectedJob.status) && currentUserRole !== "Service Advisor" && (
+                {["Waiting", "Active"].includes(selectedJob.status) && currentUserRole !== "service_advisor" && (
                   <button 
                     onClick={() => setShowReworkForm(true)}
                     className="bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 font-bold text-[10px] px-3 py-1.5 rounded uppercase tracking-wider cursor-pointer"
@@ -1608,13 +1636,34 @@ export default function JobCardManager({
                   Complaint History
                 </button>
 
-                <button 
+                <button
                   onClick={() => openEditModal(selectedJob)}
                   className="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-bold text-[10px] px-3 py-1.5 rounded uppercase tracking-wider cursor-pointer flex items-center gap-1"
                 >
                   <Wrench className="h-3.5 w-3.5 text-orange-600" />
                   Edit Job Card
                 </button>
+
+                {onDeleteJob && ["admin", "gm_service", "developer"].includes(currentUserRole) && (
+                  <button
+                    onClick={() => {
+                      const reason = window.prompt(
+                        `Permanently delete job card ${selectedJob.job_card_no} (${selectedJob.vrn})?\n\nThis cannot be undone. Enter a reason (min 10 characters):`
+                      );
+                      if (reason === null) return;
+                      if (reason.trim().length < 10) {
+                        window.alert("A reason of at least 10 characters is required.");
+                        return;
+                      }
+                      onDeleteJob(selectedJob.job_id, reason.trim());
+                    }}
+                    className="bg-red-600 hover:bg-red-700 text-white border border-red-700 font-bold text-[10px] px-3 py-1.5 rounded uppercase tracking-wider cursor-pointer flex items-center gap-1"
+                    title="Permanently delete this job card (admin/GM only) — for test entries or genuine mistakes"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Delete Job Card
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1783,10 +1832,35 @@ export default function JobCardManager({
                 </div>
 
                 <div className="border-b border-slate-200/60 pb-2.5 col-span-2 md:col-span-3">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">SERVICE ADVISOR</span>
-                  <p className="font-semibold text-slate-800 mt-0.5">
-                    {selectedJob.service_advisor || employees.find(e => e.employee_id === selectedJob.created_by)?.full_name || "Unknown Advisor"}
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">SERVICE ADVISOR</span>
+                    {canEditServiceAdvisor && (
+                      <span className="text-[8.5px] text-blue-600 font-bold uppercase tracking-wider">Manager Assign</span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-2">
+                    {canEditServiceAdvisor ? (
+                      <select
+                        value={selectedJob.service_advisor || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          onUpdateJob(selectedJob.job_id, { service_advisor: val || null });
+                        }}
+                        className="bg-slate-50 border border-slate-200 rounded px-2.5 py-1 text-xs font-semibold text-slate-800 focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
+                      >
+                        <option value="">-- Select Advisor (Unassigned) --</option>
+                        {employees.filter(e => e.is_active && isAdvisorRole(e.role)).map(e => (
+                          <option key={e.employee_id} value={e.full_name}>
+                            {e.full_name} ({e.role})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p className="font-semibold text-slate-800">
+                        {selectedJob.service_advisor || <span className="text-amber-600 font-bold">Unassigned</span>}
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="border-b border-slate-200/60 pb-2.5 col-span-2">
@@ -1852,7 +1926,7 @@ export default function JobCardManager({
  
               <div className="flex flex-wrap items-center gap-3">
                 <select 
-                  disabled={currentUserRole === "Service Advisor"}
+                  disabled={currentUserRole === "service_advisor"}
                   value={tempEmpId}
                   onChange={(e) => setTempEmpId(Number(e.target.value))}
                   className="text-xs bg-slate-50 border border-slate-200 rounded p-2 font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden disabled:opacity-60"
@@ -1863,7 +1937,7 @@ export default function JobCardManager({
                 </select>
  
                 <select 
-                  disabled={currentUserRole === "Service Advisor"}
+                  disabled={currentUserRole === "service_advisor"}
                   value={tempRole}
                   onChange={(e) => setTempRole(e.target.value)}
                   className="text-xs bg-slate-50 border border-slate-200 rounded p-2 font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden disabled:opacity-60"
@@ -1874,7 +1948,7 @@ export default function JobCardManager({
                   <option value="Add Tech">Add Tech</option>
                 </select>
  
-                {currentUserRole !== "Service Advisor" && (
+                {currentUserRole !== "service_advisor" && (
                   <button 
                     onClick={addStaffAllocation}
                     className="ds-button-primary bg-orange-500/10 text-orange-600 border border-orange-500/20 hover: /20 font-bold text-[10px] px-3 py-2 rounded uppercase tracking-wider transition-all cursor-pointer"
@@ -1898,7 +1972,7 @@ export default function JobCardManager({
                           <span className="ds-button-primary text-[9px]  /10 text-orange-600 border border-orange-500/20 font-bold uppercase tracking-wider px-2 py-0.5 rounded">
                             {staff.tech_role}
                           </span>
-                          {currentUserRole !== "Service Advisor" && (
+                          {currentUserRole !== "service_advisor" && (
                             <button 
                               onClick={() => removeStaffAllocation(staff.employee_id)}
                               className="text-slate-400 hover:text-rose-600 font-bold ml-1 text-sm cursor-pointer"
@@ -1912,7 +1986,7 @@ export default function JobCardManager({
                   </div>
                 )}
  
-                {assignedStaff.length > 0 && currentUserRole !== "Service Advisor" && (
+                {assignedStaff.length > 0 && currentUserRole !== "service_advisor" && (
                   <div className="flex justify-end pt-2">
                     <button 
                       onClick={handleSaveAllocations}
@@ -1941,7 +2015,7 @@ export default function JobCardManager({
                       <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">Labour Amount (₹)</label>
                       <input 
                         type="number"
-                        disabled={currentUserRole !== "Workshop Manager"}
+                        disabled={currentUserRole !== "workshop_manager"}
                         value={labourAmount}
                         onChange={(e) => setLabourAmount(Number(e.target.value))}
                         className="w-full bg-white border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden disabled:opacity-60 disabled:bg-slate-100"
@@ -1951,7 +2025,7 @@ export default function JobCardManager({
                       <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">Parts Amount (₹)</label>
                       <input 
                         type="number"
-                        disabled={currentUserRole !== "Workshop Manager"}
+                        disabled={currentUserRole !== "workshop_manager"}
                         value={partsAmount}
                         onChange={(e) => setPartsAmount(Number(e.target.value))}
                         className="w-full bg-white border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden disabled:opacity-60 disabled:bg-slate-100"
@@ -1961,7 +2035,7 @@ export default function JobCardManager({
  
                   <button 
                     onClick={handleCalculateRevSplit}
-                    disabled={currentUserRole !== "Workshop Manager"}
+                    disabled={currentUserRole !== "workshop_manager"}
                     className="ds-button-primary w-full   hover:bg-orange-600 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-[10px] py-2 rounded uppercase tracking-wider shadow-sm transition-colors cursor-pointer"
                   >
                     Calculate Split Share
@@ -2804,22 +2878,19 @@ export default function JobCardManager({
                   <select 
                     required
                     value={createdBy}
-                    onChange={(e) => setCreatedBy(Number(e.target.value))}
+                    onChange={(e) => {
+                      const empId = Number(e.target.value);
+                      setCreatedBy(empId);
+                      const emp = employees.find(x => x.employee_id === empId);
+                      if (emp) setServiceAdvisor(emp.full_name);
+                    }}
                     className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
                   >
-                    {(() => {
-                      const list = employees.filter(e => e.is_active && (
-                        e.role.toLowerCase().includes("advisor") ||
-                        e.role.toLowerCase() === "service_advisor" ||
-                        e.role.toLowerCase().includes("service")
-                      ));
-                      const finalDropdownList = list.length > 0 ? list : employees.filter(e => e.is_active);
-                      return finalDropdownList.map(e => (
-                        <option key={e.employee_id} value={e.employee_id}>
-                          {e.full_name} ({e.role})
-                        </option>
-                      ));
-                    })()}
+                    {employees.filter(e => e.is_active && isAdvisorRole(e.role)).map(e => (
+                      <option key={e.employee_id} value={e.employee_id}>
+                        {e.full_name} ({e.role})
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -2827,7 +2898,7 @@ export default function JobCardManager({
               <div>
                 <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Assign Bay (Optional)</label>
                 <select 
-                  disabled={currentUserRole === "Service Advisor"}
+                  disabled={currentUserRole === "service_advisor"}
                   value={bayId || ""}
                   onChange={(e) => setBayId(e.target.value ? Number(e.target.value) : null)}
                   className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden disabled:opacity-60 disabled:bg-slate-100"
@@ -2847,7 +2918,7 @@ export default function JobCardManager({
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Bay No</label>
                     <input 
                       type="text"
-                      disabled={currentUserRole === "Service Advisor"}
+                      disabled={currentUserRole === "service_advisor"}
                       list="bays-datalist"
                       value={bayNo}
                       onChange={(e) => setBayNo(e.target.value)}
@@ -2859,7 +2930,7 @@ export default function JobCardManager({
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">No. of Laborers</label>
                     <input 
                       type="number"
-                      disabled={currentUserRole === "Service Advisor"}
+                      disabled={currentUserRole === "service_advisor"}
                       value={noOfLaborers}
                       onChange={(e) => setNoOfLaborers(e.target.value)}
                       placeholder="e.g. 2"
@@ -2884,7 +2955,7 @@ export default function JobCardManager({
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Technician Name</label>
                     <input 
                       type="text"
-                      disabled={currentUserRole === "Service Advisor"}
+                      disabled={currentUserRole === "service_advisor"}
                       list="technicians-datalist"
                       value={technicianName}
                       onChange={(e) => setTechnicianName(e.target.value)}
@@ -2899,7 +2970,7 @@ export default function JobCardManager({
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Date Completed</label>
                     <input 
                       type="date"
-                      disabled={currentUserRole === "Service Advisor"}
+                      disabled={currentUserRole === "service_advisor"}
                       value={dateCompleted}
                       onChange={(e) => setDateCompleted(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden disabled:opacity-60 disabled:bg-slate-100"
@@ -2909,7 +2980,7 @@ export default function JobCardManager({
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Time Out</label>
                     <input 
                       type="time"
-                      disabled={currentUserRole === "Service Advisor"}
+                      disabled={currentUserRole === "service_advisor"}
                       value={timeOut}
                       onChange={(e) => setTimeOut(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden disabled:opacity-60 disabled:bg-slate-100"
@@ -2919,7 +2990,7 @@ export default function JobCardManager({
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Actual Time Taken</label>
                     <input 
                       type="text"
-                      disabled={currentUserRole === "Service Advisor"}
+                      disabled={currentUserRole === "service_advisor"}
                       value={actualTimeTaken}
                       onChange={(e) => setActualTimeTaken(e.target.value)}
                       placeholder="e.g. 4h 30m"
@@ -3228,10 +3299,10 @@ export default function JobCardManager({
                     placeholder="e.g. TML-2026-14582"
                     maxLength={50}
                     value={editCrmJobCardNo}
-                    disabled={editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm"}
+                    disabled={editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm_service"}
                     onChange={(e) => setEditCrmJobCardNo(e.target.value)}
-                    className={`w-full border rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden ${(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-300' : 'bg-white border-amber-300 text-slate-900'}`}
-                    title={(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") ? "Locked after submission. GM / Developer override required." : "Enter CRM or DMS Reference Number"}
+                    className={`w-full border rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden ${(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm_service") ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-300' : 'bg-white border-amber-300 text-slate-900'}`}
+                    title={(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm_service") ? "Locked after submission. GM / Developer override required." : "Enter CRM or DMS Reference Number"}
                   />
                 </div>
                 <div>
@@ -3290,35 +3361,35 @@ export default function JobCardManager({
                 <div>
                   <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
                     Date In*
-                    {(selectedJob?.date_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") && (
+                    {(selectedJob?.date_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm_service") && (
                       <span className="ml-1 text-amber-600 font-normal text-[8px]">(Locked 🔒)</span>
                     )}
                   </label>
                   <input 
                     type="date" 
                     required 
-                    disabled={Boolean(selectedJob?.date_in) && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm"}
+                    disabled={Boolean(selectedJob?.date_in) && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm_service"}
                     value={editDateIn}
                     onChange={(e) => setEditDateIn(e.target.value)}
-                    className={`w-full border rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden ${(selectedJob?.date_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-300' : 'bg-slate-50 border-slate-200'}`}
-                    title={(selectedJob?.date_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") ? "Operational timestamp is locked after workflow progression. GM / Developer override required." : "Date In"}
+                    className={`w-full border rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden ${(selectedJob?.date_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm_service") ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-300' : 'bg-slate-50 border-slate-200'}`}
+                    title={(selectedJob?.date_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm_service") ? "Operational timestamp is locked after workflow progression. GM / Developer override required." : "Date In"}
                   />
                 </div>
                 <div>
                   <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
                     Time-In*
-                    {(selectedJob?.time_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") && (
+                    {(selectedJob?.time_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm_service") && (
                       <span className="ml-1 text-amber-600 font-normal text-[8px]">(Locked 🔒)</span>
                     )}
                   </label>
                   <input 
                     type="time" 
                     required 
-                    disabled={Boolean(selectedJob?.time_in) && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm"}
+                    disabled={Boolean(selectedJob?.time_in) && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm_service"}
                     value={editTimeIn}
                     onChange={(e) => setEditTimeIn(e.target.value)}
-                    className={`w-full border rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden ${(selectedJob?.time_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-300' : 'bg-slate-50 border-slate-200'}`}
-                    title={(selectedJob?.time_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") ? "Operational timestamp is locked after workflow progression. GM / Developer override required." : "Time-In"}
+                    className={`w-full border rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden ${(selectedJob?.time_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm_service") ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-300' : 'bg-slate-50 border-slate-200'}`}
+                    title={(selectedJob?.time_in && editStatus !== "Draft" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm_service") ? "Operational timestamp is locked after workflow progression. GM / Developer override required." : "Time-In"}
                   />
                 </div>
               </div>
@@ -3382,7 +3453,7 @@ export default function JobCardManager({
                 <div>
                   <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
                     Odometer Reading (KM)
-                    {(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") && (
+                    {(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm_service") && (
                       <span className="ml-1 text-amber-600 font-normal text-[8px]">(Locked 🔒)</span>
                     )}
                   </label>
@@ -3390,11 +3461,11 @@ export default function JobCardManager({
                     <input 
                       type="number" 
                       min="0"
-                      disabled={editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm"}
+                      disabled={editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm_service"}
                       value={editKmReading ?? ""}
                       onChange={(e) => setEditKmReading(e.target.value === "" ? "" : Math.max(0, Number(e.target.value)))}
-                      className={`w-full border rounded p-2 pr-9 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden ${(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-300' : 'bg-slate-50 border-slate-200'}`}
-                      title={(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm") ? "Odometer reading is locked after Job Card submission. GM / Developer override required." : "Enter vehicle odometer reading"}
+                      className={`w-full border rounded p-2 pr-9 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden ${(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm_service") ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-300' : 'bg-slate-50 border-slate-200'}`}
+                      title={(editStatus !== "Draft" && editStatus !== "Waiting" && editStatus !== "GATE_IN" && currentUserRole !== "developer" && currentUserRole !== "admin" && currentUserRole !== "gm_service") ? "Odometer reading is locked after Job Card submission. GM / Developer override required." : "Enter vehicle odometer reading"}
                     />
                     <label className="ds-label absolute right-2 cursor-pointer   hover:text-orange-500 transition-colors" title="Scan Odometer Photo">
                       <Camera className="h-4.5 w-4.5" />
@@ -3444,10 +3515,15 @@ export default function JobCardManager({
                   <select 
                     required
                     value={editCreatedBy}
-                    onChange={(e) => setEditCreatedBy(Number(e.target.value))}
+                    onChange={(e) => {
+                      const empId = Number(e.target.value);
+                      setEditCreatedBy(empId);
+                      const emp = employees.find(x => x.employee_id === empId);
+                      if (emp) setEditServiceAdvisor(emp.full_name);
+                    }}
                     className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
                   >
-                    {employees.filter(e => e.is_active).map(e => (
+                    {employees.filter(e => e.is_active && isAdvisorRole(e.role)).map(e => (
                       <option key={e.employee_id} value={e.employee_id}>
                         {e.full_name} ({e.role})
                       </option>
@@ -3459,7 +3535,7 @@ export default function JobCardManager({
                 <div>
                   <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Job Status*</label>
                   <select 
-                    disabled={currentUserRole === "Service Advisor"}
+                    disabled={currentUserRole === "service_advisor"}
                     value={editStatus}
                     onChange={(e) => setEditStatus(e.target.value as any)}
                     className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden disabled:opacity-60 disabled:bg-slate-100"
@@ -3475,7 +3551,7 @@ export default function JobCardManager({
                 <div>
                   <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Allocated Bay</label>
                   <select 
-                    disabled={currentUserRole === "Service Advisor" || isEditAdvisorUnassigned}
+                    disabled={currentUserRole === "service_advisor" || isEditAdvisorUnassigned}
                     value={editBayId || ""}
                     onChange={(e) => setEditBayId(e.target.value ? Number(e.target.value) : null)}
                     className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden disabled:opacity-60 disabled:bg-slate-100"
@@ -3496,7 +3572,7 @@ export default function JobCardManager({
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Bay No</label>
                     <input 
                       type="text"
-                      disabled={currentUserRole === "Service Advisor" || isEditAdvisorUnassigned}
+                      disabled={currentUserRole === "service_advisor" || isEditAdvisorUnassigned}
                       list="bays-datalist"
                       value={editBayNo}
                       onChange={(e) => setEditBayNo(e.target.value)}
@@ -3508,7 +3584,7 @@ export default function JobCardManager({
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">No. of Laborers</label>
                     <input 
                       type="number"
-                      disabled={currentUserRole === "Service Advisor"}
+                      disabled={currentUserRole === "service_advisor"}
                       value={editNoOfLaborers}
                       onChange={(e) => setEditNoOfLaborers(e.target.value)}
                       placeholder="e.g. 2"
@@ -3536,7 +3612,7 @@ export default function JobCardManager({
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Technician Name</label>
                     <input 
                       type="text"
-                      disabled={currentUserRole === "Service Advisor" || isEditAdvisorUnassigned}
+                      disabled={currentUserRole === "service_advisor" || isEditAdvisorUnassigned}
                       list="technicians-datalist"
                       value={editTechnicianName}
                       onChange={(e) => setEditTechnicianName(e.target.value)}
@@ -3551,7 +3627,7 @@ export default function JobCardManager({
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Date Completed</label>
                     <input 
                       type="date"
-                      disabled={currentUserRole === "Service Advisor"}
+                      disabled={currentUserRole === "service_advisor"}
                       value={editDateCompleted}
                       onChange={(e) => setEditDateCompleted(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden disabled:opacity-60 disabled:bg-slate-100"
@@ -3561,7 +3637,7 @@ export default function JobCardManager({
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Time Out</label>
                     <input 
                       type="time"
-                      disabled={currentUserRole === "Service Advisor"}
+                      disabled={currentUserRole === "service_advisor"}
                       value={editTimeOut}
                       onChange={(e) => setEditTimeOut(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden disabled:opacity-60 disabled:bg-slate-100"
@@ -3571,7 +3647,7 @@ export default function JobCardManager({
                     <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Actual Time Taken</label>
                     <input 
                       type="text"
-                      disabled={currentUserRole === "Service Advisor"}
+                      disabled={currentUserRole === "service_advisor"}
                       value={editActualTimeTaken}
                       onChange={(e) => setEditActualTimeTaken(e.target.value)}
                       placeholder="e.g. 4h 30m"

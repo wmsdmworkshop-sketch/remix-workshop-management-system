@@ -57,6 +57,7 @@ export const WORKSPACE_MAPPING: Record<string, string> = {
   "pilot-control-room": "admin",
   "live-support": "admin",
   "devops-dashboard": "admin",
+  "ai-brains": "admin",
   "cctv-safety": "admin",
   "oem-integrations": "admin",
   "operations-console": "admin",
@@ -93,6 +94,12 @@ interface AppShellProps {
   handleLogout: () => void;
   aiModeEnabled?: boolean;
   onToggleAiMode?: () => void;
+  /** True when this user may flip AI Mode directly (GM / Admin / Developer). */
+  aiModeCanToggle?: boolean;
+  /** True when this user may only REQUEST activation (Manager / Advisor). */
+  aiModeCanRequest?: boolean;
+  /** Pending activation requests — shown to approvers as a badge. */
+  aiModePendingRequests?: number;
   children: React.ReactNode;
 }
 
@@ -104,6 +111,9 @@ export default function AppShell({
   handleLogout,
   aiModeEnabled = true,
   onToggleAiMode,
+  aiModeCanToggle = false,
+  aiModeCanRequest = false,
+  aiModePendingRequests = 0,
   children
 }: AppShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
@@ -347,7 +357,15 @@ export default function AppShell({
                     ? "bg-purple-600/20 text-purple-300 border-purple-500/50 shadow-lg" 
                     : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200"
                 }`}
-                title={aiModeEnabled ? "AI Copilot ENABLED" : "AI Copilot DISABLED"}
+                title={
+                  aiModeCanToggle
+                    ? `AI Copilot ${aiModeEnabled ? "ENABLED" : "DISABLED"} workshop-wide — click to ${aiModeEnabled ? "disable" : "enable"}`
+                    : aiModeCanRequest
+                      ? aiModeEnabled
+                        ? "AI Copilot ENABLED. Only a GM, Admin or Developer can switch it off."
+                        : "AI Copilot DISABLED — click to request activation from a GM/Admin"
+                      : `AI Copilot ${aiModeEnabled ? "ENABLED" : "DISABLED"} — only a GM, Admin or Developer can change this`
+                }
               >
                 <Sparkles className={`h-3.5 w-3.5 ${aiModeEnabled ? "text-purple-400 animate-pulse" : "text-zinc-500"}`} />
                 <span className="hidden sm:inline">AI Mode</span>
@@ -356,6 +374,12 @@ export default function AppShell({
                 }`}>
                   {aiModeEnabled ? "ON" : "OFF"}
                 </span>
+                {/* Approvers see how many activation requests are waiting. */}
+                {aiModeCanToggle && aiModePendingRequests > 0 && (
+                  <span className="ml-0.5 min-w-[14px] h-[14px] px-1 flex items-center justify-center rounded-full bg-amber-500 text-[9px] font-black text-white">
+                    {aiModePendingRequests}
+                  </span>
+                )}
               </button>
             )}
 
@@ -369,9 +393,15 @@ export default function AppShell({
                   if (next) fetchNotifications();
                 }}
               >
-                <Bell className="h-4 w-4" />
+                <Bell className={`h-4 w-4 ${notifications.some((n: any) => n.severity === "critical") ? "text-red-400 animate-pulse" : ""}`} />
                 {notifications.length > 0 && (
-                  <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-orange-500 rounded-full"></span>
+                  <span
+                    className={`absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 flex items-center justify-center rounded-full text-[9px] font-black text-white ${
+                      notifications.some((n: any) => n.severity === "critical") ? "bg-red-500" : "bg-orange-500"
+                    }`}
+                  >
+                    {notifications.length}
+                  </span>
                 )}
               </button>
               {notifOpen && (
@@ -388,10 +418,23 @@ export default function AppShell({
                         <button
                           key={n.id}
                           onClick={() => { if (n.link) setActiveTab(n.link); setNotifOpen(false); }}
-                          className="w-full text-left px-3 py-2 border-b border-zinc-800/50 hover:bg-zinc-800/50"
+                          className="w-full text-left px-3 py-2 border-b border-zinc-800/50 hover:bg-zinc-800/50 flex gap-2 items-start"
+                          title={n.link ? `Go to ${n.link.replace(/-/g, " ")}` : undefined}
                         >
-                          <div className="text-xs font-semibold text-zinc-200">{n.title}</div>
-                          <div className="text-[11px] text-zinc-400">{n.message}</div>
+                          {/* Severity rail so a breach is distinguishable at a glance. */}
+                          <span
+                            className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
+                              n.severity === "critical"
+                                ? "bg-red-500 animate-pulse"
+                                : n.severity === "warning"
+                                  ? "bg-amber-500"
+                                  : "bg-zinc-600"
+                            }`}
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-xs font-semibold text-zinc-200">{n.title}</span>
+                            <span className="block text-[11px] text-zinc-400">{n.message}</span>
+                          </span>
                         </button>
                       ))
                     )}

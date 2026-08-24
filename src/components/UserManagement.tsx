@@ -17,7 +17,14 @@ import {
   ToggleLeft,
   ToggleRight,
   RefreshCw,
-  Clock
+  Clock,
+  Sparkles,
+  Sliders,
+  Eye,
+  Edit3,
+  Bot,
+  Zap,
+  Database
 } from "lucide-react";
 import { User } from "../types";
 import FunnyLoader from "./FunnyLoader";
@@ -34,11 +41,27 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
   const [success, setSuccess] = useState<string | null>(null);
   
   // Tabs and Permissions Matrix State
-  const [activeTab, setActiveTab] = useState<'directory' | 'permissions' | 'profile-approvals'>('directory');
+  const [activeTab, setActiveTab] = useState<'directory' | 'permissions' | 'field-permissions' | 'ai-rbac' | 'live-bugs' | 'profile-approvals'>('permissions');
   const [permissionsList, setPermissionsList] = useState<any[]>([]);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
   const [expandedRole, setExpandedRole] = useState<string | null>(null);
   const [saveLoading, setSaveLoading] = useState(false);
+
+  // Field-level security state
+  const [fieldPermissionsList, setFieldPermissionsList] = useState<any[]>([]);
+  const [selectedRoleForFields, setSelectedRoleForFields] = useState<string>("reception");
+  const [fieldSaveLoading, setFieldSaveLoading] = useState(false);
+
+  // DeepSeek AI RBAC Copilot State
+  const [aiPrompt, setAiPrompt] = useState<string>("");
+  const [aiResult, setAiResult] = useState<any>(null);
+  const [aiLoading, setAiLoading] = useState<boolean>(false);
+  const [aiApplyLoading, setAiApplyLoading] = useState<boolean>(false);
+
+  // Live Testing Bugs & DeepSeek Diagnostics State
+  const [liveBugs, setLiveBugs] = useState<any[]>([]);
+  const [bugsLoading, setBugsLoading] = useState<boolean>(false);
+  const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
 
   // Profile update approvals state
   const [approvalRequests, setApprovalRequests] = useState<any[]>([]);
@@ -727,10 +750,10 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
 
       {/* Tabs */}
       {(currentUser?.role === 'admin' || currentUser?.role === 'developer') && (
-        <div className="flex border-b border-slate-200 gap-4">
+        <div className="flex border-b border-slate-200 gap-4 overflow-x-auto">
           <button
             onClick={() => setActiveTab('directory')}
-            className={`pb-3 font-bold text-xs uppercase tracking-wider border-b-2 transition ${
+            className={`pb-3 font-bold text-xs uppercase tracking-wider border-b-2 transition whitespace-nowrap ${
               activeTab === 'directory'
                 ? 'border-orange-500 text-slate-900'
                 : 'border-transparent text-slate-400 hover:text-slate-600'
@@ -740,17 +763,60 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
           </button>
           <button
             onClick={() => setActiveTab('permissions')}
-            className={`pb-3 font-bold text-xs uppercase tracking-wider border-b-2 transition ${
+            className={`pb-3 font-bold text-xs uppercase tracking-wider border-b-2 transition whitespace-nowrap ${
               activeTab === 'permissions'
                 ? 'border-orange-500 text-slate-900'
                 : 'border-transparent text-slate-400 hover:text-slate-600'
             }`}
           >
-            Permission Matrix
+            Screen & Module Access (RBAC)
+          </button>
+          <button
+            onClick={() => setActiveTab('field-permissions')}
+            className={`pb-3 font-bold text-xs uppercase tracking-wider border-b-2 transition whitespace-nowrap flex items-center gap-1.5 ${
+              activeTab === 'field-permissions'
+                ? 'border-orange-500 text-slate-900'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <Sliders className="h-3.5 w-3.5 text-blue-600" />
+            <span>Field-Level Security</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('ai-rbac')}
+            className={`pb-3 font-bold text-xs uppercase tracking-wider border-b-2 transition whitespace-nowrap flex items-center gap-1.5 ${
+              activeTab === 'ai-rbac'
+                ? 'border-orange-500 text-slate-900'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <Sparkles className="h-3.5 w-3.5 text-orange-500" />
+            <span>DeepSeek Security Copilot</span>
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('live-bugs');
+              setBugsLoading(true);
+              fetch("/api/v1/pilot/live-bugs", {
+                headers: { "Authorization": `Bearer ${token}` }
+              })
+                .then(r => r.json())
+                .then(d => { if (d.success) setLiveBugs(d.bugs || []); })
+                .catch(err => console.error("Error loading bugs:", err))
+                .finally(() => setBugsLoading(false));
+            }}
+            className={`pb-3 font-bold text-xs uppercase tracking-wider border-b-2 transition whitespace-nowrap flex items-center gap-1.5 ${
+              activeTab === 'live-bugs'
+                ? 'border-orange-500 text-slate-900'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <Zap className="h-3.5 w-3.5 text-red-500" />
+            <span>Live UAT Bugs & Screenshots</span>
           </button>
           <button
             onClick={() => setActiveTab('profile-approvals')}
-            className={`pb-3 font-bold text-xs uppercase tracking-wider border-b-2 transition ${
+            className={`pb-3 font-bold text-xs uppercase tracking-wider border-b-2 transition whitespace-nowrap ${
               activeTab === 'profile-approvals'
                 ? 'border-orange-500 text-slate-900'
                 : 'border-transparent text-slate-400 hover:text-slate-600'
@@ -1007,7 +1073,15 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
       {/* Directory & Filter Controls */}
       {activeTab === 'directory' && (
         <div className="bg-zinc-950/90 rounded-2xl border border-zinc-800 overflow-hidden shadow-2xl backdrop-blur-md">
-          
+
+          {/* Account creation now lives in Employee Directory, so accounts and
+              employee records stay one identity in one place. This tab remains
+              for viewing/editing existing accounts and role assignment. */}
+          <div className="p-3 bg-orange-500/10 border-b border-orange-500/20 text-orange-300 text-xs flex items-center gap-2">
+            <UserCheck className="h-4 w-4 shrink-0" />
+            <span>Creating new login accounts has moved to <strong>Employee Directory</strong> — open an employee's record there and use "Create Login". This tab is for managing existing accounts.</span>
+          </div>
+
           {/* Controls Panel */}
           <div className="p-4 bg-zinc-900/90 border-b border-zinc-800 flex flex-col md:flex-row gap-3 justify-between items-center">
             <div className="relative w-full md:w-72">
@@ -1364,6 +1438,541 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'field-permissions' && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+          <div className="border-b pb-4 flex justify-between items-center flex-wrap gap-4">
+            <div>
+              <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <Sliders className="h-4 w-4 text-blue-600" />
+                <span>Field-Level Access Control Matrix (FLS)</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">Configure exactly which fields each role can view, edit, or are locked down. Stored permanently in MySQL.</p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Select Role:</span>
+              <select
+                value={selectedRoleForFields}
+                onChange={(e) => setSelectedRoleForFields(e.target.value)}
+                className="bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold px-3 py-1.5 text-slate-800 focus:outline-none"
+              >
+                {ROLES.map(r => (
+                  <option key={r.key} value={r.key}>{r.label} ({r.key})</option>
+                ))}
+              </select>
+              <button
+                onClick={async () => {
+                  setFieldSaveLoading(true);
+                  try {
+                    const res = await fetch("/api/rbac/field-permissions", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${token}`
+                      },
+                      body: JSON.stringify({ fieldPermissions: fieldPermissionsList })
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.success) {
+                      setSuccess("Field permissions saved permanently to MySQL database.");
+                      setTimeout(() => setSuccess(null), 3000);
+                    } else {
+                      setError(data.error || "Failed to save field permissions.");
+                    }
+                  } catch (e: any) {
+                    setError(e.message || "Network error saving field permissions.");
+                  } finally {
+                    setFieldSaveLoading(false);
+                  }
+                }}
+                disabled={fieldSaveLoading}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm transition cursor-pointer disabled:opacity-50"
+              >
+                {fieldSaveLoading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Database className="h-3.5 w-3.5" />}
+                <span>Save to MySQL</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="ds-table w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  <th className="ds-th pb-3 pr-4">Field Name</th>
+                  <th className="ds-th pb-3 pr-4">Description</th>
+                  <th className="ds-th pb-3 pr-4">Workflow Stage</th>
+                  <th className="ds-th pb-3 text-right">Access Permission Level</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50 text-xs">
+                {[
+                  { key: "service_advisor", label: "Service Advisor Assignment", desc: "Allows assigning/changing the Service Advisor on Job Cards" },
+                  { key: "technician_name", label: "Technician & Laborers Allocation", desc: "Allows assigning technicians or specialist laborers" },
+                  { key: "bay_no", label: "Bay Allocation", desc: "Controls bay mapping and bay movement" },
+                  { key: "odometer", label: "Odometer (KM Reading)", desc: "Controls odometer entry and verification" },
+                  { key: "customer_name", label: "Customer Name", desc: "Customer identity and billing name" },
+                  { key: "customer_mobile", label: "Customer Mobile", desc: "Customer contact number" },
+                  { key: "vehicle_model", label: "Vehicle Model / Chassis", desc: "Vehicle model designation" },
+                  { key: "priority", label: "Service Priority", desc: "Normal vs Express urgent service tagging" },
+                  { key: "labour_amount", label: "Labour Cost & Rates", desc: "Labour charges estimation and billing" },
+                  { key: "parts_amount", label: "Parts Amount", desc: "Parts requisitions and cost calculations" },
+                  { key: "discount", label: "Discount & Financial Waiver", desc: "Commercial discounts and financial overrides" },
+                  { key: "job_description", label: "Customer Voice & Complaints", desc: "Detailed complaint logs and service requests" },
+                  { key: "pending_reason", label: "Pending Delay Reason", desc: "Stoppage, parts delay or approval bottleneck notes" },
+                  { key: "remarks", label: "Supervisor Remarks", desc: "Floor notes and handover instructions" },
+                  { key: "date_completed", label: "Completion Date & Signoff", desc: "Job card closing and final QC timestamp" },
+                ].map((field) => {
+                  const existing = fieldPermissionsList.find(
+                    (fp) => fp.role === selectedRoleForFields && fp.field_name === field.key
+                  );
+                  const currentLevel = existing?.permission_level || (
+                    selectedRoleForFields === "admin" || selectedRoleForFields === "developer" ? "OVERRIDE" :
+                    selectedRoleForFields === "reception" && ["service_advisor", "technician_name", "bay_no", "discount", "labour_amount", "parts_amount"].includes(field.key) ? "LOCKED" :
+                    "EDIT"
+                  );
+
+                  return (
+                    <tr key={field.key} className="ds-table-row hover:bg-slate-50/50">
+                      <td className="ds-td py-3.5 pr-4">
+                        <div className="font-bold text-slate-800">{field.label}</div>
+                        <div className="font-mono text-[10px] text-slate-400 mt-0.5">{field.key}</div>
+                      </td>
+                      <td className="ds-td py-3.5 pr-4 text-slate-500 text-xs">{field.desc}</td>
+                      <td className="ds-td py-3.5 pr-4">
+                        <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[10px] font-bold">ANY STAGE</span>
+                      </td>
+                      <td className="ds-td py-3.5 text-right">
+                        <select
+                          value={currentLevel}
+                          onChange={(e) => {
+                            const newLevel = e.target.value;
+                            setFieldPermissionsList((prev) => {
+                              const filtered = prev.filter(
+                                (fp) => !(fp.role === selectedRoleForFields && fp.field_name === field.key)
+                              );
+                              return [...filtered, {
+                                role: selectedRoleForFields,
+                                workflow_stage: "ANY",
+                                field_name: field.key,
+                                permission_level: newLevel
+                              }];
+                            });
+                          }}
+                          className={`rounded-lg text-xs font-bold px-3 py-1.5 border focus:outline-none cursor-pointer ${
+                            currentLevel === "EDIT" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                            currentLevel === "VIEW_ONLY" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                            currentLevel === "HIDDEN" ? "bg-slate-100 text-slate-500 border-slate-200" :
+                            currentLevel === "LOCKED" ? "bg-red-50 text-red-700 border-red-200" :
+                            "bg-purple-50 text-purple-700 border-purple-200"
+                          }`}
+                        >
+                          <option value="EDIT">✏️ EDIT (Editable)</option>
+                          <option value="VIEW_ONLY">👁️ VIEW ONLY (Read-Only)</option>
+                          <option value="LOCKED">🔒 LOCKED (Non-Editable)</option>
+                          <option value="HIDDEN">🚫 HIDDEN (Invisible)</option>
+                          <option value="OVERRIDE">⚡ OVERRIDE (Superuser)</option>
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'ai-rbac' && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+          <div className="border-b pb-4 flex justify-between items-center flex-wrap gap-4">
+            <div>
+              <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-orange-500" />
+                <span>DeepSeek AI Security & Access Copilot</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Describe desired security policies or user access rules in plain English. DeepSeek will configure module and field permissions automatically.
+              </p>
+            </div>
+            <span className="bg-orange-50 text-orange-700 border border-orange-200 px-3 py-1 rounded-full text-[10px] font-bold">
+              Powered by DeepSeek-V4
+            </span>
+          </div>
+
+          {/* Prompt input */}
+          <div className="space-y-3">
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+              Instruction Prompt for DeepSeek AI
+            </label>
+            <textarea
+              rows={3}
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              placeholder="e.g. Lock receptionist Afroz to only see Gate Entry and Reception Intake. Make all post-intake fields (bay allocation, technician, advisor) completely read-only and locked for reception."
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-800 focus:ring-2 focus:ring-orange-500 focus:outline-none"
+            />
+
+            {/* Quick chips */}
+            <div className="flex flex-wrap gap-2 pt-1">
+              <span className="text-[10px] font-bold uppercase text-slate-400 self-center">Quick Templates:</span>
+              {[
+                "Lock Receptionist Afroz to only view Gate Entry and Reception Intake, and lock all bay/technician fields",
+                "Allow Floor Incharge to assign Service Advisors, allocate Bays, and manage Technicians",
+                "Make Odometer, Customer Mobile, and Discount locked for Service Advisors once Job is Active",
+                "Strictly restrict Cashier to Invoicing and Billing with read-only access to Job Cards"
+              ].map((chip, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setAiPrompt(chip)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-semibold px-2.5 py-1 rounded-lg transition"
+                >
+                  {chip.slice(0, 50)}...
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={async () => {
+                if (!aiPrompt.trim()) return;
+                setAiLoading(true);
+                setAiResult(null);
+                try {
+                  const res = await fetch("/api/rbac/ai-assist", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      "Authorization": `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ prompt: aiPrompt })
+                  });
+                  const data = await res.json();
+                  if (res.ok && data.success) {
+                    setAiResult(data);
+                  } else {
+                    setError(data.error || "DeepSeek failed to generate security policy.");
+                  }
+                } catch (e: any) {
+                  setError(e.message || "Network error communicating with DeepSeek.");
+                } finally {
+                  setAiLoading(false);
+                }
+              }}
+              disabled={aiLoading || !aiPrompt.trim()}
+              className="ds-button-primary bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-5 py-2.5 rounded-xl flex items-center gap-2 shadow-sm transition cursor-pointer disabled:opacity-50"
+            >
+              {aiLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
+              <span>{aiLoading ? "DeepSeek is Reasoning..." : "Generate Security Policy with DeepSeek"}</span>
+            </button>
+          </div>
+
+          {/* AI Result Card */}
+          {aiResult && (
+            <div className="bg-slate-900 text-white rounded-2xl p-6 border border-slate-800 space-y-4 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold">
+                  <Zap className="h-4 w-4" />
+                  <span>DeepSeek Security Policy Plan Generated</span>
+                </div>
+                <span className="text-[10px] text-slate-400">{aiResult.modelUsed || "DeepSeek"}</span>
+              </div>
+
+              <div className="text-xs text-slate-300 bg-slate-800/80 p-3.5 rounded-xl border border-slate-700/50">
+                <span className="font-bold text-orange-400 block mb-1">Architect Rationale:</span>
+                {aiResult.explanation}
+              </div>
+
+              {/* Proposed Role Permissions */}
+              {aiResult.rolePermissions && aiResult.rolePermissions.length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Module Permissions to Apply:</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    {aiResult.rolePermissions.map((rp: any, idx: number) => (
+                      <div key={idx} className="bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-[11px]">
+                        <span className="font-bold text-white uppercase">{rp.role_name}</span>
+                        <div className="text-slate-400 mt-0.5">{rp.module_name}</div>
+                        <div className="mt-1 flex gap-2 font-mono text-[10px]">
+                          <span className={rp.can_view ? "text-emerald-400" : "text-red-400"}>View: {rp.can_view ? "YES" : "NO"}</span>
+                          <span className={rp.can_edit ? "text-emerald-400" : "text-red-400"}>Edit: {rp.can_edit ? "YES" : "NO"}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Proposed Field Permissions */}
+              {aiResult.fieldPermissions && aiResult.fieldPermissions.length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Field-Level Rules to Apply:</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    {aiResult.fieldPermissions.map((fp: any, idx: number) => (
+                      <div key={idx} className="bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-[11px]">
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold text-white uppercase">{fp.role}</span>
+                          <span className="bg-orange-500/20 text-orange-400 text-[9px] font-bold px-1.5 py-0.5 rounded">{fp.permission_level}</span>
+                        </div>
+                        <div className="text-slate-400 font-mono text-[10px] mt-1">{fp.field_name}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-2 flex justify-end">
+                <button
+                  onClick={async () => {
+                    setAiApplyLoading(true);
+                    try {
+                      // 1. Apply module permissions if present
+                      if (aiResult.rolePermissions && aiResult.rolePermissions.length > 0) {
+                        await fetch("/api/permissions", {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${token}`
+                          },
+                          body: JSON.stringify({ permissions: aiResult.rolePermissions })
+                        });
+                      }
+                      // 2. Apply field permissions if present
+                      if (aiResult.fieldPermissions && aiResult.fieldPermissions.length > 0) {
+                        await fetch("/api/rbac/field-permissions", {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${token}`
+                          },
+                          body: JSON.stringify({ fieldPermissions: aiResult.fieldPermissions })
+                        });
+                      }
+                      setSuccess("DeepSeek security policy applied permanently to MySQL database!");
+                      setTimeout(() => setSuccess(null), 4000);
+                    } catch (e: any) {
+                      setError(e.message || "Failed to apply AI policy.");
+                    } finally {
+                      setAiApplyLoading(false);
+                    }
+                  }}
+                  disabled={aiApplyLoading}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl flex items-center gap-2 shadow-lg transition cursor-pointer disabled:opacity-50"
+                >
+                  {aiApplyLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+                  <span>{aiApplyLoading ? "Saving to Database..." : "Apply Policy Permanently to Database"}</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'live-bugs' && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+          <div className="border-b pb-4 flex justify-between items-center flex-wrap gap-4">
+            <div>
+              <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <Zap className="h-4 w-4 text-red-500" />
+                <span>Live UAT Bug Reports, User Feedback & DeepSeek Triage</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Real-time feedback captured from testing users with device metadata, user screenshots, and automated DeepSeek root-cause triage.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="bg-slate-100 text-slate-700 text-xs font-bold px-3 py-1.5 rounded-xl">
+                {liveBugs.length} Total Reports
+              </span>
+              <button
+                onClick={() => {
+                  setBugsLoading(true);
+                  fetch("/api/v1/pilot/live-bugs", {
+                    headers: { "Authorization": `Bearer ${token}` }
+                  })
+                    .then(r => r.json())
+                    .then(d => { if (d.success) setLiveBugs(d.bugs || []); })
+                    .catch(err => console.error("Error loading bugs:", err))
+                    .finally(() => setBugsLoading(false));
+                }}
+                disabled={bugsLoading}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${bugsLoading ? "animate-spin" : ""}`} />
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+
+          {bugsLoading ? (
+            <div className="flex justify-center py-12">
+              <RefreshCw className="h-6 w-6 animate-spin text-orange-500" />
+            </div>
+          ) : liveBugs.length === 0 ? (
+            <div className="text-center py-12 bg-slate-50 border border-dashed border-slate-200 rounded-2xl text-slate-400 text-xs font-medium">
+              No live testing bugs reported yet. Users can report bugs from any screen using the bottom-right Feedback button.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {liveBugs.map((bug: any) => (
+                <div key={bug.feedback_id} className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-3 hover:border-slate-300 transition">
+                  <div className="flex justify-between items-start flex-wrap gap-2 border-b border-slate-200/60 pb-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-800 text-sm">{bug.employee_name || `Employee #${bug.employee_id}`}</span>
+                        <span className="bg-slate-200 text-slate-700 text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase">{bug.role}</span>
+                        <span className="bg-orange-100 text-orange-800 text-[10px] font-bold px-2 py-0.5 rounded uppercase">{bug.screen_id}</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-1">
+                        📅 {new Date(bug.created_at).toLocaleString()} • Type: <span className="font-bold text-slate-600">{bug.feedback_type}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase ${
+                        bug.ai_severity === "CRITICAL" ? "bg-red-100 text-red-700 border border-red-200" :
+                        bug.ai_severity === "HIGH" ? "bg-orange-100 text-orange-700 border border-orange-200" :
+                        bug.ai_severity === "MEDIUM" ? "bg-amber-100 text-amber-700 border border-amber-200" :
+                        "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                      }`}>
+                        {bug.ai_severity || "MEDIUM"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* User Message */}
+                  <div className="text-xs text-slate-700 font-medium bg-white p-3.5 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">User Description:</span>
+                    {bug.message}
+                  </div>
+
+                  {/* Screenshot Thumbnail */}
+                  {bug.screenshot_base64 && (
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold uppercase text-slate-400 block">Attached Screenshot:</span>
+                      <img
+                        src={bug.screenshot_base64}
+                        alt="User bug screenshot"
+                        onClick={() => setSelectedScreenshot(bug.screenshot_base64)}
+                        className="h-28 rounded-xl border border-slate-300 shadow-sm object-cover cursor-pointer hover:opacity-90 transition hover:ring-2 hover:ring-orange-500"
+                      />
+                    </div>
+                  )}
+
+                  {/* DeepSeek AI Diagnostics Card */}
+                  {bug.ai_analysis && (
+                    <div className="bg-slate-900 text-white rounded-xl p-4 border border-slate-800 space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <div className="flex items-center gap-1.5 text-orange-400 text-xs font-bold">
+                          <Sparkles className="h-3.5 w-3.5" />
+                          <span>DeepSeek AI Root Cause & Diagnostics</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-mono">STATUS: {bug.ai_status || "TRIAGED"}</span>
+                      </div>
+
+                      <div className="text-xs text-slate-300">
+                        <span className="text-slate-400 font-bold block mb-0.5">Root Cause:</span>
+                        {bug.ai_analysis}
+                      </div>
+
+                      {bug.ai_suggested_fix && (
+                        <div className="text-xs text-emerald-300 bg-slate-950/80 p-2.5 rounded-lg border border-slate-800 font-mono text-[11px]">
+                          <span className="text-slate-400 font-sans font-bold block mb-0.5">Suggested Fix:</span>
+                          {bug.ai_suggested_fix}
+                        </div>
+                      )}
+
+                      {/* In-House Auto-Fix Action */}
+                      {bug.in_house_action && (
+                        <div className="bg-blue-950/50 border border-blue-900/60 p-3 rounded-lg flex items-center justify-between flex-wrap gap-2">
+                          <div>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400 block">⚡ In-House Fix Available:</span>
+                            <span className="text-xs text-slate-200 font-mono">{bug.in_house_action}</span>
+                          </div>
+                          <button
+                            onClick={async () => {
+                              try {
+                                const res = await fetch(`/api/v1/pilot/feedback/${bug.feedback_id}/apply-in-house-fix`, {
+                                  method: "POST",
+                                  headers: {
+                                    "Content-Type": "application/json",
+                                    "Authorization": `Bearer ${token}`
+                                  },
+                                  body: JSON.stringify({ sqlAction: bug.in_house_action })
+                                });
+                                const data = await res.json();
+                                if (res.ok && data.success) {
+                                  setSuccess("In-house fix applied and marked resolved!");
+                                  setTimeout(() => setSuccess(null), 3000);
+                                  bug.ai_status = "RESOLVED_IN_HOUSE";
+                                  setLiveBugs([...liveBugs]);
+                                } else {
+                                  setError(data.error || "Failed to apply in-house fix.");
+                                }
+                              } catch (e: any) {
+                                setError(e.message);
+                              }
+                            }}
+                            className="bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg transition cursor-pointer"
+                          >
+                            Apply In-House Fix
+                          </button>
+                        </div>
+                      )}
+
+                      {/* IDE Agent Prompt for Development */}
+                      {bug.ide_agent_prompt && (
+                        <div className="bg-purple-950/40 border border-purple-900/50 p-3 rounded-lg space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1">
+                              <Bot className="h-3 w-3" />
+                              <span>Antigravity IDE Agent Prompt:</span>
+                            </span>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(bug.ide_agent_prompt);
+                                setSuccess("IDE Agent prompt copied to clipboard! Paste it into Antigravity IDE.");
+                                setTimeout(() => setSuccess(null), 3000);
+                              }}
+                              className="text-[10px] font-bold text-purple-300 hover:text-white bg-purple-900/60 hover:bg-purple-800 px-2 py-1 rounded transition cursor-pointer"
+                            >
+                              📋 Copy Prompt for IDE
+                            </button>
+                          </div>
+                          <pre className="text-[11px] text-purple-200 font-mono whitespace-pre-wrap bg-slate-950 p-2.5 rounded-md border border-purple-900/30 overflow-x-auto">
+                            {bug.ide_agent_prompt}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Screenshot Modal Lightbox */}
+          {selectedScreenshot && (
+            <div 
+              className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+              onClick={() => setSelectedScreenshot(null)}
+            >
+              <div className="relative max-w-4xl max-h-[90vh] bg-slate-900 rounded-2xl overflow-hidden shadow-2xl p-2 border border-slate-700">
+                <button
+                  onClick={() => setSelectedScreenshot(null)}
+                  className="absolute top-4 right-4 bg-slate-800/80 hover:bg-slate-700 text-white p-2 rounded-full cursor-pointer z-10"
+                >
+                  ✕
+                </button>
+                <img
+                  src={selectedScreenshot}
+                  alt="Full screen preview"
+                  className="max-h-[85vh] max-w-full rounded-xl object-contain"
+                />
               </div>
             </div>
           )}

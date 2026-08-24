@@ -108,3 +108,42 @@ gcloud run services update-traffic dwip-enterprise --region asia-south1 \
   --project giga-course-dp497 \
   --to-revisions dwip-enterprise-00056-9tj=100
 ```
+
+---
+
+## SLA-evaluator Cloud Scheduler job (one-time, do AFTER a deploy that includes it)
+
+`POST /api/v1/devops/cron/sla-evaluator` (server.ts) is a fully-built, secured
+endpoint that runs `RealtimeOwnershipPipeline.evaluateHandoffSlaEscalations()`
+— the 5-minute handoff-SLA breach/escalation engine (L1→service_manager,
+L2→works_manager, L3→general_manager). It was already coded to require a
+Google-signed OIDC token + `x-cloudscheduler: true` header in production, but
+**no Cloud Scheduler job was ever provisioned to call it** — so SLA breaches
+were never evaluated in prod, regardless of how many trackers existed. Not run
+yet; prepared here for after a deploy lands.
+
+```
+PROJECT=giga-course-dp497
+REGION=asia-south1
+SA=772298398554-compute@developer.gserviceaccount.com   # same runtime SA as the service
+TARGET_URL=https://dwip-enterprise-npoyvb3q7a-el.a.run.app/api/v1/devops/cron/sla-evaluator
+
+# One-time: the scheduler's invoking SA needs Cloud Run Invoker on the service
+gcloud run services add-iam-policy-binding dwip-enterprise \
+  --region $REGION --project $PROJECT \
+  --member="serviceAccount:${SA}" --role="roles/run.invoker"
+
+gcloud scheduler jobs create http dwip-sla-evaluator \
+  --project $PROJECT --location $REGION \
+  --schedule="*/2 * * * *" \
+  --uri="$TARGET_URL" \
+  --http-method=POST \
+  --oidc-service-account-email="$SA" \
+  --oidc-token-audience="$TARGET_URL" \
+  --headers="x-cloudscheduler=true" \
+  --message-body='{"branchId":"BR-SEDAM"}'
+```
+
+Verify after creation: `gcloud scheduler jobs run dwip-sla-evaluator --location $REGION --project $PROJECT`
+then check `tbl_sla_history` for new `ESCALATED` rows, or watch Cloud Run logs
+for `[Interval Notification]`-style output from the evaluator.

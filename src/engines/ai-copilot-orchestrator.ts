@@ -77,7 +77,7 @@ export class AiCopilotOrchestrator {
       id: "inventory-skill",
       name: "Parts Inventory Advisor",
       description: "Analyzes stock levels and reorder requirements",
-      allowedRoles: ["Store Manager", "Parts Counter", "Dealer Principal", "Admin"],
+      allowedRoles: ["Store Manager", "Parts Counter", "Dealer Principal", "Admin", "Parts Manager", "Spares Manager"],
       execute: async (prompt: string, context: any) => {
         const recId = `REC-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
         await db.execute(

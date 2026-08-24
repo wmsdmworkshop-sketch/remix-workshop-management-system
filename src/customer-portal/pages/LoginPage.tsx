@@ -133,27 +133,6 @@ export function LoginPage({ onSuccess }: LoginPageProps) {
     }
   };
 
-  const startGoogleSignup = async (name: string, email: string) => {
-    setSelectedSocialName(name);
-    setSelectedSocialEmail(email);
-    setSocialModal("none");
-    setLoading(true);
-    try {
-      const mockMobile = "+919876543201";
-      const result = await signupCustomer(name, mockMobile, "google");
-      if (result.success) {
-        onSuccess();
-      } else {
-        // Fallback auto-login on demo profile match
-        onSuccess();
-      }
-    } catch (err) {
-      onSuccess();
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const startWhatsAppSignup = () => {
     setSelectedSocialName("WhatsApp User");
     setSocialStep("link");
@@ -178,40 +157,51 @@ export function LoginPage({ onSuccess }: LoginPageProps) {
     }
   };
 
+  // The customer portal SPA is served at /customer-portal/ (see server.ts static
+  // routing) — the OAuth redirect must return here, not to a stale /customer path.
+  const GOOGLE_REDIRECT_URI = typeof window !== "undefined" ? window.location.origin + "/customer-portal/" : "";
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("code") || params.get("google_auth")) {
-      signupCustomer("Google Verified User", "+919606453845", "google").then(() => {
-        onSuccess();
-      }).catch(() => {
-        onSuccess();
-      });
-    }
+    const code = params.get("code");
+    if (!code) return;
+
+    // Strip the code from the URL immediately so a refresh doesn't replay it.
+    window.history.replaceState({}, "", window.location.pathname);
+
+    setLoading(true);
+    fetch("/api/customer/auth/google/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, redirectUri: GOOGLE_REDIRECT_URI }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.googleEmail) {
+          // Real, verified identity from Google. This app's customer model is
+          // mobile-number-keyed, so collect/confirm the mobile via the existing
+          // "link account" step rather than fabricating one.
+          setSelectedSocialName(data.googleName);
+          setSelectedSocialEmail(data.googleEmail);
+          setSocialModal("google");
+          setSocialStep("link");
+        } else {
+          setError(data.message || "Google Sign-In failed. Please try mobile OTP instead.");
+        }
+      })
+      .catch(() => setError("Network error verifying Google Sign-In. Please try mobile OTP instead."))
+      .finally(() => setLoading(false));
   }, []);
 
-  const handleGoogleAuthRedirect = async () => {
-    setLoading(true);
-    try {
-      const googleClientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || (window as any).GOOGLE_CLIENT_ID;
-      if (googleClientId && typeof googleClientId === "string" && googleClientId.includes(".apps.googleusercontent.com")) {
-        const redirectUri = window.location.origin + "/customer";
-        const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(googleClientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=openid%20email%20profile&prompt=select_account`;
-        window.location.href = googleAuthUrl;
-        return;
-      }
-
-      // Seamless direct Google Authentication (bypasses unconfigured Google Cloud 401 client error)
-      const res = await signupCustomer("Google Verified User", "+919606453845", "google");
-      if (res.success) {
-        onSuccess();
-      } else {
-        onSuccess();
-      }
-    } catch (e) {
-      onSuccess();
-    } finally {
-      setLoading(false);
+  const handleGoogleAuthRedirect = () => {
+    setError("");
+    const googleClientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID;
+    if (!googleClientId || typeof googleClientId !== "string" || !googleClientId.includes(".apps.googleusercontent.com")) {
+      setError("Google Sign-In is not yet configured for this portal. Please use mobile OTP instead.");
+      return;
     }
+    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(googleClientId)}&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}&response_type=code&scope=openid%20email%20profile&prompt=select_account`;
+    window.location.href = googleAuthUrl;
   };
 
   return (
@@ -466,44 +456,6 @@ export function LoginPage({ onSuccess }: LoginPageProps) {
               <button onClick={() => setSocialModal("none")} style={s.closeBtn}>✕</button>
             </div>
 
-            {socialModal === "google" && socialStep === "select" && (
-              <div style={s.modalBody}>
-                <p style={s.modalDesc}>Select an account to continue to Devanand Motors:</p>
-                <div style={s.googleAccountList}>
-                  <div 
-                    onClick={handleGoogleAuthRedirect}
-                    style={s.googleAccountItem}
-                  >
-                    <div style={s.avatar}>JJ</div>
-                    <div>
-                      <div style={s.accountName}>Jaffer Jaffer</div>
-                      <div style={s.accountEmail}>jaffer@gmail.com</div>
-                    </div>
-                  </div>
-                  <div 
-                    onClick={handleGoogleAuthRedirect}
-                    style={s.googleAccountItem}
-                  >
-                    <div style={s.avatar}>SJ</div>
-                    <div>
-                      <div style={s.accountName}>Sayeed Jaffer</div>
-                      <div style={s.accountEmail}>sayeed.jaffer@devanand.com</div>
-                    </div>
-                  </div>
-                  <div 
-                    onClick={handleGoogleAuthRedirect}
-                    style={s.googleAccountItem}
-                  >
-                    <div style={s.avatar}>GU</div>
-                    <div>
-                      <div style={s.accountName}>Guest User</div>
-                      <div style={s.accountEmail}>guest.user@gmail.com</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {socialModal === "whatsapp" && socialStep === "select" && (
               <div style={s.modalBody}>
                 <div style={s.qrSection}>
@@ -538,7 +490,8 @@ export function LoginPage({ onSuccess }: LoginPageProps) {
             {socialStep === "link" && (
               <form onSubmit={handleSocialLinkSubmit} style={s.modalBody}>
                 <p style={s.modalDesc}>
-                  Enter your mobile number to link your <strong>{socialModal === "google" ? "Google Account" : "WhatsApp"}</strong> profile:
+                  Enter your mobile number to link your <strong>{socialModal === "google" ? "Google Account" : "WhatsApp"}</strong> profile
+                  {socialModal === "google" && selectedSocialEmail ? <> (verified as <strong>{selectedSocialEmail}</strong>)</> : null}:
                 </p>
 
                 <div style={s.inputGroup}>

@@ -546,14 +546,19 @@ export default function DmsImporter({
         const dbCol = aiHeaderMapping[csvHeader];
         if (dbCol) {
           let val = row[csvHeader];
-          // Handle amount formatting (remove currency prefix like Rs. and clean non-numeric)
+          // Handle amount formatting (remove currency prefix like Rs. and clean non-numeric).
+          // Strip the "Rs." prefix explicitly BEFORE stripping non-digit characters —
+          // its trailing period otherwise survives as a stray leading decimal point
+          // (e.g. "Rs.1,770.00" -> ".1770.00" -> parseFloat stops at the real decimal
+          // and returns 0.177 instead of 1770), which is why every invoice amount
+          // imported through this path ended up corrupted to a near-zero fraction.
           if (
             dbCol === "final_labour_amount" ||
             dbCol === "final_spares_amount" ||
             dbCol === "final_consolidated_amt"
           ) {
             if (val && typeof val === "string") {
-              const clean = val.replace(/[^0-9.]/g, "");
+              const clean = val.replace(/Rs\.?/gi, "").replace(/,/g, "").trim();
               val = parseFloat(clean) || 0;
             }
           }

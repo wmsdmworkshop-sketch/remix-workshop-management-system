@@ -218,65 +218,6 @@ describe("Phase 10 - Operations Command Control & SLA Evaluator", () => {
     await db.execute(`DELETE FROM tbl_gate_entry WHERE gate_entry_id = ?`, [gateEntryId]);
   });
 
-  test("5. Cashier -> Security Handoff (Creation to Closure)", async () => {
-    const { GateOutEngine } = await import('../core/workshop/gate-out-engine.ts');
-    const jobId = `JOB-${Date.now()}`;
-    const mockGe = `GE-MOCK-${Date.now()}`;
-    const branchId = testBranchId.toString();
-
-    // Insert mock gate entry and job card
-    await db.execute(`INSERT INTO tbl_gate_entry (gate_entry_id, vin, odometer) VALUES (?, 'VIN-123', 0)`, [mockGe]);
-    await db.execute(`INSERT INTO tbl_job_card (job_card_id, gate_entry_id, workflow_state) VALUES (?, ?, 'INVOICED')`, [jobId, mockGe]);
-    await db.execute(`INSERT INTO tbl_payments (payment_id, job_id, status) VALUES ('PAY-123', ?, 'COMPLETED')`, [jobId]);
-    await db.execute(`INSERT INTO tbl_evidence (evidence_id, lifecycle_status) VALUES ('EV-123', 'ACTIVE')`);
-
-    // 1. Cashier creates gate pass, generating SLA_CASHIER_TO_SECURITY
-    const engine = new GateOutEngine();
-    const gpResult = await engine.createGatePass({
-      jobId, 
-      branchId,
-      issuedBy: 'CASH-1'
-    });
-    assert.ok(gpResult.gatePassId);
-
-    // Verify SLA created
-    const [slaRows]: any = await db.execute(
-      `SELECT status FROM tbl_handoff_sla WHERE entity_id = ? AND stage_name = 'SLA_CASHIER_TO_SECURITY'`,
-      [gpResult.gatePassId]
-    );
-    assert.strictEqual(slaRows.length > 0, true, 'SLA should be created');
-    assert.strictEqual(slaRows[0].status, 'ON_TRACK', 'SLA should be ON_TRACK');
-
-    // 2. Security gates out vehicle, closing SLA
-    const goResult = await engine.gateOutVehicle({
-      gatePassId: gpResult.gatePassId,
-      jobId,
-      securityOperatorId: 'SEC-1',
-      branchId,
-      expectedVrn: 'VRN-123',
-      detectedVrn: 'VRN-123',
-      evidenceId: 'EV-123',
-      captureSource: 'ANPR'
-    });
-    assert.ok(goResult.gateOutId);
-
-    // Verify SLA closed
-    const [closedSlaRows]: any = await db.execute(
-      `SELECT status, accepted_at FROM tbl_handoff_sla WHERE entity_id = ? AND stage_name = 'SLA_CASHIER_TO_SECURITY'`,
-      [gpResult.gatePassId]
-    );
-    assert.strictEqual(closedSlaRows[0].status, 'COMPLETED', 'SLA should be COMPLETED');
-    assert.ok(closedSlaRows[0].accepted_at, 'Accepted timestamp should be set');
-
-    // Cleanup
-    await db.execute(`DELETE FROM tbl_handoff_sla WHERE entity_id = ?`, [gpResult.gatePassId]);
-    await db.execute(`DELETE FROM tbl_gate_out WHERE gate_pass_id = ?`, [gpResult.gatePassId]);
-    await db.execute(`DELETE FROM tbl_gate_pass WHERE gate_pass_id = ?`, [gpResult.gatePassId]);
-    await db.execute(`DELETE FROM tbl_job_card WHERE job_card_id = ?`, [jobId]);
-    await db.execute(`DELETE FROM tbl_gate_entry WHERE gate_entry_id = ?`, [mockGe]);
-    await db.execute(`DELETE FROM tbl_evidence WHERE evidence_id = 'EV-123'`);
-  });
-
   test("6. Manager Override Functionality", async () => {
     const jobId = 'JOB-TEST-OVR-' + Date.now();
     

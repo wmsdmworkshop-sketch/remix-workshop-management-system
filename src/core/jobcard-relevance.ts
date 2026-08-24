@@ -38,8 +38,8 @@ export const GROUP3_VIEW_ONLY = ["dkam", "dealer_principal"];
 // Roles whose relevance is the workflow STAGE the JC currently sits in.
 // Values are matched against jc.current_workflow_state (and a status fallback).
 const STAGE_RULES: Record<string, { states: string[]; statuses?: string[]; flag?: string }> = {
-  reception:      { states: ["GATE_IN", "INTAKE_PENDING", "INTAKE_QUEUE", "RECEPTION_QUEUE"], statuses: ["Waiting", "Draft", "Gate In", "Open"] },
-  receptionist:   { states: ["GATE_IN", "INTAKE_PENDING", "INTAKE_QUEUE", "RECEPTION_QUEUE"], statuses: ["Waiting", "Draft", "Gate In", "Open"] },
+  reception:      { states: ["GATE_IN", "INTAKE_PENDING", "INTAKE_QUEUE", "RECEPTION_QUEUE"], statuses: ["Gate In", "Draft"] },
+  receptionist:   { states: ["GATE_IN", "INTAKE_PENDING", "INTAKE_QUEUE", "RECEPTION_QUEUE"], statuses: ["Gate In", "Draft"] },
   service_advisor:{ states: ["GATE_IN", "INTAKE_PENDING", "INTAKE_QUEUE", "RECEPTION_QUEUE", "WAITING_ADVISOR", "ESTIMATE_PENDING", "ESTIMATE_SUBMITTED", "INSPECTION_PENDING", "CUSTOMER_APPROVAL_PENDING"], statuses: ["Waiting", "Draft", "Gate In", "Open"] },
   parts:          { states: ["PARTS_PENDING"], flag: "parts_required" },
   parts_incharge: { states: ["PARTS_PENDING"], flag: "parts_required" },
@@ -50,8 +50,8 @@ const STAGE_RULES: Record<string, { states: string[]; statuses?: string[]; flag?
   warranty_clerk: { states: ["BILLING_PENDING"], statuses: ["Completed"] },
   cashier:        { states: ["CASHIER_PENDING"], statuses: ["Invoiced"] },
   qc:             { states: ["QC_PENDING", "QC_FAILED"] },
-  security_agent: { states: ["GATE_IN", "FINAL_REVIEW", "COMPLETED"], statuses: ["Waiting", "Draft", "Gate In", "Completed", "Invoiced"] },
-  gate_personnel: { states: ["GATE_IN", "FINAL_REVIEW", "COMPLETED"], statuses: ["Waiting", "Draft", "Gate In", "Completed", "Invoiced"] },
+  security_agent: { states: ["GATE_IN", "FINAL_REVIEW", "COMPLETED"], statuses: ["Gate In", "Completed", "Invoiced"] },
+  gate_personnel: { states: ["GATE_IN", "FINAL_REVIEW", "COMPLETED"], statuses: ["Gate In", "Completed", "Invoiced"] },
 };
 
 const norm = (v: any): string => String(v ?? "").trim().toLowerCase();

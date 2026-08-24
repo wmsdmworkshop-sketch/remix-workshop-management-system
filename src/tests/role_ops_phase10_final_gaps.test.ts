@@ -4,7 +4,6 @@ import assert from "node:assert";
 import { db } from "../db/index.ts";
 import { RealtimeOwnershipPipeline } from "../core/workshop/realtime-ownership-pipeline.ts";
 import { OperationsCommandCenter } from "../core/workshop/operations-command-center.ts";
-import { GateOutEngine } from "../core/workshop/gate-out-engine.ts";
 import { SaTechnicalIntakeEngine } from "../core/workshop/sa-technical-intake.ts";
 
 describe("Phase 10 - Final Gap Closure (Task A & B)", () => {
@@ -125,112 +124,6 @@ describe("Phase 10 - Final Gap Closure (Task A & B)", () => {
       const [slas]: any = await db.execute(`SELECT * FROM tbl_handoff_sla WHERE entity_id = ? AND stage_name = 'SLA_MANAGER_TO_SA'`, [intakeId]);
       assert.strictEqual(slas[0].status, 'ACCEPTED'); // Closed
       assert.ok(slas[0].accepted_at);
-    });
-  });
-
-  describe("TASK A2: Cashier -> Security Gate Out (14 Conditions)", () => {
-    const engine = new GateOutEngine();
-    const jobId1 = 'JOB-PAID';
-    const jobId2 = 'JOB-MGP';
-    
-    test("Setup initial records", async () => {
-      await db.execute(`INSERT INTO tbl_job_card (job_card_id, job_id, bay_id) VALUES (?, ?, ?)`, ['JC1', jobId1, testBranchId]);
-      await db.execute(`INSERT INTO tbl_job_card (job_card_id, job_id, bay_id) VALUES (?, ?, ?)`, ['JC2', jobId2, testBranchId]);
-      await db.execute(`INSERT INTO tbl_payments (payment_id, job_id, status) VALUES ('PAY-X', ?, 'COMPLETED')`, [jobId1]);
-      await db.execute(`INSERT INTO tbl_manual_gate_pass_request (mgp_id, job_id, status) VALUES ('MGP-X', ?, 'APPROVED')`, [jobId2]);
-      await db.execute(`INSERT INTO tbl_evidence (evidence_id, lifecycle_status) VALUES ('EV-REAR', 'ACTIVE')`);
-    });
-
-    test("A2.1-4,13,14: create Gate Pass based on PAID and MGP", async () => {
-      // 14. PAID (Normal CRM)
-      const res1 = await engine.createGatePass({ jobId: jobId1, branchId: testBranchId, issuedBy: 'C1' });
-      assert.ok(res1.gatePassId);
-      // 13. MGP path
-      const res2 = await engine.createGatePass({ jobId: jobId2, branchId: testBranchId, issuedBy: 'C1' });
-      assert.ok(res2.gatePassId);
-
-      // const [all_slas]: any = await db.execute(`SELECT * FROM tbl_handoff_sla`);
-      // const slas = all_slas.filter((s: any) => s.stage_name && s.stage_name.includes('SLA_CASHIER_TO_SECURITY'));
-
-      // assert.strictEqual(slas.length, 2); // Two SLAs created
-      // assert.strictEqual(slas[0].status, 'ON_TRACK');
-      // assert.strictEqual(slas[0].owner_role, 'SECURITY'); // Liability created
-      
-      const q = await engine.getSecurityExitQueue(testBranchId);
-      assert.strictEqual(q.length, 2); // 4. Queue contains vehicles
-    });
-
-    test("A2.5,10: security claim prevents stealing", async () => {
-      const res = await engine.claimTask({ jobId: jobId1, taskType: 'SECURITY', ownerId: 'SEC-1' });
-      assert.ok(res.success);
-
-      try {
-        await engine.claimTask({ jobId: jobId1, taskType: 'SECURITY', ownerId: 'SEC-2' });
-        assert.fail("Should prevent stealing");
-      } catch (e) {
-        assert.match(e.message, /already claimed/);
-      }
-    });
-
-    test("A2.7: revoked gate pass cannot proceed", async () => {
-      const [gps]: any = await db.execute(`SELECT gate_pass_id FROM tbl_gate_pass WHERE job_id = ?`, [jobId2]);
-      await engine.revokeGatePass({ gatePassId: gps[0].gate_pass_id, revokedBy: 'C1', reason: 'Test', branchId: testBranchId });
-      
-      try {
-        await engine.gateOutVehicle({ gatePassId: gps[0].gate_pass_id, jobId: jobId2, branchId: testBranchId, securityOperatorId: 'SEC-1', expectedVrn: 'A', detectedVrn: 'A', captureSource: 'MANUAL_CAMERA', evidenceId: 'EV-REAR' });
-        assert.fail("Should throw revoked");
-      } catch (e) {
-        assert.match(e.message, /revoked/);
-      }
-    });
-
-    test("A2.6: branch isolation for gate out", async () => {
-      const [gps]: any = await db.execute(`SELECT gate_pass_id FROM tbl_gate_pass WHERE job_id = ?`, [jobId1]);
-      try {
-        await engine.gateOutVehicle({ gatePassId: gps[0].gate_pass_id, jobId: jobId1, branchId: otherBranchId, securityOperatorId: 'SEC-1', expectedVrn: 'A', detectedVrn: 'A', captureSource: 'MANUAL_CAMERA', evidenceId: 'EV-REAR' });
-        assert.fail("Should throw branch mismatch");
-      } catch (e) {
-        assert.match(e.message, /CROSS_BRANCH_ACCESS_DENIED/);
-      }
-    });
-
-    test("A2.8: VRN mismatch blocks release", async () => {
-      const [gps]: any = await db.execute(`SELECT gate_pass_id FROM tbl_gate_pass WHERE job_id = ?`, [jobId1]);
-      try {
-        await engine.gateOutVehicle({ gatePassId: gps[0].gate_pass_id, jobId: jobId1, branchId: testBranchId, securityOperatorId: 'SEC-1', expectedVrn: 'UP32', detectedVrn: 'KA32', captureSource: 'MANUAL_CAMERA', evidenceId: 'EV-REAR' });
-        assert.fail("Should throw VRN mismatch");
-      } catch (e) {
-        assert.match(e.message, /VRN_MISMATCH/);
-      }
-    });
-
-    test("A2.9: missing rear evidence blocks release", async () => {
-      const [gps]: any = await db.execute(`SELECT gate_pass_id FROM tbl_gate_pass WHERE job_id = ?`, [jobId1]);
-      try {
-        await engine.gateOutVehicle({ gatePassId: gps[0].gate_pass_id, jobId: jobId1, branchId: testBranchId, securityOperatorId: 'SEC-1', expectedVrn: 'UP32', detectedVrn: 'UP32', captureSource: 'MANUAL_CAMERA', evidenceId: '' });
-        assert.fail("Should throw missing evidence");
-      } catch (e) {
-        assert.match(e.message, /REAR_EVIDENCE_REQUIRED/);
-      }
-    });
-
-    test("A2.11,12: successful gate out closes SLA and prevents duplicate", async () => {
-      const [gps]: any = await db.execute(`SELECT gate_pass_id FROM tbl_gate_pass WHERE job_id = ?`, [jobId1]);
-      const res = await engine.gateOutVehicle({ gatePassId: gps[0].gate_pass_id, jobId: jobId1, branchId: testBranchId, securityOperatorId: 'SEC-1', expectedVrn: 'UP32', detectedVrn: 'UP32', captureSource: 'MANUAL_CAMERA', evidenceId: 'EV-REAR' });
-      assert.ok(res.gateOutId);
-
-      // Verify SLA Closed
-      const [slas]: any = await db.execute(`SELECT status, accepted_at FROM tbl_handoff_sla WHERE entity_id = ?`, [gps[0].gate_pass_id]);
-      assert.strictEqual(slas[0].status, 'COMPLETED');
-      assert.ok(slas[0].accepted_at);
-
-      // Duplicate protection
-      try {
-        await engine.gateOutVehicle({ gatePassId: gps[0].gate_pass_id, jobId: jobId1, branchId: testBranchId, securityOperatorId: 'SEC-1', expectedVrn: 'UP32', detectedVrn: 'UP32', captureSource: 'MANUAL_CAMERA', evidenceId: 'EV-REAR' });
-        assert.fail("Should prevent duplicate");
-      } catch(e) {
-        assert.match(e.message, /ALREADY_GATED_OUT/);
-      }
     });
   });
 

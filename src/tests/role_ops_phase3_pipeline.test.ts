@@ -7,6 +7,10 @@ let mockReceptionIntakes: any[] = [];
 let mockManagerAssignments: any[] = [];
 let mockHandoffSla: any[] = [];
 let mockJobCards: any[] = [];
+// The REAL `job_cards` table (single source of truth across the whole app) —
+// distinct from `mockJobCards` above, which models the now-unused tbl_job_card
+// shadow table that assignServiceAdvisor previously (incorrectly) wrote to.
+let mockRealJobCards: any[] = [];
 
 const mockDbProvider = {
   execute: async (sql: string, params: any[] = []) => {
@@ -107,12 +111,18 @@ const mockDbProvider = {
     }
 
     if (sqlUpper.includes("UPDATE TBL_HANDOFF_SLA SET ACCEPTED_AT")) {
-      const item = mockHandoffSla.find(h => h.entity_id === params[1] && h.stage_name === params[2]);
+      // stage_name is a SQL literal in these queries, not a bound param (only
+      // accepted_at and entity_id are parameterized) — match it out of the
+      // query text itself so trackers sharing the same entity_id across
+      // different stages aren't conflated.
+      const item = mockHandoffSla.find(
+        h => h.entity_id === params[1] && sqlUpper.includes(`STAGE_NAME = '${String(h.stage_name).toUpperCase()}'`)
+      );
       if (item) {
         item.accepted_at = params[0];
         item.status = "ACCEPTED";
       }
-      return [{ affectedRows: 1 }, []];
+      return [{ affectedRows: item ? 1 : 0 }, []];
     }
 
     if (sqlUpper.includes("INSERT INTO TBL_JOB_CARD")) {
@@ -151,6 +161,26 @@ const mockDbProvider = {
       return [mockGateEntries.map(g => ({ ...g, sla_due_at: new Date() })), []];
     }
 
+    if (sqlUpper.includes("SELECT COUNT(*) AS CNT FROM TBL_JOB_CARD")) {
+      const cnt = mockJobCards.filter(j => j.advisor_id === params[0]).length;
+      return [[{ cnt }], []];
+    }
+
+    // ── Bridge into the app-wide `job_cards` table (assignServiceAdvisor step 4b) ──
+    // Matched by VRN, not job_id/intake_id — job_cards has no column linking
+    // back to tbl_reception_intake/tbl_gate_entry.
+    if (sqlUpper.includes("UPDATE JOB_CARDS SET SERVICE_ADVISOR")) {
+      const match = mockRealJobCards.find(
+        j => j.vrn === params[1] && j.current_workflow_state === "GATE_IN" &&
+             (!j.service_advisor || j.service_advisor === "" || j.service_advisor === "Unassigned")
+      );
+      if (match) {
+        match.service_advisor = params[0];
+        match.current_workflow_state = "WAITING_ADVISOR";
+      }
+      return [{ affectedRows: match ? 1 : 0 }, []];
+    }
+
     return [[], []];
   }
 };
@@ -162,6 +192,7 @@ describe("Phase 3 — Gate-In → Reception → Manager Assignment Real-Time Own
     mockManagerAssignments = [];
     mockHandoffSla = [];
     mockJobCards = [];
+    mockRealJobCards = [];
     RealtimeOwnershipPipeline.setDbProvider(mockDbProvider);
   });
 
@@ -234,9 +265,22 @@ describe("Phase 3 — Gate-In → Reception → Manager Assignment Real-Time Own
     expect(rec.reason.length).toBeGreaterThan(0);
   });
 
-  it("5. STAGE 09: Manager assigns Service Advisor and transfers ownership", async () => {
+  it("5. STAGE 09: Manager assigns Service Advisor, transfers ownership, and bridges the assignment into job_cards", async () => {
     const gateRes = await RealtimeOwnershipPipeline.createGateIn({ vrn: "KA32P5544", odometer: 20000 }, securityUser);
     const intakeRes = await RealtimeOwnershipPipeline.acceptReceptionIntake({ gateEntryId: gateRes.gateEntryId, visitCategory: "General Check-up", confirmedOdometer: 20000 }, receptionistUser);
+
+    // The app-wide `job_cards` row for this same vehicle (created independently
+    // by POST /api/job-cards, the screen receptionists actually use) — the
+    // assignment must bridge into this by VRN, since job_cards has no column
+    // linking back to tbl_reception_intake/tbl_gate_entry.
+    mockRealJobCards.push({
+      job_id: 601,
+      job_card_no: "JC601",
+      vrn: "KA32P5544",
+      current_workflow_state: "GATE_IN",
+      service_advisor: "Unassigned",
+      created_at: new Date()
+    });
 
     const assignRes = await RealtimeOwnershipPipeline.assignServiceAdvisor(
       {
@@ -252,6 +296,14 @@ describe("Phase 3 — Gate-In → Reception → Manager Assignment Real-Time Own
     expect(assignRes.success).toBe(true);
     expect(assignRes.assignedSaName).toBe("Shashi Patil");
     expect(assignRes.jobCardId).toBeDefined();
+
+    // The real job_cards row must now carry the assignment — this is what
+    // every other screen in the app (JobCardManager, Dashboard, billing, QC)
+    // actually reads, unlike the tbl_job_card write above which nothing
+    // outside this pipeline sees.
+    const bridged = mockRealJobCards.find(j => j.job_id === 601);
+    expect(bridged.service_advisor).toBe("Shashi Patil");
+    expect(bridged.current_workflow_state).toBe("WAITING_ADVISOR");
   });
 
   it("6. SECURITY: Rejects unauthorized SA self-assignment", async () => {

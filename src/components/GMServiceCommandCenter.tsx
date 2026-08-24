@@ -82,7 +82,9 @@ export const GMServiceCommandCenter: React.FC<GMServiceCommandCenterProps> = Rea
             { id: "kpis", label: "Executive KPIs" },
             { id: "brief", label: "AI Daily Brief" },
             { id: "comparison", label: "Workshop Comparison" },
-            { id: "credit_approvals", label: "Credit Approvals" }
+            { id: "credit_approvals", label: "Credit Approvals" },
+            { id: "gate_reentry", label: "Gate Re-Entry" },
+            { id: "ai_mode", label: "AI Mode" }
           ].map(tab => (
             <button
               key={tab.id}
@@ -150,6 +152,14 @@ export const GMServiceCommandCenter: React.FC<GMServiceCommandCenterProps> = Rea
 
       {activeTab === "credit_approvals" && (
         <GMCreditApprovals currentUser={currentUser} />
+      )}
+
+      {activeTab === "gate_reentry" && (
+        <GMGateReentryApprovals currentUser={currentUser} onRefresh={onRefresh} />
+      )}
+
+      {activeTab === "ai_mode" && (
+        <GMAiModeApprovals currentUser={currentUser} />
       )}
     </div>
   );
@@ -232,6 +242,222 @@ const GMCreditApprovals: React.FC<{ currentUser?: any }> = ({ currentUser }) => 
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+};
+
+// Same-day gate re-entry requires GM approval: a vehicle whose job card was
+// closed earlier the same calendar day cannot be gated in again without a
+// human check here — see the same-day reopen guard on POST /api/job-cards.
+const GMGateReentryApprovals: React.FC<{ currentUser?: any; onRefresh: () => void }> = ({ currentUser, onRefresh }) => {
+  const [pendingReentries, setPendingReentries] = useState<any[]>([]);
+
+  const fetchReentries = async () => {
+    try {
+      const res = await fetch("/api/gate-reentry-requests?status=PENDING", {
+        headers: { Authorization: `Bearer ${getStaffToken()}` }
+      });
+      if (res.ok) setPendingReentries(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchReentries();
+    const interval = setInterval(fetchReentries, 10000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
+  const handleDecision = async (requestId: number, decision: "approve" | "reject") => {
+    try {
+      const res = await fetch(`/api/gate-reentry-requests/${requestId}/${decision}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getStaffToken()}` },
+        body: JSON.stringify({})
+      });
+      if (res.ok) {
+        fetchReentries();
+        onRefresh();
+      } else {
+        const err = await res.json();
+        alert(`Failed: ${err.error}`);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg">
+      <div className="flex items-center gap-2 pb-3 border-b border-slate-800 mb-4">
+        <AlertOctagon className="h-4 w-4 text-orange-400" />
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Same-Day Gate Re-Entry Approvals</h3>
+      </div>
+      {pendingReentries.length === 0 && <p className="text-xs text-slate-500">No pending re-entry requests.</p>}
+      <div className="space-y-4">
+        {pendingReentries.map(r => (
+          <div key={r.request_id} className="p-4 bg-slate-950/40 border border-slate-850 rounded-xl">
+            <div className="flex justify-between items-start mb-3">
+              <div>
+                <div className="font-mono text-sm font-bold text-orange-400">{r.vrn || r.chassis_number}</div>
+                <div className="text-[10px] text-slate-400 mt-1">Requested by: {r.requested_by_name || "—"}</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">{new Date(r.requested_at).toLocaleString("en-IN")}</div>
+              </div>
+            </div>
+            <div className="bg-slate-900 border border-slate-800 p-2 rounded text-xs text-slate-300 mb-4">
+              Already had a job card closed today: <span className="font-bold text-slate-100">{r.prior_job_card_no}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => handleDecision(r.request_id, "approve")}
+                className="ds-button-success py-3 text-xs font-bold uppercase rounded-xl border border-emerald-600/30"
+              >
+                Approve
+              </button>
+              <button
+                onClick={() => handleDecision(r.request_id, "reject")}
+                className="py-3 bg-red-600/20 text-red-400 text-xs font-bold uppercase rounded-xl border border-red-600/30"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// AI Mode is workshop-wide and gates real API spend, so Managers / Service
+// Advisors can only request activation — a GM/Admin/Developer decides here.
+const GMAiModeApprovals: React.FC<{ currentUser?: any }> = ({ currentUser }) => {
+  const [state, setState] = useState<{ enabled: boolean; pendingRequests: number } | null>(null);
+  const [requests, setRequests] = useState<any[]>([]);
+
+  const fetchAll = async () => {
+    const headers = { Authorization: `Bearer ${getStaffToken()}` };
+    try {
+      const [sRes, rRes] = await Promise.all([
+        fetch("/api/v1/ai-mode", { headers }),
+        fetch("/api/v1/ai-mode/requests?status=PENDING", { headers })
+      ]);
+      if (sRes.ok) setState(await sRes.json());
+      if (rRes.ok) setRequests(await rRes.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchAll();
+    const interval = setInterval(fetchAll, 10000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
+  const setEnabled = async (enabled: boolean) => {
+    try {
+      const res = await fetch("/api/v1/ai-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getStaffToken()}` },
+        body: JSON.stringify({ enabled })
+      });
+      if (res.ok) fetchAll();
+      else alert(`Failed: ${(await res.json()).error}`);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const decide = async (requestId: number, decision: "approve" | "reject") => {
+    try {
+      const res = await fetch(`/api/v1/ai-mode/requests/${requestId}/${decision}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getStaffToken()}` },
+        body: JSON.stringify({})
+      });
+      if (res.ok) fetchAll();
+      else alert(`Failed: ${(await res.json()).error}`);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg">
+        <div className="flex items-center gap-2 pb-3 border-b border-slate-800 mb-4">
+          <Sparkles className="h-4 w-4 text-purple-400" />
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Workshop AI Mode</h3>
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-black text-slate-100">
+              AI is currently{" "}
+              <span className={state?.enabled ? "text-emerald-400" : "text-red-400"}>
+                {state === null ? "…" : state.enabled ? "ON" : "OFF"}
+              </span>
+            </p>
+            <p className="text-[10px] text-slate-500 mt-1">
+              Switching this off stops every outbound AI call across the workshop — no suggestions, no API-key spend.
+            </p>
+          </div>
+          {state && (
+            <button
+              onClick={() => setEnabled(!state.enabled)}
+              className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider border ${
+                state.enabled
+                  ? "bg-red-600/20 text-red-400 border-red-600/30"
+                  : "ds-button-success border-emerald-600/30"
+              }`}
+            >
+              {state.enabled ? "Switch Off" : "Switch On"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg">
+        <div className="flex items-center gap-2 pb-3 border-b border-slate-800 mb-4">
+          <AlertOctagon className="h-4 w-4 text-amber-400" />
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Pending Activation Requests</h3>
+        </div>
+        {requests.length === 0 && <p className="text-xs text-slate-500">No pending activation requests.</p>}
+        <div className="space-y-4">
+          {requests.map(r => (
+            <div key={r.request_id} className="p-4 bg-slate-950/40 border border-slate-850 rounded-xl">
+              <div className="mb-3">
+                <div className="text-sm font-bold text-slate-100">{r.requested_by_name || "—"}</div>
+                <div className="text-[10px] text-slate-400 mt-0.5 capitalize">
+                  {(r.requested_by_role || "").replace(/_/g, " ")}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">
+                  {new Date(r.requested_at).toLocaleString("en-IN")}
+                </div>
+              </div>
+              {r.reason && (
+                <div className="bg-slate-900 border border-slate-800 p-2 rounded text-xs text-slate-300 mb-4">
+                  Reason: {r.reason}
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => decide(r.request_id, "approve")}
+                  className="ds-button-success py-3 text-xs font-bold uppercase rounded-xl border border-emerald-600/30"
+                >
+                  Approve &amp; Enable
+                </button>
+                <button
+                  onClick={() => decide(r.request_id, "reject")}
+                  className="py-3 bg-red-600/20 text-red-400 text-xs font-bold uppercase rounded-xl border border-red-600/30"
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

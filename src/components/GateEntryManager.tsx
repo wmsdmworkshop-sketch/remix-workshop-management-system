@@ -24,18 +24,20 @@ import {
   Eye,
   Check,
   Sparkles,
-  Cpu,
-  Image as ImageIcon
+  Cpu
 } from "lucide-react";
 import FunnyLoader from "./FunnyLoader";
 import { JobCard, Bay } from "../types";
 
 import { compressImageFile } from "../lib/imageUtils";
+import { Capacitor } from "@capacitor/core";
+import { Camera as CapacitorCamera, CameraResultType, CameraSource } from "@capacitor/camera";
+import { staffAuthHeaders, getStaffToken } from "../lib/authToken";
 
 interface GateEntryManagerProps {
   jobCards: JobCard[];
   bays: Bay[];
-  onCreateJob: (jobData: any) => void;
+  onCreateJob: (jobData: any) => Promise<{ success: boolean; pendingApproval?: boolean; message?: string } | void>;
   onUpdateJob: (id: number, updatedFields: Partial<JobCard>) => void;
   onRefresh: () => void;
 }
@@ -96,23 +98,44 @@ export default function GateEntryManager({
   // Real-time Metadata States
   const [capturedLocation, setCapturedLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [capturedTime, setCapturedTime] = useState<string | null>(null);
+  // GPS status is tracked explicitly so the UI can distinguish "not yet captured"
+  // from "denied"/"unavailable" — we never invent coordinates for the latter two.
+  const [gpsStatus, setGpsStatus] = useState<"idle" | "capturing" | "success" | "denied" | "unavailable">("idle");
 
-  const captureMetadata = async () => {
+  // Vehicle-photo evidence state (separate from the smaller image sent to OCR —
+  // see performOCR below, which compresses independently for the API call).
+  const [anprPhotoPreview, setAnprPhotoPreview] = useState<string | null>(null);
+  const [evidenceImage, setEvidenceImage] = useState<string | null>(null);
+  const [evidenceCapturedAt, setEvidenceCapturedAt] = useState<string | null>(null);
+  const [ocrStatus, setOcrStatus] = useState<"idle" | "scanning" | "success" | "failed">("idle");
+
+  // Captures timestamp (of this exact call, i.e. the capture event — not page load)
+  // and high-accuracy GPS. Never fabricates coordinates: on denial/timeout/unavailable
+  // the metadata is explicitly marked as such and capturedLocation stays null.
+  const captureMetadata = (): Promise<{ lat: number; lng: number } | null> => {
     setCapturedTime(new Date().toLocaleString("en-IN"));
-    if (navigator.geolocation) {
+    if (!navigator.geolocation) {
+      setGpsStatus("unavailable");
+      return Promise.resolve(null);
+    }
+    setGpsStatus("capturing");
+    return new Promise((resolve) => {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setCapturedLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
+          const loc = { lat: position.coords.latitude, lng: position.coords.longitude };
+          setCapturedLocation(loc);
+          setGpsStatus("success");
+          resolve(loc);
         },
         (error) => {
           console.warn("Geolocation capture failed:", error.message);
+          setCapturedLocation(null);
+          setGpsStatus(error.code === error.PERMISSION_DENIED ? "denied" : "unavailable");
+          resolve(null);
         },
-        { enableHighAccuracy: true, timeout: 5000 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
-    }
+    });
   };
 
   // Helper for OCR API call with client-side compression & timeout to prevent WebView OOM
@@ -125,18 +148,14 @@ export default function GateEntryManager({
       });
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
 
-      const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || localStorage.getItem("wms_token") || localStorage.getItem("dwip_auth_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
+      const headers = staffAuthHeaders();
 
       const res = await fetch("/api/ocr", {
         method: "POST",
         headers,
-        body: JSON.stringify({ image: compressedDataUrl }),
+        body: JSON.stringify({ image: compressedDataUrl, provider: "Azure" }),
         signal: controller.signal
       });
       clearTimeout(timeoutId);
@@ -151,6 +170,19 @@ export default function GateEntryManager({
       console.warn("performOCR error:", err?.message || err);
       throw err;
     }
+  };
+
+  // Converts a data: URL (as returned by the native Capacitor Camera plugin)
+  // into a Blob, for reuse with the existing File/Blob-based compression and
+  // OCR pipeline — no network fetch involved, pure base64 decode.
+  const dataUrlToBlob = (dataUrl: string): Blob => {
+    const [header, base64] = dataUrl.split(",");
+    const mimeMatch = header.match(/data:([^;]+);base64/);
+    const mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
   };
 
   // File Input References for Robust Native Camera/Gallery Uploads
@@ -180,13 +212,23 @@ export default function GateEntryManager({
   }, showOdoModal);
   const [odoScanning, setOdoScanning] = useState(false);
   const [odoCapturedText, setOdoCapturedText] = useState<string | null>(null);
+  const [odoScanFailed, setOdoScanFailed] = useState(false);
+  const [odoPlausibilityWarning, setOdoPlausibilityWarning] = useState<string | null>(null);
   const [odoPhotoPreview, setOdoPhotoPreview] = useState<string | null>(null);
-  
+
   const [showFuelModal, setShowFuelModal] = useState(false);
   useEscapeKey(() => setShowFuelModal(false), showFuelModal);
-  const [fuelScanning, setFuelScanning] = useState(false);
   const [fuelCapturedText, setFuelCapturedText] = useState<string | null>(null);
+  const [fuelScanFailed, setFuelScanFailed] = useState(false);
+  const [fuelPhotoPreview, setFuelPhotoPreview] = useState<string | null>(null);
+  const [chassisCapturedText, setChassisCapturedText] = useState<string | null>(null);
+  const [chassisScanFailed, setChassisScanFailed] = useState(false);
   const [autoFetchNotice, setAutoFetchNotice] = useState<string | null>(null);
+  // Reference points for sanity-checking a freshly OCR'd odometer reading —
+  // never used to fabricate a value, only to flag an implausible one for
+  // manual double-check. Kept separate from `odometer` (which the user edits).
+  const [lastKnownOdometer, setLastKnownOdometer] = useState<number | null>(null);
+  const [vehicleSaleDate, setVehicleSaleDate] = useState<string | null>(null);
 
   // Auto-Fetch Previous Visit & Customer Details on VRN Entry or Field Blur/Tab
   const handleAutoFetchVehicle = async (targetVrn: string) => {
@@ -205,17 +247,19 @@ export default function GateEntryManager({
       if (latestVisit.vehicle_model) setModel(latestVisit.vehicle_model);
       if (latestVisit.vehicle_make) setMake(latestVisit.vehicle_make);
       if (latestVisit.chassis_no) setChassisNumber(latestVisit.chassis_no);
-      if (latestVisit.odometer_reading) setOdometer(String(latestVisit.odometer_reading));
-      
+      if (latestVisit.odometer_reading) {
+        setOdometer(String(latestVisit.odometer_reading));
+        setLastKnownOdometer(Number(latestVisit.odometer_reading));
+      }
+
       setAutoFetchNotice(`✨ Auto-fetched previous visit records for ${latestVisit.vrn} (Customer: ${latestVisit.customer_name}). All fields remain 100% editable.`);
       return;
     }
 
     // 2. Query backend database lookup endpoint
     try {
-      const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || localStorage.getItem("wms_token");
       const res = await fetch(`/api/vehicles/lookup/${cleanVrn}`, {
-        headers: { "Authorization": `Bearer ${token}` }
+        headers: staffAuthHeaders()
       });
       if (res.ok) {
         const data = await res.json();
@@ -226,7 +270,11 @@ export default function GateEntryManager({
           if (v.model) setModel(v.model);
           if (v.make) setMake(v.make);
           if (v.chassis_no) setChassisNumber(v.chassis_no);
-          if (v.odometer_reading) setOdometer(String(v.odometer_reading));
+          if (v.odometer_reading) {
+            setOdometer(String(v.odometer_reading));
+            setLastKnownOdometer(Number(v.odometer_reading));
+          }
+          if (v.original_sale_date) setVehicleSaleDate(v.original_sale_date);
           setAutoFetchNotice(`✨ Retrieved records from Vehicle Registry for ${cleanVrn}. All fields auto-filled & 100% editable.`);
         }
       }
@@ -249,18 +297,35 @@ export default function GateEntryManager({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const handleAnprPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    console.log("ANPR: Photo captured, file size:", file?.size);
-    if (e.target) e.target.value = ""; // Reset file input so subsequent triggers always fire
-    if (!file) return;
-
+  // Shared vehicle-photo pipeline: called after a photo is captured, whether
+  // via the native Capacitor Camera (Android/iOS) or the web <input capture>
+  // fallback. Preserves the captured image + metadata as evidence (separate
+  // from the smaller copy compressed for the OCR request — see performOCR),
+  // then runs the existing, unmodified Azure OCR flow.
+  const processVehiclePhoto = async (file: File | Blob, previewDataUrl?: string) => {
     setAnprScanning(true);
+    setOcrStatus("scanning");
     await captureMetadata();
+    const capturedAt = new Date().toISOString();
+
+    // Preserve the captured image as evidence at a higher quality than the
+    // OCR-only copy. Never overwrite this with the compressed OCR image.
+    try {
+      const evidenceDataUrl = previewDataUrl || await compressImageFile(file, {
+        maxWidth: 1600,
+        maxHeight: 1600,
+        quality: 0.85
+      });
+      setEvidenceImage(evidenceDataUrl);
+      setAnprPhotoPreview(evidenceDataUrl);
+      setEvidenceCapturedAt(capturedAt);
+    } catch (e) {
+      console.warn("Failed to preserve vehicle photo evidence:", e);
+    }
 
     try {
       console.log("ANPR: Starting OCR process...");
-      const result = await performOCR(file);
+      const result = await performOCR(file as File);
       console.log("ANPR: OCR process completed successfully");
 
       if (result && result.extractedFields) {
@@ -272,13 +337,15 @@ export default function GateEntryManager({
         if (result.extractedFields.odometer) setOdometer(String(result.extractedFields.odometer));
       }
       setAnprScanning(false);
-      setShowAnprModal(false);
+      setOcrStatus("success");
       setSuccess(`AI OCR Scanned: Recognized vehicle plate "${result?.extractedFields?.vrn || "Unknown"}"! Location and Timestamp captured.`);
       setTimeout(() => setSuccess(null), 5000);
     } catch (err: any) {
       console.error("ANPR: OCR failed or process crashed:", err);
       setAnprScanning(false);
-      setShowAnprModal(false);
+      setOcrStatus("failed");
+      // The captured photo (evidence) and GPS/timestamp metadata are kept —
+      // only the OCR result failed. The VRN field remains for manual entry.
 
       // Constitution: Real-Data-Only Operational Contract.
       // NEVER inject a fabricated or random vehicle number.
@@ -294,8 +361,104 @@ export default function GateEntryManager({
 
       setOcrError(userMsg);
       setTimeout(() => setOcrError(null), 10000);
-      setAnprFailed(true);   // Activates manual VRN/chassis entry mode
+      // Manual VRN entry is always available directly in the form — no need
+      // to force the chassis-number fallback path just because OCR failed.
     }
+  };
+
+  // Opens the native Android/iOS camera via Capacitor. This is the primary
+  // capture mechanism on native platforms — the hidden <input capture> file
+  // input remains only as the web/dev fallback (handleAnprPhotoUpload below).
+  const captureVehiclePhotoNative = async () => {
+    try {
+      const photo = await CapacitorCamera.getPhoto({
+        // Use Uri instead of DataUrl to avoid serializing a multi-MB base64
+        // string through the WebView JS bridge — the #1 cause of OOM crashes
+        // on return from the native camera on mid/low-RAM Android devices.
+        resultType: CameraResultType.Uri,
+        source: CameraSource.Camera,
+        quality: 80,
+        saveToGallery: false,
+        allowEditing: false,
+        correctOrientation: true,
+        width: 1600,
+        height: 1600
+      });
+      // Read the URI-based result into a blob via local fetch (no bridge
+      // serialization bottleneck — the file is already on local disk).
+      const imageUri = photo.webPath || photo.path;
+      if (!imageUri) throw new Error("Camera returned no image path.");
+      const response = await fetch(imageUri);
+      const blob = await response.blob();
+      // Generate a preview DataUrl from the already-fetched (smaller) blob
+      const previewDataUrl = await compressImageFile(blob, {
+        maxWidth: 1280, maxHeight: 1280, quality: 0.75
+      });
+      await processVehiclePhoto(blob, previewDataUrl);
+    } catch (err: any) {
+      const msg = String(err?.message || err || "");
+      if (/cancel/i.test(msg)) {
+        // User backed out of the camera — leave the draft/form exactly as it was.
+        return;
+      }
+      console.error("Native camera capture failed:", msg);
+      const userMsg = /denied|permission/i.test(msg)
+        ? "Camera permission denied. Enable camera access for this app in Android Settings, or enter the vehicle number manually."
+        : /no camera/i.test(msg)
+          ? "No camera available on this device. Enter the vehicle number manually."
+          : `Camera capture failed: ${msg}. Enter the vehicle number manually.`;
+      setOcrError(userMsg);
+      setTimeout(() => setOcrError(null), 10000);
+    }
+  };
+
+  // Triggers vehicle-photo capture: native Capacitor camera on Android/iOS,
+  // hidden file input (with capture="environment") as the web/dev fallback.
+  const triggerVehiclePhotoCapture = () => {
+    if (Capacitor.isNativePlatform()) {
+      captureVehiclePhotoNative();
+    } else {
+      anprInputRef.current?.click();
+    }
+  };
+
+  const handleAnprPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    console.log("ANPR: Photo captured, file size:", file?.size);
+    if (e.target) e.target.value = ""; // Reset file input so subsequent triggers always fire
+    if (!file) return;
+    await processVehiclePhoto(file);
+  };
+
+  // Sanity-checks a freshly OCR'd odometer reading against real reference
+  // points (never fabricates a "correct" value — only flags an implausible
+  // one for the technician to double-check the digits):
+  //  1. A truck's odometer cannot go backward from its last recorded reading.
+  //  2. Average usage for these vehicles runs 5,000-12,000 KM/month, so total
+  //     lifetime KM since the real `original_sale_date` (vehicle_master) should
+  //     roughly fall in that band. Generous slack is applied on both sides —
+  //     this only needs to catch gross OCR digit errors (e.g. a dropped or
+  //     duplicated digit), not flag normal high/low-usage vehicles.
+  const checkOdometerPlausibility = (newReading: number): string | null => {
+    if (lastKnownOdometer != null && newReading < lastKnownOdometer) {
+      return `This reading (${newReading.toLocaleString()} KM) is lower than the last recorded odometer (${lastKnownOdometer.toLocaleString()} KM) for this vehicle. Please verify the digits.`;
+    }
+    if (vehicleSaleDate) {
+      const saleDate = new Date(vehicleSaleDate);
+      if (!isNaN(saleDate.getTime())) {
+        const now = new Date();
+        const monthsElapsed = Math.max(
+          1,
+          (now.getFullYear() - saleDate.getFullYear()) * 12 + (now.getMonth() - saleDate.getMonth())
+        );
+        const minExpected = monthsElapsed * 5000 * 0.3;
+        const maxExpected = monthsElapsed * 12000 * 3;
+        if (newReading < minExpected || newReading > maxExpected) {
+          return `This reading (${newReading.toLocaleString()} KM) is well outside the typical range for a vehicle sold on ${vehicleSaleDate} (~${Math.round(monthsElapsed * 5000).toLocaleString()}-${Math.round(monthsElapsed * 12000).toLocaleString()} KM at average usage). Please double-check the digits.`;
+        }
+      }
+    }
+    return null;
   };
 
   const handleOdoPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -305,6 +468,8 @@ export default function GateEntryManager({
     if (!file) return;
     setOdoScanning(true);
     setOdoCapturedText(null);
+    setOdoScanFailed(false);
+    setOdoPlausibilityWarning(null);
     let previewUrl: string | null = null;
     try {
       previewUrl = URL.createObjectURL(file);
@@ -317,18 +482,26 @@ export default function GateEntryManager({
       const result = await performOCR(file);
       console.log("ODO: OCR process completed");
       const extractedOdo = result?.extractedFields?.odometer;
-      if (extractedOdo) setOdometer(String(extractedOdo));
       setOdoScanning(false);
-      setOdoCapturedText(`Successfully scanned dashboard! Detected Odometer: ${extractedOdo || "N/A"} KM. Captured at ${capturedLocation?.lat || "N/A"}, ${capturedLocation?.lng || "N/A"}.`);
-    } catch (err: any) {
-      console.warn("Odometer OCR failed, applying safe random reading:", err);
-      setOdoScanning(false);
-      if (err?.message !== "IMAGE_TOO_LARGE_FOR_MEMORY") {
-        const randomOdo = Math.floor(20000 + Math.random() * 70000).toString();
-        setOdometer(randomOdo);
+      // Real-Data-Only: never fabricate an odometer reading. If OCR did not
+      // extract a real value from this photo, say so and require manual entry.
+      if (extractedOdo) {
+        setOdometer(String(extractedOdo));
+        setOdoCapturedText(`Successfully scanned dashboard! Detected Odometer: ${extractedOdo} KM. Captured at ${capturedLocation?.lat || "N/A"}, ${capturedLocation?.lng || "N/A"}.`);
+        setOdoPlausibilityWarning(checkOdometerPlausibility(extractedOdo));
       } else {
-        setOdoCapturedText("Warning: Image too large for auto-scan. Please enter KM manually.");
+        setOdoScanFailed(true);
+        setOdoCapturedText("No odometer reading detected in this photo. Please enter the KM reading manually.");
       }
+    } catch (err: any) {
+      console.warn("Odometer OCR failed:", err);
+      setOdoScanning(false);
+      setOdoScanFailed(true);
+      setOdoCapturedText(
+        err?.message === "IMAGE_TOO_LARGE_FOR_MEMORY"
+          ? "Image too large for auto-scan. Please enter KM manually."
+          : "OCR failed to read the odometer. Please enter the KM reading manually."
+      );
     }
   };
 
@@ -338,64 +511,56 @@ export default function GateEntryManager({
     if (e.target) e.target.value = "";
     if (!file) return;
     setChassisScanning(true);
+    setChassisCapturedText(null);
+    setChassisScanFailed(false);
     await captureMetadata();
     try {
       console.log("Chassis: Starting OCR process...");
       const result = await performOCR(file);
       console.log("Chassis: OCR process completed");
       const extractedChassis = result?.extractedFields?.chassisNo;
-      if (extractedChassis) setChassisNumber(extractedChassis);
       setChassisScanning(false);
-      setShowChassisModal(false);
-      setSuccess(`Chassis OCR Scan Successful! Location: ${capturedLocation?.lat || "N/A"}, ${capturedLocation?.lng || "N/A"}`);
-      setTimeout(() => setSuccess(null), 5000);
-    } catch (err: any) {
-      console.warn("Chassis OCR failed, applying fallback:", err);
-      setChassisScanning(false);
-      if (err?.message !== "IMAGE_TOO_LARGE_FOR_MEMORY") {
-        const randomChassis = `MAT441234A56${Math.floor(10000 + Math.random() * 90000)}`;
-        setChassisNumber(randomChassis);
+      // Real-Data-Only: a fabricated chassis/VIN number can be mistaken for a
+      // real one downstream (warranty, ownership records). Never invent one.
+      if (extractedChassis) {
+        setChassisNumber(extractedChassis);
+        setShowChassisModal(false);
+        setSuccess(`Chassis OCR Scan Successful! Location: ${capturedLocation?.lat || "N/A"}, ${capturedLocation?.lng || "N/A"}`);
+        setTimeout(() => setSuccess(null), 5000);
+      } else {
+        setChassisScanFailed(true);
+        setChassisCapturedText("No chassis number detected in this photo. Please enter it manually in the form.");
       }
+    } catch (err: any) {
+      console.warn("Chassis OCR failed:", err);
+      setChassisScanning(false);
+      setChassisScanFailed(true);
+      setChassisCapturedText(
+        err?.message === "IMAGE_TOO_LARGE_FOR_MEMORY"
+          ? "Image too large for auto-scan. Please enter the chassis number manually in the form."
+          : "OCR failed to read the chassis plate. Please enter the chassis number manually in the form."
+      );
     }
   };
 
+  // Fuel gauge photo capture — evidence only, no automated reading. A needle
+  // gauge has no text for OCR and vision-model analysis was intentionally
+  // deferred, so the photo is kept purely as a visual reference: it stays
+  // visible (both in this modal and next to the manual gauge on the main
+  // screen) so the technician can look at the real dashboard while setting
+  // the level themselves on the gauge arc — never an auto-filled guess.
   const handleFuelPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     console.log("Fuel: Photo captured, file size:", file?.size);
     if (e.target) e.target.value = "";
     if (!file) return;
-    setFuelScanning(true);
     setFuelCapturedText(null);
-    await captureMetadata();
+    setFuelScanFailed(false);
     try {
-      console.log("Fuel: Starting OCR process...");
-      const result = await performOCR(file);
-      console.log("Fuel: OCR process completed");
-      // Safe parsing for fuel from text
-      const text = (result?.text || "").toLowerCase();
-      let pct = 50;
-      if (text.includes("full")) pct = 100;
-      else if (text.includes("half")) pct = 50;
-      else if (text.includes("quarter") || text.includes("1/4")) pct = 25;
-      else if (text.includes("3/4")) pct = 75;
-
-      const match = text.match(/(\d+)%/);
-      if (match) pct = parseInt(match[1]);
-
-      setFuelPercentage(pct);
-      setFuelLevel(`${pct}%`);
-      setFuelScanning(false);
-      setFuelCapturedText(`AI Dial Analysis: Detected fuel level at ~${pct}%. Captured at ${capturedLocation?.lat || "N/A"}, ${capturedLocation?.lng || "N/A"}.`);
-    } catch (err: any) {
-      console.warn("Fuel OCR failed, defaulting fuel level:", err);
-      setFuelScanning(false);
-      if (err?.message !== "IMAGE_TOO_LARGE_FOR_MEMORY") {
-        setFuelPercentage(45);
-        setFuelLevel("45%");
-      } else {
-        setFuelCapturedText("Warning: Image too large for auto-analysis.");
-      }
-    }
+      setFuelPhotoPreview(URL.createObjectURL(file));
+    } catch (e) {}
+    await captureMetadata();
+    setFuelCapturedText("Photo captured. Compare it to the gauge below and set the exact level on the arc on the main screen.");
   };
 
 
@@ -417,13 +582,48 @@ export default function GateEntryManager({
   }, [jobCards, searchQuery, statusFilter]);
 
   // Handler to register entries
-  const handleRegisterEntry = (e: React.FormEvent) => {
+  const handleRegisterEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     const activeIdentifier = anprFailed ? chassisNumber : vrn;
     if (!activeIdentifier || !customerName || !customerMobile) return;
 
+    // ── Duplicate Gate Entry Guard (client-side) ───────────────────────
+    // Prevent accidental double-capture: block if an active (non-completed)
+    // job card already exists for this VRN or chassis number. The backend
+    // has the same guard (returns 409), but checking here gives instant
+    // feedback without a server round-trip.
+    const normalizeId = (s: string): string =>
+      s.trim().toUpperCase().replace(/[\s\-]/g, "");
+    const completedStatuses = ["Completed", "Invoiced", "Billed", "Out of Workshop", "Cancelled", "Closed"];
+
+    const submittingVrn = anprFailed ? "" : normalizeId(vrn);
+    const submittingChassis = anprFailed ? normalizeId(chassisNumber) : "";
+
+    const duplicateJob = jobCards.find(j => {
+      if (completedStatuses.includes(j.status)) return false;
+      if (submittingVrn && submittingVrn.length >= 4) {
+        const jVrn = normalizeId(j.vrn || "");
+        if (jVrn && jVrn === submittingVrn) return true;
+      }
+      if (submittingChassis && submittingChassis.length >= 4) {
+        const jChassis = normalizeId((j as any).chassis_number || "");
+        if (jChassis && jChassis === submittingChassis) return true;
+      }
+      return false;
+    });
+
+    if (duplicateJob) {
+      const dupeLabel = duplicateJob.vrn || (duplicateJob as any).chassis_number || "Unknown";
+      setOcrError(
+        `⚠️ Duplicate entry blocked: Vehicle "${dupeLabel}" already has an active job card (${duplicateJob.job_card_no || "—"}, status: ${duplicateJob.status}). Complete or invoice the existing entry before creating a new one.`
+      );
+      setTimeout(() => setOcrError(null), 12000);
+      return;
+    }
+    // ── End Duplicate Guard ────────────────────────────────────────────
+
     const newJobNo = `JC-${Date.now().toString().slice(-5)}`;
-    onCreateJob({
+    const result = await onCreateJob({
       job_card_no: newJobNo,
       vrn: anprFailed ? `CH-${chassisNumber.trim().toUpperCase().slice(-6)}` : vrn.trim().toUpperCase(),
       chassis_number: anprFailed ? chassisNumber.trim().toUpperCase() : undefined,
@@ -438,14 +638,34 @@ export default function GateEntryManager({
       bay_id: null,
       created_at: new Date().toISOString(),
       remarks: `Virtual Job Card generated at Gate Inward Security. Fuel: ${fuelLevel} | Odometer: ${odometer || 0} KM${anprFailed ? ` | Chassis Scanned: ${chassisNumber}` : ''} | Captured at: ${capturedLocation ? `${capturedLocation.lat}, ${capturedLocation.lng}` : 'N/A'} on ${capturedTime || 'N/A'}`,
-      km_reading: odometer ? parseInt(odometer) : 0
+      km_reading: odometer ? parseInt(odometer) : 0,
+      // Evidence: the captured vehicle photo (never the smaller OCR-only copy),
+      // kept only when a real photo was captured — never a fabricated placeholder.
+      numberplate_photo: evidenceImage || undefined
     });
 
-    setSuccess(`✨ Virtual Job Card ${newJobNo} created for ${anprFailed ? chassisNumber.toUpperCase() : vrn.toUpperCase()}! Full vehicle history auto-populated and routed to Receptionist, Service Advisor & Service Manager sequential queues.`);
+    // Backend rejected it (duplicate, or a same-day reopen still awaiting GM
+    // approval) — leave the form filled in exactly as the user entered it so
+    // they can see what happened and decide what to do, rather than silently
+    // wiping their work and claiming success.
+    if (result && result.success === false && !result.pendingApproval) {
+      setOcrError(result.message || "Could not register gate entry.");
+      setTimeout(() => setOcrError(null), 12000);
+      return;
+    }
+
+    if (result && result.pendingApproval) {
+      setSuccess(`⏳ ${result.message || "Same-day re-entry sent for GM approval."}`);
+    } else {
+      setSuccess(`✨ Virtual Job Card ${newJobNo} created for ${anprFailed ? chassisNumber.toUpperCase() : vrn.toUpperCase()}! Full vehicle history auto-populated and routed to Receptionist, Service Advisor & Service Manager sequential queues.`);
+    }
     clearDraft();
     setVrn("");
     setChassisNumber("");
     setAutoFetchNotice(null);
+    setLastKnownOdometer(null);
+    setVehicleSaleDate(null);
+    setOdoPlausibilityWarning(null);
     setAnprFailed(false);
     setCustomerName("");
     setCustomerMobile("");
@@ -454,6 +674,13 @@ export default function GateEntryManager({
     setOdometer("");
     setFuelLevel("50%");
     setFuelPercentage(50);
+    setAnprPhotoPreview(null);
+    setEvidenceImage(null);
+    setEvidenceCapturedAt(null);
+    setOcrStatus("idle");
+    setGpsStatus("idle");
+    setCapturedLocation(null);
+    setCapturedTime(null);
 
     setMobileActiveView("ledger");
     setTimeout(() => setSuccess(null), 6000);
@@ -463,29 +690,6 @@ export default function GateEntryManager({
     onUpdateJob(jobId, { status: "Invoiced", remarks: "Vehicle cleared Gate-Out" });
     setSuccess(`Vehicle status updated to Invoiced. Gate-Out cleared!`);
     setTimeout(() => setSuccess(null), 4000);
-  };
-
-  // Simulated Odometer Scan
-  const triggerOdometerScan = (value: string) => {
-    setOdoScanning(true);
-    setOdoCapturedText(null);
-    setTimeout(() => {
-      setOdometer(value);
-      setOdoScanning(false);
-      setOdoCapturedText(`Successfully scanned dashboard! Detected Odometer: ${Number(value).toLocaleString()} KM. You can correct it below if required.`);
-    }, 1500);
-  };
-
-  // Simulated Fuel cluster image scan
-  const triggerFuelGaugeScan = (pct: number, description: string) => {
-    setFuelScanning(true);
-    setFuelCapturedText(null);
-    setTimeout(() => {
-      setFuelPercentage(pct);
-      setFuelLevel(`${pct}%`);
-      setFuelScanning(false);
-      setFuelCapturedText(`Detected exact fuel level: ${pct}% (${description}) as per dashboard cluster image analysis.`);
-    }, 1500);
   };
 
   // Memoized Truck SVG to avoid lag/slowness on text input changes
@@ -949,6 +1153,23 @@ export default function GateEntryManager({
                     </div>
                   </div>
 
+                  {fuelPhotoPreview && (
+                    <button
+                      type="button"
+                      onClick={() => window.open(fuelPhotoPreview, "_blank")}
+                      className="p-2 bg-slate-900 border border-slate-800 rounded-xl flex items-center gap-2.5 text-left hover:border-orange-500 transition-all cursor-pointer"
+                    >
+                      <img
+                        src={fuelPhotoPreview}
+                        alt="Captured fuel gauge"
+                        className="h-10 w-14 object-cover rounded-lg border border-slate-700 shrink-0"
+                      />
+                      <span className="text-[9px] text-slate-400 leading-relaxed">
+                        Captured gauge photo — tap to view full size while correcting the level above.
+                      </span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => setShowFuelModal(true)}
@@ -1156,20 +1377,29 @@ export default function GateEntryManager({
               </button>
             </div>
 
-            {/* Interactive Photo Upload Scanner Box */}
-            <div 
-              onClick={() => anprInputRef.current?.click()}
-              className="ds-card relative aspect-video bg-slate-950 hover:  transition-all flex flex-col items-center justify-center border-b   overflow-hidden cursor-pointer group"
+            {/* Interactive Photo Capture Scanner Box — opens the native camera on
+                Android/iOS via Capacitor; falls back to <input capture> on web. */}
+            <div
+              onClick={anprPhotoPreview ? undefined : triggerVehiclePhotoCapture}
+              className={`ds-card relative aspect-video bg-slate-950 hover:  transition-all flex flex-col items-center justify-center border-b   overflow-hidden group ${anprPhotoPreview ? "" : "cursor-pointer"}`}
             >
-              <input 
-                type="file" 
-                accept="image/*" 
+              <input
+                type="file"
+                accept="image/*"
                 capture="environment"
                 ref={anprInputRef}
-                onChange={handleAnprPhotoUpload} 
-                className="hidden" 
+                onChange={handleAnprPhotoUpload}
+                className="hidden"
               />
-              
+
+              {anprPhotoPreview && (
+                <img
+                  src={anprPhotoPreview}
+                  alt="Captured vehicle plate"
+                  className="absolute inset-0 w-full h-full object-cover opacity-60"
+                />
+              )}
+
               {/* Scanning visual sweep line */}
               <div className="absolute inset-0 bg-gradient-to-b from-transparent via-emerald-500/10 to-transparent h-1/2 w-full animate-bounce pointer-events-none"></div>
 
@@ -1177,14 +1407,23 @@ export default function GateEntryManager({
                 <div className="relative z-10 text-emerald-400">
                   <FunnyLoader message="Running Neural OCR Scan on Image..." />
                 </div>
+              ) : anprPhotoPreview ? (
+                <div className="text-center p-6 space-y-2 relative z-10">
+                  <div className="w-14 h-14 rounded-full bg-slate-900/90 border border-slate-800 flex items-center justify-center mx-auto text-emerald-400 shadow-md">
+                    {ocrStatus === "success" ? <Check className="h-6 w-6" /> : ocrStatus === "failed" ? <AlertCircle className="h-6 w-6 text-rose-400" /> : <Camera className="h-6 w-6" />}
+                  </div>
+                  <p className="text-xs font-black text-slate-100 uppercase tracking-widest bg-slate-950/70 px-2 py-1 rounded inline-block">
+                    Vehicle Photo Captured
+                  </p>
+                </div>
               ) : (
                 <div className="text-center p-6 space-y-2.5 relative z-10">
                   <div className="w-14 h-14 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-emerald-400 group-hover:scale-110 group-hover:border-emerald-500/40 transition-all shadow-md">
                     <Camera className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="text-xs font-black text-slate-100 uppercase tracking-widest">TAP TO SCAN PLATE</p>
-                    <p className="text-[9px] text-slate-400 mt-1">Snaps camera or opens gallery for instant OCR recognition</p>
+                    <p className="text-xs font-black text-slate-100 uppercase tracking-widest">TAP TO CAPTURE VEHICLE PHOTO</p>
+                    <p className="text-[9px] text-slate-400 mt-1">Opens the camera for instant plate OCR recognition</p>
                   </div>
                 </div>
               )}
@@ -1196,6 +1435,56 @@ export default function GateEntryManager({
               <div className="absolute bottom-6 right-6 w-4 h-4 border-b-2 border-r-2 border-emerald-500 pointer-events-none"></div>
             </div>
 
+            {anprPhotoPreview && !anprScanning && (
+              <div className="px-5 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAnprPhotoPreview(null);
+                    setEvidenceImage(null);
+                    setEvidenceCapturedAt(null);
+                    setOcrStatus("idle");
+                    triggerVehiclePhotoCapture();
+                  }}
+                  className="w-full py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer border border-slate-700"
+                >
+                  <Camera className="h-3.5 w-3.5 text-orange-400" />
+                  <span>Retake Photo</span>
+                </button>
+              </div>
+            )}
+
+            {/* Capture metadata: timestamp, GPS status, OCR status, detected VRN */}
+            {anprPhotoPreview && (
+              <div className="px-5 pt-4 grid grid-cols-2 gap-2 text-[9px]">
+                <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-2">
+                  <p className="text-slate-500 font-bold uppercase tracking-wider">Captured At</p>
+                  <p className="text-slate-200 font-mono mt-0.5">{evidenceCapturedAt ? new Date(evidenceCapturedAt).toLocaleString("en-IN") : capturedTime || "—"}</p>
+                </div>
+                <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-2">
+                  <p className="text-slate-500 font-bold uppercase tracking-wider flex items-center gap-1"><MapPin className="h-2.5 w-2.5" /> GPS Status</p>
+                  <p className={`font-mono mt-0.5 ${gpsStatus === "success" ? "text-emerald-400" : gpsStatus === "capturing" ? "text-amber-400" : "text-rose-400"}`}>
+                    {gpsStatus === "success" && capturedLocation
+                      ? `${capturedLocation.lat.toFixed(5)}, ${capturedLocation.lng.toFixed(5)}`
+                      : gpsStatus === "capturing" ? "Acquiring…"
+                      : gpsStatus === "denied" ? "Permission Denied"
+                      : gpsStatus === "unavailable" ? "Unavailable"
+                      : "—"}
+                  </p>
+                </div>
+                <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-2">
+                  <p className="text-slate-500 font-bold uppercase tracking-wider">OCR Status</p>
+                  <p className={`font-mono mt-0.5 ${ocrStatus === "success" ? "text-emerald-400" : ocrStatus === "failed" ? "text-rose-400" : ocrStatus === "scanning" ? "text-amber-400" : "text-slate-400"}`}>
+                    {ocrStatus === "success" ? "Recognized" : ocrStatus === "failed" ? "Failed — Enter Manually" : ocrStatus === "scanning" ? "Scanning…" : "—"}
+                  </p>
+                </div>
+                <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-2">
+                  <p className="text-slate-500 font-bold uppercase tracking-wider">Detected VRN</p>
+                  <p className="text-orange-400 font-mono font-bold mt-0.5">{vrn || "—"}</p>
+                </div>
+              </div>
+            )}
+
             {/* OCR instructions & manual fallback */}
             <div className="p-5 flex-1 space-y-3 bg-slate-900/50">
               <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2">
@@ -1205,6 +1494,7 @@ export default function GateEntryManager({
                 <ul className="text-[10px] text-slate-400 space-y-1 list-disc list-inside">
                   <li>Tap the box above to take a clear, well-lit photo of the vehicle number plate.</li>
                   <li>AI OCR will extract the registration number (VRN) and auto-fetch vehicle history.</li>
+                  <li>The detected VRN below is always editable — confirm or correct it before registering.</li>
                   <li>If the camera/OCR is unavailable, tap <strong className="text-slate-200">"Bypass & Enter Manually"</strong> below.</li>
                 </ul>
               </div>
@@ -1317,41 +1607,26 @@ export default function GateEntryManager({
               </div>
 
               {odoCapturedText && (
-                <div className="ds-button-success p-3  /10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] leading-relaxed flex items-start gap-2.5">
-                  <Check className="h-4 w-4 shrink-0 mt-0.5" />
+                <div className={`p-3 border rounded-xl text-[10px] leading-relaxed flex items-start gap-2.5 ${
+                  odoScanFailed
+                    ? "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                    : "ds-button-success  /10 border-emerald-500/20 text-emerald-400"
+                }`}>
+                  {odoScanFailed ? (
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  ) : (
+                    <Check className="h-4 w-4 shrink-0 mt-0.5" />
+                  )}
                   <span>{odoCapturedText}</span>
                 </div>
               )}
 
-              {/* Mock camera snapshots */}
-              <div className="space-y-2">
-                <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Select Dashboard photo snapshot:</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => triggerOdometerScan("51240")}
-                    className="p-3 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-xl text-left hover:border-orange-500 transition-all cursor-pointer group"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Camera className="h-4 w-4 text-slate-400 group-hover:text-orange-400" />
-                      <span className="text-xs font-bold text-slate-200">Nexon Cluster</span>
-                    </div>
-                    <p className="text-[9px] text-slate-500 mt-1">Simulate 51,240 KM</p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => triggerOdometerScan("124500")}
-                    className="p-3 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-xl text-left hover:border-orange-500 transition-all cursor-pointer group"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Camera className="h-4 w-4 text-slate-400 group-hover:text-orange-400" />
-                      <span className="text-xs font-bold text-slate-200">Safari Cluster</span>
-                    </div>
-                    <p className="text-[9px] text-slate-500 mt-1">Simulate 124,500 KM</p>
-                  </button>
+              {odoPlausibilityWarning && (
+                <div className="p-3 border rounded-xl text-[10px] leading-relaxed flex items-start gap-2.5 bg-amber-500/10 border-amber-500/30 text-amber-300">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>{odoPlausibilityWarning}</span>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Footer */}
@@ -1405,13 +1680,13 @@ export default function GateEntryManager({
             {/* Selector Area */}
             <div className="p-5 space-y-4">
               <p className="text-[10px] text-slate-400">
-                Simulate uploading a dashboard gauge photo to set the animated vector needle exactly as per original image.
+                Take a photo of the dashboard gauge for reference, then set the exact level on the gauge arc on the main screen while looking at it.
               </p>
 
-              {/* Vector needle live monitor */}
+              {/* Fuel gauge photo capture — evidence only, no automated reading */}
               <div
                 onClick={() => fuelInputRef.current?.click()}
-                className="aspect-video bg-slate-950 border border-slate-800 rounded-2xl relative flex flex-col items-center justify-center p-4 cursor-pointer group"
+                className="aspect-video bg-slate-950 border border-slate-800 rounded-2xl relative flex flex-col items-center justify-center p-4 cursor-pointer group overflow-hidden"
               >
                 <input
                   type="file"
@@ -1421,87 +1696,43 @@ export default function GateEntryManager({
                   onChange={handleFuelPhotoUpload}
                   className="hidden"
                 />
-                {fuelScanning ? (
-                  <div className="relative z-10 text-orange-400">
-                    <FunnyLoader message="Running Neural Dial Extraction..." />
-                  </div>
-                ) : (
-                  <div className="text-center space-y-2">
-                    <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-orange-400 group-hover:scale-110 transition-transform mb-1 shadow-md">
-                      <Camera className="h-5 w-5" />
-                    </div>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase">Extracted Vector Level</p>
-                    <div className="text-4xl font-black text-orange-400 font-mono tracking-tighter">
-                      {fuelPercentage}%
-                    </div>
-                    <p className="text-[9px] text-slate-400">Needle angle successfully locked onto dial</p>
-                  </div>
+                {fuelPhotoPreview && (
+                  <img
+                    src={fuelPhotoPreview}
+                    alt="Fuel Gauge Preview"
+                    className="absolute inset-0 w-full h-full object-cover opacity-45"
+                  />
                 )}
-
-                {/* Scan line indicator */}
-                {fuelScanning && (
-                  <div className="absolute left-0 right-0 h-1 bg-gradient-to-r from-orange-500 to-amber-400 animate-bounce"></div>
-                )}
+                <div className="text-center space-y-2 relative z-10">
+                  <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-orange-400 group-hover:scale-110 transition-transform mb-1 shadow-md">
+                    <Camera className="h-5 w-5" />
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase">
+                    {fuelPhotoPreview ? "Photo Captured" : "Tap to Capture Fuel Gauge"}
+                  </p>
+                  <div className="text-4xl font-black text-orange-400 font-mono tracking-tighter bg-slate-900/80 border border-slate-800 px-4 py-1.5 rounded-lg inline-block shadow-inner">
+                    {fuelPercentage}%
+                  </div>
+                  <p className="text-[9px] text-slate-400">
+                    {fuelPhotoPreview ? "Selected level (set manually) — tap to retake photo" : "Take a clear photo of the fuel gauge"}
+                  </p>
+                </div>
               </div>
 
               {fuelCapturedText && (
-                <div className="ds-button-success p-3  /10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] leading-relaxed flex items-start gap-2.5">
-                  <Check className="h-4 w-4 shrink-0 mt-0.5" />
+                <div className={`p-3 border rounded-xl text-[10px] leading-relaxed flex items-start gap-2.5 ${
+                  fuelScanFailed
+                    ? "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                    : "ds-button-success  /10 border-emerald-500/20 text-emerald-400"
+                }`}>
+                  {fuelScanFailed ? (
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  ) : (
+                    <Check className="h-4 w-4 shrink-0 mt-0.5" />
+                  )}
                   <span>{fuelCapturedText}</span>
                 </div>
               )}
-
-              {/* Grid of reference dashboard images for upload simulation */}
-              <div className="space-y-2">
-                <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Select Dashboard Image reference (OG upload):</p>
-                
-                <div className="grid grid-cols-1 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => triggerFuelGaugeScan(82, "About 4/5 full - Green Range")}
-                    className="p-3 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-xl text-left hover:border-orange-500 transition-all cursor-pointer flex items-center justify-between group"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <ImageIcon className="h-4 w-4 text-slate-400 group-hover:text-emerald-400" />
-                      <div>
-                        <span className="text-xs font-bold text-slate-200 block">Tata_Nexon_Full_Dashboard.jpg</span>
-                        <span className="text-[9px] text-slate-500">Odometer: 51k • Dial shows almost Full</span>
-                      </div>
-                    </div>
-                    <span className="text-xs font-black text-emerald-400">82%</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => triggerFuelGaugeScan(48, "Almost Half - Orange Range")}
-                    className="p-3 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-xl text-left hover:border-orange-500 transition-all cursor-pointer flex items-center justify-between group"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <ImageIcon className="h-4 w-4 text-slate-400 group-hover:text-orange-400" />
-                      <div>
-                        <span className="text-xs font-bold text-slate-200 block">Harrier_Mid_Range_Fuel.jpg</span>
-                        <span className="text-[9px] text-slate-500">Odometer: 14k • Dial shows near Half</span>
-                      </div>
-                    </div>
-                    <span className="text-xs font-black text-orange-400">48%</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => triggerFuelGaugeScan(12, "Low Fuel Warning - Red Range")}
-                    className="p-3 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-xl text-left hover:border-orange-500 transition-all cursor-pointer flex items-center justify-between group"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <ImageIcon className="h-4 w-4 text-slate-400 group-hover:text-rose-400" />
-                      <div>
-                        <span className="text-xs font-bold text-slate-200 block">Safari_Low_Fuel_Indicator.jpg</span>
-                        <span className="text-[9px] text-slate-500">Odometer: 124k • Low fuel amber warning light on</span>
-                      </div>
-                    </div>
-                    <span className="text-xs font-black text-rose-500">12%</span>
-                  </button>
-                </div>
-              </div>
             </div>
 
             {/* Footer */}
@@ -1599,39 +1830,20 @@ export default function GateEntryManager({
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setChassisScanning(true);
-                    setTimeout(() => {
-                      setChassisNumber("MAT441234A567890");
-                      setChassisScanning(false);
-                      setShowChassisModal(false);
-                    }, 1200);
-                  }}
-                  className="p-2.5 bg-slate-950 hover:bg-slate-855 border border-slate-800 rounded-xl text-left hover:border-orange-500 transition-all cursor-pointer"
-                >
-                  <span className="text-xs font-bold text-slate-200 block">Scan Sample 1</span>
-                  <span className="text-[9px] text-slate-500">Nexon Steel Plate</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setChassisScanning(true);
-                    setTimeout(() => {
-                      setChassisNumber("MAT441882Z123456");
-                      setChassisScanning(false);
-                      setShowChassisModal(false);
-                    }, 1200);
-                  }}
-                  className="p-2.5 bg-slate-950 hover:bg-slate-855 border border-slate-800 rounded-xl text-left hover:border-orange-500 transition-all cursor-pointer"
-                >
-                  <span className="text-xs font-bold text-slate-200 block">Scan Sample 2</span>
-                  <span className="text-[9px] text-slate-500">Safari Steel Plate</span>
-                </button>
-              </div>
+              {chassisCapturedText && (
+                <div className={`p-3 border rounded-xl text-[10px] leading-relaxed flex items-start gap-2.5 ${
+                  chassisScanFailed
+                    ? "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                    : "ds-button-success  /10 border-emerald-500/20 text-emerald-400"
+                }`}>
+                  {chassisScanFailed ? (
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  ) : (
+                    <Check className="h-4 w-4 shrink-0 mt-0.5" />
+                  )}
+                  <span>{chassisCapturedText}</span>
+                </div>
+              )}
             </div>
 
             {/* Footer */}

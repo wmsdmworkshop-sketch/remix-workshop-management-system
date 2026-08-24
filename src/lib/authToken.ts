@@ -29,6 +29,11 @@ export function getStaffToken(): string {
       const v = localStorage.getItem(k);
       if (v) return v;
     }
+    const rawUser = localStorage.getItem(STAFF_USER_KEY);
+    if (rawUser) {
+      const parsed = JSON.parse(rawUser);
+      if (parsed?.token) return parsed.token;
+    }
   } catch {
     /* localStorage unavailable */
   }

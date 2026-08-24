@@ -50,8 +50,8 @@ export const MobilePlatformWorkspace: React.FC<MobilePlatformWorkspaceProps> = R
               <div className="flex justify-between"><span>Play Protect:</span><span className="text-emerald-400 font-bold">Passed (V2/V3)</span></div>
             </div>
           </div>
-          <a 
-            href="/downloads/dwip-staff-v2.4.0.apk"
+          <a
+            href="https://storage.googleapis.com/dwip-app-downloads/dwip-staff-v2.4.0.apk"
             download="dwip-staff-v2.4.0.apk"
             className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition shadow-lg flex items-center justify-center gap-2 text-center"
           >

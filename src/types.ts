@@ -148,6 +148,8 @@ export interface JobCard {
   chassis_no?: string | null;
   chassis_number?: string | null;
   odometer_reading?: number | string | null;
+  current_workflow_state?: string;
+  current_queue?: string;
 }
 
 export interface JobTechnicianMap {

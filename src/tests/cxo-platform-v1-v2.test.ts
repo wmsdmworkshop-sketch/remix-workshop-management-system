@@ -81,7 +81,7 @@ test("Event Bus maps published events to Notification Engine delivery channels",
     [passportId, "Arhaan Khan", "9988776655", "PUSH,SMS"]
   );
 
-  await globalEventBus.subscribe("JOB_CARD_CREATED", async (env) => {
+  await globalEventBus.subscribe<{ customer_passport_id: string; message: string }>("JOB_CARD_CREATED", async (env) => {
     const payload = env.payload;
     await db.execute(
       `INSERT INTO communication_logs (log_id, customer_passport_id, channel, subject, body_text)
