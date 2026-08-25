@@ -10658,6 +10658,24 @@ Respond with valid JSON only:
     res.sendFile(targetPath);
   });
 
+  // --- PRIVACY POLICY: public, unauthenticated ---
+  // Google Play requires a publicly reachable privacy policy URL for the listing,
+  // and its reviewers fetch it anonymously — so this must sit ABOVE the SPA
+  // catch-all and must never be placed behind authenticateToken. Vite copies
+  // public/ into dist/ on build, so the file exists in both dev and prod trees.
+  app.get(["/privacy", "/privacy-policy"], (_req: any, res: any) => {
+    const candidatePaths = [
+      path.join(process.cwd(), "dist", "privacy.html"),
+      path.join(process.cwd(), "public", "privacy.html"),
+    ];
+    const targetPath = candidatePaths.find(p => fs.existsSync(p));
+    if (!targetPath) {
+      return res.status(404).send("Privacy policy not found.");
+    }
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.sendFile(targetPath);
+  });
+
   // --- VITE MIDDLEWARE SETUP ---
   if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test") {
     const vite = await createViteServer({
