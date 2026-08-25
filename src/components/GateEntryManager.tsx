@@ -37,7 +37,10 @@ import { staffAuthHeaders, getStaffToken } from "../lib/authToken";
 interface GateEntryManagerProps {
   jobCards: JobCard[];
   bays: Bay[];
-  onCreateJob: (jobData: any) => Promise<{ success: boolean; pendingApproval?: boolean; message?: string } | void>;
+  onCreateJob: (
+    jobData: any,
+    options?: { silent?: boolean }
+  ) => Promise<{ success: boolean; pendingApproval?: boolean; message?: string } | void>;
   onUpdateJob: (id: number, updatedFields: Partial<JobCard>) => void;
   onRefresh: () => void;
 }
@@ -642,7 +645,7 @@ export default function GateEntryManager({
       // Evidence: the captured vehicle photo (never the smaller OCR-only copy),
       // kept only when a real photo was captured — never a fabricated placeholder.
       numberplate_photo: evidenceImage || undefined
-    });
+    }, { silent: true });
 
     // Backend rejected it (duplicate, or a same-day reopen still awaiting GM
     // approval) — leave the form filled in exactly as the user entered it so

@@ -513,17 +513,27 @@ export default function AppShell({
           </div>
 
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex items-center gap-2.5 min-w-0 shrink">
               {getWorkspaceIcon()}
-              <h2 className="text-base sm:text-lg font-extrabold text-white leading-none truncate">
+              {/* On a phone the mobile title renders the ACTIVE sub-tab name, which
+                  the tab strip beside it already shows highlighted. Rendering both
+                  only competed for width and left the title clipped to "Gat…", so
+                  hide it on mobile whenever a strip is present and let the strip
+                  own the row. With no strip there is nothing else naming the view,
+                  so the title stays. */}
+              <h2 className={`text-base sm:text-lg font-extrabold text-white leading-none truncate ${workspaceSubTabs.length > 1 ? "hidden sm:block" : ""}`}>
                 <span className="sm:hidden">{activeSubTab?.label || getWorkspaceTitle()}</span>
                 <span className="hidden sm:inline">{getWorkspaceTitle()} Workspace</span>
               </h2>
             </div>
 
-            {/* 4. WORKSPACE NAVIGATION */}
+            {/* 4. WORKSPACE NAVIGATION
+                min-w-0 below is load-bearing: a flex item defaults to
+                min-width:auto, so with shrink-0 buttons inside, this strip refused
+                to shrink below its full content width and `overflow-x-auto` never
+                engaged — it just squeezed the title instead. */}
             {workspaceSubTabs.length > 1 && (
-              <div className="flex items-center gap-1 bg-slate-900/60 p-1 rounded-xl border border-slate-850/60 overflow-x-auto max-w-full scrollbar-none">
+              <div className="flex items-center gap-1 bg-slate-900/60 p-1 rounded-xl border border-slate-850/60 overflow-x-auto min-w-0 scrollbar-none">
                 {workspaceSubTabs.map(tab => {
                   const isTabActive = activeTab === tab.id;
                   return (

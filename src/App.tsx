@@ -1029,7 +1029,17 @@ export default function App() {
     ...(token ? { "Authorization": `Bearer ${token}` } : {})
   });
 
-  const handleCreateJob = async (jobData: Partial<JobCard>) => {
+  // `silent` is for callers that render their own richer inline confirmation
+  // (Gate Entry shows the job number, VRN and downstream routing). Without it
+  // a single gate-in fired BOTH the generic toast and that banner, which on a
+  // phone stacked on top of each other and covered the workspace header.
+  // Callers that have no inline feedback of their own (Job Cards, the reception
+  // panel) leave it off and keep relying on these toasts.
+  const handleCreateJob = async (
+    jobData: Partial<JobCard>,
+    options?: { silent?: boolean }
+  ) => {
+    const silent = options?.silent === true;
     try {
       const res = await fetch("/api/job-cards", {
         method: "POST",
@@ -1040,19 +1050,19 @@ export default function App() {
         const data = await res.json().catch(() => ({}));
         fetchAllData();
         if (data?.pendingApproval) {
-          showToast(data.message || "Same-day re-entry sent for GM approval.", "info");
+          if (!silent) showToast(data.message || "Same-day re-entry sent for GM approval.", "info");
           return { success: false, pendingApproval: true, message: data.message };
         }
-        showToast("Job card created successfully.", "success");
+        if (!silent) showToast("Job card created successfully.", "success");
         return { success: true };
       } else {
         const err = await res.json().catch(() => ({ error: "Unknown error" }));
-        showToast(`Failed to create job card: ${err.error || res.statusText}`, "error");
+        if (!silent) showToast(`Failed to create job card: ${err.error || res.statusText}`, "error");
         return { success: false, message: err.error || res.statusText };
       }
     } catch (e: any) {
       console.error(e);
-      showToast("Network error creating job card. Please try again.", "error");
+      if (!silent) showToast("Network error creating job card. Please try again.", "error");
       return { success: false, message: "Network error creating job card." };
     }
   };
@@ -2259,9 +2269,14 @@ export default function App() {
           </div>
         </div>
       )}
-      {/* Toast Notifications */}
+      {/* Toast Notifications.
+          `w-full` on a fixed element anchored only by `right-4` resolves against
+          the viewport, so on a phone the stack was a full 100vw wide and bled off
+          the left edge, covering the workspace header and any inline banner
+          underneath. Inset it on both sides on mobile and only let it collapse to
+          a right-anchored column once there is room. */}
       {toasts.length > 0 && (
-        <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+        <div className="fixed top-4 right-4 left-4 sm:left-auto z-[9999] flex flex-col gap-2 sm:w-full sm:max-w-sm pointer-events-none">
           {toasts.map((toast) => (
             <div
               key={toast.id}
