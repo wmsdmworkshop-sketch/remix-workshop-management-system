@@ -54,3 +54,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [v1.1.1-camera-fix] - 2026-08-19
 - Release Commit: `6c0c259`
 - Automated handover sequence verified.
+
+
+## [v1.1.0-rc.1] - 2026-08-26
+- Release Commit: `71b9c00`
+- Automated handover sequence verified.
