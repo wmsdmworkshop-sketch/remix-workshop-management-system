@@ -29,7 +29,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.aivaahan.dwip"
+        applicationId "devanand.aivaahan.com"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 10005
@@ -46,7 +46,7 @@ android {
     productFlavors {
         staff {
             dimension "role"
-            applicationId "com.aivaahan.dwip"
+            applicationId "devanand.aivaahan.com"
             versionCode 10005
             versionName "1.1.5"
         }

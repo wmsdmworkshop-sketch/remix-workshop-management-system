@@ -26,6 +26,8 @@ import { getReworkHistoryForTechnician } from "./src/engines/rework-tracking-ser
 import { validateOvertimeRequest } from "./src/engines/overtime-rules.ts";
 import { verifyFace } from "./src/engines/face-verifier.ts";
 import { verifyJobCard } from "./src/engines/ocr-processor.ts";
+import { evidenceStorageService } from "./src/services/evidence-storage.service.ts";
+import { ocrFallbackService } from "./src/services/ocr-fallback.service.ts";
 import vehiclePassportFacade from "./src/engines/vehicle-passport/index.ts";
 import { pipelineRouter } from "./src/api/routes/pipeline.routes.ts";
 import { DeepSeekEngine } from "./src/engines/deepseek-engine.ts";
@@ -3797,19 +3799,66 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     res.json(Array.from(masterMap.values()));
   });
 
-  // API: OCR Extraction for Gate-In
+  // API: OCR Extraction for Gate-In (Resilient Gemini 3.1 -> Azure Fallback)
   app.post("/api/ocr", async (req, res) => {
-    const { image, provider = "Azure" } = req.body;
+    const { image } = req.body;
     if (!image) {
       return res.status(400).json({ error: "Missing image data" });
     }
 
     try {
-      const result = await verifyJobCard(image, provider);
+      const result = await ocrFallbackService.processWithFallback(image, "numberplate", {
+        branchId: (req as any).user?.branchId || (req as any).user?.branch_id || "BR-SEDAM",
+        capturedBy: (req as any).user?.user_id || (req as any).user?.id || null
+      });
+
+      // Unified 90-Day Evidence & Compliance Storage (non-blocking)
+      const vrnExtracted = result?.extractedFields?.vrn;
+      evidenceStorageService.storeEvidence({
+        base64Image: image,
+        ocrType: "NUMBERPLATE",
+        vrn: vrnExtracted || null,
+        ocrProvider: result.provider,
+        ocrResultJson: result,
+        ocrConfidence: result.confidence || null,
+        capturedBy: (req as any).user?.user_id || (req as any).user?.id || null,
+        branchId: (req as any).user?.branchId || (req as any).user?.branch_id || "BR-SEDAM"
+      }).catch(err => console.error("[OCR-GateIn] Evidence storage failed:", err.message));
+
       res.json(result);
     } catch (error: any) {
       console.error("OCR API error:", error);
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // API: Evidence lookup by VRN
+  app.get("/api/evidence/vrn/:vrn", async (req, res) => {
+    try {
+      const records = await evidenceStorageService.getEvidenceByVrn(req.params.vrn);
+      res.json({ success: true, count: records.length, records });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  // API: Evidence lookup by Job Card Number
+  app.get("/api/evidence/job-card/:jobCardNo", async (req, res) => {
+    try {
+      const records = await evidenceStorageService.getEvidenceByJobCard(req.params.jobCardNo);
+      res.json({ success: true, count: records.length, records });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  // DevOps / Scheduled Cron: 90-Day Evidence Retention Worker
+  app.post("/api/v1/devops/cron/evidence-retention", async (req, res) => {
+    try {
+      const result = await evidenceStorageService.markExpiredAsDeleted();
+      res.json({ success: true, message: "Retention worker completed", ...result });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
     }
   });
 
@@ -4056,6 +4105,24 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       saveDB(cachedDB);
     } catch (e: any) {
       console.error("Failed to publish initial events during Job Card creation:", e);
+    }
+
+    // 3. Evidence Storage for numberplate & odometer photos if provided as base64/dataURL
+    if (newJob.numberplate_photo && (newJob.numberplate_photo.startsWith("data:") || newJob.numberplate_photo.length > 500)) {
+      evidenceStorageService.storeEvidence({
+        base64Image: newJob.numberplate_photo,
+        ocrType: "NUMBERPLATE",
+        jobCardNo: newJob.job_card_no,
+        vrn: newJob.vrn,
+        capturedBy: req.user?.user_id || Number(newJob.created_by) || 1,
+        branchId: req.user?.branchId || req.user?.branch_id || "BR-SEDAM"
+      }).then(ev => {
+        if (ev?.photo_url) {
+          newJob.numberplate_photo = ev.photo_url;
+          dbPool.execute("UPDATE job_card_master SET numberplate_photo = ? WHERE job_card_id = ?", [ev.photo_url, newJob.job_id]).catch(() => {});
+          dbPool.execute("UPDATE job_cards SET numberplate_photo = ? WHERE job_id = ?", [ev.photo_url, newJob.job_id]).catch(() => {});
+        }
+      }).catch(err => console.error("[JobCardCreation] Photo evidence storage failed:", err.message));
     }
 
     // Drive the real VOS gate-in -> reception-accept pipeline for this vehicle.
@@ -7200,242 +7267,111 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
-  // --- GEMINI MANUAL JOBCARD OCR ---
+  // --- GEMINI & AZURE MANUAL JOBCARD OCR ---
   app.post("/api/gemini/extract-manual-jobcard", express.json({ limit: "20mb" }), async (req, res) => {
     const { imageData, mimeType } = req.body;
-
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(400).json({
-        error: "Gemini API key is not configured. Please add GEMINI_API_KEY to your Settings > Secrets."
-      });
-    }
 
     if (!imageData) {
       return res.status(400).json({ error: "No image data provided for OCR." });
     }
 
     try {
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
+      const result = await ocrFallbackService.processWithFallback(imageData, "manual-jobcard", {
+        mimeType: mimeType || "image/jpeg",
+        branchId: (req as any).user?.branchId || (req as any).user?.branch_id || "BR-SEDAM",
+        capturedBy: (req as any).user?.user_id || (req as any).user?.id || null
       });
 
-      console.log(`Performing OCR on Manual Jobcard image, mime: ${mimeType}`);
+      // Unified 90-Day Evidence & Compliance Storage (non-blocking)
+      evidenceStorageService.storeEvidence({
+        base64Image: imageData,
+        ocrType: "MANUAL_JOBCARD",
+        vrn: result.extractedFields?.vrn || null,
+        ocrProvider: result.provider,
+        ocrResultJson: result.extractedFields,
+        ocrConfidence: result.confidence,
+        mimeType: mimeType || "image/jpeg",
+        capturedBy: (req as any).user?.user_id || (req as any).user?.id || null,
+        branchId: (req as any).user?.branchId || (req as any).user?.branch_id || "BR-SEDAM"
+      }).catch(err => console.error("[OCR-ManualJobCard] Evidence storage failed:", err.message));
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: [
-          {
-            inlineData: {
-              data: imageData,
-              mimeType: mimeType || "image/jpeg"
-            }
-          },
-          {
-            text: "You are an expert OCR and document-parsing assistant for Tata Motors workshops. " +
-              "Please read the handwritten or printed Manual Job Card image provided and extract all legible parameters. " +
-              "Ensure you look for vehicle registration number/VRN (e.g. KA-01-MJ-1234), customer name, customer phone, " +
-              "vehicle model (e.g. Tata Nexon, Tiago, Safari, Harrier), km reading (Odometer), " +
-              "reported complains or job description, advisor name, and any special remarks. " +
-              "Additionally, assess if any extracted value might be inaccurate, incomplete, handwriting is hard to read/blurry, " +
-              "or if the value is missing or defaulted. Set boolean flags in verification_flags and explain why in verification_reasons."
-          }
-        ],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              vrn: { type: Type.STRING, description: "Vehicle Registration Number (e.g., KA-05-MT-1234)" },
-              customer_name: { type: Type.STRING, description: "Customer Full Name" },
-              customer_mobile: { type: Type.STRING, description: "Customer 10-digit mobile number" },
-              vehicle_model: { type: Type.STRING, description: "Vehicle Model (e.g. Nexon, Safari, Punch, Tiago)" },
-              km_reading: { type: Type.INTEGER, description: "Odometer KM reading (must be integer, e.g. 45200)" },
-              job_description: { type: Type.STRING, description: "Main customer voice, complaints or job description text" },
-              remarks: { type: Type.STRING, description: "Additional remarks, handwritten notes or special instructions" },
-              service_advisor: { type: Type.STRING, description: "Service advisor or estimator name listed on the card" },
-              verification_flags: {
-                type: Type.OBJECT,
-                properties: {
-                  vrn_needs_verification: { type: Type.BOOLEAN, description: "True if VRN is missing, has incorrect format, or is hard to read." },
-                  customer_name_needs_verification: { type: Type.BOOLEAN, description: "True if customer name is missing, handwriting is blurry, or hard to read." },
-                  customer_mobile_needs_verification: { type: Type.BOOLEAN, description: "True if customer mobile number is missing, incomplete (not 10 digits), or hard to read." },
-                  vehicle_model_needs_verification: { type: Type.BOOLEAN, description: "True if vehicle model is missing, guess-work was required, or hard to read." },
-                  km_reading_needs_verification: { type: Type.BOOLEAN, description: "True if odometer km reading is missing, has suspicious value, or is hard to read." },
-                  job_description_needs_verification: { type: Type.BOOLEAN, description: "True if customer voice/complaints description is missing or hard to transcribe." },
-                  service_advisor_needs_verification: { type: Type.BOOLEAN, description: "True if service advisor name is missing, unknown, or hard to read." }
-                },
-                required: [
-                  "vrn_needs_verification",
-                  "customer_name_needs_verification",
-                  "customer_mobile_needs_verification",
-                  "vehicle_model_needs_verification",
-                  "km_reading_needs_verification",
-                  "job_description_needs_verification",
-                  "service_advisor_needs_verification"
-                ]
-              },
-              verification_reasons: {
-                type: Type.OBJECT,
-                properties: {
-                  vrn_reason: { type: Type.STRING, description: "Why VRN requires verification, empty if not needed." },
-                  customer_name_reason: { type: Type.STRING, description: "Why customer name requires verification, empty if not needed." },
-                  customer_mobile_reason: { type: Type.STRING, description: "Why customer mobile requires verification, empty if not needed." },
-                  vehicle_model_reason: { type: Type.STRING, description: "Why vehicle model requires verification, empty if not needed." },
-                  km_reading_reason: { type: Type.STRING, description: "Why odometer requires verification, empty if not needed." },
-                  job_description_reason: { type: Type.STRING, description: "Why complaints description requires verification, empty if not needed." },
-                  service_advisor_reason: { type: Type.STRING, description: "Why service advisor name requires verification, empty if not needed." }
-                },
-                required: [
-                  "vrn_reason",
-                  "customer_name_reason",
-                  "customer_mobile_reason",
-                  "vehicle_model_reason",
-                  "km_reading_reason",
-                  "job_description_reason",
-                  "service_advisor_reason"
-                ]
-              }
-            },
-            required: [
-              "vrn",
-              "customer_name",
-              "customer_mobile",
-              "vehicle_model",
-              "km_reading",
-              "job_description",
-              "remarks",
-              "service_advisor",
-              "verification_flags",
-              "verification_reasons"
-            ]
-          }
-        }
-      });
-
-      const text = response.text;
-      if (!text) {
-        throw new Error("No data extracted from image.");
-      }
-
-      const extracted = JSON.parse(text.trim());
-      res.json(extracted);
+      res.json(result.extractedFields);
     } catch (error: any) {
       console.error("Manual Jobcard OCR error:", error);
       res.status(500).json({ error: error.message || "An error occurred while performing OCR extraction." });
     }
   });
 
+  // --- GEMINI & AZURE INVOICE OCR ---
   app.post("/api/gemini/extract-invoice", express.json({ limit: "20mb" }), async (req, res) => {
     const { imageData, mimeType, textInput } = req.body;
 
-    // Fallback: If no GEMINI_API_KEY, generate mock structured data from inputs or generic template
-    if (!process.env.GEMINI_API_KEY) {
-      console.log("No GEMINI_API_KEY. Using mock extraction fallback.");
-      // Create a mock extraction result based on simple heuristics or defaults
-      const randomId = Math.floor(Math.random() * 9000) + 1000;
-      const extracted = {
-        invoice_no: `INV-2026-${randomId}`,
-        job_card_no: `JC${randomId}`,
-        labour_amount: 3500,
-        parts_amount: 5400,
-        customer_name: "John Doe",
-        vrn: "KA-03-MG-5678",
-        chassis_no: "MAT451092M81" + randomId,
-        engine_no: "TATA312N" + randomId,
-        mileage: 48500,
-        invoice_date: new Date().toISOString().split("T")[0],
-        assigned_technicians: ["Lokesh", "Mohsin Nawaz"]
-      };
-      return res.json(extracted);
+    if (!imageData && !textInput) {
+      return res.status(400).json({ error: "No image or text data provided for invoice OCR." });
     }
 
     try {
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
+      const result = await ocrFallbackService.processWithFallback(imageData || "", "invoice", {
+        mimeType: mimeType || "image/jpeg",
+        textInput,
+        branchId: (req as any).user?.branchId || (req as any).user?.branch_id || "BR-SEDAM",
+        capturedBy: (req as any).user?.user_id || (req as any).user?.id || null
       });
 
-      let contents: any[] = [];
+      // Unified 90-Day Evidence & Compliance Storage (non-blocking)
       if (imageData) {
-        contents.push({
-          inlineData: {
-            data: imageData,
-            mimeType: mimeType || "image/jpeg"
-          }
-        });
+        evidenceStorageService.storeEvidence({
+          base64Image: imageData,
+          ocrType: "INVOICE",
+          jobCardNo: result.extractedFields?.job_card_no || null,
+          vrn: result.extractedFields?.vrn || null,
+          ocrProvider: result.provider,
+          ocrResultJson: result.extractedFields,
+          ocrConfidence: result.confidence,
+          mimeType: mimeType || "image/jpeg",
+          capturedBy: (req as any).user?.user_id || (req as any).user?.id || null,
+          branchId: (req as any).user?.branchId || (req as any).user?.branch_id || "BR-SEDAM"
+        }).catch(err => console.error("[OCR-Invoice] Evidence storage failed:", err.message));
       }
 
-      contents.push({
-        text: "You are an expert CRM DMS invoice parsing assistant for Tata Motors workshops. " +
-          "Please read the provided invoice (image or pasted text) and extract all parameters. " +
-          "Ensure you extract: invoice_no, job_card_no, labour_amount, parts_amount, customer_name, " +
-          "vrn, chassis_no, engine_no, mileage (odometer reading as integer), invoice_date, and list of assigned_technicians. " +
-          "Format all outputs strictly according to the requested JSON schema. If any field is not found, " +
-          "fill it with a reasonable estimate or leave it blank." +
-          (textInput ? `\n\nPasted Invoice Text:\n${textInput}` : "")
-      });
-
-      console.log("Calling Gemini to extract Invoice data...");
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: contents,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              invoice_no: { type: Type.STRING, description: "Invoice number on the document" },
-              job_card_no: { type: Type.STRING, description: "Associated Job Card number" },
-              labour_amount: { type: Type.NUMBER, description: "Total labour cost/charges" },
-              parts_amount: { type: Type.NUMBER, description: "Total parts/spares/consumables cost" },
-              customer_name: { type: Type.STRING, description: "Customer name" },
-              vrn: { type: Type.STRING, description: "Vehicle Registration Number (e.g. KA-03-MH-1234)" },
-              chassis_no: { type: Type.STRING, description: "17-digit Chassis Number" },
-              engine_no: { type: Type.STRING, description: "Engine identification number" },
-              mileage: { type: Type.INTEGER, description: "KM / Odometer reading" },
-              invoice_date: { type: Type.STRING, description: "Date of the invoice (YYYY-MM-DD)" },
-              assigned_technicians: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-                description: "List of technicians/mechanics/helpers who worked on the vehicle"
-              }
-            },
-            required: [
-              "invoice_no",
-              "job_card_no",
-              "labour_amount",
-              "parts_amount",
-              "customer_name",
-              "vrn",
-              "chassis_no",
-              "engine_no",
-              "mileage",
-              "invoice_date",
-              "assigned_technicians"
-            ]
-          }
-        }
-      });
-
-      const text = response.text;
-      if (!text) {
-        throw new Error("No data extracted from invoice.");
-      }
-
-      const extracted = JSON.parse(text.trim());
-      res.json(extracted);
+      res.json(result.extractedFields);
     } catch (error: any) {
       console.error("Invoice OCR extraction error:", error);
       res.status(500).json({ error: error.message || "Failed to extract invoice parameters." });
+    }
+  });
+
+  // --- GEMINI & AZURE PARTS OCR ---
+  app.post("/api/gemini/extract-part-numbers", express.json({ limit: "20mb" }), async (req, res) => {
+    const { imageData, mimeType } = req.body;
+
+    if (!imageData) {
+      return res.status(400).json({ error: "No image data provided for parts OCR." });
+    }
+
+    try {
+      const result = await ocrFallbackService.processWithFallback(imageData, "parts-photo", {
+        mimeType: mimeType || "image/jpeg",
+        branchId: (req as any).user?.branchId || (req as any).user?.branch_id || "BR-SEDAM",
+        capturedBy: (req as any).user?.user_id || (req as any).user?.id || null
+      });
+
+      // Unified 90-Day Evidence & Compliance Storage (non-blocking)
+      evidenceStorageService.storeEvidence({
+        base64Image: imageData,
+        ocrType: "PARTS_PHOTO",
+        ocrProvider: result.provider,
+        ocrResultJson: result.extractedFields,
+        ocrConfidence: result.confidence,
+        mimeType: mimeType || "image/jpeg",
+        capturedBy: (req as any).user?.user_id || (req as any).user?.id || null,
+        branchId: (req as any).user?.branchId || (req as any).user?.branch_id || "BR-SEDAM"
+      }).catch(err => console.error("[OCR-Parts] Evidence storage failed:", err.message));
+
+      res.json(result.extractedFields);
+    } catch (error: any) {
+      console.error("Parts OCR error:", error);
+      res.status(500).json({ error: error.message || "Failed to extract part numbers." });
     }
   });
 

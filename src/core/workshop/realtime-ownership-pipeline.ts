@@ -557,17 +557,28 @@ export class RealtimeOwnershipPipeline {
       console.error("Failed to write internal tbl_job_card tracking record:", e.message);
     }
 
-    // 4b. Bridge into the app-wide `job_cards` table. Everything OUTSIDE this
-    // pipeline — JobCardManager, Dashboard, billing, QC, floor execution —
-    // reads `job_cards`, not tbl_job_card, so the assignment must land there
-    // too or the SA never sees the vehicle anywhere else in the app. Matched
-    // by VRN (job_cards has no gate_entry_id/intake_id column to join on) —
-    // best-effort: never fail the (already-committed) assignment on this.
+    // 4b. Bridge into the app-wide `job_card_master` table (the real data source
+    // for the in-memory cache used by JobCardManager, Dashboard, billing, etc.).
+    // Also update `job_cards` as a secondary mirror. Matched by VRN — best-effort:
+    // never fail the (already-committed) assignment on this.
     if (vrnClean) {
       try {
+        // Primary: job_card_master is the canonical source for syncLoad()
         await RealtimeOwnershipPipeline.execute(
-          `UPDATE job_cards SET service_advisor = ?, current_workflow_state = 'WAITING_ADVISOR'
-            WHERE vrn = ? AND current_workflow_state = 'GATE_IN'
+          `UPDATE job_card_master SET service_advisor = ?, job_status = 'Assigned'
+            WHERE vehicle_reg = ?
+              AND (service_advisor IS NULL OR service_advisor = '')
+            ORDER BY job_card_id DESC LIMIT 1`,
+          [payload.assignedSaName, vrnClean]
+        );
+      } catch (e: any) {
+        console.error("Failed to bridge SA assignment into job_card_master:", e.message);
+      }
+      try {
+        // Secondary: job_cards mirror (some routes read from here directly)
+        await RealtimeOwnershipPipeline.execute(
+          `UPDATE job_cards SET service_advisor = ?
+            WHERE vrn = ?
               AND (service_advisor IS NULL OR service_advisor = '' OR service_advisor = 'Unassigned')
             ORDER BY created_at DESC LIMIT 1`,
           [payload.assignedSaName, vrnClean]

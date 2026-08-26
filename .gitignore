@@ -37,3 +37,7 @@ dev/
 
 # Quarantined by file audit 2026-08-18 - see _quarantine/MANIFEST.md
 _quarantine/
+
+# Uploaded OCR evidence and local uploads
+public/uploads/
+

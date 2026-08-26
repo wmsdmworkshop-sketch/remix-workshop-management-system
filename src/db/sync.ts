@@ -1194,6 +1194,42 @@ export async function ensureTablesExist(): Promise<void> {
     }
   }
 
+  // 20. ocr_evidence (Unified 90-Day Evidence & Compliance Table)
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS \`ocr_evidence\` (
+        \`evidence_id\` VARCHAR(50) NOT NULL,
+        \`ocr_type\` ENUM('NUMBERPLATE','INVOICE','MANUAL_JOBCARD','PARTS_PHOTO','FUEL_GAUGE','ODOMETER') NOT NULL,
+        \`job_card_no\` VARCHAR(50) DEFAULT NULL,
+        \`gate_entry_id\` VARCHAR(100) DEFAULT NULL,
+        \`vrn\` VARCHAR(50) DEFAULT NULL,
+        \`photo_url\` VARCHAR(1000) DEFAULT NULL,
+        \`photo_size_bytes\` INT DEFAULT NULL,
+        \`captured_at\` DATETIME NOT NULL,
+        \`captured_by\` INT DEFAULT NULL,
+        \`ocr_provider\` VARCHAR(50) DEFAULT NULL,
+        \`ocr_result_json\` LONGTEXT DEFAULT NULL,
+        \`ocr_confidence\` DECIMAL(5,2) DEFAULT NULL,
+        \`retention_expiry\` DATE NOT NULL,
+        \`is_deleted\` TINYINT(1) DEFAULT 0,
+        \`branch_id\` VARCHAR(50) DEFAULT 'BR-SEDAM',
+        \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`evidence_id\`),
+        INDEX \`idx_ocr_evidence_type\` (\`ocr_type\`),
+        INDEX \`idx_ocr_evidence_vrn\` (\`vrn\`),
+        INDEX \`idx_ocr_evidence_jc\` (\`job_card_no\`),
+        INDEX \`idx_ocr_evidence_retention\` (\`retention_expiry\`, \`is_deleted\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+    `);
+  } catch (e) {}
+
+  try {
+    await db.execute("ALTER TABLE `job_card_master` ADD COLUMN `numberplate_photo` TEXT DEFAULT NULL");
+  } catch (e) {}
+  try {
+    await db.execute("ALTER TABLE `job_card_master` ADD COLUMN `odometer_photo` TEXT DEFAULT NULL");
+  } catch (e) {}
+
   console.log("Database table verification completed.");
 }
 
@@ -1307,13 +1343,39 @@ export async function syncLoad(): Promise<any> {
     // Fetch from job_card_master as requested
     const [jobCardMasterRows] = await db.query("SELECT * FROM job_card_master") as any[];
 
-    // Fetch job_cards to link fields like km_reading
+    // Fetch job_cards to link fields like km_reading, photos
     let jobCardsRows: any[] = [];
     try {
-      const [jcRows] = await db.query("SELECT job_id, km_reading, vehicle_make, vehicle_model, vehicle_year, vin, last_service_date, odometer_reading FROM job_cards") as any[];
+      const [jcRows] = await db.query("SELECT job_id, km_reading, vehicle_make, vehicle_model, vehicle_year, vin, last_service_date, odometer_reading, numberplate_photo, odometer_photo FROM job_cards") as any[];
       jobCardsRows = jcRows;
     } catch (e) {
       console.error("Could not load job_cards rows for mapping:", e);
+    }
+
+    let ocrEvidenceMap = new Map<string, { numberplate?: string; odometer?: string }>();
+    try {
+      const [evRows] = await db.query(
+        "SELECT vrn, job_card_no, ocr_type, photo_url FROM ocr_evidence WHERE is_deleted = 0 AND photo_url IS NOT NULL ORDER BY captured_at ASC"
+      ) as any[];
+      if (Array.isArray(evRows)) {
+        for (const ev of evRows) {
+          if (ev.vrn) {
+            const vrnKey = String(ev.vrn).toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const entry = ocrEvidenceMap.get(vrnKey) || {};
+            if (ev.ocr_type === "NUMBERPLATE") entry.numberplate = ev.photo_url;
+            if (ev.ocr_type === "ODOMETER") entry.odometer = ev.photo_url;
+            ocrEvidenceMap.set(vrnKey, entry);
+          }
+          if (ev.job_card_no) {
+            const entry = ocrEvidenceMap.get(ev.job_card_no) || {};
+            if (ev.ocr_type === "NUMBERPLATE") entry.numberplate = ev.photo_url;
+            if (ev.ocr_type === "ODOMETER") entry.odometer = ev.photo_url;
+            ocrEvidenceMap.set(ev.job_card_no, entry);
+          }
+        }
+      }
+    } catch (e) {
+      // Non-blocking
     }
 
     let bayQueueRows: any[] = [];
@@ -1458,12 +1520,21 @@ export async function syncLoad(): Promise<any> {
         created_at: safeIsoString(row.created_at, safeIsoString(new Date(), "")),
         updated_at: safeIsoString(row.updated_at, undefined),
         workshop_stage: row.live_status || row.job_status || 'Waiting',
+        service_advisor: row.service_advisor || null,
         bay_no: bayNo,
         technician_name: techName,
         no_of_laborers: 1,
         actual_time_taken: null,
-        numberplate_photo: null,
-        odometer_photo: null,
+        numberplate_photo: (() => {
+          const vrnKey = String(row.vehicle_reg || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+          const ev = ocrEvidenceMap.get(vrnKey) || (row.job_card_no ? ocrEvidenceMap.get(row.job_card_no) : undefined);
+          return row.numberplate_photo || (jcMatch ? jcMatch.numberplate_photo : null) || ev?.numberplate || null;
+        })(),
+        odometer_photo: (() => {
+          const vrnKey = String(row.vehicle_reg || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+          const ev = ocrEvidenceMap.get(vrnKey) || (row.job_card_no ? ocrEvidenceMap.get(row.job_card_no) : undefined);
+          return row.odometer_photo || (jcMatch ? jcMatch.odometer_photo : null) || ev?.odometer || null;
+        })(),
         invoice_no: row.invoice_no || null,
         gate_out_time: row.gate_out_time ? safeIsoString(row.gate_out_time, null) : null,
         billing_status: row.billing_status || null,
