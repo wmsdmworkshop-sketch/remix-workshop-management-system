@@ -29,7 +29,9 @@ import { verifyJobCard } from "./src/engines/ocr-processor.ts";
 import { evidenceStorageService } from "./src/services/evidence-storage.service.ts";
 import { ocrFallbackService } from "./src/services/ocr-fallback.service.ts";
 import vehiclePassportFacade from "./src/engines/vehicle-passport/index.ts";
+import serviceScheduleEvaluator from "./src/services/service-schedule-evaluator.ts";
 import { pipelineRouter } from "./src/api/routes/pipeline.routes.ts";
+import { saIntakeRouter } from "./src/api/routes/sa-intake.routes.ts";
 import { DeepSeekEngine } from "./src/engines/deepseek-engine.ts";
 import { EmployeeIdentityService, RoleService, AuditService } from "./src/core/identity.ts";
 import { EmployeeRepository, PermissionRepository, AuditRepository } from "./src/core/repositories.ts";
@@ -1560,6 +1562,22 @@ async function startServer() {
     }
   });
 
+  // --- AI COST GUARDRAIL ---
+  // Token-bucket limiter on every route that triggers a PAID outbound call
+  // (DeepSeek, Azure Document Intelligence, Vertex AI). Mounted HERE, ahead of
+  // the route definitions below, because Express applies path middleware in
+  // declaration order — mounting it further down would leave /api/ocr and the
+  // feedback triage route, both defined earlier, completely unprotected.
+  //
+  // The AI Brains routes get this via the router in src/api/routes/ai.routes.ts;
+  // these are the paid endpoints that remain inline in this file.
+  // Limit: AI_RATE_LIMIT_PER_MINUTE (default 60/min per key).
+  const { aiRateLimiter } = await import("./src/middleware/rate-limiter.ts");
+  app.use("/api/ocr", aiRateLimiter);                     // gate-entry plate OCR
+  app.use("/api/deepseek", aiRateLimiter);                // reserved prefix
+  app.use("/api/v1/pilot/feedback", aiRateLimiter);       // AI feedback triage
+  app.use(/^\/api\/job-cards\/[^/]+\/invoice-ocr$/, aiRateLimiter);
+
   // AUTH API: Login (Email + Password only)
   app.post("/api/auth/login", loginRateLimiter, async (req, res) => {
     const { username, password } = req.body;
@@ -1689,8 +1707,8 @@ async function startServer() {
         if (r && r.length) { row = r[0]; table = "user_access_master"; keyCol = "user_id"; keyVal = row.user_id; }
       }
       if (!row && uname) {
-        const [r]: any = await dbPool.query("SELECT id, password_hash FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1", [uname]);
-        if (r && r.length) { row = r[0]; table = "users"; keyCol = "id"; keyVal = row.id; }
+        const [r]: any = await dbPool.query("SELECT user_id, password_hash FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1", [uname]);
+        if (r && r.length) { row = r[0]; table = "users"; keyCol = "user_id"; keyVal = row.user_id; }
       }
       if (!row) return res.status(404).json({ error: "Your account was not found." });
 
@@ -2106,7 +2124,7 @@ async function startServer() {
 
     const username = String(employee.employee_code).trim().toLowerCase();
     const [usernameTakenRows]: any = await dbPool.query(
-      "SELECT user_id FROM user_access_master WHERE LOWER(username) = LOWER(?) UNION SELECT id AS user_id FROM users WHERE LOWER(username) = LOWER(?)",
+      "SELECT user_id FROM user_access_master WHERE LOWER(username) = LOWER(?) UNION SELECT user_id FROM users WHERE LOWER(username) = LOWER(?)",
       [username, username]
     );
     if (usernameTakenRows && usernameTakenRows.length > 0) {
@@ -3680,6 +3698,11 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       return res.status(500).json({ error: "Internal server error" });
     }
   });
+
+  // GET /api/vehicles/:vrn/schedule-eligibility moved to
+  // src/api/routes/ai.routes.ts (mounted below) so it inherits the AI rate
+  // limiter — it calls the schedule evaluator, which reaches paid AI services.
+  // Behaviour is otherwise byte-identical, including remaining unauthenticated.
 
   app.get("/api/validation/exception-report", async (req, res) => {
     try {
@@ -9122,70 +9145,33 @@ Respond with valid JSON only:
   // never mounted. It brings its own JWT auth (authenticateJwt) and inline
   // role checks, so it's safe to mount as-is.
   app.use("/api/pipeline", pipelineRouter);
+  app.use("/api/sa-intake", saIntakeRouter);
 
   // --- AI BRAINS: SIGNA (L1 Tactical) / SETU (L2 Coordination) / DISHA (L3 Strategic) ---
-  // Developer-only per explicit instruction (strictly "developer" role, not
-  // admin-inclusive). Health/activity reflect REAL invocations recorded in
-  // ai_brain_registry / ai_brain_activity_log — never a hardcoded "online" flag.
-  const AI_BRAINS_ROLES = ["developer"];
-
-  app.get("/api/v1/ai-brains/health", authenticateToken, requireRoles(AI_BRAINS_ROLES), async (req: any, res: any) => {
-    try {
-      const { getAllBrainHealth } = await import("./src/engines/ai-brains/brain-registry.ts");
-      const brains = await getAllBrainHealth();
-      res.json({ success: true, brains });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
-
-  app.get("/api/v1/ai-brains/activity", authenticateToken, requireRoles(AI_BRAINS_ROLES), async (req: any, res: any) => {
-    try {
-      const { getRecentActivity } = await import("./src/engines/ai-brains/brain-registry.ts");
-      const brainId = req.query.brainId as any;
-      const limit = req.query.limit ? parseInt(String(req.query.limit)) : 50;
-      const activity = await getRecentActivity(brainId, limit);
-      res.json({ success: true, activity });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
-
-  app.post("/api/v1/ai-brains/signa/suggest", authenticateToken, requireRoles(AI_BRAINS_ROLES), async (req: any, res: any) => {
-    const { vehicleModel, complaint } = req.body || {};
-    if (!vehicleModel || !complaint) {
-      return res.status(400).json({ success: false, error: "vehicleModel and complaint are required." });
-    }
-    try {
-      const { getTacticalSuggestion } = await import("./src/engines/ai-brains/signa-tactical-brain.ts");
-      const suggestion = await getTacticalSuggestion(vehicleModel, complaint, req.user?.username || req.user?.full_name || "developer");
-      res.json({ success: true, suggestion });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
-
-  app.post("/api/v1/ai-brains/setu/observe", authenticateToken, requireRoles(AI_BRAINS_ROLES), async (req: any, res: any) => {
-    try {
-      const { observeCoordinationState } = await import("./src/engines/ai-brains/setu-coordination-brain.ts");
-      const branchId = req.body?.branchId || req.user?.branchId || req.user?.branch_id || "BR-SEDAM";
-      const snapshot = await observeCoordinationState(req.user?.username || req.user?.full_name || "developer", String(branchId));
-      res.json({ success: true, snapshot });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
-
-  app.post("/api/v1/ai-brains/disha/analyze", authenticateToken, requireRoles(AI_BRAINS_ROLES), async (req: any, res: any) => {
-    try {
-      const { analyzeStrategicTrends } = await import("./src/engines/ai-brains/disha-strategic-brain.ts");
-      const periodDays = req.body?.periodDays ? parseInt(String(req.body.periodDays)) : 7;
-      const report = await analyzeStrategicTrends(req.user?.username || req.user?.full_name || "developer", periodDays);
-      res.json({ success: true, report });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
+  // Handlers now live in src/api/routes/ai.routes.ts. They are mounted here
+  // rather than imported as a bare Router because authenticateToken /
+  // requireRoles / requirePermission are consts inside THIS closure and are not
+  // exportable — injecting them keeps ONE RBAC implementation instead of
+  // forking it into the router module. The router also applies the AI rate
+  // limiter to everything it serves.
+  //
+  // Mounted at "/api", so paths are unchanged for existing clients:
+  //   GET  /api/v1/ai-brains/health
+  //   GET  /api/v1/ai-brains/activity
+  //   POST /api/v1/ai-brains/signa/suggest
+  //   POST /api/v1/ai-brains/setu/observe
+  //   POST /api/v1/ai-brains/disha/analyze
+  //   GET  /api/vehicles/:vrn/schedule-eligibility   (moved from line ~3686)
+  const { createAiRouter } = await import("./src/api/routes/ai.routes.ts");
+  app.use(
+    "/api",
+    createAiRouter({
+      authenticateToken,
+      requireRoles,
+      requirePermission,
+      serviceScheduleEvaluator,
+    })
+  );
 
   // --- MASTER DATA HUB: Dealer / Branch (single-dealer pilot) ---
   // NOTE: the source router (routes/master.routes.ts) modeled dealers/branches as
