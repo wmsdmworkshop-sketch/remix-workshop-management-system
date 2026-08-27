@@ -48,17 +48,29 @@ export interface AiRouterDependencies {
 }
 
 /**
- * Developer-only, per the explicit instruction recorded at the original call
- * site: strictly "developer", NOT admin-inclusive. Preserved for inspection/admin.
+ * INTROSPECTION endpoints — brain health, the raw activity log, and the SETU /
+ * DISHA coordination and strategic analyses. These expose cross-workshop
+ * internals and operational telemetry rather than assisting a specific repair,
+ * so they stay strictly "developer" per the explicit instruction recorded at
+ * the original call site. NOT admin-inclusive.
  */
 const AI_BRAINS_ROLES = ["developer"];
 
 /**
- * Decision audit logging is used operationally across the workshop: technicians
+ * SHOP-FLOOR endpoints — SIGNA's tactical suggestion and the decision audit
+ * that closes the loop on it.
+ *
+ * These two must carry the SAME gate. Splitting them left six of the seven
+ * roles able to record a decision about a recommendation they had no way to
+ * request, which made the decision endpoint unreachable in practice for exactly
+ * the people whose accountability it was built to capture.
+ *
+ * The rationale for the wider list applies identically to both: technicians
  * evaluate recommendations on the bay floor, service advisors review them during
- * technical intake, and workshop/service managers oversee decisions.
+ * technical intake, and workshop/service managers oversee the resulting work.
+ * Every slug below was verified to exist in the `roles` table.
  */
-const AI_DECISION_ROLES = [
+const AI_ASSIST_ROLES = [
   "developer",
   "admin",
   "gm_service",
@@ -67,6 +79,27 @@ const AI_DECISION_ROLES = [
   "service_advisor",
   "technician",
 ];
+
+/**
+ * Identity written to the brain activity log's `triggered_by` column.
+ *
+ * The literal "developer" was previously the fallback, which was survivable
+ * while these routes were developer-only. Now that technicians, advisors and
+ * managers can invoke SIGNA, a missing username would silently attribute their
+ * invocation to a developer in an audit trail — a fabricated identity, and the
+ * same class of defect as the employees[0] fallback removed elsewhere.
+ *
+ * authenticateToken guarantees req.user, and the JWT always carries user_id, so
+ * this degrades to a real identifier instead of inventing a plausible name.
+ */
+function resolveActor(req: any): string {
+  const u = req?.user;
+  const name = u?.username || u?.full_name;
+  if (name) return String(name);
+  if (u?.employee_id) return `employee:${u.employee_id}`;
+  if (u?.user_id ?? u?.id) return `user:${u.user_id ?? u.id}`;
+  return "unidentified";
+}
 
 export function createAiRouter(deps: AiRouterDependencies): Router {
   const { authenticateToken, requireRoles, serviceScheduleEvaluator } = deps;
@@ -128,7 +161,7 @@ export function createAiRouter(deps: AiRouterDependencies): Router {
   router.post(
     "/v1/ai-brains/signa/suggest",
     authenticateToken,
-    requireRoles(AI_BRAINS_ROLES),
+    requireRoles(AI_ASSIST_ROLES),
     async (req: any, res: any) => {
       const { vehicleModel, complaint } = req.body || {};
       if (!vehicleModel || !complaint) {
@@ -143,7 +176,7 @@ export function createAiRouter(deps: AiRouterDependencies): Router {
         const suggestion = await getTacticalSuggestion(
           vehicleModel,
           complaint,
-          req.user?.username || req.user?.full_name || "developer"
+          resolveActor(req)
         );
         res.json({ success: true, suggestion });
       } catch (err: any) {
@@ -159,7 +192,7 @@ export function createAiRouter(deps: AiRouterDependencies): Router {
   router.post(
     "/v1/ai-brains/signa/decision",
     authenticateToken,
-    requireRoles(AI_DECISION_ROLES),
+    requireRoles(AI_ASSIST_ROLES),
     async (req: any, res: any) => {
       const { logId, decision, notes } = req.body || {};
 
@@ -228,7 +261,7 @@ export function createAiRouter(deps: AiRouterDependencies): Router {
         );
         const branchId = req.body?.branchId || req.user?.branchId || req.user?.branch_id || "BR-SEDAM";
         const snapshot = await observeCoordinationState(
-          req.user?.username || req.user?.full_name || "developer",
+          resolveActor(req),
           String(branchId)
         );
         res.json({ success: true, snapshot });
@@ -249,7 +282,7 @@ export function createAiRouter(deps: AiRouterDependencies): Router {
         );
         const periodDays = req.body?.periodDays ? parseInt(String(req.body.periodDays)) : 7;
         const report = await analyzeStrategicTrends(
-          req.user?.username || req.user?.full_name || "developer",
+          resolveActor(req),
           periodDays
         );
         res.json({ success: true, report });
