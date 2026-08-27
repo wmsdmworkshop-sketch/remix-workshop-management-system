@@ -23,6 +23,70 @@ export interface StartupValidationReport {
 }
 
 export class StartupSchemaValidator {
+  /**
+   * Adds any columns a table is missing, without touching what already exists.
+   *
+   * `CREATE TABLE IF NOT EXISTS` guarantees a table EXISTS — it guarantees
+   * nothing about its SHAPE. When an older, narrower version of a table is
+   * already present, the CREATE silently matches and does nothing, so the
+   * declaration below drifts away from reality with no error anywhere. That is
+   * exactly how tbl_sa_intake ended up live with 8 columns while the code
+   * INSERTed 21, breaking every SA Technical Intake with
+   * "Unknown column 'gate_entry_id' in 'field list'" — a failure that only
+   * surfaced when an advisor tried to create a job card.
+   *
+   * Deliberately additive only: never drops, renames or retypes a column, since
+   * an unexpected column may be load-bearing for a reader this file cannot see.
+   * (tbl_sa_intake's stray `vrn` is read by operations-command-center.ts.)
+   * Returns the columns it actually added, for the diagnostics report.
+   */
+  private async reconcileColumns(
+    tableName: string,
+    columnDefs: Record<string, string>,
+    diagnostics: string[]
+  ): Promise<string[]> {
+    const added: string[] = [];
+    try {
+      const [rows]: any = await dbPool.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+        [tableName]
+      );
+      if (!rows || rows.length === 0) {
+        // No such table — the CREATE above is responsible for it, not this.
+        return added;
+      }
+      const existing = new Set(rows.map((r: any) => String(r.COLUMN_NAME)));
+
+      for (const [column, definition] of Object.entries(columnDefs)) {
+        if (existing.has(column)) continue;
+        try {
+          // Column name comes from the hardcoded map below, never user input.
+          await dbPool.query(
+            `ALTER TABLE \`${tableName}\` ADD COLUMN \`${column}\` ${definition}`
+          );
+          added.push(column);
+        } catch (colErr: any) {
+          diagnostics.push(
+            `⚠️ Could not add ${tableName}.${column}: ${colErr.message}`
+          );
+        }
+      }
+
+      if (added.length > 0) {
+        diagnostics.push(
+          `🔧 Schema drift repaired on ${tableName}: added ${added.length} missing column(s) — ${added.join(', ')}.`
+        );
+        console.log(
+          `[SchemaValidator] Repaired drift on ${tableName}: ${added.join(', ')}`
+        );
+      }
+    } catch (err: any) {
+      diagnostics.push(`⚠️ Column reconciliation failed for ${tableName}: ${err.message}`);
+    }
+    return added;
+  }
+
   async validateAndRepair(): Promise<StartupValidationReport> {
     console.log('🔍 Running DWIP Startup Schema & Single-Source-of-Truth Auth Validator...');
     const diagnostics: string[] = [];
@@ -78,6 +142,18 @@ export class StartupSchemaValidator {
         diagnostics.push('✅ "users" table automatically repaired and created.');
       }
       usersTableExists = true;
+
+      // Ensure 'must_change_password' exists on both tables
+      try {
+        await dbPool.execute(`ALTER TABLE users ADD COLUMN must_change_password TINYINT(1) DEFAULT 0`);
+      } catch (colErr) {
+        // Column already exists
+      }
+      try {
+        await dbPool.execute(`ALTER TABLE user_access_master ADD COLUMN must_change_password TINYINT(1) DEFAULT 0`);
+      } catch (colErr) {
+        // Column already exists
+      }
 
       // 3. Sync legacy 'user_access_master' records into 'users' table if user_access_master exists
       const [uamCheck] = await dbPool.execute(`SHOW TABLES LIKE 'user_access_master'`) as any[];
@@ -234,6 +310,87 @@ export class StartupSchemaValidator {
         }
       } catch (backfillErr: any) {
         diagnostics.push(`⚠️ Deterministic backfill notice: ${backfillErr.message}`);
+      }
+
+      // 7. Ensure Phase 4 SA Technical Intake Tables Exist
+      try {
+        await dbPool.execute(`
+          CREATE TABLE IF NOT EXISTS tbl_sa_intake (
+            intake_id VARCHAR(50) PRIMARY KEY,
+            job_card_id VARCHAR(50),
+            gate_entry_id VARCHAR(50) NOT NULL,
+            vos_id VARCHAR(50),
+            sa_id VARCHAR(50) NOT NULL,
+            sa_name VARCHAR(100) NOT NULL,
+            gate_odometer INT,
+            reception_odometer INT,
+            sa_verified_odometer INT NOT NULL,
+            odometer_corrected TINYINT(1) DEFAULT 0,
+            correction_reason TEXT,
+            complaint_source VARCHAR(100) NOT NULL,
+            authenticated_by VARCHAR(100) NOT NULL,
+            authenticated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            authenticated_complaints_json TEXT NOT NULL,
+            fsv_status VARCHAR(50) DEFAULT 'DATA_UNAVAILABLE',
+            warranty_prescreen_status VARCHAR(50) DEFAULT 'INSUFFICIENT_DATA',
+            job_scope_json TEXT,
+            jc_type VARCHAR(50) NOT NULL DEFAULT 'DWIP_TEMP',
+            reconciled_crm_jc_no VARCHAR(50),
+            reconciled_at TIMESTAMP NULL,
+            branch_id VARCHAR(50) NOT NULL,
+            status VARCHAR(50) DEFAULT 'INTAKE_STARTED',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_sa_intake_ge (gate_entry_id),
+            INDEX idx_sa_intake_jc (job_card_id)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `);
+
+        // The CREATE above is a no-op when an older, narrower tbl_sa_intake is
+        // already present — which was the case in production, where the table
+        // had only 8 of these columns. Every SA Technical Intake therefore died
+        // on "Unknown column 'gate_entry_id' in 'field list'". Reconcile the
+        // shape explicitly rather than assuming the CREATE did anything.
+        await this.reconcileColumns('tbl_sa_intake', {
+          job_card_id: 'VARCHAR(50) NULL',
+          gate_entry_id: 'VARCHAR(50) NULL',
+          vos_id: 'VARCHAR(50) NULL',
+          sa_id: 'VARCHAR(50) NULL',
+          sa_name: 'VARCHAR(100) NULL',
+          gate_odometer: 'INT NULL',
+          reception_odometer: 'INT NULL',
+          sa_verified_odometer: 'INT NULL',
+          odometer_corrected: 'TINYINT(1) NOT NULL DEFAULT 0',
+          correction_reason: 'TEXT NULL',
+          complaint_source: 'VARCHAR(100) NULL',
+          authenticated_by: 'VARCHAR(100) NULL',
+          authenticated_at: 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP',
+          authenticated_complaints_json: 'TEXT NULL',
+          fsv_status: "VARCHAR(50) NULL DEFAULT 'DATA_UNAVAILABLE'",
+          warranty_prescreen_status: "VARCHAR(50) NULL DEFAULT 'INSUFFICIENT_DATA'",
+          job_scope_json: 'TEXT NULL',
+          jc_type: "VARCHAR(50) NOT NULL DEFAULT 'DWIP_TEMP'",
+          reconciled_crm_jc_no: 'VARCHAR(50) NULL',
+          reconciled_at: 'TIMESTAMP NULL',
+          branch_id: 'VARCHAR(50) NULL',
+          status: "VARCHAR(50) NULL DEFAULT 'INTAKE_STARTED'",
+          updated_at: 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
+        }, diagnostics);
+        await dbPool.execute(`
+          CREATE TABLE IF NOT EXISTS tbl_complaint_amendment_audit (
+            audit_id VARCHAR(50) PRIMARY KEY,
+            intake_id VARCHAR(50) NOT NULL,
+            job_card_id VARCHAR(50),
+            previous_complaints_json TEXT NOT NULL,
+            new_complaints_json TEXT NOT NULL,
+            amended_by VARCHAR(100) NOT NULL,
+            amended_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            amendment_reason TEXT NOT NULL,
+            branch_id VARCHAR(50) NOT NULL
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `);
+      } catch (tableErr: any) {
+        diagnostics.push(`⚠️ SA intake tables setup notice: ${tableErr.message}`);
       }
 
       console.log('✅ Startup Schema & Auth Single-Source-of-Truth Validation Complete.');

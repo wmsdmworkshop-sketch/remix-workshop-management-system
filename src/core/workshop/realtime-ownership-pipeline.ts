@@ -561,16 +561,36 @@ export class RealtimeOwnershipPipeline {
     // for the in-memory cache used by JobCardManager, Dashboard, billing, etc.).
     // Also update `job_cards` as a secondary mirror. Matched by VRN — best-effort:
     // never fail the (already-committed) assignment on this.
+    // The manager's assignment is AUTHORITATIVE and FORCED — there is no advisor
+    // accept step in this workflow. The previous version guarded with
+    // `AND (service_advisor IS NULL OR service_advisor = '')`, which silently
+    // did nothing on any reassignment or override: the manager saw a success
+    // message while the job card kept its old advisor. Removed, so a stamp is a
+    // stamp.
+    //
+    // Both statements also now check affectedRows. Previously a zero-row match
+    // was indistinguishable from a successful write — which is how every job
+    // card ended up with service_advisor NULL while tbl_manager_assignment held
+    // real assignments, and why the ADVISOR_UNASSIGNED alerts fired against
+    // cards the manager had already assigned.
     if (vrnClean) {
       try {
         // Primary: job_card_master is the canonical source for syncLoad()
-        await RealtimeOwnershipPipeline.execute(
+        const masterRes: any = await RealtimeOwnershipPipeline.execute(
           `UPDATE job_card_master SET service_advisor = ?, job_status = 'Assigned'
             WHERE vehicle_reg = ?
-              AND (service_advisor IS NULL OR service_advisor = '')
             ORDER BY job_card_id DESC LIMIT 1`,
           [payload.assignedSaName, vrnClean]
         );
+        const masterRows = masterRes?.affectedRows ?? masterRes?.[0]?.affectedRows ?? 0;
+        if (masterRows === 0) {
+          // Expected when the manager assigns before the job card exists. The
+          // SA technical intake stamps it on creation; this records the gap
+          // rather than pretending the bridge succeeded.
+          console.warn(
+            `[Assignment] No job_card_master row for VRN ${vrnClean} yet — advisor ${payload.assignedSaName} will be stamped when the job card is created.`
+          );
+        }
       } catch (e: any) {
         console.error("Failed to bridge SA assignment into job_card_master:", e.message);
       }
@@ -579,7 +599,6 @@ export class RealtimeOwnershipPipeline {
         await RealtimeOwnershipPipeline.execute(
           `UPDATE job_cards SET service_advisor = ?
             WHERE vrn = ?
-              AND (service_advisor IS NULL OR service_advisor = '' OR service_advisor = 'Unassigned')
             ORDER BY created_at DESC LIMIT 1`,
           [payload.assignedSaName, vrnClean]
         );

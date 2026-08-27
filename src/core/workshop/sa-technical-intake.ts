@@ -468,21 +468,72 @@ export class SaTechnicalIntakeEngine {
       ]
     );
 
-    // Record or update in tbl_job_card
-    await this.execute(
-      `INSERT INTO tbl_job_card (
-        job_card_id, gate_entry_id, service_type, advisor_id, customer_complaint, workflow_state, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        jobCardId,
-        payload.gateEntryId,
-        payload.jobScope[0]?.jobType || "General Service",
-        saName,
-        payload.authenticatedComplaints[0]?.complaintText || "Technical Intake Completed",
-        "JC_CREATED",
-        now
-      ]
-    );
+    // Record or update in tbl_job_card (non-blocking)
+    try {
+      await this.execute(
+        `INSERT INTO tbl_job_card (
+          job_card_id, gate_entry_id, service_type, advisor_id, customer_complaint, workflow_state, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          jobCardId,
+          payload.gateEntryId,
+          payload.jobScope[0]?.jobType || "General Service",
+          saName,
+          payload.authenticatedComplaints[0]?.complaintText || "Technical Intake Completed",
+          "JC_CREATED",
+          now
+        ]
+      );
+    } catch (tblErr: any) {
+      console.warn("[SaTechnicalIntake] Warning inserting internal tbl_job_card:", tblErr.message);
+    }
+
+    // Bridge into app-wide job_card_master / job_cards table
+    if (ge?.vin) {
+      const vrnClean = ge.vin.replace("VIN-", "").trim().toUpperCase();
+      try {
+        await this.execute(
+          `UPDATE job_card_master 
+           SET job_card_no = ?, job_status = 'Assigned', service_advisor = ?, complaints = ?
+           WHERE vehicle_reg = ? OR chassis_no = ?`,
+          [jobCardId, saName, payload.authenticatedComplaints[0]?.complaintText || "", vrnClean, vrnClean]
+        );
+      } catch (brErr: any) {
+        console.warn("[SaTechnicalIntake] Warning bridging to job_card_master:", brErr.message);
+      }
+    }
+
+    // AUTOMATIC FLOOR HANDOFF.
+    //
+    // There is no separate "send to floor" decision in this workshop's process:
+    // a created job card IS floor work. Requiring the advisor to press a second
+    // button only created a state where a job card existed but no floor SLA was
+    // running, and any advisor who closed the modal at step 5 stranded the
+    // vehicle invisibly. Allocation of technician and bay stays with the floor
+    // supervisor / workshop manager / service manager downstream — this only
+    // moves the card into their queue.
+    //
+    // Best-effort: the job card is already committed above and must never be
+    // rolled back because the handoff bookkeeping failed. A failure here leaves
+    // the card recoverable via the existing send-to-floor endpoint.
+    let floorHandoff: any = null;
+    try {
+      floorHandoff = await this.sendToFloor(
+        {
+          jobCardId,
+          intakeId,
+          gateEntryId: payload.gateEntryId,
+          vosId: payload.vosId,
+          branchId,
+        },
+        user
+      );
+    } catch (floorErr: any) {
+      console.error(
+        `[SaTechnicalIntake] Automatic floor handoff failed for ${jobCardId}:`,
+        floorErr.message
+      );
+    }
 
     return {
       success: true,
@@ -493,7 +544,12 @@ export class SaTechnicalIntakeEngine {
       saVerifiedOdometer: payload.saVerifiedOdometer,
       authenticatedComplaintsCount: payload.authenticatedComplaints.length,
       jobScopeCount: payload.jobScope.length,
-      status: "JC_CREATED",
+      // Reported honestly so the UI can show the real outcome rather than
+      // assuming the handoff succeeded.
+      floorHandoff: floorHandoff
+        ? { success: true, status: floorHandoff.status, slaDueAt: floorHandoff.slaDueAt }
+        : { success: false, status: "HANDOFF_PENDING" },
+      status: floorHandoff ? "FLOOR_READY" : "JC_CREATED",
       createdAt: now.toISOString()
     };
   }
@@ -560,13 +616,58 @@ export class SaTechnicalIntakeEngine {
       [payload.jobCardId, payload.gateEntryId]
     );
 
-    // Update Job Card workflow state
-    await this.execute(
-      `UPDATE tbl_job_card SET workflow_state = 'FLOOR_READY' WHERE job_card_id = ?`,
+    // Update Job Card workflow state.
+    //
+    // This previously targeted `tbl_job_card`, which is a VIEW over `job_cards`
+    // and has neither a `job_card_id` nor a `workflow_state` column — so it
+    // could never succeed, and threw "Unknown column 'job_card_id' in 'where
+    // clause'" straight through to the advisor at the final handoff step.
+    //
+    // The real workflow position lives in job_card_master.job_status (the
+    // canonical source for syncLoad) mirrored into job_cards.workshop_stage.
+    // Matched on job_card_no, which is what createJobCard() actually stamps.
+    try {
+      await this.execute(
+        `UPDATE job_card_master SET job_status = 'Floor Ready' WHERE job_card_no = ?`,
+        [payload.jobCardId]
+      );
+    } catch (e: any) {
+      console.warn("[SaTechnicalIntake] Could not set job_card_master floor state:", e.message);
+    }
+    try {
+      await this.execute(
+        `UPDATE job_cards SET workshop_stage = 'Floor Ready' WHERE job_card_no = ?`,
+        [payload.jobCardId]
+      );
+    } catch (e: any) {
+      console.warn("[SaTechnicalIntake] Could not set job_cards floor state:", e.message);
+    }
+
+    // Create 5-minute Handoff SLA tracker for Floor In-Charge.
+    //
+    // Idempotent: createJobCard() now performs this handoff automatically, and
+    // the manual endpoint remains for recovery. Without this guard the two
+    // paths would stack duplicate SA_TO_FLOOR rows on one job card, inflating
+    // the breach counts the manager dashboard reports.
+    const [existingHandoff]: any = await this.execute(
+      `SELECT handoff_id, status FROM tbl_handoff_sla
+        WHERE stage_name = 'SA_TO_FLOOR' AND entity_id = ? LIMIT 1`,
       [payload.jobCardId]
     );
+    const alreadyHandedOff = Array.isArray(existingHandoff) && existingHandoff.length > 0;
+    if (alreadyHandedOff) {
+      return {
+        success: true,
+        jobCardId: payload.jobCardId,
+        previousOwnerRole: "service_advisor",
+        newOwnerRole: "floor_incharge",
+        handoffAt: now.toISOString(),
+        slaDueAt: slaDueAt.toISOString(),
+        status: "FLOOR_READY",
+        alreadyHandedOff: true
+      };
+    }
 
-    // Create 5-minute Handoff SLA tracker for Floor In-Charge
     const handoffId = `SLA-SA2F-${randomUUID().substring(0, 8).toUpperCase()}`;
     await this.execute(
       `INSERT INTO tbl_handoff_sla (
