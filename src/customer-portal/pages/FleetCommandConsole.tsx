@@ -1,206 +1,178 @@
-import React, { useState } from "react";
-import { Truck, CheckCircle2, AlertTriangle, Shield, DollarSign, Clock, Users, FileText, ChevronRight, Sparkles } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Truck, AlertTriangle, Loader2 } from "lucide-react";
+import { fetchVehicles, fetchJobs } from "../hooks/useCustomerApi";
 
-export interface FleetVehicle {
-  id: string;
+/**
+ * Fleet console for the signed-in customer.
+ *
+ * Every row and count here comes from /api/customer/vehicles and
+ * /api/customer/jobs, both scoped server-side to the authenticated mobile
+ * number.
+ *
+ * This page previously rendered five hardcoded vehicles — other people's
+ * registration numbers, driver names and mobile numbers — plus invented KPIs
+ * (96.4% uptime, "₹54,100 / Mo") and a "bulk approve" button whose handler
+ * only set a success message and called no API at all. A customer could be
+ * told their repairs were authorised while the workshop was never notified.
+ *
+ * Driver name/mobile and estimate amounts are deliberately absent: the
+ * customer-safe payloads (buildVehicleView / sanitizeJobCard) do not carry
+ * them, and nothing here may display a figure it cannot source.
+ */
+
+interface VehicleView {
   vrn: string;
-  model: string;
-  driverName: string;
-  driverMobile: string;
-  jobCardNo?: string;
-  status: "In Workshop" | "On Road" | "Estimate Pending" | "Ready for Delivery";
-  pendingEstimate?: number;
-  odometerKm: number;
+  vehicle_model: string;
+  vehicle_make: string;
+  vehicle_year: number;
+  active_jobs: number;
+  last_service_date: string | null;
+  total_visits: number;
+}
+
+interface JobView {
+  job_card_no: string;
+  vrn: string;
+  status: string;
+  km_reading: number | null;
+  service_type: string;
+  gate_out_time: string | null;
 }
 
 export const FleetCommandConsole: React.FC = () => {
-  const [selectedFleetJobIds, setSelectedFleetJobIds] = useState<string[]>([]);
-  const [bulkApprovedSuccess, setBulkApprovedSuccess] = useState<string | null>(null);
+  const [vehicles, setVehicles] = useState<VehicleView[]>([]);
+  const [jobs, setJobs] = useState<JobView[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const fleetVehicles: FleetVehicle[] = [
-    { id: "flt-1", vrn: "KA-32-AA-5577", model: "Tata Signa 4825.TK", driverName: "Ramesh Pawar", driverMobile: "9845112233", jobCardNo: "JC-DevAus-AA1-2526-002338", status: "Estimate Pending", pendingEstimate: 14850, odometerKm: 142500 },
-    { id: "flt-2", vrn: "KA-32-AA-8899", model: "Tata Prima 3530.K", driverName: "Suresh Patil", driverMobile: "9845223344", jobCardNo: "JC-DevAus-AA1-2526-002410", status: "In Workshop", pendingEstimate: 0, odometerKm: 98400 },
-    { id: "flt-3", vrn: "KA-32-BB-1122", model: "Tata Ultra T.7", driverName: "Mahesh Naik", driverMobile: "9845334455", jobCardNo: "JC-DevAus-AA1-2526-002490", status: "Estimate Pending", pendingEstimate: 8400, odometerKm: 65200 },
-    { id: "flt-4", vrn: "KA-32-CC-4455", model: "Tata Intra V50", driverName: "Anil Kumar", driverMobile: "9845445566", status: "On Road", odometerKm: 34100 },
-    { id: "flt-5", vrn: "KA-32-DD-7788", model: "Tata LPT 1613", driverName: "Ganesh Rathod", driverMobile: "9845556677", status: "On Road", odometerKm: 215000 }
-  ];
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [v, j] = await Promise.all([fetchVehicles(), fetchJobs()]);
+        if (cancelled) return;
+        setVehicles(Array.isArray(v?.vehicles) ? v.vehicles : []);
+        setJobs(Array.isArray(j?.jobs) ? j.jobs : []);
+      } catch (err: any) {
+        if (!cancelled) setError(err?.message || "Could not load your fleet.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
-  const pendingEstimatesList = fleetVehicles.filter(v => v.status === "Estimate Pending" && v.pendingEstimate && v.pendingEstimate > 0);
+  /** Latest open job per VRN, so the roster can show a live job card number. */
+  const openJobByVrn = new Map<string, JobView>();
+  for (const j of jobs) {
+    if (!j.gate_out_time && !openJobByVrn.has(j.vrn)) openJobByVrn.set(j.vrn, j);
+  }
+  const inWorkshop = openJobByVrn.size;
 
-  const toggleSelectVehicle = (id: string) => {
-    setSelectedFleetJobIds(prev => 
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-slate-500 p-8 text-sm">
+        <Loader2 className="w-4 h-4 animate-spin" /> Loading your fleet…
+      </div>
     );
-  };
+  }
 
-  const handleBulkApprove = () => {
-    if (selectedFleetJobIds.length === 0) return;
-    setBulkApprovedSuccess(`Successfully bulk-approved ${selectedFleetJobIds.length} commercial fleet estimates! Work authorization dispatched to workshop supervisor.`);
-    setSelectedFleetJobIds([]);
-    setTimeout(() => setBulkApprovedSuccess(null), 5000);
-  };
+  if (error) {
+    return (
+      <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-semibold flex items-center gap-2">
+        <AlertTriangle className="w-4 h-4 shrink-0" /> {error}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-24">
-      {/* Fleet Hero Banner */}
+      {/* Fleet header — counts only, each derived from the rows below */}
       <div className="bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white rounded-2xl p-6 shadow-md border border-slate-800 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-indigo-500/20 border border-indigo-500/40 text-indigo-400 rounded-xl">
-              <Truck className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="text-[10px] font-extrabold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded uppercase tracking-wider">Commercial Fleet Ops</span>
-              <h2 className="text-lg font-black tracking-tight text-white mt-1">Devanand Commercial Logistics Fleet</h2>
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="p-3 bg-indigo-500/20 border border-indigo-500/40 text-indigo-400 rounded-xl">
+            <Truck className="w-6 h-6" />
           </div>
-
-          <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold rounded-full">
-            Fleet Uptime: 96.4%
-          </span>
+          <div>
+            <span className="text-[10px] font-extrabold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded uppercase tracking-wider">
+              Fleet Operations
+            </span>
+            <h2 className="text-lg font-black tracking-tight text-white mt-1">Your Vehicles</h2>
+          </div>
         </div>
 
-        {/* Fleet KPI Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-800/80 text-xs">
+        <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-800/80 text-xs">
           <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
-            <span className="text-slate-400 block text-[10px] uppercase font-semibold">Total Fleet Size</span>
-            <span className="text-base font-extrabold text-white font-mono mt-0.5 block">5 Heavy Trucks</span>
+            <span className="text-slate-400 block text-[10px] uppercase font-semibold">Vehicles Registered</span>
+            <span className="text-base font-extrabold text-white font-mono mt-0.5 block">{vehicles.length}</span>
           </div>
-
           <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
-            <span className="text-slate-400 block text-[10px] uppercase font-semibold">Active in Workshop</span>
-            <span className="text-base font-extrabold text-amber-400 font-mono mt-0.5 block">3 Commercial Vehicles</span>
-          </div>
-
-          <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
-            <span className="text-slate-400 block text-[10px] uppercase font-semibold">Pending Estimates</span>
-            <span className="text-base font-extrabold text-indigo-400 font-mono mt-0.5 block">₹23,250 (2 Jobs)</span>
-          </div>
-
-          <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
-            <span className="text-slate-400 block text-[10px] uppercase font-semibold">Monthly Maintenance</span>
-            <span className="text-base font-extrabold text-emerald-400 font-mono mt-0.5 block">₹54,100 / Mo</span>
+            <span className="text-slate-400 block text-[10px] uppercase font-semibold">Currently in Workshop</span>
+            <span className="text-base font-extrabold text-amber-400 font-mono mt-0.5 block">{inWorkshop}</span>
           </div>
         </div>
       </div>
 
-      {/* Success Banner */}
-      {bulkApprovedSuccess && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-          <span>{bulkApprovedSuccess}</span>
-        </div>
-      )}
-
-      {/* Bulk Estimate Approval Box */}
-      {pendingEstimatesList.length > 0 && (
-        <div className="bg-indigo-50/80 border border-indigo-200 rounded-2xl p-5 shadow-sm space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-indigo-600" />
-              <h3 className="text-xs font-extrabold text-indigo-950 uppercase tracking-wider">Bulk Commercial Estimate Approvals</h3>
-            </div>
-
-            <button
-              onClick={handleBulkApprove}
-              disabled={selectedFleetJobIds.length === 0}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
-            >
-              Approve Selected ({selectedFleetJobIds.length})
-            </button>
-          </div>
-
-          <div className="space-y-2">
-            {pendingEstimatesList.map(v => (
-              <div 
-                key={v.id}
-                onClick={() => toggleSelectVehicle(v.id)}
-                className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between text-xs ${
-                  selectedFleetJobIds.includes(v.id)
-                    ? "bg-white border-indigo-600 shadow-sm ring-2 ring-indigo-600/20 font-bold"
-                    : "bg-white/60 border-slate-200 hover:bg-white"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={selectedFleetJobIds.includes(v.id)}
-                    onChange={() => {}}
-                    className="rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 h-4 w-4"
-                  />
-                  <div>
-                    <span className="font-mono font-extrabold text-slate-900">{v.vrn}</span>
-                    <span className="text-[10px] text-slate-500 font-medium ml-2">({v.model}) — Driver: {v.driverName}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <span className="font-mono font-extrabold text-indigo-700 text-sm">₹{v.pendingEstimate?.toLocaleString('en-IN')}</span>
-                  <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-bold rounded">Estimate Ready</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Fleet Roster Table */}
+      {/* Roster */}
       <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
         <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-          <Truck className="w-4 h-4 text-slate-700" />
-          Active Fleet Vehicle Operations Roster
+          <Truck className="w-4 h-4 text-slate-700" /> Vehicle Roster
         </h3>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
-                <th className="py-3 px-4">Vehicle VRN & Model</th>
-                <th className="py-3 px-4">Assigned Driver</th>
-                <th className="py-3 px-4">Job Card</th>
-                <th className="py-3 px-4">Odometer</th>
-                <th className="py-3 px-4 text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {fleetVehicles.map(v => (
-                <tr key={v.id} className="hover:bg-slate-50 transition">
-                  <td className="py-3 px-4">
-                    <p className="font-mono font-extrabold text-slate-900">{v.vrn}</p>
-                    <p className="text-[10px] text-slate-500 font-medium">{v.model}</p>
-                  </td>
-                  <td className="py-3 px-4 font-medium text-slate-700">
-                    <p>{v.driverName}</p>
-                    <p className="text-[10px] font-mono text-slate-400">{v.driverMobile}</p>
-                  </td>
-                  <td className="py-3 px-4 font-mono">
-                    {v.jobCardNo ? (
-                      <span className="bg-slate-100 border border-slate-200 px-2 py-0.5 rounded font-bold text-slate-700">
-                        {v.jobCardNo}
-                      </span>
-                    ) : (
-                      <span className="text-slate-400 italic">No Active JC</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4 font-mono font-semibold text-slate-700">
-                    {v.odometerKm.toLocaleString()} KM
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase ${
-                      v.status === "On Road"
-                        ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                        : v.status === "Estimate Pending"
-                        ? "bg-indigo-100 text-indigo-800 border border-indigo-200"
-                        : "bg-amber-100 text-amber-800 border border-amber-200"
-                    }`}>
-                      {v.status}
-                    </span>
-                  </td>
+        {vehicles.length === 0 ? (
+          <p className="py-8 text-center text-slate-500 text-xs font-medium">
+            No vehicles are linked to your account yet. They appear here once a job card
+            has been raised against your registered mobile number.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
+                  <th className="py-3 px-4">Vehicle</th>
+                  <th className="py-3 px-4">Open Job Card</th>
+                  <th className="py-3 px-4">Odometer</th>
+                  <th className="py-3 px-4">Last Service</th>
+                  <th className="py-3 px-4 text-right">Visits</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {vehicles.map((v) => {
+                  const open = openJobByVrn.get(v.vrn);
+                  const model = [v.vehicle_make, v.vehicle_model].filter(Boolean).join(" ");
+                  return (
+                    <tr key={v.vrn} className="hover:bg-slate-50 transition">
+                      <td className="py-3 px-4">
+                        <p className="font-mono font-extrabold text-slate-900">{v.vrn}</p>
+                        {model && <p className="text-[10px] text-slate-500 font-medium">{model}</p>}
+                      </td>
+                      <td className="py-3 px-4 font-mono">
+                        {open ? (
+                          <span className="bg-slate-100 border border-slate-200 px-2 py-0.5 rounded font-bold text-slate-700">
+                            {open.job_card_no}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 italic">No open job</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 font-mono font-semibold text-slate-700">
+                        {open?.km_reading != null ? `${open.km_reading.toLocaleString("en-IN")} KM` : "—"}
+                      </td>
+                      <td className="py-3 px-4 font-medium text-slate-700">
+                        {v.last_service_date
+                          ? new Date(v.last_service_date).toLocaleDateString("en-IN")
+                          : "—"}
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono font-semibold text-slate-700">
+                        {v.total_visits}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -35,11 +35,6 @@ export default function BusinessImpactTracker() {
     );
   }
 
-  const dummyGrowthData = [
-    { name: "Labour Revenue", current: 48000, target: 40000 },
-    { name: "Parts Revenue", current: 152000, target: 120000 }
-  ];
-
   if (loading || !metrics) {
     return (
       <div className="flex items-center justify-center p-12 bg-slate-900 border border-slate-800 rounded-2xl text-slate-400">
@@ -99,17 +94,16 @@ export default function BusinessImpactTracker() {
         {/* Revenue chart */}
         <div className="col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-lg">
           <h3 className="text-lg font-semibold mb-4 text-slate-300">Revenue Performance vs Target Goals</h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dummyGrowthData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="name" stroke="#475569" fontSize={12} />
-                <YAxis stroke="#475569" fontSize={12} />
-                <Tooltip contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155" }} />
-                <Bar dataKey="current" fill="#f97316" radius={[4, 4, 0, 0]} name="Actual Revenue (₹)" />
-                <Bar dataKey="target" fill="#475569" radius={[4, 4, 0, 0]} name="Target Baseline (₹)" />
-              </BarChart>
-            </ResponsiveContainer>
+          {/* The chart used to plot `dummyGrowthData` — ₹48,000 labour against a
+              ₹40,000 target and ₹152,000 parts against ₹120,000, all literals
+              shown beside genuinely computed KPIs. The metrics payload carries
+              totalRevenue but no labour/parts split and no targets, so there is
+              nothing here to plot until those are actually recorded. */}
+          <div className="h-64 flex items-center justify-center">
+            <p className="text-xs text-slate-500 italic text-center max-w-xs">
+              Revenue-against-target tracking needs labour and parts split targets
+              to be configured. No targets have been set for this workshop.
+            </p>
           </div>
         </div>
 

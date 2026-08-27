@@ -20,18 +20,11 @@ export const QueueHeatMap: React.FC<QueueHeatMapProps> = React.memo(({
   isLoading = false,
   hasError = false,
 }) => {
-  const chartData = useMemo<QueueHeatMapItem[]>(() => {
-    if (data.length > 0) return data;
-    return [
-      { name: "Gate", load: 3, capacity: 10, avgWaitMinutes: 5 },
-      { name: "Reception", load: 5, capacity: 8, avgWaitMinutes: 12 },
-      { name: "Advisor", load: 8, capacity: 12, avgWaitMinutes: 20 },
-      { name: "Workshop", load: 14, capacity: 12, avgWaitMinutes: 45 },
-      { name: "QC", load: 2, capacity: 6, avgWaitMinutes: 15 },
-      { name: "Parts", load: 6, capacity: 10, avgWaitMinutes: 30 },
-      { name: "Billing", load: 4, capacity: 8, avgWaitMinutes: 10 }
-    ];
-  }, [data]);
+  // Real stage loads only. This used to substitute seven invented rows whenever
+  // `data` was empty — including a "Workshop" stage shown at 14/12 over
+  // capacity with a 45-minute wait. A manager could act on a bottleneck that
+  // did not exist.
+  const chartData = data;
 
   if (hasError) {
     return (
@@ -57,6 +50,13 @@ export const QueueHeatMap: React.FC<QueueHeatMapProps> = React.memo(({
         <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Stage Load & Bottlenecks</h3>
       </div>
 
+      {chartData.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center min-h-[160px]">
+          <p className="text-xs text-slate-500 italic text-center px-4">
+            No stage load data available.
+          </p>
+        </div>
+      ) : (
       <div className="flex-1 w-full min-h-[160px] max-h-[220px]">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
@@ -93,6 +93,7 @@ export const QueueHeatMap: React.FC<QueueHeatMapProps> = React.memo(({
           </BarChart>
         </ResponsiveContainer>
       </div>
+      )}
 
       <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-slate-800 shrink-0 text-center text-[10px] font-bold text-slate-400">
         <div>

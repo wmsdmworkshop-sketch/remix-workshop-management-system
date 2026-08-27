@@ -177,13 +177,19 @@ export class EmployeeIdentityService {
     }
   }
 
+  /**
+   * Deletes an employee row.
+   *
+   * Returns false ONLY when the row did not exist. Any real failure — most
+   * commonly a foreign-key restriction from operational history — is rethrown
+   * so the caller can report the actual reason.
+   *
+   * This used to catch/log/return false, which the route then reported as
+   * 404 "Employee not found" for a row that plainly existed, and the UI
+   * discarded entirely. The delete button did nothing and said nothing.
+   */
   public async deleteEmployee(employeeId: number): Promise<boolean> {
-    try {
-      return await this.employeeRepo.delete(employeeId);
-    } catch (err: any) {
-      console.error(`EmployeeIdentityService: Failed to delete employee ${employeeId}:`, err.message);
-      return false;
-    }
+    return await this.employeeRepo.delete(employeeId);
   }
 
   public async mapUserToEmployee(

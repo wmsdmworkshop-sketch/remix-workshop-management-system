@@ -24,8 +24,8 @@ export const EstimateApprovalModal: React.FC<EstimateApprovalModalProps> = ({
   jobCardNo,
   vrn,
   totalEstimateAmount,
-  laborAmount = 4500,
-  partsAmount = 10350,
+  laborAmount,
+  partsAmount,
   items,
   onClose,
   onApproveSuccess
@@ -33,12 +33,12 @@ export const EstimateApprovalModal: React.FC<EstimateApprovalModalProps> = ({
   const [approving, setApproving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const sampleItems: EstimateItem[] = items || [
-    { id: "1", type: "Labor", description: "Brake System Servicing & Caliper Overhaul", amount: 2500 },
-    { id: "2", type: "Labor", description: "Synthetic Engine Oil & Filter Change Labour", amount: 2000 },
-    { id: "3", type: "Spares", description: "Front Brake Pads Set (OEM)", amount: 4850 },
-    { id: "4", type: "Spares", description: "Synthetic Engine Oil 5W30 (7 Litres)", amount: 5500 }
-  ];
+  // Only ever the real estimate lines. This previously fell back to four
+  // invented entries (brake pads, engine oil, ₹14,850 of work) whenever the
+  // caller passed nothing — so a customer could have authorised a repair
+  // against a breakdown that described no actual job. An estimate a customer
+  // is asked to approve must never contain a line the workshop did not raise.
+  const estimateItems: EstimateItem[] = Array.isArray(items) ? items : [];
 
   const handleApproveClick = async () => {
     setApproving(true);
@@ -91,19 +91,26 @@ export const EstimateApprovalModal: React.FC<EstimateApprovalModalProps> = ({
         <div className="space-y-3">
           <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Itemized Labor & Spares Breakdown</h4>
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 divide-y divide-slate-200/80 text-xs">
-            {sampleItems.map((item) => (
-              <div key={item.id} className="py-2 flex items-center justify-between">
-                <div>
-                  <span className={`px-1.5 py-0.5 text-[9px] font-extrabold rounded mr-2 uppercase ${
-                    item.type === "Labor" ? "bg-blue-100 text-blue-800" : "bg-purple-100 text-purple-800"
-                  }`}>
-                    {item.type}
-                  </span>
-                  <span className="font-semibold text-slate-800">{item.description}</span>
+            {estimateItems.length === 0 ? (
+              <p className="py-3 text-slate-500 font-medium text-center">
+                A line-by-line breakdown has not been shared for this estimate yet.
+                Message your Service Advisor below if you would like one before approving.
+              </p>
+            ) : (
+              estimateItems.map((item) => (
+                <div key={item.id} className="py-2 flex items-center justify-between">
+                  <div>
+                    <span className={`px-1.5 py-0.5 text-[9px] font-extrabold rounded mr-2 uppercase ${
+                      item.type === "Labor" ? "bg-blue-100 text-blue-800" : "bg-purple-100 text-purple-800"
+                    }`}>
+                      {item.type}
+                    </span>
+                    <span className="font-semibold text-slate-800">{item.description}</span>
+                  </div>
+                  <span className="font-mono font-bold text-slate-900">₹{item.amount.toLocaleString('en-IN')}</span>
                 </div>
-                <span className="font-mono font-bold text-slate-900">₹{item.amount.toLocaleString('en-IN')}</span>
-              </div>
-            ))}
+              ))
+            )}
           </div>
 
           {/* Consolidated Total Box */}

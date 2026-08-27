@@ -345,17 +345,17 @@ export default function PartsWarrantyManager({
     }
   };
 
-  // Local state for parts requests & claims to persist dynamically during live session
-  const [requisitions, setRequisitions] = useState<PartRequisition[]>([
-    { id: "REQ-001", jobId: 1, jobCardNo: "JC-90412", partName: "Front Brake Pads Set", partCode: "BP-SUZ-882", qty: 1, unitPrice: 1850, status: "Requested", requestedAt: new Date(Date.now() - 3600000).toISOString() },
-    { id: "REQ-002", jobId: 2, jobCardNo: "JC-90451", partName: "Synthetic Engine Oil 5W30", partCode: "EO-5W30-4L", qty: 1, unitPrice: 2200, status: "Issued", requestedAt: new Date(Date.now() - 7200000).toISOString() },
-    { id: "REQ-003", jobId: 3, jobCardNo: "JC-90480", partName: "AC Cabin Air Filter", partCode: "AF-CAB-445", qty: 1, unitPrice: 650, status: "Requested", requestedAt: new Date(Date.now() - 5400000).toISOString() }
-  ]);
+  // Local state for parts requests & claims raised during this session.
+  //
+  // These lists start EMPTY. They used to be seeded with three requisitions
+  // (JC-90412/90451/90480) and two warranty claims worth ₹18,500 and ₹32,000
+  // that existed nowhere but this file — production holds no such job cards,
+  // and the part codes were for Suzuki and Hyundai components on a Tata
+  // commercial vehicle dealership. Staff could act on a claim that was never
+  // filed.
+  const [requisitions, setRequisitions] = useState<PartRequisition[]>([]);
 
-  const [warrantyClaims, setWarrantyClaims] = useState<WarrantyClaim[]>([
-    { id: "CLM-901", jobCardNo: "JC-90412", partName: "Power Steering Rack Assembly", partCode: "SR-HYU-332", claimAmount: 18500, status: "Submitted", failureReason: "Oil leakage from oil-seal within warranty term", submittedAt: new Date(Date.now() - 86400000).toISOString() },
-    { id: "CLM-902", jobCardNo: "JC-90480", partName: "Electronic ABS Actuator", partCode: "ABS-ACT-991", claimAmount: 32000, status: "Approved", failureReason: "Internal solenoid coil open circuit error", submittedAt: new Date(Date.now() - 172800000).toISOString() }
-  ]);
+  const [warrantyClaims, setWarrantyClaims] = useState<WarrantyClaim[]>([]);
 
   // Form states for Part requisition
   const [reqJobId, setReqJobId] = useState("");
@@ -810,6 +810,13 @@ export default function PartsWarrantyManager({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
+                  {requisitions.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="ds-td py-10 text-center text-slate-400 text-xs italic">
+                        No spare parts have been requisitioned yet. Raise one using the form above.
+                      </td>
+                    </tr>
+                  )}
                   {requisitions.map((req) => (
                     <tr key={req.id} className="ds-table-row hover:bg-slate-50/50 transition-colors">
                       <td className="ds-td py-3 px-5 font-mono font-bold text-slate-800">{req.id}</td>
@@ -1522,6 +1529,13 @@ export default function PartsWarrantyManager({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
+                  {warrantyClaims.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="ds-td py-10 text-center text-slate-400 text-xs italic">
+                        No warranty claims have been filed yet.
+                      </td>
+                    </tr>
+                  )}
                   {warrantyClaims.map((claim) => (
                     <tr key={claim.id} className="ds-table-row hover:bg-slate-50/50 transition-colors">
                       <td className="ds-td py-3 px-5 font-mono font-bold text-slate-800">{claim.id}</td>

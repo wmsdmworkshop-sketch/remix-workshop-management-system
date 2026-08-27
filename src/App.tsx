@@ -449,7 +449,6 @@ export default function App() {
       { id: "receptionist-workspace", label: "Reception Intake", icon: ClipboardCheck },
       { id: "manager-assignment-workspace", label: "SA Assignment", icon: Users },
       { id: "security-workspace", label: "Security Gate Out", icon: ShieldAlert },
-      { id: "fleet-manager-workspace", label: "Fleet Intelligence", icon: Truck },
       { id: "delivery-workspace", label: "Vehicle Delivery", icon: Truck },
       { id: "gm-command", label: "GM Command", icon: Building },
       { id: "dealer-principal-cockpit", label: "Dealer Principal", icon: Sparkles },
@@ -500,7 +499,6 @@ export default function App() {
       { id: "receptionist-workspace", label: "Reception Intake", icon: ClipboardCheck },
       { id: "manager-assignment-workspace", label: "SA Assignment", icon: Users },
       { id: "security-workspace", label: "Security Gate Out", icon: ShieldAlert },
-      { id: "fleet-manager-workspace", label: "Fleet Intelligence", icon: Truck },
       { id: "delivery-workspace", label: "Vehicle Delivery", icon: Truck },
       { id: "gm-command", label: "GM Command", icon: Building },
       { id: "dealer-principal-cockpit", label: "Dealer Principal", icon: Sparkles },
@@ -1278,14 +1276,27 @@ export default function App() {
   };
 
   const handleDeleteEmployee = async (id: number) => {
+    const emp = employees.find((e: any) => e.employee_id === id);
+    const who = emp ? `${emp.full_name} (${emp.employee_code || `ID ${id}`})` : `employee ID ${id}`;
+    if (!confirm(`Delete ${who}? This cannot be undone.`)) return;
+
     try {
       const res = await fetch(`/api/employees/${id}`, {
         method: "DELETE",
         headers: authHeaders()
       });
-      if (res.ok) fetchAllData();
-    } catch (e) {
+      // A failed DELETE used to fall through this `if` with no else, so a
+      // refused delete looked identical to no click at all. Every non-OK
+      // response now reaches the user.
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body?.error || `Could not delete ${who} (HTTP ${res.status}).`);
+        return;
+      }
+      fetchAllData();
+    } catch (e: any) {
       console.error(e);
+      alert(`Could not reach the server to delete ${who}. ${e?.message || ""}`.trim());
     }
   };
 

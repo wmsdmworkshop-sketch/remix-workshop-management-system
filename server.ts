@@ -2218,7 +2218,17 @@ async function startServer() {
       }
 
       let finalEmployeeId = existingUser.employee_id;
-      if (employee_id !== undefined && employee_id !== null && Number(employee_id) > 0) {
+      // An explicit null/0/"" means "unlink this login from its employee record".
+      // Without this branch the condition below silently ignored those values, so
+      // a login mapped to the WRONG employee could never be corrected — it could
+      // only ever be pointed at a different employee, never cleared. That left
+      // the wrong person's salary, PAN, Aadhaar and bank details on screen.
+      const wantsUnlink =
+        employee_id !== undefined &&
+        (employee_id === null || employee_id === "" || Number(employee_id) === 0);
+      if (wantsUnlink) {
+        finalEmployeeId = null;
+      } else if (employee_id !== undefined && employee_id !== null && Number(employee_id) > 0) {
         const empId = Number(employee_id);
         // Verify Employee exists
         const [empRows] = await dbPool.query("SELECT * FROM employees WHERE employee_id = ?", [empId]) as any[];
@@ -3106,14 +3116,68 @@ async function startServer() {
     }
   });
 
+  /**
+   * Lists the rows that currently block a hard delete of an employee.
+   *
+   * Every foreign key pointing at employees.employee_id is declared NO ACTION,
+   * so MySQL refuses the DELETE while any child row exists. The referencing
+   * tables are read from information_schema rather than hardcoded, so this
+   * stays correct as the schema changes.
+   */
+  const findEmployeeReferences = async (employeeId: number) => {
+    const [fks]: any = await dbPool.query(
+      `SELECT TABLE_NAME, COLUMN_NAME
+         FROM information_schema.KEY_COLUMN_USAGE
+        WHERE REFERENCED_TABLE_SCHEMA = DATABASE()
+          AND REFERENCED_TABLE_NAME = 'employees'
+          AND REFERENCED_COLUMN_NAME = 'employee_id'`
+    );
+    const blockers: Array<{ table: string; column: string; rows: number }> = [];
+    for (const fk of fks) {
+      const [cnt]: any = await dbPool.query(
+        `SELECT COUNT(*) AS n FROM \`${fk.TABLE_NAME}\` WHERE \`${fk.COLUMN_NAME}\` = ?`,
+        [employeeId]
+      );
+      if (cnt[0]?.n > 0) {
+        blockers.push({ table: fk.TABLE_NAME, column: fk.COLUMN_NAME, rows: Number(cnt[0].n) });
+      }
+    }
+    return blockers;
+  };
+
   app.delete("/api/employees/:id", authenticateToken, requireRoles(WORKFORCE_ADMIN_ROLES), async (req: any, res) => {
+    const id = parseInt(req.params.id);
     try {
-      const id = parseInt(req.params.id);
+      // Distinguish "no such employee" from "delete refused" up front. The old
+      // code could not tell them apart and reported both as 404.
+      const existing = await EmployeeIdentityService.instance.getEmployeeById(id);
+      if (!existing) return res.status(404).json({ error: "Employee not found." });
+
       const ok = await EmployeeIdentityService.deleteEmployee(id);
-      if (!ok) return res.status(404).json({ error: "Employee not found" });
+      if (!ok) return res.status(404).json({ error: "Employee not found." });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message || "Failed to delete employee." });
+      // A foreign-key restriction is not a server fault — it means this
+      // employee still owns operational history that must not be orphaned.
+      // Report exactly what holds the record so the decision is informed.
+      if (err?.code === "ER_ROW_IS_REFERENCED_2" || err?.errno === 1451) {
+        let blockers: Array<{ table: string; column: string; rows: number }> = [];
+        try {
+          blockers = await findEmployeeReferences(id);
+        } catch (lookupErr: any) {
+          console.error(`Employee ${id}: could not enumerate blocking references:`, lookupErr.message);
+        }
+        const summary = blockers.length
+          ? blockers.map(b => `${b.table} (${b.rows})`).join(", ")
+          : "linked operational records";
+        return res.status(409).json({
+          error: `This employee still has operational history and cannot be deleted: ${summary}. Deactivate the employee instead, so the history stays intact.`,
+          reason: "REFERENCED_BY_OPERATIONAL_HISTORY",
+          blockers,
+        });
+      }
+      console.error(`Failed to delete employee ${id}:`, err?.message);
+      res.status(500).json({ error: err?.message || "Failed to delete employee." });
     }
   });
 

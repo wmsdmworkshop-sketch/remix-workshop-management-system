@@ -297,21 +297,26 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
       {/* TAB 3: MY BAYS */}
       {activeTab === "my-bays" && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {(bays.length > 0 ? bays : [
-            { bay_id: "B-01", bay_name: "Bay 01 - HCV Heavy Repair", status: "Available" },
-            { bay_id: "B-02", bay_name: "Bay 02 - General Repair", status: "Occupied" },
-            { bay_id: "B-03", bay_name: "Bay 03 - EV & Electrical", status: "Available" }
-          ]).map((b: any) => (
-            <div key={b.bay_id} className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="font-bold text-white text-xs uppercase">{b.bay_name}</span>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                  b.status === "Occupied" ? "bg-amber-500/20 text-amber-400" : "bg-emerald-500/20 text-emerald-400"
-                }`}>{b.status}</span>
+          {/* No placeholder bays. This used to fall back to B-01/B-02/B-03 with
+              invented occupancy whenever the real bay list was empty, so a
+              supervisor could plan against three bays that do not exist. */}
+          {bays.length === 0 ? (
+            <p className="md:col-span-3 py-10 text-center text-slate-500 text-xs italic">
+              No bays are configured for this workshop yet.
+            </p>
+          ) : (
+            bays.map((b: any) => (
+              <div key={b.bay_id} className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-white text-xs uppercase">{b.bay_name}</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                    b.status === "Occupied" ? "bg-amber-500/20 text-amber-400" : "bg-emerald-500/20 text-emerald-400"
+                  }`}>{b.status}</span>
+                </div>
+                {b.bay_type && <p className="text-xs text-slate-400">{b.bay_type}</p>}
               </div>
-              <p className="text-xs text-slate-400">LOB: HCV/MCV • Station Rack A1</p>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       )}
 
