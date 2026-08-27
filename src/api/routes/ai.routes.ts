@@ -180,10 +180,11 @@ export function createAiRouter(deps: AiRouterDependencies): Router {
   );
 
   // ─────────────────────── SERVICE SCHEDULE ELIGIBILITY ───────────────────────
-  // Moved verbatim, INCLUDING the fact that it carries no authenticateToken.
-  // Adding auth here would be a behavioural change smuggled into a refactor and
-  // would break any unauthenticated caller relying on it. It is flagged in the
-  // Task 4 findings instead, for a deliberate decision.
+  // Moved verbatim. It declares no authenticateToken of its own, but it is NOT
+  // a public endpoint: the global API authentication gate in server.ts (~line
+  // 1538) enforces a valid JWT on every /api/* path outside an explicit
+  // whitelist, and this path is not whitelisted. Adding a second per-route auth
+  // check here would be redundant, not a hardening.
   router.get("/vehicles/:vrn/schedule-eligibility", async (req: any, res: any) => {
     const { vrn } = req.params;
     const odo = Number(req.query.odometer) || 0;

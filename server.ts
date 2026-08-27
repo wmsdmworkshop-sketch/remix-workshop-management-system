@@ -3702,7 +3702,9 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   // GET /api/vehicles/:vrn/schedule-eligibility moved to
   // src/api/routes/ai.routes.ts (mounted below) so it inherits the AI rate
   // limiter — it calls the schedule evaluator, which reaches paid AI services.
-  // Behaviour is otherwise byte-identical, including remaining unauthenticated.
+  // Behaviour is otherwise byte-identical. It carries no per-route auth, but the
+  // GLOBAL API AUTHENTICATION GATE above still enforces a JWT on it, since it is
+  // not in PUBLIC_API_PATHS.
 
   app.get("/api/validation/exception-report", async (req, res) => {
     try {
