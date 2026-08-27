@@ -23,7 +23,7 @@ android {
                 keyAlias keyAliasVal
                 keyPassword keyPasswordVal
             } else {
-                throw new GradleException("Release signing error: Production signing credentials missing! Please set AIVAAHAN_KEYSTORE_FILE, AIVAAHAN_KEYSTORE_PASSWORD, AIVAAHAN_KEY_ALIAS, and AIVAAHAN_KEY_PASSWORD environment variables or configure key.properties.")
+                throw new IllegalStateException("Release signing error: Production signing credentials missing! Please set AIVAAHAN_KEYSTORE_FILE, AIVAAHAN_KEYSTORE_PASSWORD, AIVAAHAN_KEY_ALIAS, and AIVAAHAN_KEY_PASSWORD environment variables or configure key.properties.")
             }
         }
     }

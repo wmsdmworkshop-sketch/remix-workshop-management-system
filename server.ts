@@ -2134,16 +2134,22 @@ async function startServer() {
     const tempPassword = String(employee.employee_code).trim();
     const password_hash = await bcrypt.hash(tempPassword, 10);
 
+    // Sanitise mobile to bare 10-digit number. user_access_master.mobile_no is
+    // VARCHAR(10) NOT NULL DEFAULT ''; inserting a +91-prefixed 14-char string
+    // causes "Data too long" and aborts the entire bulk-create batch.
+    const rawMobile = String(employee.mobile || "").replace(/\D/g, "");
+    const cleanMobile = rawMobile.length > 10 ? rawMobile.slice(-10) : rawMobile;
+
     await dbPool.execute(
       `INSERT INTO user_access_master
         (full_name, employee_id, username, email, user_role, access_level, is_active, mobile_no, password_hash, must_change_password)
        VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 1)`,
-      [employee.full_name, empId, username, employee.email || null, employee.role, employee.role, employee.mobile || "", password_hash]
+      [employee.full_name, empId, username, employee.email || null, employee.role, employee.role, cleanMobile, password_hash]
     );
     await dbPool.execute(
       `INSERT INTO users (full_name, username, password_hash, role, employee_id, is_active, mobile_no, created_at, must_change_password)
        VALUES (?, ?, ?, ?, ?, 1, ?, NOW(), 1)`,
-      [employee.full_name, username, password_hash, employee.role, empId, employee.mobile || ""]
+      [employee.full_name, username, password_hash, employee.role, empId, cleanMobile]
     );
 
     await AuditService.logAction(
@@ -2179,9 +2185,15 @@ async function startServer() {
       const created: any[] = [];
       const skipped: any[] = [];
       for (const r of rows) {
-        const result = await createDefaultLoginForEmployee(r.employee_id, req.user);
-        if (result.ok) created.push(result);
-        else skipped.push(result);
+        try {
+          const result = await createDefaultLoginForEmployee(r.employee_id, req.user);
+          if (result.ok) created.push(result);
+          else skipped.push(result);
+        } catch (perEmpErr: any) {
+          // Per-employee errors (e.g. constraint violations) must not abort the
+          // remaining employees — report the failure and continue.
+          skipped.push({ ok: false, employee_id: r.employee_id, error: perEmpErr?.message || String(perEmpErr) });
+        }
       }
       res.json({ success: true, createdCount: created.length, skippedCount: skipped.length, created, skipped });
     } catch (err: any) {
