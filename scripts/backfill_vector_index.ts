@@ -2,20 +2,18 @@
  * =============================================================================
  * DWIP Enterprise — Vector Index Backfill
  *
- * Embeds the workshop's EXISTING closed history so SIGNA has something to
- * retrieve from on day one. Without this the semantic index is empty and every
- * lookup silently falls through to keyword matching until enough new job cards
- * close to fill it — which for a single dealership is months.
+ * Embeds the workshop's EXISTING closed history so SIGNA can retrieve from
+ * semantic similarity on day one.
  *
  * Sources, in order:
  *   1. ai_brain_memory  — cases SIGNA already learned from closed job cards
- *   2. service_history  — the real historical service records
+ *   2. job_cards        — real job cards recorded in the workshop platform
+ *   3. service_history  — the real historical service records (joined with vehicle_master)
  *
- * Safe to re-run. Rows already present are updated in place (upsert by ID), so
- * an interrupted run can simply be started again.
+ * Safe to re-run. Rows already present in ai_vector_memory are excluded or updated in place.
  *
  * Usage:
- *   npx dotenv -e .env -- npx tsx scripts/backfill_vector_index.ts [--limit=2000] [--dry-run]
+ *   $env:GOOGLE_CLOUD_PROJECT="giga-course-dp497"; npx tsx scripts/backfill_vector_index.ts [--limit=2000] [--dry-run]
  * =============================================================================
  */
 
@@ -42,6 +40,17 @@ interface Candidate {
   metadata: VectorMetadata;
 }
 
+function safeSqlDate(dateVal: any): string | null {
+  if (!dateVal) return null;
+  try {
+    const d = new Date(dateVal);
+    if (!isNaN(d.getTime())) {
+      return d.toISOString().slice(0, 19).replace("T", " ");
+    }
+  } catch {}
+  return null;
+}
+
 async function collectFromBrainMemory(limit: number): Promise<Candidate[]> {
   try {
     const [rows]: any = await db.query(
@@ -65,9 +74,7 @@ async function collectFromBrainMemory(limit: number): Promise<Candidate[]> {
           outcome: r.outcome || "Completed",
           jobCardRef: r.job_card_ref || null,
           sourceTable: "ai_brain_memory",
-          occurredAt: r.created_at
-            ? new Date(r.created_at).toISOString().slice(0, 19).replace("T", " ")
-            : null,
+          occurredAt: safeSqlDate(r.created_at),
         } as VectorMetadata,
       }))
       .filter((c: Candidate) => c.text.length > 0);
@@ -77,34 +84,92 @@ async function collectFromBrainMemory(limit: number): Promise<Candidate[]> {
   }
 }
 
-async function collectFromServiceHistory(limit: number): Promise<Candidate[]> {
+async function collectFromJobCards(limit: number): Promise<Candidate[]> {
   try {
     const [rows]: any = await db.query(
-      `SELECT s.sh_no, s.summary, s.sr_type, s.service_datetime, s.model
-       FROM service_history s
-       LEFT JOIN ai_vector_memory v ON v.vector_id = CONCAT('SH-', s.sh_no)
+      `SELECT j.job_id, j.job_card_no, j.vrn, j.vehicle_make, j.vehicle_model, 
+              j.job_description, j.remarks, j.technician_name, j.status, j.created_at
+       FROM job_cards j
+       LEFT JOIN ai_vector_memory v ON v.vector_id = CONCAT('JC-', j.job_id)
        WHERE v.vector_id IS NULL
-         AND s.summary IS NOT NULL AND s.summary <> ''
-       ORDER BY s.service_datetime DESC
+         AND (j.job_description IS NOT NULL AND j.job_description <> '')
+       ORDER BY j.created_at DESC
        LIMIT ?`,
       [limit]
     );
     return (rows || [])
-      .map((r: any) => ({
-        id: `SH-${r.sh_no}`,
-        text: [r.model, r.sr_type, r.summary].filter(Boolean).join(" — ").trim(),
-        metadata: {
-          vehicleModel: r.model || "",
-          complaintText: r.summary || "",
-          diagnosis: r.summary || "",
-          outcome: "Closed (historical service record)",
-          jobCardRef: r.sh_no ? String(r.sh_no) : null,
-          sourceTable: "service_history",
-          occurredAt: r.service_datetime
-            ? new Date(r.service_datetime).toISOString().slice(0, 19).replace("T", " ")
-            : null,
-        } as VectorMetadata,
-      }))
+      .map((r: any) => {
+        const model = [r.vehicle_make, r.vehicle_model].filter(Boolean).join(" ") || "Tata Vehicle";
+        const textParts = [
+          model,
+          r.job_description ? `Complaint: ${r.job_description}` : "",
+          r.remarks ? `Diagnosis: ${r.remarks}` : "",
+          r.technician_name ? `Tech: ${r.technician_name}` : ""
+        ].filter(Boolean).join(" — ").trim();
+
+        return {
+          id: `JC-${r.job_id}`,
+          text: textParts,
+          metadata: {
+            vehicleModel: model,
+            complaintText: r.job_description || "",
+            diagnosis: r.remarks || r.job_description || "",
+            outcome: r.status || "Closed",
+            jobCardRef: r.job_card_no || String(r.job_id),
+            sourceTable: "job_cards",
+            occurredAt: safeSqlDate(r.created_at),
+          } as VectorMetadata,
+        };
+      })
+      .filter((c: Candidate) => c.text.length > 0);
+  } catch (e: any) {
+    console.warn(`  job_cards unavailable (${e.message}) — skipping.`);
+    return [];
+  }
+}
+
+async function collectFromServiceHistory(limit: number): Promise<Candidate[]> {
+  try {
+    const [rows]: any = await db.query(
+      `SELECT s.sh_no, s.registration_no, s.chassis_no, s.summary, s.sr_type, 
+              s.service_datetime, s.created_at,
+              COALESCE(v.product_line, v.product_vc, 'Tata Commercial Vehicle') AS vehicle_model
+       FROM service_history s
+       LEFT JOIN vehicle_master v ON s.chassis_no = v.chassis_no COLLATE utf8mb4_unicode_ci
+       LEFT JOIN ai_vector_memory vm ON vm.vector_id = CONCAT('SH-', s.sh_no) COLLATE utf8mb4_unicode_ci
+       WHERE vm.vector_id IS NULL
+         AND (
+           (s.summary IS NOT NULL AND s.summary <> '') OR
+           (s.sr_type IS NOT NULL AND s.sr_type <> '')
+         )
+       ORDER BY s.created_at DESC
+       LIMIT ?`,
+      [limit]
+    );
+
+    return (rows || [])
+      .map((r: any) => {
+        const textParts = [
+          r.vehicle_model,
+          r.sr_type ? `Type: ${r.sr_type}` : "",
+          r.summary ? `Summary: ${r.summary}` : "",
+          r.registration_no ? `VRN: ${r.registration_no}` : ""
+        ].filter(Boolean).join(" — ").trim();
+
+        return {
+          id: `SH-${r.sh_no}`,
+          text: textParts,
+          metadata: {
+            vehicleModel: r.vehicle_model || "Tata Commercial Vehicle",
+            complaintText: r.summary || r.sr_type || "",
+            diagnosis: r.summary || r.sr_type || "",
+            outcome: "Closed (historical service record)",
+            jobCardRef: r.sh_no ? String(r.sh_no) : null,
+            sourceTable: "service_history",
+            occurredAt: safeSqlDate(r.service_datetime || r.created_at),
+          } as VectorMetadata,
+        };
+      })
       .filter((c: Candidate) => c.text.length > 0);
   } catch (e: any) {
     console.warn(`  service_history unavailable (${e.message}) — skipping.`);
@@ -130,11 +195,16 @@ async function main() {
   console.log("Collecting un-indexed cases...");
   const fromMemory = await collectFromBrainMemory(LIMIT);
   console.log(`  ai_brain_memory : ${fromMemory.length}`);
-  const remaining = Math.max(0, LIMIT - fromMemory.length);
+
+  let remaining = Math.max(0, LIMIT - fromMemory.length);
+  const fromJobCards = remaining > 0 ? await collectFromJobCards(remaining) : [];
+  console.log(`  job_cards       : ${fromJobCards.length}`);
+
+  remaining = Math.max(0, LIMIT - fromMemory.length - fromJobCards.length);
   const fromHistory = remaining > 0 ? await collectFromServiceHistory(remaining) : [];
   console.log(`  service_history : ${fromHistory.length}`);
 
-  const candidates = [...fromMemory, ...fromHistory];
+  const candidates = [...fromMemory, ...fromJobCards, ...fromHistory];
   if (candidates.length === 0) {
     console.log("\nNothing to backfill — index is already current.");
     process.exit(0);
@@ -145,6 +215,7 @@ async function main() {
     process.exit(0);
   }
 
+  console.log(`\nStarting embedding & indexing for ${candidates.length} cases in batches of ${BATCH_SIZE}...`);
   let indexed = 0;
   let failed = 0;
 
@@ -168,6 +239,11 @@ async function main() {
 
     const done = Math.min(i + BATCH_SIZE, candidates.length);
     console.log(`  ${done}/${candidates.length} processed (indexed ${indexed}, failed ${failed})`);
+
+    // Pacing delay to avoid Vertex per-minute rate limits
+    if (done < candidates.length) {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    }
   }
 
   const after = await getIndexStats();

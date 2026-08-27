@@ -46,6 +46,8 @@ import {
   isEmbeddingConfigured,
 } from "./embedding.service.ts";
 
+// Env-only — see the matching note in embedding.service.ts. A hardcoded project
+// fallback would make the reported retrieval tier untrustworthy.
 const PROJECT_ID =
   process.env.VERTEX_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || "";
 const LOCATION = process.env.VERTEX_LOCATION || "asia-south1";
@@ -238,6 +240,7 @@ export async function insertVector(
     }
   }
 
+  invalidateVectorCache();
   return true;
 }
 
@@ -266,6 +269,27 @@ async function hydrateByIds(ids: string[]): Promise<Map<string, VectorMetadata>>
     });
   }
   return map;
+}
+
+interface CachedVector {
+  id: string;
+  vehicleModel: string;
+  complaintText: string;
+  diagnosis: string;
+  outcome: string;
+  jobCardRef: string | null;
+  sourceTable: string;
+  occurredAt: string | null;
+  vector: number[];
+}
+
+let vectorCache: CachedVector[] | null = null;
+let cacheExpiry = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+export function invalidateVectorCache(): void {
+  vectorCache = null;
+  cacheExpiry = 0;
 }
 
 /**
@@ -337,53 +361,62 @@ export async function searchSimilar(
     }
   }
 
-  // ── Tier 2: exhaustive cosine over MySQL-held vectors ──
+  // ── Tier 2: exhaustive cosine over MySQL-held vectors (cached in memory) ──
   try {
-    const params: any[] = [];
-    let where = "WHERE embedding IS NOT NULL AND dimensions = ?";
-    params.push(EMBEDDING_DIMENSIONS);
-    if (vehicleModel) {
-      where += " AND vehicle_model LIKE ?";
-      params.push(`%${vehicleModel}%`);
+    const now = Date.now();
+    if (!vectorCache || now > cacheExpiry) {
+      const [rows]: any = await db.query(
+        `SELECT vector_id, vehicle_model, complaint_text, diagnosis, outcome,
+                job_card_ref, source_table, occurred_at, embedding
+         FROM ai_vector_memory
+         WHERE embedding IS NOT NULL AND dimensions = ?
+         ORDER BY created_at DESC
+         LIMIT 150`,
+        [EMBEDDING_DIMENSIONS]
+      );
+
+      const parsed: CachedVector[] = [];
+      for (const r of rows || []) {
+        try {
+          const vector = typeof r.embedding === "string" ? JSON.parse(r.embedding) : r.embedding;
+          if (Array.isArray(vector) && vector.length === EMBEDDING_DIMENSIONS) {
+            parsed.push({
+              id: r.vector_id,
+              vehicleModel: r.vehicle_model || "",
+              complaintText: r.complaint_text || "",
+              diagnosis: r.diagnosis || "",
+              outcome: r.outcome || "Unknown",
+              jobCardRef: r.job_card_ref || null,
+              sourceTable: r.source_table || "job_cards",
+              occurredAt: r.occurred_at ? new Date(r.occurred_at).toISOString().slice(0, 10) : null,
+              vector,
+            });
+          }
+        } catch {}
+      }
+      vectorCache = parsed;
+      cacheExpiry = now + CACHE_TTL_MS;
     }
 
-    // Bounded so a large corpus cannot pull unlimited rows into memory. Newest
-    // first, because recent cases reflect current parts and current procedures.
-    const [rows]: any = await db.query(
-      `SELECT vector_id, vehicle_model, complaint_text, diagnosis, outcome,
-              job_card_ref, source_table, occurred_at, embedding
-       FROM ai_vector_memory
-       ${where}
-       ORDER BY occurred_at DESC, created_at DESC
-       LIMIT 5000`,
-      params
-    );
-
     const scored: VectorSearchHit[] = [];
-    for (const r of rows || []) {
-      let vector: number[] | null = null;
-      try {
-        // mysql2 may hand back JSON already parsed or as a string.
-        vector = typeof r.embedding === "string" ? JSON.parse(r.embedding) : r.embedding;
-      } catch {
+    for (const item of vectorCache) {
+      if (vehicleModel && item.vehicleModel && !item.vehicleModel.toLowerCase().includes(vehicleModel.toLowerCase())) {
         continue;
       }
-      if (!Array.isArray(vector) || vector.length !== EMBEDDING_DIMENSIONS) continue;
-
-      const score = cosineSimilarity(embedding, vector);
+      const score = cosineSimilarity(embedding, item.vector);
       if (score <= 0) continue;
 
       scored.push({
-        id: r.vector_id,
+        id: item.id,
         score,
         metadata: {
-          vehicleModel: r.vehicle_model || "",
-          complaintText: r.complaint_text || "",
-          diagnosis: r.diagnosis || "",
-          outcome: r.outcome || "Unknown",
-          jobCardRef: r.job_card_ref || null,
-          sourceTable: r.source_table || "job_cards",
-          occurredAt: r.occurred_at ? new Date(r.occurred_at).toISOString().slice(0, 10) : null,
+          vehicleModel: item.vehicleModel,
+          complaintText: item.complaintText,
+          diagnosis: item.diagnosis,
+          outcome: item.outcome,
+          jobCardRef: item.jobCardRef,
+          sourceTable: item.sourceTable,
+          occurredAt: item.occurredAt,
         },
       });
     }
@@ -393,7 +426,7 @@ export async function searchSimilar(
     // Weak matches are worse than none: they pad the prompt with unrelated
     // cases and invite the model to draw a false parallel. Below this the
     // caller should prefer SQL LIKE or an explicit "no history found".
-    const MIN_SIMILARITY = 0.55;
+    const MIN_SIMILARITY = 0.45;
     return scored.filter((h) => h.score >= MIN_SIMILARITY).slice(0, limit);
   } catch (err: any) {
     console.warn(`[VectorIndex] SQL vector search failed: ${err?.message || err}`);

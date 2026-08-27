@@ -36,6 +36,13 @@ import type { protos } from "@google-cloud/aiplatform";
  */
 export const EMBEDDING_DIMENSIONS = 768;
 
+// Env-only by design. A hardcoded project fallback makes isEmbeddingConfigured()
+// unconditionally true, so getActiveTier() reports SQL_VECTOR — and the
+// /ai-brains/health endpoint reports healthy semantic retrieval — even when
+// Vertex is entirely unreachable and answers are really coming from keyword
+// search. That silent degradation is exactly what the tier field exists to
+// expose. It also makes any non-production environment talk to the production
+// GCP project instead of failing loudly on missing config.
 const PROJECT_ID =
   process.env.VERTEX_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || "";
 const LOCATION = process.env.VERTEX_LOCATION || "asia-south1";
@@ -172,44 +179,58 @@ export async function generateEmbedding(
  */
 export async function generateEmbeddingsBatch(
   texts: string[],
-  taskType: EmbeddingTaskType = "RETRIEVAL_DOCUMENT"
+  taskType: EmbeddingTaskType = "RETRIEVAL_DOCUMENT",
+  maxRetries: number = 3
 ): Promise<Array<number[] | null>> {
   if (!Array.isArray(texts) || texts.length === 0) return [];
 
   const client = await getPredictionClient();
   if (!client) return texts.map(() => null);
 
-  try {
-    const aiplatform = await import("@google-cloud/aiplatform");
-    const { helpers } = aiplatform;
-    const endpoint = `projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${MODEL}`;
+  const aiplatform = await import("@google-cloud/aiplatform");
+  const { helpers } = aiplatform;
+  const endpoint = `projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${MODEL}`;
 
-    const instances = texts.map((t) =>
-      helpers.toValue({
-        content: String(t || "").trim().slice(0, MAX_INPUT_CHARS),
-        task_type: taskType,
-      })
-    );
+  const instances = texts.map((t) =>
+    helpers.toValue({
+      content: String(t || "").trim().slice(0, MAX_INPUT_CHARS),
+      task_type: taskType,
+    })
+  );
 
-    const [response]: any = await client.predict({
-      endpoint,
-      instances,
-      parameters: helpers.toValue({ outputDimensionality: EMBEDDING_DIMENSIONS }),
-    });
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const [response]: any = await client.predict({
+        endpoint,
+        instances,
+        parameters: helpers.toValue({ outputDimensionality: EMBEDDING_DIMENSIONS }),
+      });
 
-    return texts.map((_, i) => {
-      const prediction = response?.predictions?.[i];
-      if (!prediction) return null;
-      const decoded: any = helpers.fromValue(prediction);
-      const values: unknown = decoded?.embeddings?.values ?? decoded?.values;
-      if (!Array.isArray(values) || values.length !== EMBEDDING_DIMENSIONS) return null;
-      const vector = values.map((v: any) => Number(v));
-      return vector.some((v) => !Number.isFinite(v)) ? null : vector;
-    });
-  } catch (err: any) {
-    console.warn(`[Embedding] Batch generation failed: ${err?.message || "unknown error"}`);
-    return texts.map(() => null);
+      return texts.map((_, i) => {
+        const prediction = response?.predictions?.[i];
+        if (!prediction) return null;
+        const decoded: any = helpers.fromValue(prediction);
+        const values: unknown = decoded?.embeddings?.values ?? decoded?.values;
+        if (!Array.isArray(values) || values.length !== EMBEDDING_DIMENSIONS) return null;
+        const vector = values.map((v: any) => Number(v));
+        return vector.some((v) => !Number.isFinite(v)) ? null : vector;
+      });
+    } catch (err: any) {
+      const isQuota = String(err?.message || "").includes("RESOURCE_EXHAUSTED") || err?.code === 8;
+      if (isQuota && attempt < maxRetries) {
+        const backoffMs = attempt * 2500;
+        console.warn(`[Embedding] Quota reached, retrying batch in ${backoffMs}ms (attempt ${attempt}/${maxRetries})...`);
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        continue;
+      }
+      console.warn(`[Embedding] Batch generation failed (attempt ${attempt}): ${err?.message || "unknown error"}`);
+      if (attempt === maxRetries) {
+        return texts.map(() => null);
+      }
+    }
   }
+
+  return texts.map(() => null);
 }
 
 /**
