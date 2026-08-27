@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { ShieldAlert, Clock, CheckCircle2, AlertOctagon, XCircle, FileWarning, RefreshCw, FileText } from "lucide-react";
+import { getStaffToken } from "../lib/authToken";
 
 export const WarrantyClerkWorkspace: React.FC<{ currentUser: any }> = ({ currentUser }) => {
   const [activeTab, setActiveTab] = useState("queue");
@@ -12,7 +13,7 @@ export const WarrantyClerkWorkspace: React.FC<{ currentUser: any }> = ({ current
   const fetchQueue = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("dwip_token");
+      const token = getStaffToken();
       const res = await fetch("/api/warranty/my-queue", {
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -32,7 +33,7 @@ export const WarrantyClerkWorkspace: React.FC<{ currentUser: any }> = ({ current
 
   const handleAction = async (reviewId: string, action: string, decision?: string, notes?: string) => {
     try {
-      const token = localStorage.getItem("dwip_token");
+      const token = getStaffToken();
       let url = '';
       let method = 'POST';
       let body: any = { reviewId };

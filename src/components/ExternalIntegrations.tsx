@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Plug, ShieldCheck, Save, Loader2, CheckCircle2, XCircle, RefreshCw, KeyRound } from "lucide-react";
+import { getStaffToken } from "../lib/authToken";
 
 /**
  * External Integrations — paste the OFFICIAL Tata API base URL + credentials for
@@ -24,8 +25,18 @@ interface Provider {
   updated_at: string | null;
 }
 
+/**
+ * Uses the shared accessor rather than reading localStorage directly.
+ *
+ * This previously looked only at "dwip_token" and "token" — both LEGACY keys.
+ * The canonical key is "wms_token" (STAFF_TOKEN_KEY), so for any normally
+ * logged-in user this returned an empty string and the page sent no
+ * Authorization header at all, rendering "Access denied. No token provided."
+ * every time. getStaffToken() checks the canonical key first and then the same
+ * legacy keys, so old sessions keep working.
+ */
 const authHeaders = (): Record<string, string> => {
-  const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || "";
+  const token = getStaffToken();
   const h: Record<string, string> = { "Content-Type": "application/json" };
   if (token) h["Authorization"] = `Bearer ${token}`;
   return h;

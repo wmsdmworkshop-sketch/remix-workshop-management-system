@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { MessageSquarePlus, Send, CheckCircle2, XCircle, Clock, Loader2 } from "lucide-react";
+import { getStaffToken } from "../lib/authToken";
 
 /**
  * "MY RESPONSIBILITY" — Update Request panel.
@@ -29,7 +30,7 @@ interface Props {
 }
 
 const authHeaders = (): Record<string, string> => {
-  const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || "";
+  const token = getStaffToken();
   const h: Record<string, string> = { "Content-Type": "application/json" };
   if (token) h["Authorization"] = `Bearer ${token}`;
   return h;

@@ -273,10 +273,29 @@ export default function App() {
   const [aiModeCanRequest, setAiModeCanRequest] = useState(false);
   const [aiModePending, setAiModePending] = useState(0);
 
+  // `token` MUST stay in the dependency list. authHeaders() closes over token,
+  // so with an empty list this callback kept the value token held on the very
+  // first render. On a page reload that is the localStorage token and all is
+  // well — but on a fresh LOGIN token starts null, and this callback then sent
+  // every /api/v1/ai-mode request with no Authorization header for the life of
+  // the session. Production logged an unbroken run of 401s on this one route
+  // while the rest of the app worked, because every other call builds its
+  // headers from the current render.
+  //
+  // The visible symptom was a developer being told "Only a GM, Admin or
+  // Developer can change AI Mode": the 401 hit the silent `return` below, so
+  // canToggle never left its initial false.
   const refreshAiMode = React.useCallback(async () => {
+    if (!token) return;
     try {
       const res = await fetch("/api/v1/ai-mode", { headers: authHeaders() });
-      if (!res.ok) return;
+      if (!res.ok) {
+        // Was a bare `return`. A permanent 401 or 500 here silently strips the
+        // user's rights over AI Mode with no way to tell that from genuinely
+        // lacking them, which is exactly how this went unnoticed.
+        console.warn(`[AIMode] Could not read AI Mode state: HTTP ${res.status}. Controls stay disabled.`);
+        return;
+      }
       const data = await res.json();
       setAiModeEnabled(Boolean(data.enabled));
       setAiModeCanToggle(Boolean(data.canToggle));
@@ -285,7 +304,7 @@ export default function App() {
     } catch {
       /* non-fatal: keep the last known value */
     }
-  }, []);
+  }, [token]);
 
   // Handles a click on the AI Mode control. Approvers flip it directly;
   // managers / advisors raise an activation request instead; anyone else is

@@ -36,6 +36,7 @@ import {
 import { JobCard, Bay, SRType, Employee, JobTechnicianMap, JobRevenue, JobRevenueSplitDetail, User } from "../types";
 import JobCardPreview from "./reception/JobCardPreview";
 import GateProgressBar from "./GateProgressBar";
+import { getStaffToken } from "../lib/authToken";
 
 
 interface JobCardManagerProps {
@@ -169,7 +170,7 @@ export default function JobCardManager({
     if (!cleanVrn || cleanVrn.length < 3) return;
 
     try {
-      const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || "";
+      const token = getStaffToken();
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
 

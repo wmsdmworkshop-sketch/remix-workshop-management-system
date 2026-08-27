@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { ShieldCheck, Camera, LogOut } from "lucide-react";
+import { getStaffToken } from "../lib/authToken";
 
 export interface SecurityWorkspaceProps {
   currentUser?: any;
@@ -14,7 +15,7 @@ export const SecurityWorkspace: React.FC<SecurityWorkspaceProps> = ({ currentUse
   const [evidenceId, setEvidenceId] = useState<string>("");
 
   const authHeaders = (): Record<string, string> => {
-    const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || currentUser?.token || "";
+    const token = getStaffToken() || currentUser?.token || "";
     const h: Record<string, string> = { "Content-Type": "application/json" };
     if (token) h["Authorization"] = `Bearer ${token}`;
     return h;

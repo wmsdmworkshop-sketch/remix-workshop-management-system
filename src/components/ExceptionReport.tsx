@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { getStaffToken } from "../lib/authToken";
 import { 
   AlertTriangle, 
   CheckCircle2, 
@@ -31,19 +32,61 @@ interface ExceptionReportData {
   duplicateInvoices: ExceptionItem[];
 }
 
+const authHeaders = (): Record<string, string> => {
+  const token = getStaffToken();
+  return token
+    ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
+    : { "Content-Type": "application/json" };
+};
+
 export default function ExceptionReport() {
   const [data, setData] = useState<ExceptionReportData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [activeExceptionTab, setActiveExceptionTab] = useState<keyof ExceptionReportData>("missingInvoice");
+
+  /** The only keys that are real exception buckets. */
+  const EXCEPTION_KEYS: Array<keyof ExceptionReportData> = [
+    "missingInvoice", "missingVehicle", "missingCustomer",
+    "missingJobCard", "duplicateJobCards", "duplicateInvoices",
+  ];
 
   const runScan = async () => {
     setLoading(true);
+    setError(null);
     try {
-      const res = await fetch("/api/validation/exception-report");
+      // This request carried NO Authorization header. Every /api/* path outside
+      // PUBLIC_API_PATHS is behind the global auth gate, so it always returned
+      // 401 with {"error":"Access denied. No token provided."}.
+      //
+      // That error body was then fed straight into setData(). The tile grid
+      // renders Object.keys(data), so it drew a tile for "error", and getCount
+      // did data["error"]?.length — the STRING's length. "Access denied. No
+      // token provided." is 33 characters, which is where the mysterious "33"
+      // came from. Clicking it called .map() on a string, which threw and took
+      // the whole React tree down to a blank page.
+      const res = await fetch("/api/validation/exception-report", {
+        headers: authHeaders(),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body?.error || `Integrity scan failed (HTTP ${res.status}).`);
+        setData(null);
+        return;
+      }
       const report = await res.json();
-      setData(report);
-    } catch (e) {
-      console.error(e);
+
+      // Keep only the known buckets, and only when they are genuinely arrays.
+      // A malformed or error-shaped response can no longer reach the renderer.
+      const clean = {} as ExceptionReportData;
+      for (const k of EXCEPTION_KEYS) {
+        clean[k] = Array.isArray((report as any)?.[k]) ? (report as any)[k] : [];
+      }
+      setData(clean);
+    } catch (e: any) {
+      console.error("Exception report scan failed:", e);
+      setError(e?.message || "Could not reach the integrity scan service.");
+      setData(null);
     } finally {
       setLoading(false);
     }
@@ -106,9 +149,18 @@ export default function ExceptionReport() {
         </div>
       </div>
 
-      {/* KPI Cards Grid */}
+      {error && (
+        <div className="p-4 rounded-[18px] border border-rose-500/30 bg-rose-500/10 text-rose-300 text-sm">
+          <strong className="font-bold">Integrity scan unavailable.</strong> {error}
+        </div>
+      )}
+
+      {/* KPI Cards Grid.
+          Iterates the FIXED key list, not Object.keys(data). Deriving tiles from
+          whatever the response happened to contain is what rendered a tile for an
+          `error` string and reported its character count as an exception count. */}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
-        {(Object.keys(data || {}) as Array<keyof ExceptionReportData>).map((key) => {
+        {EXCEPTION_KEYS.map((key) => {
           const count = getCount(key);
           return (
             <button
@@ -162,7 +214,7 @@ export default function ExceptionReport() {
                   </td>
                 </tr>
               ) : (
-                data[activeExceptionTab].map((item, idx) => (
+                (Array.isArray(data[activeExceptionTab]) ? data[activeExceptionTab] : []).map((item, idx) => (
                   <tr key={idx} className="ds-table-row border-b border-slate-800/40 hover:bg-slate-950/40 transition-colors text-slate-300">
                     <td className="ds-td py-3.5 px-4 font-mono font-bold text-slate-200">
                       {item.job_card_no || item.invoice_no || "N/A"}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Package, Clock, CheckCircle2, AlertTriangle, Archive, RefreshCw } from "lucide-react";
+import { getStaffToken } from "../lib/authToken";
 
 export const PartsInChargeWorkspace: React.FC<{ currentUser: any }> = ({ currentUser }) => {
   const [activeTab, setActiveTab] = useState("queue");
@@ -9,7 +10,7 @@ export const PartsInChargeWorkspace: React.FC<{ currentUser: any }> = ({ current
   const fetchQueue = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("dwip_token");
+      const token = getStaffToken();
       const res = await fetch("/api/parts/my-queue", {
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -29,7 +30,7 @@ export const PartsInChargeWorkspace: React.FC<{ currentUser: any }> = ({ current
 
   const handleAction = async (requestId: string, action: string) => {
     try {
-      const token = localStorage.getItem("dwip_token");
+      const token = getStaffToken();
       const url = action === 'ACKNOWLEDGE' ? '/api/parts/acknowledge' :
                   action === 'FULFILL' ? '/api/parts/fulfill' : '/api/parts/backorder';
       

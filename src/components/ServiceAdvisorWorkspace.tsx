@@ -8,6 +8,7 @@ import {
 import { AICopilotPanel } from "./AICopilotPanel";
 import { VehiclePassportModal } from "./VehiclePassportModal";
 import { SaTechnicalIntakeModal } from "./SaTechnicalIntakeModal";
+import { getStaffToken } from "../lib/authToken";
 
 export interface ServiceAdvisorWorkspaceProps {
   jobCards: any[];
@@ -43,6 +44,70 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
   const [selectedIntakeItem, setSelectedIntakeItem] = useState<any | null>(null);
   const [showPassportModal, setShowPassportModal] = useState<boolean>(false);
   const [passportData, setPassportData] = useState<any | null>(null);
+  const [passportLoading, setPassportLoading] = useState<boolean>(false);
+
+  // Fetch real vehicle passport data from the same source as service history / Vehicle Lookup 360° Dossier
+  const fetchPassportForVrn = async (vrn: string, gateOdometer?: number) => {
+    setPassportLoading(true);
+    setPassportData(null);
+    setShowPassportModal(true);
+    try {
+      const res = await fetch(`/api/vehicle/history?query=${encodeURIComponent(vrn)}`);
+      const data = await res.json();
+      if (data.success && data.passportAggregate) {
+        const agg = data.passportAggregate;
+        const passport = agg.passport;
+        const customer = agg.customer;
+        const lifetime = agg.lifetimeSummary;
+        // Compute last service odometer from the most recent visit
+        let lastOdo: number | null = null;
+        if (agg.visitLedger && agg.visitLedger.length > 0) {
+          lastOdo = agg.visitLedger[0].odometerKm || null;
+        }
+        setPassportData({
+          vrn: passport.registrationNo || vrn,
+          chassisNo: passport.vin || "",
+          engineNo: passport.engineNo || "",
+          vehicleMake: passport.make || "TATA",
+          vehicleModel: passport.model || passport.productLine || "",
+          customerName: customer?.customerName || "",
+          customerMobile: customer?.customerMobile || "",
+          lastOdometer: lastOdo,
+          currentOdometer: gateOdometer ?? null,
+          previousVisitCount: lifetime?.totalVisits ?? 0,
+          lifetimeSpend: lifetime?.lifetimeSpend ?? 0,
+          warrantyStatus: lifetime?.activeWarrantyStatus || "Not Available",
+          warrantyExpiryDate: passport.warrantyExpiryDate || "",
+          warrantyExpiryKm: passport.warrantyExpiryKm || 0,
+          fsvEligibility: lifetime?.activeAmcStatus || "Not Available",
+          originalSaleDate: passport.originalSaleDate || "",
+          tmInvoiceDate: passport.tmInvoiceDate || "",
+          dateOfRegistration: passport.dateOfRegistration || "",
+          sourceTag: "LIVE",
+        });
+      } else {
+        // No data found — show modal with minimal info
+        setPassportData({
+          vrn: vrn,
+          chassisNo: "",
+          engineNo: "",
+          vehicleMake: "",
+          vehicleModel: "",
+          customerName: "",
+          customerMobile: "",
+          sourceTag: "UNAVAILABLE",
+        });
+      }
+    } catch (err) {
+      console.error("[Passport] Error fetching vehicle passport:", err);
+      setPassportData({
+        vrn: vrn,
+        sourceTag: "UNAVAILABLE",
+      });
+    } finally {
+      setPassportLoading(false);
+    }
+  };
 
   // Digital inspection checklist state
   const [inspectionChecked, setInspectionChecked] = useState<Record<string, boolean>>({
@@ -358,8 +423,7 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                   <div className="flex gap-2">
                     <button
                       onClick={() => {
-                        setPassportData({ vrn: item.vrn, vin: `VIN-${item.vrn}`, customerName: item.customer, currentOdometer: 45000, sourceTag: "DWIP" });
-                        setShowPassportModal(true);
+                        fetchPassportForVrn(item.vrn, item.odometer);
                       }}
                       className="w-1/2 py-2 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
                     >
@@ -367,13 +431,20 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                       <span>PASSPORT</span>
                     </button>
 
-                    <button
-                      onClick={() => {
-                        setSelectedIntakeItem({ gateEntryId: `GE-${item.id}`, vrn: item.vrn, tokenNumber: "SEDAM-20260803-001", confirmedOdometer: 45000 });
-                        setShowIntakeModal(true);
-                      }}
-                      className="w-1/2 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
-                    >
+                      <button
+                        onClick={() => {
+                          setSelectedIntakeItem({ 
+                            gateEntryId: item.gateEntryId || `GE-${item.id}`, 
+                            intakeId: item.intakeId || `INT-${item.id}`,
+                            vrn: item.vrn, 
+                            tokenNumber: item.tokenNumber || `SEDAM-${item.vrn}`, 
+                            confirmedOdometer: item.odometer || 45000,
+                            preliminaryComplaints: item.reason || ""
+                          });
+                          setShowIntakeModal(true);
+                        }}
+                        className="w-1/2 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                      >
                       <Wrench className="h-3.5 w-3.5" />
                       <span>INTAKE</span>
                     </button>
@@ -624,7 +695,8 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
       {showPassportModal && (
         <VehiclePassportModal
           passportData={passportData}
-          onClose={() => setShowPassportModal(false)}
+          isLoading={passportLoading}
+          onClose={() => { setShowPassportModal(false); setPassportData(null); }}
         />
       )}
 
@@ -648,7 +720,7 @@ const SABillingVisibility: React.FC<{ currentUser?: any }> = ({ currentUser }) =
   const fetchVisibility = async () => {
     try {
       const res = await fetch("/api/gate-out/sa-billing-visibility", {
-        headers: { Authorization: `Bearer ${localStorage.getItem("dwip_token") || localStorage.getItem("token") || currentUser?.token || ""}` }
+        headers: { Authorization: `Bearer ${getStaffToken() || currentUser?.token || ""}` }
       });
       if (res.ok) setBillingList(await res.json());
     } catch (e) {
