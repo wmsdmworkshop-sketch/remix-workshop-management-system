@@ -392,16 +392,30 @@ export class RealtimeOwnershipPipeline {
       availableAdvisors = await Promise.all(advisors.map(async (a: any) => {
         let activeJcs = 0;
         try {
-          // NOTE: tbl_job_card has no `service_advisor`/`status` columns (it has
-          // `advisor_id`/`workflow_state`) — the previous query silently errored
-          // on every call (caught below) and always returned 0, so the "lowest
-          // workload" recommendation was really just "first advisor, always".
+          // A previous fix here swapped `service_advisor`/`status` for
+          // `advisor_id`/`workflow_state` on tbl_job_card. Neither pair exists:
+          // tbl_job_card is a 1:1 VIEW over `job_cards` and carries that table's
+          // columns, so the query still threw on every call, was swallowed by
+          // the catch below, and returned 0 for every advisor. The "lowest
+          // workload" recommendation was therefore always "the first advisor",
+          // which is exactly what every stored recommendation_reason says:
+          // "Lowest active workload (0 open job cards)".
+          //
+          // Counted against job_card_master, the canonical source, using the
+          // real column and real open-work statuses.
           const [cnt]: any = await RealtimeOwnershipPipeline.execute(
-            `SELECT COUNT(*) AS cnt FROM tbl_job_card WHERE advisor_id = ?`,
+            `SELECT COUNT(*) AS cnt FROM job_card_master
+              WHERE service_advisor = ?
+                AND job_status NOT IN ('Delivered', 'Invoiced', 'Closed', 'Cancelled')`,
             [a.name]
           );
           activeJcs = Number(cnt?.[0]?.cnt || 0);
-        } catch { activeJcs = 0; }
+        } catch (e: any) {
+          // Still non-fatal, but no longer invisible: a failure here silently
+          // degrades assignment to "first advisor" and must be diagnosable.
+          console.warn(`[Assignment] Workload count failed for advisor ${a.name}: ${e.message}`);
+          activeJcs = 0;
+        }
         return { id: a.id, name: a.name, role: a.role, activeJcs };
       }));
     } catch {
@@ -532,30 +546,21 @@ export class RealtimeOwnershipPipeline {
     // the fake plate. Skip the job_cards bridge in that case instead.
     const vrnClean = ge ? ge.vin.replace("VIN-", "") : null;
 
-    // tbl_job_card is a pipeline-internal tracking table only — nothing
-    // outside this pipeline reads it (the real bridge is 4b below, into the
-    // app-wide `job_cards` table). Best-effort, same as 4b: never fail the
-    // already-committed assignment (tbl_manager_assignment / tbl_reception_intake)
-    // over this internal record.
+    // The comment that stood here called tbl_job_card a "pipeline-internal
+    // tracking table". It is not a table at all — it is a 1:1 VIEW over
+    // `job_cards`, carrying that table's columns and none of job_card_id,
+    // gate_entry_id, service_type, advisor_id, customer_complaint or
+    // workflow_state. The INSERT threw on every assignment ever made and was
+    // swallowed by its own catch, so no tracking record has ever been written.
+    //
+    // Removed rather than redirected: the assignment's real effects are the
+    // tbl_manager_assignment row above and the job_card_master bridge in 4b
+    // below. A second write of the same facts under another name is what
+    // produced the competing sources of truth in the first place.
+    //
+    // jobCardId is still generated — it is returned to the caller as the
+    // assignment's reference.
     const jobCardId = `JC-${randomUUID().substring(0, 8).toUpperCase()}`;
-    try {
-      await RealtimeOwnershipPipeline.execute(
-        `INSERT INTO tbl_job_card (
-          job_card_id, gate_entry_id, service_type, advisor_id, customer_complaint, workflow_state, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          jobCardId,
-          payload.gateEntryId,
-          "Scheduled Maintenance",
-          payload.assignedSaName,
-          "Intake completed; pending advisor digital inspection",
-          "ESTIMATE_PENDING",
-          now
-        ]
-      );
-    } catch (e: any) {
-      console.error("Failed to write internal tbl_job_card tracking record:", e.message);
-    }
 
     // 4b. Bridge into the app-wide `job_card_master` table (the real data source
     // for the in-memory cache used by JobCardManager, Dashboard, billing, etc.).

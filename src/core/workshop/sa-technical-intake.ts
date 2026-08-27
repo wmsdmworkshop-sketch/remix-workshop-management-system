@@ -468,25 +468,17 @@ export class SaTechnicalIntakeEngine {
       ]
     );
 
-    // Record or update in tbl_job_card (non-blocking)
-    try {
-      await this.execute(
-        `INSERT INTO tbl_job_card (
-          job_card_id, gate_entry_id, service_type, advisor_id, customer_complaint, workflow_state, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          jobCardId,
-          payload.gateEntryId,
-          payload.jobScope[0]?.jobType || "General Service",
-          saName,
-          payload.authenticatedComplaints[0]?.complaintText || "Technical Intake Completed",
-          "JC_CREATED",
-          now
-        ]
-      );
-    } catch (tblErr: any) {
-      console.warn("[SaTechnicalIntake] Warning inserting internal tbl_job_card:", tblErr.message);
-    }
+    // An INSERT INTO tbl_job_card stood here, writing an "internal tracking
+    // record". It never executed once: tbl_job_card is a 1:1 VIEW over
+    // `job_cards` and has none of job_card_id, gate_entry_id, service_type,
+    // advisor_id, customer_complaint or workflow_state. Every call threw and was
+    // swallowed by its own catch, so the tracking record has never existed.
+    //
+    // Removed rather than redirected, because the state it was trying to capture
+    // is already written to the real tables immediately below — job_card_master
+    // gets job_card_no, job_status and service_advisor, and the floor handoff
+    // sets the workflow position. Re-pointing this at job_cards would have
+    // duplicated those writes under a second, competing source of truth.
 
     // Bridge into app-wide job_card_master / job_cards table
     if (ge?.vin) {
