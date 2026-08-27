@@ -303,7 +303,7 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
                 </div>
 
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-slate-400 font-mono">
-                  <span>VIN: <strong className="text-slate-200">{passportAggregate.passport.vin}</strong></span>
+                  <span>CHASSIS: <strong className="text-slate-200">{passportAggregate.passport.vin}</strong></span>
                   <span>ENGINE: <strong className="text-slate-200">{passportAggregate.passport.engineNo}</strong></span>
                   <span>CUSTOMER: <strong className="text-indigo-400">{passportAggregate.customer.customerName}</strong> ({passportAggregate.customer.customerMobile})</span>
                 </div>

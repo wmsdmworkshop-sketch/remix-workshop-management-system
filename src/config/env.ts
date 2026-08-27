@@ -35,7 +35,7 @@ export const envConfig = {
 
   // DB Resilience Configuration (WP-05)
   DB_HEALTH_PROBE_INTERVAL: process.env.DB_HEALTH_PROBE_INTERVAL ? parseInt(process.env.DB_HEALTH_PROBE_INTERVAL, 10) : 10000,
-  DB_HEALTH_TIMEOUT: process.env.DB_HEALTH_TIMEOUT ? parseInt(process.env.DB_HEALTH_TIMEOUT, 10) : 1500,
+  DB_HEALTH_TIMEOUT: process.env.DB_HEALTH_TIMEOUT ? parseInt(process.env.DB_HEALTH_TIMEOUT, 10) : 10000,
   DB_MAX_RETRIES: process.env.DB_MAX_RETRIES ? parseInt(process.env.DB_MAX_RETRIES, 10) : 2,
   DB_RETRY_DELAY: process.env.DB_RETRY_DELAY ? parseInt(process.env.DB_RETRY_DELAY, 10) : 500,
 
