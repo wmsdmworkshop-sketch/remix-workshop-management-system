@@ -22,6 +22,9 @@
  * Every function fails SOFT, returning null rather than throwing. Embeddings
  * are a retrieval optimisation; if Vertex is unreachable, SIGNA must degrade to
  * the existing SQL search and still answer the technician, not error out.
+ *
+ * Real runtime call outcomes (success/failure, error category, timestamps) are
+ * tracked to ensure getActiveTier() reports reality rather than blind configuration.
  * =============================================================================
  */
 
@@ -36,13 +39,6 @@ import type { protos } from "@google-cloud/aiplatform";
  */
 export const EMBEDDING_DIMENSIONS = 768;
 
-// Env-only by design. A hardcoded project fallback makes isEmbeddingConfigured()
-// unconditionally true, so getActiveTier() reports SQL_VECTOR — and the
-// /ai-brains/health endpoint reports healthy semantic retrieval — even when
-// Vertex is entirely unreachable and answers are really coming from keyword
-// search. That silent degradation is exactly what the tier field exists to
-// expose. It also makes any non-production environment talk to the production
-// GCP project instead of failing loudly on missing config.
 const PROJECT_ID =
   process.env.VERTEX_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || "";
 const LOCATION = process.env.VERTEX_LOCATION || "asia-south1";
@@ -61,6 +57,91 @@ const MAX_INPUT_CHARS = 8000;
 let predictionClient: any = null;
 let clientInitFailed = false;
 
+// ── REAL RUNTIME HEALTH TRACKING ──
+export interface EmbeddingLastError {
+  message: string;
+  reason: string;
+  at: string;
+}
+
+/**
+ * Four distinct states, because "not yet proven" is NOT the same as "working".
+ * Collapsing them is what let the service report healthy semantic retrieval
+ * before it had ever successfully embedded anything.
+ */
+export type EmbeddingState = "UNCONFIGURED" | "UNVERIFIED" | "HEALTHY" | "DEGRADED";
+
+export interface EmbeddingHealthStatus {
+  /** True ONLY when a real call has actually succeeded and none has since failed. */
+  healthy: boolean;
+  isConfigured: boolean;
+  state: EmbeddingState;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  lastError: EmbeddingLastError | null;
+}
+
+let lastAttemptAt: string | null = null;
+let lastSuccessAt: string | null = null;
+let lastError: EmbeddingLastError | null = null;
+
+function categorizeError(err: any): string {
+  const msg = String(err?.message || "").toUpperCase();
+  const code = err?.code;
+  if (msg.includes("RESOURCE_EXHAUSTED") || code === 8 || code === 429) return "RESOURCE_EXHAUSTED";
+  if (msg.includes("PERMISSION_DENIED") || code === 7 || code === 403) return "PERMISSION_DENIED";
+  if (msg.includes("NOT_FOUND") || code === 5 || code === 404) return "NOT_FOUND";
+  if (msg.includes("UNAUTHENTICATED") || code === 16 || code === 401) return "UNAUTHENTICATED";
+  if (msg.includes("DEADLINE_EXCEEDED") || code === 4 || msg.includes("ETIMEDOUT")) return "TIMEOUT";
+  if (msg.includes("ECONNREFUSED") || msg.includes("ENOTFOUND") || msg.includes("NETWORK")) return "NETWORK_ERROR";
+  return "VERTEX_PREDICTION_ERROR";
+}
+
+export function recordEmbeddingSuccess(): void {
+  lastSuccessAt = new Date().toISOString();
+  lastError = null;
+}
+
+export function recordEmbeddingFailure(err: any): void {
+  const reason = categorizeError(err);
+  lastError = {
+    message: String(err?.message || "Unknown embedding error").slice(0, 300),
+    reason,
+    at: new Date().toISOString(),
+  };
+}
+
+/**
+ * Returns the current live health of the embedding service based on actual call outcomes.
+ */
+export function getEmbeddingHealth(): EmbeddingHealthStatus {
+  const configured = Boolean(PROJECT_ID) && !clientInitFailed;
+
+  // `lastSuccessAt !== null` is the load-bearing condition. At process start
+  // lastError is null simply because NOTHING HAS BEEN TRIED YET, so testing
+  // only for the absence of an error reported healthy semantic retrieval before
+  // a single embedding had ever succeeded. On Cloud Run every cold start
+  // re-enters that state, and a health check is often the first request an
+  // instance serves — so the optimistic window was routinely observable, and
+  // is precisely the silent degradation this field exists to expose.
+  //
+  // Unproven is therefore reported as UNVERIFIED, never as healthy.
+  let state: EmbeddingState;
+  if (!configured) state = "UNCONFIGURED";
+  else if (lastError !== null) state = "DEGRADED";
+  else if (lastSuccessAt === null) state = "UNVERIFIED";
+  else state = "HEALTHY";
+
+  return {
+    healthy: state === "HEALTHY",
+    isConfigured: configured,
+    state,
+    lastAttemptAt,
+    lastSuccessAt,
+    lastError,
+  };
+}
+
 /**
  * Lazily constructs the Vertex client.
  *
@@ -78,6 +159,7 @@ async function getPredictionClient(): Promise<any | null> {
       "[Embedding] VERTEX_PROJECT_ID / GOOGLE_CLOUD_PROJECT not set — semantic retrieval disabled, SQL fallback in use."
     );
     clientInitFailed = true;
+    recordEmbeddingFailure(new Error("VERTEX_PROJECT_ID / GOOGLE_CLOUD_PROJECT not set"));
     return null;
   }
 
@@ -93,11 +175,12 @@ async function getPredictionClient(): Promise<any | null> {
       `[Embedding] Vertex AI client unavailable (${err?.message || err}) — SQL fallback in use.`
     );
     clientInitFailed = true;
+    recordEmbeddingFailure(err);
     return null;
   }
 }
 
-/** True when embeddings can be generated at all. Cheap; safe to call per request. */
+/** True when embeddings can be generated at all based on configuration. */
 export function isEmbeddingConfigured(): boolean {
   return Boolean(PROJECT_ID) && !clientInitFailed;
 }
@@ -113,8 +196,13 @@ export async function generateEmbedding(
   const cleaned = String(text || "").trim();
   if (!cleaned) return null;
 
+  lastAttemptAt = new Date().toISOString();
+
   const client = await getPredictionClient();
-  if (!client) return null;
+  if (!client) {
+    recordEmbeddingFailure(new Error("Vertex AI prediction client unavailable"));
+    return null;
+  }
 
   try {
     const endpoint = `projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${MODEL}`;
@@ -135,6 +223,7 @@ export async function generateEmbedding(
     const prediction = response?.predictions?.[0];
     if (!prediction) {
       console.warn("[Embedding] Vertex returned no prediction.");
+      recordEmbeddingFailure(new Error("Vertex returned empty predictions array"));
       return null;
     }
 
@@ -144,30 +233,35 @@ export async function generateEmbedding(
 
     if (!Array.isArray(values) || values.length === 0) {
       console.warn("[Embedding] Vertex prediction contained no embedding values.");
+      recordEmbeddingFailure(new Error("Vertex prediction contained no values"));
       return null;
     }
 
     const vector = values.map((v: any) => Number(v));
     if (vector.some((v) => !Number.isFinite(v))) {
       console.warn("[Embedding] Discarding embedding containing non-finite values.");
+      recordEmbeddingFailure(new Error("Embedding contained non-finite numeric values"));
       return null;
     }
 
     if (vector.length !== EMBEDDING_DIMENSIONS) {
       // Loud, because it means the model and the index disagree and every
       // upsert will be rejected downstream.
-      console.error(
-        `[Embedding] Dimension mismatch: model "${MODEL}" returned ${vector.length}, ` +
-          `index expects ${EMBEDDING_DIMENSIONS}. Check EMBEDDING_MODEL against the deployed index.`
+      const mismatchErr = new Error(
+        `Dimension mismatch: model "${MODEL}" returned ${vector.length}, index expects ${EMBEDDING_DIMENSIONS}.`
       );
+      console.error(`[Embedding] ${mismatchErr.message}`);
+      recordEmbeddingFailure(mismatchErr);
       return null;
     }
 
+    recordEmbeddingSuccess();
     return vector;
   } catch (err: any) {
     // Message only. Vertex errors can echo request metadata, and the input is
     // customer complaint text that must not be written to logs.
     console.warn(`[Embedding] Generation failed: ${err?.message || "unknown error"}`);
+    recordEmbeddingFailure(err);
     return null;
   }
 }
@@ -184,8 +278,13 @@ export async function generateEmbeddingsBatch(
 ): Promise<Array<number[] | null>> {
   if (!Array.isArray(texts) || texts.length === 0) return [];
 
+  lastAttemptAt = new Date().toISOString();
+
   const client = await getPredictionClient();
-  if (!client) return texts.map(() => null);
+  if (!client) {
+    recordEmbeddingFailure(new Error("Vertex AI prediction client unavailable"));
+    return texts.map(() => null);
+  }
 
   const aiplatform = await import("@google-cloud/aiplatform");
   const { helpers } = aiplatform;
@@ -198,6 +297,8 @@ export async function generateEmbeddingsBatch(
     })
   );
 
+  let lastCaughtError: any = null;
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const [response]: any = await client.predict({
@@ -206,7 +307,7 @@ export async function generateEmbeddingsBatch(
         parameters: helpers.toValue({ outputDimensionality: EMBEDDING_DIMENSIONS }),
       });
 
-      return texts.map((_, i) => {
+      const results = texts.map((_, i) => {
         const prediction = response?.predictions?.[i];
         if (!prediction) return null;
         const decoded: any = helpers.fromValue(prediction);
@@ -215,7 +316,17 @@ export async function generateEmbeddingsBatch(
         const vector = values.map((v: any) => Number(v));
         return vector.some((v) => !Number.isFinite(v)) ? null : vector;
       });
+
+      const validCount = results.filter(Boolean).length;
+      if (validCount > 0) {
+        recordEmbeddingSuccess();
+      } else {
+        recordEmbeddingFailure(new Error("Batch prediction returned no valid vectors"));
+      }
+
+      return results;
     } catch (err: any) {
+      lastCaughtError = err;
       const isQuota = String(err?.message || "").includes("RESOURCE_EXHAUSTED") || err?.code === 8;
       if (isQuota && attempt < maxRetries) {
         const backoffMs = attempt * 2500;
@@ -224,10 +335,11 @@ export async function generateEmbeddingsBatch(
         continue;
       }
       console.warn(`[Embedding] Batch generation failed (attempt ${attempt}): ${err?.message || "unknown error"}`);
-      if (attempt === maxRetries) {
-        return texts.map(() => null);
-      }
     }
+  }
+
+  if (lastCaughtError) {
+    recordEmbeddingFailure(lastCaughtError);
   }
 
   return texts.map(() => null);

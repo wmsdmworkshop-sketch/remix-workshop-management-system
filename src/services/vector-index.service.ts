@@ -30,6 +30,13 @@
  * commitment. Set VERTEX_INDEX_ENDPOINT_ID to promote to tier 1 at any time; no
  * code change is required and the stored vectors are reused as-is.
  *
+ * ── DYNAMIC RUNTIME HEALTH INTEGRATION ──
+ *
+ * getActiveTier() does not blindly trust static configuration. It integrates
+ * live call outcomes from getEmbeddingHealth(). If Vertex predict calls fail due
+ * to quota, permissions, or network loss, the tier automatically degrades to
+ * SQL_LIKE and recovers to SQL_VECTOR upon successful prediction.
+ *
  * ── WHY METADATA LIVES IN MYSQL ──
  *
  * Matching Engine returns datapoint IDs and distances only — it does not store
@@ -43,11 +50,11 @@ import { pool as db } from "../db/index.ts";
 import {
   EMBEDDING_DIMENSIONS,
   cosineSimilarity,
-  isEmbeddingConfigured,
+  getEmbeddingHealth,
+  type EmbeddingLastError,
+  type EmbeddingState,
 } from "./embedding.service.ts";
 
-// Env-only — see the matching note in embedding.service.ts. A hardcoded project
-// fallback would make the reported retrieval tier untrustworthy.
 const PROJECT_ID =
   process.env.VERTEX_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || "";
 const LOCATION = process.env.VERTEX_LOCATION || "asia-south1";
@@ -125,11 +132,29 @@ export function isMatchingEngineConfigured(): boolean {
   return Boolean(PROJECT_ID && INDEX_ENDPOINT_ID && DEPLOYED_INDEX_ID) && !vertexInitFailed;
 }
 
-/** Which tier will actually serve a query, given current configuration. */
+/**
+ * Which tier will actually serve a query, taking live embedding health into account.
+ * If Vertex prediction calls are failing or unconfigured, reports SQL_LIKE.
+ */
 export function getActiveTier(): RetrievalTier {
+  // Embedding health is checked FIRST, ahead of the Matching Engine branch.
+  // Both vector tiers take an embedding as their input: searchSimilar() cannot
+  // be reached at all unless the caller successfully embedded the query. So a
+  // configured Matching Engine endpoint says nothing about whether semantic
+  // retrieval can actually serve — returning MATCHING_ENGINE on configuration
+  // alone reproduced the exact config-not-reality bug this function was fixed
+  // to remove, just one tier higher up.
+  //
+  // UNVERIFIED reports as SQL_LIKE deliberately: keyword search is what will
+  // genuinely serve the next query if embedding then fails, and claiming a
+  // capability that has never once succeeded is the failure mode being avoided.
+  // The distinction between "never proven" and "known broken" is not lost — it
+  // is carried in the `state` field surfaced by getIndexStats().
+  const health = getEmbeddingHealth();
+  if (!health.healthy) return "SQL_LIKE";
+
   if (isMatchingEngineConfigured()) return "MATCHING_ENGINE";
-  if (isEmbeddingConfigured()) return "SQL_VECTOR";
-  return "SQL_LIKE";
+  return "SQL_VECTOR";
 }
 
 async function getMatchClient(): Promise<any | null> {
@@ -371,7 +396,7 @@ export async function searchSimilar(
          FROM ai_vector_memory
          WHERE embedding IS NOT NULL AND dimensions = ?
          ORDER BY created_at DESC
-         LIMIT 150`,
+         LIMIT 250`,
         [EMBEDDING_DIMENSIONS]
       );
 
@@ -463,12 +488,33 @@ export async function getPendingRemoteUpserts(limit: number = 500): Promise<
   }
 }
 
-/** Corpus size and tier, for the AI Brains health panel. */
+/**
+ * Corpus size, tier, and live embedding health for the AI Brains health panel.
+ *
+ * `tier` answers "what will actually serve the next query"; `embeddingState`
+ * answers "why". They are reported together because SQL_LIKE alone is ambiguous
+ * — an operator cannot tell a cold instance that has simply not embedded
+ * anything yet (UNVERIFIED) from one whose Vertex calls are being rejected
+ * (DEGRADED, with lastError naming the cause). Those need different responses:
+ * the first resolves itself on first use, the second does not.
+ */
 export async function getIndexStats(): Promise<{
   tier: RetrievalTier;
+  embeddingState: EmbeddingState;
   totalVectors: number;
   pendingRemote: number;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  lastError: EmbeddingLastError | null;
 }> {
+  const health = getEmbeddingHealth();
+  const base = {
+    tier: getActiveTier(),
+    embeddingState: health.state,
+    lastAttemptAt: health.lastAttemptAt,
+    lastSuccessAt: health.lastSuccessAt,
+    lastError: health.lastError,
+  };
   try {
     await ensureSchema();
     const [rows]: any = await db.query(
@@ -477,11 +523,11 @@ export async function getIndexStats(): Promise<{
        FROM ai_vector_memory WHERE embedding IS NOT NULL`
     );
     return {
-      tier: getActiveTier(),
+      ...base,
       totalVectors: Number(rows?.[0]?.total || 0),
       pendingRemote: Number(rows?.[0]?.pending || 0),
     };
   } catch {
-    return { tier: getActiveTier(), totalVectors: 0, pendingRemote: 0 };
+    return { ...base, totalVectors: 0, pendingRemote: 0 };
   }
 }

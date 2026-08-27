@@ -49,9 +49,24 @@ export interface AiRouterDependencies {
 
 /**
  * Developer-only, per the explicit instruction recorded at the original call
- * site: strictly "developer", NOT admin-inclusive. Preserved exactly.
+ * site: strictly "developer", NOT admin-inclusive. Preserved for inspection/admin.
  */
 const AI_BRAINS_ROLES = ["developer"];
+
+/**
+ * Decision audit logging is used operationally across the workshop: technicians
+ * evaluate recommendations on the bay floor, service advisors review them during
+ * technical intake, and workshop/service managers oversee decisions.
+ */
+const AI_DECISION_ROLES = [
+  "developer",
+  "admin",
+  "gm_service",
+  "service_manager",
+  "workshop_manager",
+  "service_advisor",
+  "technician",
+];
 
 export function createAiRouter(deps: AiRouterDependencies): Router {
   const { authenticateToken, requireRoles, serviceScheduleEvaluator } = deps;
@@ -77,7 +92,7 @@ export function createAiRouter(deps: AiRouterDependencies): Router {
 
         // Retrieval tier is reported alongside brain health so an operator can
         // see whether SIGNA is answering semantically or has silently degraded
-        // to keyword matching.
+        // to keyword matching. Includes live lastSuccessAt and lastError details.
         let retrieval: any = null;
         try {
           const { getIndexStats } = await import("../../services/vector-index.service.ts");
@@ -133,6 +148,71 @@ export function createAiRouter(deps: AiRouterDependencies): Router {
         res.json({ success: true, suggestion });
       } catch (err: any) {
         return respondAiError(res, err);
+      }
+    }
+  );
+
+  /**
+   * Records a technician or service advisor decision (ACCEPTED / REJECTED / MODIFIED)
+   * against a specific SIGNA recommendation log ID for accountability and feedback.
+   */
+  router.post(
+    "/v1/ai-brains/signa/decision",
+    authenticateToken,
+    requireRoles(AI_DECISION_ROLES),
+    async (req: any, res: any) => {
+      const { logId, decision, notes } = req.body || {};
+
+      if (!logId || typeof logId !== "string" || !logId.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: "logId is required and must be a valid activity log identifier string.",
+        });
+      }
+
+      if (!decision || !["ACCEPTED", "REJECTED", "MODIFIED"].includes(decision)) {
+        return res.status(400).json({
+          success: false,
+          error: 'decision is required and must be one of "ACCEPTED", "REJECTED", or "MODIFIED".',
+        });
+      }
+
+      const userId = req.user?.user_id || req.user?.id;
+      const employeeId = req.user?.employee_id || null;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: "Authenticated user identity (user_id) is required to record a decision audit trail.",
+        });
+      }
+
+      try {
+        const { recordBrainDecision } = await import(
+          "../../engines/ai-brains/brain-registry.ts"
+        );
+        const result = await recordBrainDecision({
+          logId: logId.trim(),
+          decision,
+          notes: typeof notes === "string" ? notes.trim() : undefined,
+          userId: Number(userId),
+          employeeId: employeeId ? Number(employeeId) : null,
+        });
+
+        return res.json({
+          success: true,
+          decisionId: result.decisionId,
+          message: "SIGNA recommendation decision recorded in audit log.",
+        });
+      } catch (err: any) {
+        if (err?.code === "ACTIVITY_LOG_NOT_FOUND") {
+          return res.status(404).json({
+            success: false,
+            error: err.message,
+          });
+        }
+        console.error("[AI] Failed to record decision:", err?.message || err);
+        return res.status(500).json({ success: false, error: err?.message || "Failed to record decision." });
       }
     }
   );
