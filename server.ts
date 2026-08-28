@@ -2097,6 +2097,44 @@ async function startServer() {
   // first login). Never overwrites an existing account — an employee already
   // linked, or a username already taken by anyone else (e.g. developer/admin),
   // is a hard failure, not a silent skip-and-continue.
+  /**
+   * Normalises an employee mobile for user_access_master.mobile_no, which is
+   * VARCHAR(10) NOT NULL.
+   *
+   * Only performs transformations that are UNAMBIGUOUS: stripping the +91
+   * country code and a leading trunk 0. Anything that does not resolve to
+   * exactly ten digits beginning 6-9 is rejected and stored as "" rather than
+   * truncated into something plausible.
+   *
+   * That distinction matters because mobile_no is the lookup key for password
+   * reset (`SELECT * FROM user_access_master WHERE mobile_no = ?`). A blind
+   * slice(-10) of the malformed "+9198765186525" yields "8765186525" — a valid
+   * Indian number that is very likely someone else's. Whoever owned it could
+   * then request a reset that lands on this employee's account, and the real
+   * owner could never reset their own. An empty mobile fails safe: the reset
+   * endpoint rejects falsy input, so the account simply cannot use SMS reset
+   * until the source record is corrected.
+   */
+  function normaliseStaffMobile(raw: any): { mobile: string; warning: string | null } {
+    const original = String(raw || "").trim();
+    if (!original) return { mobile: "", warning: null };
+
+    let digits = original.replace(/\D/g, "");
+    if (digits.length === 12 && digits.startsWith("91")) digits = digits.slice(2);
+    else if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
+
+    if (/^[6-9]\d{9}$/.test(digits)) return { mobile: digits, warning: null };
+
+    return {
+      mobile: "",
+      warning:
+        `Mobile '${original}' is not a valid 10-digit Indian number ` +
+        `(${digits.length} digits after normalisation). Stored blank rather than ` +
+        `guessed — SMS password reset is unavailable for this account until the ` +
+        `employee record is corrected.`,
+    };
+  }
+
   async function createDefaultLoginForEmployee(empId: number, actingUser: any) {
     const [empRows]: any = await dbPool.query("SELECT * FROM employees WHERE employee_id = ?", [empId]);
     if (!empRows || empRows.length === 0) {
@@ -2134,11 +2172,10 @@ async function startServer() {
     const tempPassword = String(employee.employee_code).trim();
     const password_hash = await bcrypt.hash(tempPassword, 10);
 
-    // Sanitise mobile to bare 10-digit number. user_access_master.mobile_no is
-    // VARCHAR(10) NOT NULL DEFAULT ''; inserting a +91-prefixed 14-char string
-    // causes "Data too long" and aborts the entire bulk-create batch.
-    const rawMobile = String(employee.mobile || "").replace(/\D/g, "");
-    const cleanMobile = rawMobile.length > 10 ? rawMobile.slice(-10) : rawMobile;
+    const { mobile: cleanMobile, warning: mobileWarning } = normaliseStaffMobile(employee.mobile);
+    if (mobileWarning) {
+      console.warn(`[bulk-create-logins] employee ${employee.employee_code}: ${mobileWarning}`);
+    }
 
     await dbPool.execute(
       `INSERT INTO user_access_master
@@ -2156,10 +2193,19 @@ async function startServer() {
       actingUser?.user_id || 0,
       actingUser?.username || "system",
       "USER_CREATION",
-      `Created default login '@${username}' for employee '${employee.full_name}' (${employee.employee_code}). Must change password on first login.`
+      `Created default login '@${username}' for employee '${employee.full_name}' (${employee.employee_code}). Must change password on first login.` +
+        (mobileWarning ? ` Mobile stored blank: ${mobileWarning}` : "")
     );
 
-    return { ok: true, employee_id: empId, employee_code: employee.employee_code, full_name: employee.full_name, username, temp_password: tempPassword };
+    return {
+      ok: true,
+      employee_id: empId,
+      employee_code: employee.employee_code,
+      full_name: employee.full_name,
+      username,
+      temp_password: tempPassword,
+      ...(mobileWarning ? { warning: mobileWarning } : {}),
+    };
   }
 
   app.post("/api/employees/:id/create-default-login", authenticateToken, requirePermission("User Management", "edit"), async (req: any, res: any) => {
@@ -2195,7 +2241,22 @@ async function startServer() {
           skipped.push({ ok: false, employee_id: r.employee_id, error: perEmpErr?.message || String(perEmpErr) });
         }
       }
-      res.json({ success: true, createdCount: created.length, skippedCount: skipped.length, created, skipped });
+      // Accounts created with an unusable mobile are reported separately. They
+      // are real successes, but they cannot use SMS password reset until the
+      // employee record is corrected, and that must not be silent.
+      const warnings = created
+        .filter((c) => c.warning)
+        .map((c) => ({ employee_code: c.employee_code, full_name: c.full_name, warning: c.warning }));
+
+      res.json({
+        success: true,
+        createdCount: created.length,
+        skippedCount: skipped.length,
+        warningCount: warnings.length,
+        created,
+        skipped,
+        warnings,
+      });
     } catch (err: any) {
       console.error("bulk-create-logins error:", err);
       res.status(500).json({ success: false, error: err.message });
