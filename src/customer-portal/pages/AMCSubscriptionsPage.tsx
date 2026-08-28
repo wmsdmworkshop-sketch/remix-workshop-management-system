@@ -1,9 +1,12 @@
 import React, { useState } from "react";
-import { ShieldCheck, Award, Check, Sparkles, DollarSign } from "lucide-react";
+import { ShieldCheck, Award, Check, Sparkles, DollarSign, AlertTriangle, Loader2 } from "lucide-react";
+import { requestCallback, getCustomerInfo } from "../hooks/useCustomerApi";
 
 export const AMCSubscriptionsPage: React.FC = () => {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [subscribedSuccess, setSubscribedSuccess] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const plans = [
     {
@@ -52,10 +55,45 @@ export const AMCSubscriptionsPage: React.FC = () => {
     }
   ];
 
-  const handleSubscribe = (planName: string, price: number) => {
-    setSubscribedSuccess(`Congratulations! You have successfully subscribed to ${planName} (₹${price.toLocaleString('en-IN')}). Active on vehicle KA-32-AA-5577!`);
-    setSelectedPlan(null);
-    setTimeout(() => setSubscribedSuccess(null), 6000);
+  /**
+   * Registers INTEREST in a plan. It does not sell one.
+   *
+   * This previously set a message reading "Congratulations! You have
+   * successfully subscribed to <plan> (₹44,999). Active on vehicle
+   * KA-32-AA-5577!" — with no API call of any kind. Nothing was purchased,
+   * nothing reached the dealership, no contract existed, and the vehicle
+   * registration in the message was a hardcoded string belonging to nobody.
+   * A customer could believe they had bought a ₹44,999 annual contract.
+   *
+   * There is no subscription endpoint, so the honest action is the one that
+   * genuinely happens: raise a real callback request and say so.
+   */
+  const handleEnquire = async (planName: string, price: number) => {
+    setSubmitting(planName);
+    setError(null);
+    try {
+      const customer = getCustomerInfo();
+      const res = await requestCallback(
+        customer.name || "Customer",
+        customer.mobile,
+        undefined,
+        `AMC enquiry: ${planName} (listed at ₹${price.toLocaleString("en-IN")}). Customer requested a callback from the portal.`
+      );
+      if (!res.success) {
+        setError(res.error || "Could not send your enquiry. Please try again or call the workshop.");
+        return;
+      }
+      setSubscribedSuccess(
+        `Enquiry sent for ${planName}${res.ticketNo ? ` (ref ${res.ticketNo})` : ""}. ` +
+          `A service advisor will call you on ${customer.mobile} to confirm coverage, pricing and which vehicle it applies to. ` +
+          `No contract is active until you confirm with them.`
+      );
+      setSelectedPlan(null);
+    } catch (e: any) {
+      setError(e?.message || "Could not reach the server. Please try again.");
+    } finally {
+      setSubmitting(null);
+    }
   };
 
   return (
@@ -79,6 +117,19 @@ export const AMCSubscriptionsPage: React.FC = () => {
           <span>{subscribedSuccess}</span>
         </div>
       )}
+
+      {error && (
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-bold flex items-center gap-2">
+          <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Prices are indicative. Nothing on this page completes a purchase. */}
+      <p className="text-[11px] text-slate-500 font-medium px-1">
+        Plan prices are indicative. Coverage and final pricing are confirmed by a service
+        advisor before any contract begins.
+      </p>
 
       {/* Plan Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -112,11 +163,20 @@ export const AMCSubscriptionsPage: React.FC = () => {
               </div>
             </div>
 
+            {/* The label now matches what the button does. "1-Tap Enroll Now"
+                promised a purchase the code never performed. */}
             <button
-              onClick={() => handleSubscribe(plan.name, plan.price)}
-              className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-extrabold uppercase tracking-wider transition shadow cursor-pointer"
+              onClick={() => handleEnquire(plan.name, plan.price)}
+              disabled={submitting === plan.name}
+              className="w-full py-3 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white rounded-xl text-xs font-extrabold uppercase tracking-wider transition shadow cursor-pointer flex items-center justify-center gap-2"
             >
-              1-Tap Enroll Now
+              {submitting === plan.name ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending enquiry…
+                </>
+              ) : (
+                "Request a Callback"
+              )}
             </button>
           </div>
         ))}

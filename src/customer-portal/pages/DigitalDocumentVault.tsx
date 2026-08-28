@@ -1,5 +1,6 @@
-import React, { useState } from "react";
-import { FileText, Download, Printer, Share2, ShieldCheck, DollarSign, Search, ExternalLink, Eye, Award } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { FileText, Printer, Share2, ShieldCheck, DollarSign, Search, ExternalLink, Eye, Award, Loader2, AlertTriangle } from "lucide-react";
+import { fetchJobs } from "../hooks/useCustomerApi";
 
 export interface VaultDocument {
   id: string;
@@ -18,69 +19,85 @@ export const DigitalDocumentVault: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedDoc, setSelectedDoc] = useState<VaultDocument | null>(null);
 
-  const sampleVaultDocs: VaultDocument[] = [
-    {
-      id: "doc-1",
-      category: "Invoice",
-      title: "Tax Invoice — Paid Servicing & Spares Replacement",
-      documentNo: "IDEVAN2526003930",
-      vrn: "KA-32-AA-5577",
-      date: "14/11/2025",
-      amount: 14885.18,
-      status: "Paid"
-    },
-    {
-      id: "doc-2",
-      category: "Estimate",
-      title: "Approved Repair & Spare Parts Estimate",
-      documentNo: "EST-2025-09821",
-      vrn: "KA-32-AA-5577",
-      date: "14/11/2025",
-      amount: 14850.00,
-      status: "Approved"
-    },
-    {
-      id: "doc-3",
-      category: "JobCard",
-      title: "Digital Job Card & 360° Inspection Report",
-      documentNo: "JC-DevAus-AA1-2526-002338",
-      vrn: "KA-32-AA-5577",
-      date: "14/11/2025",
-      status: "Finalized"
-    },
-    {
-      id: "doc-4",
-      category: "Warranty",
-      title: "OEM Warranty Replacement Certificate (Brake Actuator)",
-      documentNo: "OEM-WAR-99212",
-      vrn: "KA-32-AA-5577",
-      date: "30/06/2025",
-      amount: 0.00,
-      status: "Active"
-    },
-    {
-      id: "doc-5",
-      category: "AMC",
-      title: "Gold Fleet Care Annual Maintenance Contract",
-      documentNo: "AMC-GOLD-2025-004",
-      vrn: "KA-32-AA-5577",
-      date: "01/01/2025",
-      amount: 24999.00,
-      status: "Active"
-    },
-    {
-      id: "doc-6",
-      category: "Invoice",
-      title: "Historical Tax Invoice — Regular Servicing",
-      documentNo: "IDEVAN2526001499",
-      vrn: "KA-32-AA-5577",
-      date: "30/06/2025",
-      amount: 7257.30,
-      status: "Paid"
-    }
-  ];
+  const [docs, setDocs] = useState<VaultDocument[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const filteredDocs = sampleVaultDocs.filter(doc => {
+  /**
+   * Documents are derived from the customer's REAL job cards.
+   *
+   * This page previously rendered six hardcoded entries — tax invoices with
+   * authentic-looking numbers (IDEVAN2526003930, ₹14,885.18), an AMC contract,
+   * a warranty certificate — every one of them against VRN "KA-32-AA-5577",
+   * a registration belonging to nobody. Any customer who opened the vault saw
+   * financial records that were not theirs and did not exist.
+   *
+   * Only Invoice, JobCard and Warranty entries are built, because those are the
+   * only document types the customer-safe job payload can evidence. Amounts are
+   * NOT shown: sanitizeJobCard carries no monetary field, so any figure here
+   * would have to be invented.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetchJobs();
+        if (cancelled) return;
+        const jobs: any[] = Array.isArray(res?.jobs) ? res.jobs : [];
+        const built: VaultDocument[] = [];
+
+        for (const j of jobs) {
+          const when = j.completed_at || j.date_in || null;
+          const date = when ? new Date(when).toLocaleDateString("en-IN") : "—";
+
+          if (j.job_card_no) {
+            built.push({
+              id: `jc-${j.job_card_no}`,
+              category: "JobCard",
+              title: j.service_type ? `Job Card — ${j.service_type}` : "Job Card",
+              documentNo: j.job_card_no,
+              vrn: j.vrn || "—",
+              date,
+              status: j.gate_out_time ? "Finalized" : "Approved",
+            });
+          }
+
+          if (j.invoice_no) {
+            built.push({
+              id: `inv-${j.invoice_no}`,
+              category: "Invoice",
+              title: "Tax Invoice",
+              documentNo: j.invoice_no,
+              vrn: j.vrn || "—",
+              date,
+              status: "Finalized",
+            });
+          }
+
+          if (j.warranty_status) {
+            built.push({
+              id: `war-${j.job_card_no}`,
+              category: "Warranty",
+              title: `Warranty — ${j.warranty_status}`,
+              documentNo: j.job_card_no || "—",
+              vrn: j.vrn || "—",
+              date,
+              status: "Active",
+            });
+          }
+        }
+
+        setDocs(built);
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || "Could not load your documents.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const filteredDocs = docs.filter(doc => {
     const matchCategory = activeCategory === "All" || doc.category === activeCategory;
     const matchQuery = 
       doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -106,23 +123,30 @@ export const DigitalDocumentVault: React.FC = () => {
     }
   };
 
-  const handleDownloadDoc = (doc: VaultDocument) => {
-    alert(`Downloading Official PDF: ${doc.documentNo} (${doc.title})`);
-  };
+  // No PDF service exists, so there is no download handler. The button used to
+  // alert "Downloading Official PDF: …" while nothing was ever produced.
 
-  const handlePrintDoc = (doc: VaultDocument) => {
+  const handlePrintDoc = (_doc: VaultDocument) => {
     window.print();
   };
 
-  const handleShareDoc = (doc: VaultDocument) => {
+  const handleShareDoc = async (doc: VaultDocument) => {
+    const text = `Document ${doc.documentNo} for vehicle ${doc.vrn}`;
     if (navigator.share) {
-      navigator.share({
-        title: doc.title,
-        text: `Official Document ${doc.documentNo} for vehicle ${doc.vrn}`,
-        url: window.location.href
-      }).catch(err => console.error("Share failed", err));
-    } else {
-      alert(`Shareable Link copied for ${doc.documentNo}!`);
+      try {
+        await navigator.share({ title: doc.title, text, url: window.location.href });
+      } catch (err) {
+        console.error("Share failed", err);
+      }
+      return;
+    }
+    // The fallback claimed "Shareable Link copied!" without copying anything.
+    // Actually write to the clipboard, and only say so if it succeeded.
+    try {
+      await navigator.clipboard.writeText(`${text} — ${window.location.href}`);
+      alert(`Link copied for ${doc.documentNo}.`);
+    } catch {
+      alert("Your browser blocked copying. You can copy the address bar link instead.");
     }
   };
 
@@ -170,6 +194,26 @@ export const DigitalDocumentVault: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {loading && (
+        <div className="flex items-center gap-2 text-slate-500 p-8 text-sm">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading your documents…
+        </div>
+      )}
+
+      {error && !loading && (
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-semibold flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" /> {error}
+        </div>
+      )}
+
+      {!loading && !error && filteredDocs.length === 0 && (
+        <div className="p-10 text-center text-slate-500 text-xs font-medium bg-white rounded-2xl border border-slate-200">
+          {docs.length === 0
+            ? "No documents yet. Job cards, invoices and warranty records appear here once work has been raised against your registered mobile number."
+            : "No documents match this filter."}
+        </div>
+      )}
 
       {/* Document Grid / List */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -224,12 +268,6 @@ export const DigitalDocumentVault: React.FC = () => {
                   title="Print Document"
                 >
                   <Printer className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => handleDownloadDoc(doc)}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition shadow-sm"
-                >
-                  <Download className="w-3.5 h-3.5" /> PDF
                 </button>
               </div>
             </div>
@@ -287,10 +325,10 @@ export const DigitalDocumentVault: React.FC = () => {
                 Close Preview
               </button>
               <button
-                onClick={() => handleDownloadDoc(selectedDoc)}
+                onClick={() => handlePrintDoc(selectedDoc)}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow"
               >
-                <Download className="w-4 h-4" /> Download Official PDF
+                <Printer className="w-4 h-4" /> Print
               </button>
             </div>
           </div>
