@@ -1249,6 +1249,9 @@ export default function App() {
   };
 
 
+  // Both handlers previously ended at `if (res.ok) fetchAllData();` with no else,
+  // so a rejected save — an invalid mobile now returns 400 — looked exactly like
+  // no click at all. Validation that the user cannot see is not validation.
   const handleAddEmployee = async (employeeData: Partial<Employee>) => {
     try {
       const res = await fetch("/api/employees", {
@@ -1256,9 +1259,15 @@ export default function App() {
         headers: authHeaders(),
         body: JSON.stringify(employeeData)
       });
-      if (res.ok) fetchAllData();
-    } catch (e) {
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body?.error || `Could not add employee (HTTP ${res.status}).`);
+        return;
+      }
+      fetchAllData();
+    } catch (e: any) {
       console.error(e);
+      alert(`Could not reach the server to add this employee. ${e?.message || ""}`.trim());
     }
   };
 
@@ -1269,9 +1278,15 @@ export default function App() {
         headers: authHeaders(),
         body: JSON.stringify(employeeData)
       });
-      if (res.ok) fetchAllData();
-    } catch (e) {
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body?.error || `Could not save changes (HTTP ${res.status}).`);
+        return;
+      }
+      fetchAllData();
+    } catch (e: any) {
       console.error(e);
+      alert(`Could not reach the server to save this employee. ${e?.message || ""}`.trim());
     }
   };
 

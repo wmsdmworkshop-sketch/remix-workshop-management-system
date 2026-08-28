@@ -1972,6 +1972,10 @@ async function startServer() {
       });
     }
 
+    // mobile_no is the password-reset lookup key, so it must be exact or absent.
+    const newUserMobile = validateMobileInput(mobile_no, { label: "Mobile number" });
+    if (!newUserMobile.ok) return res.status(400).json({ error: newUserMobile.error });
+
     const empId = Number(employee_id);
 
     try {
@@ -2018,7 +2022,11 @@ async function startServer() {
       }
 
       const finalFullName = (full_name && full_name.trim()) || employee.full_name;
-      const finalMobile = (mobile_no && mobile_no.trim()) || employee.mobile || "";
+      // The submitted number is already validated above. When none was given we
+      // fall back to the employee record, which may be a legacy malformed value
+      // — normalise it leniently (blank if unusable) rather than letting a
+      // 13-digit string hit user_access_master.mobile_no VARCHAR(10).
+      const finalMobile = newUserMobile.mobile || normaliseStaffMobile(employee.mobile).mobile;
       const finalEmail = (email && email.trim()) || employee.email || null;
 
       const password_hash = await bcrypt.hash(password, 10);
@@ -2133,6 +2141,45 @@ async function startServer() {
         `guessed — SMS password reset is unavailable for this account until the ` +
         `employee record is corrected.`,
     };
+  }
+
+  /**
+   * STRICT validation for a mobile arriving from a user through the API.
+   *
+   * normaliseStaffMobile above is deliberately lenient: it blanks unusable
+   * LEGACY values so a bulk job over historical rows can still run. This is the
+   * opposite policy, and it applies to every edge where a human submits a
+   * number — nothing bad gets stored quietly, the caller is told what is wrong.
+   *
+   * Empty is accepted unless `required`, because mobile is optional on some
+   * forms. What is never accepted is a non-empty value that is not a real
+   * 10-digit Indian mobile.
+   */
+  function validateMobileInput(
+    raw: any,
+    opts: { required?: boolean; label?: string } = {}
+  ): { ok: boolean; mobile: string; error?: string } {
+    const label = opts.label || "Mobile number";
+    const original = String(raw ?? "").trim();
+
+    if (!original) {
+      if (opts.required) return { ok: false, mobile: "", error: `${label} is required.` };
+      return { ok: true, mobile: "" };
+    }
+
+    const { mobile } = normaliseStaffMobile(original);
+    if (!mobile) {
+      const digits = original.replace(/\D/g, "");
+      return {
+        ok: false,
+        mobile: "",
+        error:
+          `${label} must be a valid 10-digit Indian mobile number starting with 6-9. ` +
+          `'${original}' has ${digits.length} digit${digits.length === 1 ? "" : "s"} — ` +
+          `check for a missing or extra digit. A +91 prefix or leading 0 is fine.`,
+      };
+    }
+    return { ok: true, mobile };
   }
 
   async function createDefaultLoginForEmployee(empId: number, actingUser: any) {
@@ -2335,7 +2382,15 @@ async function startServer() {
       const finalFullName = full_name !== undefined ? full_name : existingUser.full_name;
       const finalRole = role !== undefined ? role : (existingUser.user_role || existingUser.role);
       const finalIsActive = is_active !== undefined ? (is_active ? 1 : 0) : existingUser.is_active;
-      const finalMobileNo = mobile_no !== undefined ? mobile_no : existingUser.mobile_no;
+      // Validate only when the caller actually submitted a mobile; an edit that
+      // does not touch the field must not be blocked by a legacy value already
+      // stored on the row.
+      let finalMobileNo = existingUser.mobile_no;
+      if (mobile_no !== undefined) {
+        const check = validateMobileInput(mobile_no, { label: "Mobile number" });
+        if (!check.ok) return res.status(400).json({ error: check.error });
+        finalMobileNo = check.mobile;
+      }
       const finalEmail = email !== undefined ? email : existingUser.email;
 
       try {
@@ -2519,16 +2574,20 @@ async function startServer() {
       return res.status(400).json({ error: "Mobile Number and Personal Email ID are required." });
     }
 
-    // Validate formats
-    const mobileRegex = /^\+?[0-9]{10,15}$/;
+    // Validate formats.
+    //
+    // The old rule was /^\+?[0-9]{10,15}$/ — "10 to 15 digits". That is how
+    // "+9198765186525" (13 digits, one too many after the country code) entered
+    // the directory in the first place. Anything between 10 and 15 digits was
+    // waved through, and downstream code then had to guess which ten were real.
+    // Validation is now exact, so a malformed number is refused at the door.
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-    if (!mobileRegex.test(mobile.replace(/\s+/g, ""))) {
-      return res.status(400).json({ error: "Invalid mobile number format. Must contain 10-15 digits." });
-    }
-    if (alt_mobile && !mobileRegex.test(alt_mobile.replace(/\s+/g, ""))) {
-      return res.status(400).json({ error: "Invalid alternate mobile format." });
-    }
+    const mobileCheck = validateMobileInput(mobile, { required: true, label: "Mobile number" });
+    if (!mobileCheck.ok) return res.status(400).json({ error: mobileCheck.error });
+
+    const altCheck = validateMobileInput(alt_mobile, { label: "Alternate mobile number" });
+    if (!altCheck.ok) return res.status(400).json({ error: altCheck.error });
     if (!emailRegex.test(email)) {
       return res.status(400).json({ error: "Invalid email address format." });
     }
@@ -2558,20 +2617,23 @@ async function startServer() {
 
       if (approvalSetting === "auto_approve") {
         // Direct Apply: Updates SQL tables
+        // Store the NORMALISED number everywhere, so employees.mobile,
+        // user_access_master.mobile_no and users.mobile_no cannot drift apart.
+        // The previous code wrote the raw string to two tables and a
+        // slice(-10) guess to the third.
         await dbPool.execute(
           "UPDATE employees SET mobile = ?, alt_mobile = ?, email = ? WHERE employee_id = ?",
-          [mobile, alt_mobile || null, email, employeeId]
+          [mobileCheck.mobile, altCheck.mobile || null, email, employeeId]
         );
 
         // Propagate to user_access_master & users table
-        const cleanMobile10 = mobile.replace(/[^0-9]/g, "").slice(-10);
         await dbPool.execute(
           "UPDATE user_access_master SET email = ?, mobile_no = ? WHERE employee_id = ?",
-          [email, cleanMobile10, employeeId]
+          [email, mobileCheck.mobile, employeeId]
         );
         await dbPool.execute(
           "UPDATE users SET mobile_no = ? WHERE employee_id = ?",
-          [mobile, employeeId]
+          [mobileCheck.mobile, employeeId]
         );
 
         // Update in-memory DB immediately
@@ -2728,20 +2790,35 @@ async function startServer() {
         ) as any[];
         const current = currentEmps && currentEmps.length > 0 ? currentEmps[0] : { mobile: "", alt_mobile: "", email: "" };
 
-        // Apply edits to DB tables
+        // Re-validate at apply time. Tickets raised before strict validation
+        // existed may still hold a malformed number, and approving one must not
+        // reintroduce it. Refuse the approval rather than storing a guess.
+        const ticketMobile = validateMobileInput(ticket.mobile, { required: true, label: "Mobile number" });
+        if (!ticketMobile.ok) {
+          return res.status(400).json({
+            error: `This request cannot be approved: ${ticketMobile.error} Ask the employee to resubmit with a corrected number.`,
+          });
+        }
+        const ticketAltMobile = validateMobileInput(ticket.alt_mobile, { label: "Alternate mobile number" });
+        if (!ticketAltMobile.ok) {
+          return res.status(400).json({
+            error: `This request cannot be approved: ${ticketAltMobile.error} Ask the employee to resubmit with a corrected number.`,
+          });
+        }
+
+        // Apply edits to DB tables — normalised value to every table.
         await dbPool.execute(
           "UPDATE employees SET mobile = ?, alt_mobile = ?, email = ? WHERE employee_id = ?",
-          [ticket.mobile, ticket.alt_mobile, ticket.email, ticket.employee_id]
+          [ticketMobile.mobile, ticketAltMobile.mobile || null, ticket.email, ticket.employee_id]
         );
 
-        const cleanMobile10 = ticket.mobile.replace(/[^0-9]/g, "").slice(-10);
         await dbPool.execute(
           "UPDATE user_access_master SET email = ?, mobile_no = ? WHERE employee_id = ?",
-          [ticket.email, cleanMobile10, ticket.employee_id]
+          [ticket.email, ticketMobile.mobile, ticket.employee_id]
         );
         await dbPool.execute(
           "UPDATE users SET mobile_no = ? WHERE employee_id = ?",
-          [ticket.mobile, ticket.employee_id]
+          [ticketMobile.mobile, ticket.employee_id]
         );
 
         // Update in-memory DB immediately
@@ -3071,6 +3148,17 @@ async function startServer() {
   app.post("/api/employees", authenticateToken, requireRoles(WORKFORCE_ADMIN_ROLES), (req: any, res) => {
     const db = getDB();
     const newEmp: Employee = req.body;
+
+    // Reject a malformed mobile at creation rather than storing it and leaving
+    // login creation to guess ten digits out of it later.
+    const empMobile = validateMobileInput((newEmp as any).mobile, { label: "Mobile number" });
+    if (!empMobile.ok) return res.status(400).json({ error: empMobile.error });
+    (newEmp as any).mobile = empMobile.mobile;
+
+    const empAltMobile = validateMobileInput((newEmp as any).alt_mobile, { label: "Alternate mobile number" });
+    if (!empAltMobile.ok) return res.status(400).json({ error: empAltMobile.error });
+    (newEmp as any).alt_mobile = empAltMobile.mobile || null;
+
     const nextId = db.employees.reduce((max: number, e: Employee) => Math.max(max, e.employee_id), 0) + 1;
     newEmp.employee_id = nextId;
     if (!newEmp.employee_code) {
@@ -3179,6 +3267,20 @@ async function startServer() {
       if (!existing) return res.status(404).json({ error: "Employee not found" });
       // Strip non-column / computed fields so the UPDATE doesn't hit unknown columns.
       const { employee_id, target_revenue, ...data } = req.body || {};
+
+      // Validate any mobile the edit form submitted. Only fields actually
+      // present are checked, so unrelated edits are unaffected.
+      if ("mobile" in data) {
+        const check = validateMobileInput(data.mobile, { label: "Mobile number" });
+        if (!check.ok) return res.status(400).json({ error: check.error });
+        data.mobile = check.mobile;
+      }
+      if ("alt_mobile" in data) {
+        const check = validateMobileInput(data.alt_mobile, { label: "Alternate mobile number" });
+        if (!check.ok) return res.status(400).json({ error: check.error });
+        data.alt_mobile = check.mobile || null;
+      }
+
       if (Object.keys(data).length > 0) {
         await EmployeeIdentityService.updateEmployee(id, data);
       }

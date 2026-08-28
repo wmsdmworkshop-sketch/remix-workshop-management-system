@@ -28,6 +28,36 @@ import {
 } from "lucide-react";
 import { Employee, Bay, SRType, RevenueSplitMaster } from "../types";
 
+/**
+ * Mobile validation, mirroring the server's validateMobileInput.
+ *
+ * The field must hold a real 10-digit Indian mobile (starting 6-9). A +91
+ * country code or a leading trunk 0 is accepted and stripped, because those are
+ * unambiguous. Nothing else is — the server previously allowed "10 to 15
+ * digits", which let malformed numbers into the directory that downstream code
+ * then had to guess ten digits out of.
+ *
+ * Returns the normalised number, or an error message to show under the field.
+ */
+const MOBILE_RULE = /^[6-9]\d{9}$/;
+
+function normaliseMobileInput(raw: any): string {
+  const original = String(raw ?? "").trim();
+  if (!original) return "";
+  let digits = original.replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) digits = digits.slice(2);
+  else if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
+  return MOBILE_RULE.test(digits) ? digits : "";
+}
+
+function mobileFieldError(raw: any, opts: { required?: boolean } = {}): string | null {
+  const original = String(raw ?? "").trim();
+  if (!original) return opts.required ? "Mobile number is required." : null;
+  if (normaliseMobileInput(original)) return null;
+  const digits = original.replace(/\D/g, "");
+  return `Must be a valid 10-digit Indian mobile starting with 6-9 — this has ${digits.length} digit${digits.length === 1 ? "" : "s"}. A +91 prefix or leading 0 is fine.`;
+}
+
 interface EmployeeDirectoryProps {
   employees: Employee[];
   onAddEmployee: (employeeData: Partial<Employee>) => void;
@@ -194,6 +224,8 @@ export default function EmployeeDirectory({
   const [grade, setGrade] = useState<Employee["employee_grade"]>("Junior");
   const [basicSalary, setBasicSalary] = useState(25000);
   const [mobile, setMobile] = useState("");
+  const [mobileError, setMobileError] = useState<string | null>(null);
+  const [editMobileError, setEditMobileError] = useState<string | null>(null);
   const [employeeCode, setEmployeeCode] = useState("");
   
   // Add Form Certification States
@@ -367,14 +399,24 @@ export default function EmployeeDirectory({
         if (name) {
           // Generate simple code & properties
           const isSenior = salary >= 20000 || roleName.toLowerCase().includes("supervisor") || roleName.toLowerCase().includes("manager");
-          const mobileNum = `+9198765${Math.floor(100000 + Math.random() * 900000)}`;
+
+          // Mobile comes from the CSV (4th column) or stays blank.
+          //
+          // This used to invent one: `+9198765${random 6 digits}`, which is +91
+          // followed by ELEVEN digits — not a valid Indian number at all. That
+          // is where MUSTAFA's "+9198765186525" and REVANSIDAPPA's
+          // "+9198765341681" came from; they were never real phone numbers.
+          // Fabricated contact details are worse than none: mobile_no is the
+          // password-reset lookup key, so a made-up number is a made-up
+          // recovery route.
+          const csvMobile = normaliseMobileInput(parts[3]);
 
           parsed.push({
             full_name: name,
             role: roleName,
             basic_salary: salary,
             employee_grade: isSenior ? "Senior" : "Junior",
-            mobile: mobileNum,
+            mobile: csvMobile,
             is_active: true
           });
         }
@@ -391,6 +433,14 @@ export default function EmployeeDirectory({
     e.preventDefault();
     if (!fullName || !mobile || !employeeCode) return;
 
+    // Block submission on an invalid mobile and show why, rather than letting
+    // the server reject it after the fact.
+    const mobileErr = mobileFieldError(mobile, { required: true });
+    if (mobileErr) {
+      setMobileError(mobileErr);
+      return;
+    }
+
     const finalRole = selectedRole === "custom" ? customRoleText.trim() : selectedRole;
     if (!finalRole) return;
 
@@ -400,7 +450,7 @@ export default function EmployeeDirectory({
       role: finalRole,
       employee_grade: grade,
       basic_salary: Number(basicSalary),
-      mobile,
+      mobile: normaliseMobileInput(mobile),
       certification_level: certificationLevel,
       certification_date: certificationDate || null,
       certification_expiry_date: certificationExpiryDate || null,
@@ -442,10 +492,21 @@ export default function EmployeeDirectory({
     setEditCertificationDate(emp.certification_date || "");
     setEditCertificationExpiryDate(emp.certification_expiry_date || "");
     setEditCertificationRemarks(emp.certification_remarks || "");
+    // Surface a pre-existing bad value immediately rather than only on save.
+    setEditMobileError(mobileFieldError(emp.mobile, { required: true }));
   };
 
   const handleSaveEdit = (id: number) => {
     if (!editName || !editMobile || !editCode) return;
+
+    // Refuse to save an invalid mobile. Legacy rows may already hold one, so the
+    // error appears at save time rather than blocking the whole edit panel.
+    const editErr = mobileFieldError(editMobile, { required: true });
+    if (editErr) {
+      setEditMobileError(editErr);
+      return;
+    }
+
     const finalEditRole = editSelectedRole === "custom" ? editCustomRoleText.trim() : editSelectedRole;
     if (!finalEditRole) return;
 
@@ -455,7 +516,7 @@ export default function EmployeeDirectory({
       role: finalEditRole,
       employee_grade: editGrade,
       basic_salary: Number(editSalary),
-      mobile: editMobile,
+      mobile: normaliseMobileInput(editMobile),
       certification_level: editCertificationLevel,
       certification_date: editCertificationDate || null,
       certification_expiry_date: editCertificationExpiryDate || null,
@@ -897,14 +958,23 @@ export default function EmployeeDirectory({
 
             <div>
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Mobile Number*</label>
-              <input 
-                type="tel" 
-                required 
+              <input
+                type="tel"
+                required
                 value={mobile}
-                onChange={(e) => setMobile(e.target.value)}
-                placeholder="+91..."
-                className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
+                onChange={(e) => { setMobile(e.target.value); if (mobileError) setMobileError(null); }}
+                onBlur={(e) => setMobileError(mobileFieldError(e.target.value, { required: true }))}
+                placeholder="10-digit mobile, e.g. 9876543210"
+                aria-invalid={!!mobileError}
+                className={`w-full bg-slate-50 border rounded p-2 text-xs font-semibold focus:ring-1 focus:outline-hidden ${
+                  mobileError
+                    ? "border-rose-400 focus:ring-rose-500"
+                    : "border-slate-200 focus:ring-orange-500"
+                }`}
               />
+              {mobileError && (
+                <p className="text-[10px] font-semibold text-rose-600 mt-1">{mobileError}</p>
+              )}
             </div>
           </div>
 
@@ -1352,12 +1422,22 @@ export default function EmployeeDirectory({
                         </div>
                         <div>
                           <label className="ds-label text-[9px] font-bold   uppercase tracking-wider">Mobile</label>
-                          <input 
+                          <input
                             type="text"
                             value={editMobile}
-                            onChange={(e) => setEditMobile(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 font-semibold focus:ring-1 focus:ring-orange-500 focus:outline-hidden"
+                            onChange={(e) => { setEditMobile(e.target.value); if (editMobileError) setEditMobileError(null); }}
+                            onBlur={(e) => setEditMobileError(mobileFieldError(e.target.value))}
+                            placeholder="10-digit mobile"
+                            aria-invalid={!!editMobileError}
+                            className={`w-full bg-slate-50 border rounded px-2 py-1 font-semibold focus:ring-1 focus:outline-hidden ${
+                              editMobileError
+                                ? "border-rose-400 focus:ring-rose-500"
+                                : "border-slate-200 focus:ring-orange-500"
+                            }`}
                           />
+                          {editMobileError && (
+                            <p className="text-[9px] font-semibold text-rose-600 mt-1">{editMobileError}</p>
+                          )}
                         </div>
                       </div>
 
