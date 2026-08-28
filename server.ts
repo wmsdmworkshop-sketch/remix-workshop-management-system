@@ -10848,6 +10848,25 @@ Respond with valid JSON only:
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
+
+    // dist/ is BOTH the compiled server bundle's output directory and the public
+    // web root, so express.static was serving the backend itself. Until this
+    // guard existed, https://<host>/server.cjs.map returned 200 with 1.9 MB of
+    // source map whose sourcesContent embedded the original TypeScript of 73
+    // files — server.ts included. That handed anyone the full backend: every SQL
+    // query, the JWT gate, PUBLIC_API_PATHS, and all RBAC rules.
+    //
+    // The build no longer emits the map (the --sourcemap flag is gone from the
+    // production build scripts), but this block is the durable fix: the server
+    // bundle must never be reachable over HTTP regardless of what lands in dist.
+    const BLOCKED_STATIC = /^\/(server\.cjs(\.map)?|.*\.map)$/;
+    app.use((req, res, next) => {
+      if (BLOCKED_STATIC.test(req.path)) {
+        return res.status(404).end();
+      }
+      next();
+    });
+
     app.use(express.static(distPath));
     // Customer portal is a separate SPA build (vite.customer.config.ts, base:
     // '/customer-portal/') living under dist/customer-portal/. Its own assets
