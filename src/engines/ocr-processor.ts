@@ -400,7 +400,10 @@ export async function verifyJobCard(
         : `The OCR engine returned this raw text from an Indian vehicle number plate photo:\n\n${rawText}\n\nPlease extract the Vehicle Registration Number (VRN).\nIndian VRN formats: AB-12-CD-1234 (state-district-series-number), AB-12-C-1234, AB-12-1234, or BH series 24-BH-1234-AB.\nCommercial plates are often painted in 2 lines with dots (e.g. Line 1: "KA.32", Line 2: "AB.0507" → "KA-32-AB-0507").\nAlso extract odometer and chassis number if visible.`;
 
       const deepseekRes = await DeepSeekEngine.chat([
-        { role: "system", content: "You are an expert Indian vehicle number plate parser. Respond ONLY with valid JSON matching this schema: {\"vrn\": \"KA-32-AB-0307\", \"odometer\": 12345, \"chassis_no\": \"...\", \"confidence\": 0.98}. If you cannot determine a field, set it to null." },
+        // The same photo pipeline is used for number plates AND instrument
+        // clusters. Framing it as a plate parser made odometer digits an
+        // afterthought on dashboard photos.
+        { role: "system", content: "You read Indian commercial vehicle number plates AND instrument clusters. On a cluster the odometer is the LARGEST distance figure (usually 5-7 digits); trip meters, speed, RPM and the clock are smaller — never return one of those as the odometer, and never return digits that belong to the registration number. Respond ONLY with valid JSON matching this schema: {\"vrn\": \"KA-32-AB-0307\", \"odometer\": 12345, \"chassis_no\": \"...\", \"confidence\": 0.98}. Never invent a value: if you cannot determine a field, set it to null." },
         { role: "user", content: deepseekPrompt }
       ], { model: "deepseek-chat", temperature: 0.1 });
 

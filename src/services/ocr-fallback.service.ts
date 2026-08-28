@@ -463,9 +463,15 @@ Output ONLY a JSON object matching this schema:
     // If regex missed or to validate, invoke DeepSeek parser on Azure text
     if (rawText.length > 2) {
       try {
-        const prompt = `The OCR engine returned this raw text from an Indian vehicle plate/dashboard:\n\n${rawText}\n\nPlease extract: vrn (standard format), odometer (integer), chassis_no. Return JSON: {"vrn": "...", "odometer": 12345, "chassis_no": "...", "confidence": 0.9}`;
+        // GEMINI_API_KEY is deliberately not configured in production, so this
+        // Azure + DeepSeek path is the ONLY one that runs live — the Gemini
+        // prompt above never executes. It therefore has to handle instrument
+        // clusters as well as plates, which the previous system message
+        // ("You are an Indian vehicle plate parser") did not: it framed every
+        // image as a number plate, so odometer digits were an afterthought.
+        const prompt = `The OCR engine returned this raw text from a photo of an Indian commercial vehicle — either a number plate or an instrument cluster / dashboard:\n\n${rawText}\n\nExtract:\n- vrn: registration in canonical form (AB-12-CD-1234 / AB-12-1234 / 24-BH-1234-AB), or null if this is a dashboard photo with no plate visible.\n- odometer: the TOTAL distance reading in km, as a number. A cluster also shows trip meters, speed, RPM and a clock — the odometer is the LARGEST distance figure and typically has 5 to 7 digits. Do NOT return a trip meter, and do not return digits that are part of the registration number. Some Tata clusters show a final tenths digit in a separate window (e.g. "173559" and "4" = 173559.4). Return null if no total reading is legible.\n- chassis_no: if visible, else null.\n\nReturn JSON only: {"vrn": "...", "odometer": 12345, "chassis_no": "...", "confidence": 0.9}`;
         const deepseekRes = await DeepSeekEngine.chat([
-          { role: "system", content: "You are an Indian vehicle plate parser. Output JSON only." },
+          { role: "system", content: "You read Indian commercial vehicle number plates AND instrument clusters. Never invent a value: if a field is not legible, return null for it. Output JSON only." },
           { role: "user", content: prompt },
         ], { model: "deepseek-chat", temperature: 0.1 });
 
