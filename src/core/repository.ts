@@ -183,7 +183,11 @@ export class JobCardRepository {
     
     if (!isUpdate || jobCard.job_card_no !== undefined) masterRow.job_card_no = jobCard.job_card_no;
     if (!isUpdate || jobCard.bay_id !== undefined) masterRow.bay_id = jobCard.bay_id || 1;
-    if (!isUpdate || jobCard.vrn !== undefined) masterRow.vehicle_reg = (jobCard.vrn || '').substring(0, 10);
+    // No truncation. This used to be .substring(0, 10) to fit
+    // job_card_master.vehicle_reg VARCHAR(10), which silently cut every
+    // hyphenated plate — KA-32-AB-1234 became 'KA-32-AB-1'. The column is now
+    // VARCHAR(50), matching job_cards.vrn, so the full registration is stored.
+    if (!isUpdate || jobCard.vrn !== undefined) masterRow.vehicle_reg = jobCard.vrn || '';
     if (!isUpdate || jobCard.vin !== undefined) {
       masterRow.vin = jobCard.vin ? jobCard.vin.substring(0, 50) : null;
       masterRow.chassis_no = jobCard.vin || null;

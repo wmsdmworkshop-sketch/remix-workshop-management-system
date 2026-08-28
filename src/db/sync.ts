@@ -133,7 +133,9 @@ async function saveJobCardsToMaster(jobCards: any[]) {
       job_card_id: row.job_id,
       job_card_no: row.job_card_no,
       bay_id: row.bay_id || 1, // Default to a valid bay_id
-      vehicle_reg: (row.vrn || '').substring(0, 10),
+      // vehicle_reg is VARCHAR(50) as of the widening migration; truncating to
+      // 10 here is what corrupted every hyphenated registration.
+      vehicle_reg: row.vrn || '',
       vin: row.vin ? row.vin.substring(0, 50) : null,
       customer_name: (row.customer_name || 'Walk-in Customer').substring(0, 100),
       driver_mobile: (row.customer_mobile || '0000000000').substring(0, 15),
@@ -1630,7 +1632,8 @@ export async function syncLoad(): Promise<any> {
         job_card_id: r.job_card_id,
         job_card_no: r.job_card_no,
         bay_id: r.bay_id || 1,
-        vehicle_reg: (r.vehicle_reg || '').substring(0, 10),
+        // See above: no 10-char truncation, the column is VARCHAR(50).
+        vehicle_reg: r.vehicle_reg || '',
         vin: r.vin ? r.vin.substring(0, 50) : null,
         customer_name: (r.customer_name || 'Walk-in Customer').substring(0, 100),
         driver_mobile: (r.driver_mobile || '0000000000').substring(0, 15),
