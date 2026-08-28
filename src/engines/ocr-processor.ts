@@ -166,12 +166,7 @@ export function extractJobCardFields(text: string): {
   // Many Tata truck instrument clusters show the last digit as tenths of a
   // km in a separate small window (e.g. "173559" + "4" = 173559.4 km).
   // Capture that optional decimal digit instead of dropping it.
-  const odoMatch =
-    text.match(/\b(\d{4,6}(?:\.\d)?)[ \t]*(?:km|kms|kilometers|odometer)\b/i) ||
-    text.match(/odometer\s*[:\-]?\s*(\d{4,6}(?:\.\d)?)/i) ||
-    // Instrument cluster photos: Azure returns bare numbers without "km" keyword.
-    // Only match 5-6 digit standalone numbers (4-digit could be the VRN tail).
-    text.match(/\b(\d{5,6}(?:\.\d)?)\b/);
+  const odoMatch = extractOdometerReading(text, vrn);
 
   const chassisMatch = text.match(/\b(MA[A-Z]\w{14})\b/i) || text.match(/\b(MST[A-Z0-9]{7,14})\b/i);
 
@@ -181,6 +176,54 @@ export function extractJobCardFields(text: string): {
     odometer: odoMatch ? parseFloat(odoMatch[1]) : undefined,
     chassisNo: chassisMatch ? chassisMatch[1].toUpperCase() : undefined,
   };
+}
+
+
+/**
+ * Extracts an odometer reading from raw OCR text.
+ *
+ * The previous rule ended with a fallback that took the FIRST standalone 5-6
+ * digit run anywhere in the text. On an instrument cluster that is whichever
+ * number the OCR engine happened to emit first — the trip meter, the clock, an
+ * RPM figure, or part of the registration sitting in the same frame. It also
+ * capped at six digits, so any commercial vehicle past 999,999 km read as
+ * nothing at all.
+ *
+ * This version:
+ *   1. Prefers a number adjacent to a km / odometer keyword — the only
+ *      unambiguous signal available.
+ *   2. Otherwise takes the LARGEST plausible candidate. On a cluster the
+ *      odometer is the largest figure present; trip meter, speed, RPM and the
+ *      clock are all smaller.
+ *   3. Skips digit groups belonging to the registration number.
+ *   4. Accepts 4-7 digits, so high-mileage trucks are read rather than dropped.
+ *
+ * Returns a RegExp-style match array so the caller is unchanged, or null when
+ * nothing plausible is present — never a guess.
+ */
+function extractOdometerReading(text: string, vrn?: string): RegExpMatchArray | null {
+  const keyed =
+    text.match(/\b(\d{4,7}(?:\.\d)?)[ \t]*(?:km|kms|kilometers|odometer)\b/i) ||
+    text.match(/odometer\s*[:\-]?\s*(\d{4,7}(?:\.\d)?)/i);
+  if (keyed) return keyed;
+
+  const vrnDigits = new Set((vrn || "").replace(/[^0-9]/g, "").match(/\d{3,}/g) || []);
+
+  const candidates: { value: number; raw: string }[] = [];
+  const re = /\b(\d{4,7}(?:\.\d)?)\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const raw = m[1];
+    if (vrnDigits.has(raw.split(".")[0])) continue;
+    const value = parseFloat(raw);
+    if (!isFinite(value) || value <= 0 || value > 2000000) continue;
+    candidates.push({ value, raw });
+  }
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => b.value - a.value);
+  const best = candidates[0];
+  return [best.raw, best.raw] as unknown as RegExpMatchArray;
 }
 
 export class AzureOCRProcessor implements OCRProcessorProvider {

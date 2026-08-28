@@ -67,6 +67,10 @@ export default function GateEntryManager({
   // Dedicated OCR error state — never conflated with success notifications.
   // Shown as a red banner; triggers manual VRN entry fallback automatically.
   const [ocrError, setOcrError] = useState<string | null>(null);
+  /** Heading for the error banner. Defaults to the OCR case; gate-registration
+   *  and duplicate-guard failures set their own so the user is not told to
+   *  re-scan a plate that read perfectly. */
+  const [ocrErrorTitle, setOcrErrorTitle] = useState<string>("Plate Recognition Failed");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [mobileActiveView, setMobileActiveView] = useState<"form" | "ledger">("form");
@@ -362,6 +366,7 @@ export default function GateEntryManager({
             ? "No plate text detected in image. Ensure the plate is visible and well-lit, then try again."
             : `OCR failed: ${msg}. Enter the vehicle number manually.`;
 
+      setOcrErrorTitle("Plate Recognition Failed");
       setOcrError(userMsg);
       setTimeout(() => setOcrError(null), 10000);
       // Manual VRN entry is always available directly in the form — no need
@@ -410,6 +415,7 @@ export default function GateEntryManager({
         : /no camera/i.test(msg)
           ? "No camera available on this device. Enter the vehicle number manually."
           : `Camera capture failed: ${msg}. Enter the vehicle number manually.`;
+      setOcrErrorTitle("Plate Recognition Failed");
       setOcrError(userMsg);
       setTimeout(() => setOcrError(null), 10000);
     }
@@ -617,6 +623,7 @@ export default function GateEntryManager({
 
     if (duplicateJob) {
       const dupeLabel = duplicateJob.vrn || (duplicateJob as any).chassis_number || "Unknown";
+      setOcrErrorTitle("Duplicate Entry Blocked");
       setOcrError(
         `⚠️ Duplicate entry blocked: Vehicle "${dupeLabel}" already has an active job card (${duplicateJob.job_card_no || "—"}, status: ${duplicateJob.status}). Complete or invoice the existing entry before creating a new one.`
       );
@@ -652,6 +659,7 @@ export default function GateEntryManager({
     // they can see what happened and decide what to do, rather than silently
     // wiping their work and claiming success.
     if (result && result.success === false && !result.pendingApproval) {
+      setOcrErrorTitle("Gate Registration Failed");
       setOcrError(result.message || "Could not register gate entry.");
       setTimeout(() => setOcrError(null), 12000);
       return;
@@ -812,7 +820,12 @@ export default function GateEntryManager({
         <div className="p-4 bg-rose-500/10 border border-rose-500/30 text-rose-700 rounded-xl flex items-start gap-3 text-xs animate-in slide-in-from-top-2 duration-200">
           <AlertCircle className="h-5 w-5 shrink-0 mt-0.5 text-rose-500" />
           <div>
-            <p className="font-bold uppercase tracking-wider text-rose-600 mb-0.5">Plate Recognition Failed</p>
+            {/* The heading was hardcoded to "Plate Recognition Failed", but this
+                banner carries every error on the screen — including gate
+                registration failures. A 403 from POST /api/job-cards was being
+                shown to the user as a plate-recognition problem, sending them
+                to re-scan a number plate that had read perfectly. */}
+            <p className="font-bold uppercase tracking-wider text-rose-600 mb-0.5">{ocrErrorTitle}</p>
             <p>{ocrError}</p>
           </div>
           <button

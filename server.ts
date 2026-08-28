@@ -1439,10 +1439,34 @@ async function startServer() {
     }
   };
 
-  // Helper middleware to restrict access to specific roles
+  /**
+   * Restrict access to specific roles.
+   *
+   * The comparison is NORMALISED — lowercased, trimmed, and with spaces and
+   * underscores treated as equivalent. It used to be an exact string match,
+   * which failed for 26 of the 53 active logins.
+   *
+   * The cause is that createDefaultLoginForEmployee copies `employees.role`
+   * verbatim into user_access_master.user_role, and the Employee Directory
+   * holds human-readable titles: "Service Advisor", "Technician",
+   * "Service Manager". Every guard here is written in canonical snake_case, so
+   * "Service Advisor" !== "service_advisor" and the user was refused with
+   * "Access denied. Insufficient permissions." — which is exactly what a
+   * Service Advisor saw when trying to register a gate entry.
+   *
+   * Normalising only ever grants access where the stored role genuinely maps to
+   * an allowed canonical role. Titles with no canonical equivalent, such as
+   * "BD ASSISTANT/ DRIVER" or "BAY REPORTER", still match nothing and stay
+   * denied — and a Technician still cannot gate a vehicle in, because
+   * "technician" is not in that route's list.
+   */
+  const normaliseRoleName = (r: any) =>
+    String(r || "").toLowerCase().trim().replace(/[\s_]+/g, "_");
+
   const requireRoles = (allowedRoles: string[]) => {
+    const allowed = allowedRoles.map(normaliseRoleName);
     return (req: any, res: any, next: any) => {
-      if (!req.user || !allowedRoles.includes(req.user.role)) {
+      if (!req.user || !allowed.includes(normaliseRoleName(req.user.role))) {
         return res.status(403).json({ error: "Access denied. Insufficient permissions." });
       }
       next();

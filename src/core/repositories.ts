@@ -112,7 +112,13 @@ export class PermissionRepository implements IPermissionRepository {
   }
 
   public async findByRoleAndModule(roleName: string, moduleName: string): Promise<PermissionRow | null> {
-    const normalizedRole = (roleName || "").trim().toLowerCase();
+    // Spaces and underscores are equivalent. role_permissions stores canonical
+    // snake_case ("service_advisor") but user_access_master.user_role often
+    // holds the Employee Directory's human title ("Service Advisor"), because
+    // createDefaultLoginForEmployee copies employees.role verbatim. Lowercasing
+    // alone left "service advisor" !== "service_advisor", so every permission
+    // check failed for those accounts.
+    const normalizedRole = (roleName || "").trim().toLowerCase().replace(/[\s_]+/g, "_");
     const normalizedModule = (moduleName || "").trim().toLowerCase();
     
     let canonicalModule = moduleName;
@@ -131,7 +137,7 @@ export class PermissionRepository implements IPermissionRepository {
        FROM role_permissions rp
        LEFT JOIN roles r ON r.role_id = rp.role_id
        LEFT JOIN modules m ON m.module_id = rp.module_id
-       WHERE (LOWER(COALESCE(r.role_name, rp.role_name)) = ?)
+       WHERE (REPLACE(LOWER(COALESCE(r.role_name, rp.role_name)), ' ', '_') = ?)
          AND (LOWER(COALESCE(m.module_name, rp.module_name)) = ? OR LOWER(COALESCE(m.module_name, rp.module_name)) = ?)`,
       [normalizedRole, normalizedModule, canonicalModule.toLowerCase()]
     ) as any[];
