@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import { authenticateJwt } from '../middleware/auth';
 import { RealtimeOwnershipPipeline } from '../../core/workshop/realtime-ownership-pipeline';
+import { canAssignServiceAdvisor } from '../../core/workshop/assignment-roles';
 
 export const pipelineRouter = Router();
 
@@ -86,10 +87,7 @@ pipelineRouter.post('/reception/accept', authenticateJwt, async (req: any, res: 
  */
 pipelineRouter.get('/manager/queue', authenticateJwt, async (req: any, res: any) => {
   try {
-    const role = (req.user?.role || '').toLowerCase().trim().replace(/_/g, ' ');
-    const isAuthorized = ['service manager', 'works manager', 'workshop manager', 'general manager', 'admin'].includes(role);
-
-    if (!isAuthorized) {
+    if (!canAssignServiceAdvisor(req.user?.role)) {
       return res.status(403).json({ success: false, error: 'Unauthorized: Manager role required to access pending assignment queue.' });
     }
 
@@ -129,10 +127,7 @@ pipelineRouter.post('/manager/assign', authenticateJwt, async (req: any, res: an
       });
     }
 
-    const role = (req.user?.role || '').toLowerCase().trim().replace(/_/g, ' ');
-    const isAuthorized = ['service manager', 'works manager', 'workshop manager', 'general manager', 'admin'].includes(role);
-
-    if (!isAuthorized) {
+    if (!canAssignServiceAdvisor(req.user?.role)) {
       return res.status(403).json({ success: false, error: 'Unauthorized: Only authorized Managers can assign Service Advisors.' });
     }
 

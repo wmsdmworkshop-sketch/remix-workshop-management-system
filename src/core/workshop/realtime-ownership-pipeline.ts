@@ -7,6 +7,7 @@ import { pool as db } from "../../db/index";
 import { randomUUID } from "crypto";
 import { VosCorePlatform } from "../vos";
 import { makeSystemContext } from "../business-context";
+import { canAssignServiceAdvisor } from "./assignment-roles";
 
 export interface GateInPayload {
   vrn: string;
@@ -452,11 +453,9 @@ export class RealtimeOwnershipPipeline {
     const branchId = user?.branchId || user?.branch_id || payload.branchId || "BR-SEDAM";
     const assignmentId = `ASG-${randomUUID().substring(0, 8).toUpperCase()}`;
 
-    // Verify manager role authorization
-    const role = (user?.role || "").toLowerCase().trim().replace(/_/g, " ");
-    const isAuthorizedManager = ["service manager", "works manager", "workshop manager", "general manager", "admin"].includes(role);
-
-    if (!isAuthorizedManager) {
+    // Verify manager role authorization. Second line of defence: the route
+    // checks too, but this method is also reachable from other callers.
+    if (!canAssignServiceAdvisor(user?.role)) {
       throw new Error(`Unauthorized: User role '${user?.role}' is not permitted to assign Service Advisors.`);
     }
 
