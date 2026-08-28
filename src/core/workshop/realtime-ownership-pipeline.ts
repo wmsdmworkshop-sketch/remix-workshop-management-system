@@ -8,6 +8,8 @@ import { randomUUID } from "crypto";
 import { VosCorePlatform } from "../vos";
 import { makeSystemContext } from "../business-context";
 import { canAssignServiceAdvisor } from "./assignment-roles";
+import { resolveEventTimestamp } from "./backdate-policy";
+import { AuditService } from "../identity";
 
 export interface GateInPayload {
   vrn: string;
@@ -91,8 +93,35 @@ export class RealtimeOwnershipPipeline {
     const branchId = user?.branchId || user?.branch_id || payload.branchId || "BR-SEDAM";
     const gateEntryId = `GE-${randomUUID().substring(0, 8).toUpperCase()}`;
 
-    const now = new Date();
+    // Arrival time is the server clock unless an authorised operator explicitly
+    // backdates it. resolveEventTimestamp THROWS rather than falling back to
+    // now, so a refused backdate can never be recorded as a genuine arrival.
+    // See backdate-policy.ts: requires the `allow_backdated_entries` setting to
+    // be 'true', a role of admin/developer/gm_service, a stated reason, and a
+    // timestamp that is not in the future.
+    const arrival = await resolveEventTimestamp(
+      (payload as any).arrivalTime,
+      (payload as any).backdateReason,
+      user,
+      "gate entry"
+    );
+    const now = arrival.time;
+
+    // The SLA clock runs from the moment of arrival. On a backdated entry that
+    // means the handoff window may already have elapsed — which is correct:
+    // pretending the clock starts now would misreport the delay.
     const slaDueAt = new Date(now.getTime() + this.HANDOFF_SLA_MS);
+
+    if (arrival.backdated) {
+      await AuditService.logAction(
+        Number(user?.user_id ?? user?.id ?? 0) || 0,
+        user?.username || "unknown",
+        "GATE_ENTRY_BACKDATED",
+        `Gate entry ${gateEntryId} for ${vrnClean} recorded with a BACKDATED arrival of ` +
+          `${now.toISOString()} (actual server time ${new Date().toISOString()}). ` +
+          `Role: ${user?.role}. Reason: ${arrival.reason}`
+      ).catch((e: any) => console.error("[Backdate] audit write failed:", e?.message));
+    }
 
     // 1. Create VOS session atomically
     const session = await VosCorePlatform.vos.createSession(
