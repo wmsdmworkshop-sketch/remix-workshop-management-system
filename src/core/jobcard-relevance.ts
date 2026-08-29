@@ -36,7 +36,7 @@ export const GM_OVERRIDE_ROLES = ["gm_service"];
 export const GROUP3_VIEW_ONLY = ["dkam", "dealer_principal"];
 
 // Roles whose relevance is the workflow STAGE the JC currently sits in.
-// Values are matched against jc.current_workflow_state (and a status fallback).
+// Values are matched against jc.workshop_stage (and a status fallback).
 const STAGE_RULES: Record<string, { states: string[]; statuses?: string[]; flag?: string }> = {
   reception:      { states: ["GATE_IN", "INTAKE_PENDING", "INTAKE_QUEUE", "RECEPTION_QUEUE"], statuses: ["Gate In", "Draft"] },
   receptionist:   { states: ["GATE_IN", "INTAKE_PENDING", "INTAKE_QUEUE", "RECEPTION_QUEUE"], statuses: ["Gate In", "Draft"] },
@@ -55,6 +55,16 @@ const STAGE_RULES: Record<string, { states: string[]; statuses?: string[]; flag?
 };
 
 const norm = (v: any): string => String(v ?? "").trim().toLowerCase();
+
+/**
+ * Canonical role key. user_access_master.user_role holds either the snake_case
+ * key ("service_advisor") or the Employee Directory's human title ("Service
+ * Advisor"), because createDefaultLoginForEmployee copies employees.role
+ * verbatim. Every table below is keyed snake_case, so a title-case value used
+ * raw silently matches nothing — an advisor then owned no stage at all.
+ */
+const normRole = (v: any): string =>
+  String(v ?? "").trim().toLowerCase().replace(/[\s_]+/g, "_");
 
 /** True when the JC carries a persistent ownership link to this user. */
 export function isOwnedBy(jc: any, user: RelevanceUser): boolean {
@@ -84,9 +94,12 @@ export function isOwnedBy(jc: any, user: RelevanceUser): boolean {
 /** True when the JC currently sits in a workflow stage this role handles. */
 export function isInMyStage(jc: any, role?: string): boolean {
   if (!role) return false;
-  const rule = STAGE_RULES[role];
+  const rule = STAGE_RULES[normRole(role)];
   if (!rule) return false;
-  const state = String(jc?.current_workflow_state ?? "").toUpperCase();
+  // The job-card tables carry `workshop_stage`; there is no
+  // `current_workflow_state` column, so reading it alone matched nothing and
+  // every stage rule fell through to its status list.
+  const state = String(jc?.workshop_stage ?? jc?.current_workflow_state ?? "").toUpperCase();
   if (rule.states.some(s => s.toUpperCase() === state)) return true;
   if (rule.flag && (jc?.[rule.flag] === true || jc?.[rule.flag] === 1)) return true;
   if (rule.statuses && rule.statuses.some(s => norm(s) === norm(jc?.status))) return true;
@@ -97,7 +110,7 @@ export function isInMyStage(jc: any, role?: string): boolean {
 export function canViewJobCard(jc: any, user: RelevanceUser): boolean {
   const role = user?.role;
   if (!role) return true; // unauthenticated / unknown → no scoping (legacy behaviour)
-  if (GROUP1_FULL_CONTROL.includes(role) || GROUP2_VIEW_ALL_EDIT_OWN.includes(role) || GROUP3_VIEW_ONLY.includes(role)) {
+  if (GROUP1_FULL_CONTROL.includes(normRole(role)) || GROUP2_VIEW_ALL_EDIT_OWN.includes(normRole(role)) || GROUP3_VIEW_ONLY.includes(normRole(role))) {
     return true;
   }
   return isOwnedBy(jc, user) || isInMyStage(jc, role);
@@ -107,10 +120,10 @@ export function canViewJobCard(jc: any, user: RelevanceUser): boolean {
 export function canEditJobCard(jc: any, user: RelevanceUser): boolean {
   const role = user?.role;
   if (!role) return true; // legacy — Phase 2 will require auth on actions
-  if (GROUP1_FULL_CONTROL.includes(role)) return true;
-  if (GROUP3_VIEW_ONLY.includes(role)) return false; // observer: never edits
+  if (GROUP1_FULL_CONTROL.includes(normRole(role))) return true;
+  if (GROUP3_VIEW_ONLY.includes(normRole(role))) return false; // observer: never edits
   // GM: allowed to edit anything (override), but the caller audits it.
-  if (GM_OVERRIDE_ROLES.includes(role)) return true;
+  if (GM_OVERRIDE_ROLES.includes(normRole(role))) return true;
   // Group 2 (supervisor) and everyone scoped: only own/relevant.
   return isOwnedBy(jc, user) || isInMyStage(jc, role);
 }
@@ -122,16 +135,16 @@ export function canEditJobCard(jc: any, user: RelevanceUser): boolean {
  */
 export function isGmOverride(jc: any, user: RelevanceUser): boolean {
   const role = user?.role;
-  if (!role || !GM_OVERRIDE_ROLES.includes(role)) return false;
+  if (!role || !GM_OVERRIDE_ROLES.includes(normRole(role))) return false;
   return !(isOwnedBy(jc, user) || isInMyStage(jc, role));
 }
 
 /** True when the role sees the entire workshop (no read filtering needed). */
 export function isFullViewRole(role?: string): boolean {
   return !!role && (
-    GROUP1_FULL_CONTROL.includes(role) ||
-    GROUP2_VIEW_ALL_EDIT_OWN.includes(role) ||
-    GROUP3_VIEW_ONLY.includes(role)
+    GROUP1_FULL_CONTROL.includes(normRole(role)) ||
+    GROUP2_VIEW_ALL_EDIT_OWN.includes(normRole(role)) ||
+    GROUP3_VIEW_ONLY.includes(normRole(role))
   );
 }
 

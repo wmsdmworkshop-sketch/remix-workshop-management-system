@@ -1555,7 +1555,10 @@ async function startServer() {
     "/api/auth/verify-otp",
     "/api/auth/reset-password-request",
     "/api/auth/reset-password-verify",
-    "/api/db/reload",           // internal webhook — will be secured separately
+    // NOTE: /api/db/reload used to sit here as an "internal webhook — will be
+    // secured separately". It never was: any unauthenticated caller could force
+    // a full re-read of the database on every request. It now requires an
+    // admin/developer JWT like any other privileged operation.
     "/api/v1/devops/cron/sla-evaluator", // Cloud Scheduler cron — secured by its own Google-OIDC + x-cloudscheduler check below, not the app JWT
     "/api/v2/graph",            // AICopilotPanel — matches its source router's original (unauthenticated) design; used app-wide
   ];
@@ -2891,7 +2894,7 @@ async function startServer() {
   });
 
   // API: Force reload state from the database
-  app.post("/api/db/reload", async (req, res) => {
+  app.post("/api/db/reload", authenticateToken, requireRoles(["admin", "developer"]), async (req, res) => {
     try {
       console.log("Forcing manual reload of database data from Railway MySQL...");
       const freshDB = await syncLoad();

@@ -93,7 +93,7 @@ import {
 // Import modular panels
 import Dashboard from "./components/Dashboard";
 import JobCardManager from "./components/JobCardManager";
-import { getStaffToken, setStaffToken, clearStaffToken } from "./lib/authToken";
+import { getStaffToken, setStaffToken, clearStaffToken, staffAuthHeaders } from "./lib/authToken";
 import EmployeeDirectory from "./components/EmployeeDirectory";
 import ProductivityDashboard from "./components/ProductivityDashboard";
 import ActiveBayTatMonitor from "./components/ActiveBayTatMonitor";
@@ -747,6 +747,31 @@ export default function App() {
     ],
   };
 
+  /**
+   * Gate-in is security and reception work. Every other role that carries the
+   * Gate Entry tab (service advisor, workshop manager, supervisor) sees the
+   * ledger read-only — no register form, no gate-out pass.
+   */
+  const GATE_IN_ROLES = [
+    "security_agent", "gate_personnel", "reception", "receptionist", "admin", "developer",
+  ];
+
+  /**
+   * ROLE_TABS is keyed snake_case, but user_access_master.user_role may hold the
+   * Employee Directory's human title ("Service Advisor") because
+   * createDefaultLoginForEmployee copies employees.role verbatim. A raw lookup
+   * then misses, and the old `|| ROLE_TABS["reception"]` fallback silently
+   * handed that user the RECEPTIONIST's screens — an advisor was shown Reception
+   * Intake and Gate Entry and no Job Cards tab at all. Showing someone another
+   * role's console is worse than showing them nothing, so there is no
+   * cross-role fallback: an unknown role resolves to no tabs.
+   */
+  const tabsForRole = (role: any): Array<{ id: string; label: string; icon: any }> => {
+    if (!role) return [];
+    const key = String(role).toLowerCase().trim().replace(/[\s_]+/g, "_");
+    return ROLE_TABS[key] || ROLE_TABS[String(role)] || [];
+  };
+
   // Dynamically ensure every role has the "My Profile" tab
   Object.keys(ROLE_TABS).forEach(role => {
     const tabs = ROLE_TABS[role];
@@ -772,7 +797,7 @@ export default function App() {
   // Keep active tab safe on user load or role change
   useEffect(() => {
     if (user) {
-      const permittedTabs = ROLE_TABS[user.role] || [];
+      const permittedTabs = tabsForRole(user.role);
       if (permittedTabs.length > 0 && !permittedTabs.some(t => t.id === activeTab)) {
         setActiveTab(permittedTabs[0].id);
       }
@@ -808,7 +833,8 @@ export default function App() {
     setIsReloading(true);
     setReloadSuccess(false);
     try {
-      const res = await fetch("/api/db/reload", { method: "POST" });
+      // The endpoint now requires an admin/developer JWT.
+      const res = await fetch("/api/db/reload", { method: "POST", headers: staffAuthHeaders() });
       if (res.ok) {
         await fetchAllData();
         setReloadSuccess(true);
@@ -998,7 +1024,7 @@ export default function App() {
               localStorage.setItem("wms_user", JSON.stringify(updated));
               return updated;
             });
-            const currentRoleTabs = ROLE_TABS[freshUser.role] || ROLE_TABS["reception"] || [];
+            const currentRoleTabs = tabsForRole(freshUser.role);
             setActiveTab((cur: string) =>
               currentRoleTabs.some((t: any) => t.id === cur)
                 ? cur
@@ -1505,7 +1531,7 @@ export default function App() {
     );
   }
 
-  const baseTabs = ((user && ROLE_TABS[user.role]) || ROLE_TABS["reception"] || []).filter(
+  const baseTabs = tabsForRole(user?.role).filter(
     t => {
       if (t.id === "assistant" && !aiModeEnabled) return false;
       const isRc1 = import.meta.env.VITE_WORKFORCE_PROFILE === "rc1";
@@ -1729,7 +1755,28 @@ export default function App() {
           )}
 
           {activeTab === "users" && (
-            <UserManagement currentUser={user} token={token} />
+            <>
+              {/* The server holds job cards, employees and permissions in an
+                  in-memory cache loaded at boot. After a direct database change
+                  this reloads it without a redeploy. handleReloadDatabase
+                  existed but was never wired to anything. */}
+              <div className="flex items-center justify-end gap-3 mb-3">
+                {reloadSuccess && (
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2.5 py-1">
+                    Cache reloaded from database.
+                  </span>
+                )}
+                <button
+                  onClick={handleReloadDatabase}
+                  disabled={isReloading}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 disabled:opacity-60 border border-slate-200 rounded-lg px-3 py-1.5 transition cursor-pointer"
+                >
+                  <Database className={`h-3.5 w-3.5 ${isReloading ? "animate-pulse" : ""}`} />
+                  <span>{isReloading ? "Reloading…" : "Reload Database Cache"}</span>
+                </button>
+              </div>
+              <UserManagement currentUser={user} token={token} />
+            </>
           )}
 
           {activeTab === "certification" && (
@@ -1976,12 +2023,15 @@ export default function App() {
           {activeTab === "gate-entry" && (
             <ErrorBoundary fallbackMessage="Gate Inward Registry encountered an issue. Tap retry to restore.">
               <React.Suspense fallback={<FunnyLoader message="Loading gate registry..." />}>
-                <GateEntryManager 
-                  bays={bays} 
-                  jobCards={jobCards} 
-                  onCreateJob={handleCreateJob} 
+                <GateEntryManager
+                  bays={bays}
+                  jobCards={jobCards}
+                  onCreateJob={handleCreateJob}
                   onUpdateJob={handleUpdateJob}
-                  onRefresh={fetchAllData} 
+                  onRefresh={fetchAllData}
+                  readOnly={!GATE_IN_ROLES.includes(
+                    String(user?.role || "").toLowerCase().trim().replace(/[\s_]+/g, "_")
+                  )}
                 />
               </React.Suspense>
             </ErrorBoundary>

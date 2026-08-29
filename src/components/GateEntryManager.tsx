@@ -43,14 +43,21 @@ interface GateEntryManagerProps {
   ) => Promise<{ success: boolean; pendingApproval?: boolean; message?: string } | void>;
   onUpdateJob: (id: number, updatedFields: Partial<JobCard>) => void;
   onRefresh: () => void;
+  /**
+   * Gate-in belongs to security and reception. Other roles that need visibility
+   * of the gate ledger (a service advisor tracking an arrival) get it read-only:
+   * the register form and gate-out action are withheld.
+   */
+  readOnly?: boolean;
 }
 
-export default function GateEntryManager({ 
-  jobCards, 
-  bays, 
-  onCreateJob, 
+export default function GateEntryManager({
+  jobCards,
+  bays,
+  onCreateJob,
   onUpdateJob,
-  onRefresh 
+  onRefresh,
+  readOnly = false
 }: GateEntryManagerProps) {
   // State variables
   const [vrn, setVrn] = useState("");
@@ -593,6 +600,7 @@ export default function GateEntryManager({
   // Handler to register entries
   const handleRegisterEntry = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnly) return; // view-only role — the form is not rendered either
     const activeIdentifier = anprFailed ? chassisNumber : vrn;
     if (!activeIdentifier || !customerName || !customerMobile) return;
 
@@ -698,6 +706,7 @@ export default function GateEntryManager({
   };
 
   const handleGateOut = (jobId: number) => {
+    if (readOnly) return; // view-only role — the button is not rendered either
     onUpdateJob(jobId, { status: "Invoiced", remarks: "Vehicle cleared Gate-Out" });
     setSuccess(`Vehicle status updated to Invoiced. Gate-Out cleared!`);
     setTimeout(() => setSuccess(null), 4000);
@@ -837,7 +846,7 @@ export default function GateEntryManager({
       )}
 
       {/* Mobile Toggle Switch */}
-      <div className="lg:hidden flex bg-slate-200/60 p-1 rounded-xl shadow-inner border border-slate-300/40">
+      <div className={`lg:hidden ${readOnly ? "hidden" : "flex"} bg-slate-200/60 p-1 rounded-xl shadow-inner border border-slate-300/40`}>
         <button
           type="button"
           onClick={() => setMobileActiveView("form")}
@@ -865,9 +874,9 @@ export default function GateEntryManager({
       {/* Grid: Stats and Action form */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Form panel */}
+        {/* Form panel — withheld from view-only roles; gate-in is security/reception work. */}
         <div className={`lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4 ${
-          mobileActiveView === "form" ? "block" : "hidden lg:block"
+          readOnly ? "hidden" : mobileActiveView === "form" ? "block" : "hidden lg:block"
         }`}>
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2">
@@ -1339,7 +1348,7 @@ export default function GateEntryManager({
                       <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded">
                         Cleared Outward
                       </span>
-                    ) : job.status === "Completed" ? (
+                    ) : job.status === "Completed" && !readOnly ? (
                       <button
                         onClick={() => handleGateOut(job.job_id)}
                         className="ds-button-success px-2.5 py-1.5   hover:bg-emerald-700 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"
