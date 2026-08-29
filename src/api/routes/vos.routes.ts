@@ -9,13 +9,37 @@ import { authenticateJwt } from '../middleware/auth.ts';
 
 export const vosRouter = Router();
 
+const normaliseRole = (role: unknown) => String(role || "").toLowerCase().trim().replace(/[\s_]+/g, "_");
+
+function requireVosRoles(allowedRoles: string[]) {
+  const allowed = new Set(allowedRoles.map(normaliseRole));
+  return (req: any, res: any, next: any) => {
+    if (!req.user || !allowed.has(normaliseRole(req.user.role))) {
+      return res.status(403).json({ success: false, error: "VOS_ROLE_FORBIDDEN" });
+    }
+    next();
+  };
+}
+
+function authenticatedActor(req: any) {
+  return {
+    id: String(req.user.id ?? req.user.user_id),
+    role: normaliseRole(req.user.role),
+  };
+}
+
+const VOS_GATE_ROLES = ["security_agent", "gate_personnel", "reception", "receptionist", "bay_reporter", "supervisor", "service_manager", "works_manager", "workshop_manager", "gm_service", "admin", "developer"];
+const VOS_SERVICE_ROLES = ["service_advisor", "service_manager", "works_manager", "workshop_manager", "gm_service", "admin", "developer"];
+const VOS_CONTROL_ROLES = ["supervisor", "floor_supervisor", "floor_incharge", "service_manager", "works_manager", "workshop_manager", "gm_service", "admin", "developer"];
+const VOS_DEVIATION_APPROVER_ROLES = ["service_manager", "works_manager", "workshop_manager", "gm_service", "dealer_principal", "admin", "developer"];
+
 /**
  * POST /api/vos/gate-in
  * Create a new Vehicle Operational Session on Gate In
  */
-vosRouter.post('/gate-in', async (req, res) => {
+vosRouter.post('/gate-in', authenticateJwt, requireVosRoles(VOS_GATE_ROLES), async (req: any, res) => {
   try {
-    const { vin, registrationNumber, actorId, actorRole } = req.body;
+    const { vin, registrationNumber } = req.body;
     if (!vin || !registrationNumber) {
       return res.status(400).json({ success: false, error: 'vin and registrationNumber are mandatory' });
     }
@@ -23,8 +47,8 @@ vosRouter.post('/gate-in', async (req, res) => {
     const session = await VosCorePlatform.vos.createSession(
       vin,
       registrationNumber,
-      actorId || 'usr_sec_agent',
-      actorRole || 'security_agent'
+      authenticatedActor(req).id,
+      authenticatedActor(req).role
     );
 
     return res.status(201).json({ success: true, data: session });
@@ -37,15 +61,13 @@ vosRouter.post('/gate-in', async (req, res) => {
  * POST /api/vos/:id/operational-readiness
  * Set Operational Readiness on VOS
  */
-vosRouter.post('/:id/operational-readiness', async (req, res) => {
+vosRouter.post('/:id/operational-readiness', authenticateJwt, requireVosRoles(VOS_SERVICE_ROLES), async (req: any, res) => {
   try {
     const { id } = req.params;
-    const { actorId, actorRole } = req.body;
-
     const session = await VosCorePlatform.vos.setOperationalReadiness(
       id,
-      actorId || 'usr_sa_1',
-      actorRole || 'service_advisor'
+      authenticatedActor(req).id,
+      authenticatedActor(req).role
     );
 
     return res.json({ success: true, data: session });
@@ -58,17 +80,17 @@ vosRouter.post('/:id/operational-readiness', async (req, res) => {
  * POST /api/vos/:id/transition
  * Transition VOS state
  */
-vosRouter.post('/:id/transition', async (req, res) => {
+vosRouter.post('/:id/transition', authenticateJwt, requireVosRoles(VOS_CONTROL_ROLES), async (req: any, res) => {
   try {
     const { id } = req.params;
-    const { targetState, actorId, actorRole, reason } = req.body;
+    const { targetState, reason } = req.body;
 
     const session = VosCorePlatform.vos.getSession(id);
     const updated = await VosCorePlatform.state.transitionState(
       session,
       targetState,
-      actorId || 'usr_supervisor',
-      actorRole || 'supervisor',
+      authenticatedActor(req).id,
+      authenticatedActor(req).role,
       reason
     );
 
@@ -82,16 +104,16 @@ vosRouter.post('/:id/transition', async (req, res) => {
  * POST /api/vos/:id/attach-job-card
  * Attach OEM Job Card milestone (requires Operational Readiness)
  */
-vosRouter.post('/:id/attach-job-card', async (req, res) => {
+vosRouter.post('/:id/attach-job-card', authenticateJwt, requireVosRoles(VOS_SERVICE_ROLES), async (req: any, res) => {
   try {
     const { id } = req.params;
-    const { jobCardNumber, actorId, actorRole } = req.body;
+    const { jobCardNumber } = req.body;
 
     const session = await VosCorePlatform.vos.attachOemJobCard(
       id,
       jobCardNumber,
-      actorId || 'usr_sa_1',
-      actorRole || 'service_advisor'
+      authenticatedActor(req).id,
+      authenticatedActor(req).role
     );
 
     return res.json({ success: true, data: session });
@@ -104,16 +126,17 @@ vosRouter.post('/:id/attach-job-card', async (req, res) => {
  * POST /api/vos/:id/transfer-ownership
  * Transfer VOS ownership/custody between roles
  */
-vosRouter.post('/:id/transfer-ownership', async (req, res) => {
+vosRouter.post('/:id/transfer-ownership', authenticateJwt, requireVosRoles(VOS_CONTROL_ROLES), async (req: any, res) => {
   try {
     const { id } = req.params;
-    const { fromUserId, toUserId, fromRole, toRole, reason } = req.body;
+    const { toUserId, toRole, reason } = req.body;
+    const actor = authenticatedActor(req);
 
     const record = await VosCorePlatform.ownership.transferOwnership({
       vosId: id,
-      fromUserId,
+      fromUserId: actor.id,
       toUserId,
-      fromRole,
+      fromRole: actor.role,
       toRole,
       reason
     });
@@ -128,16 +151,16 @@ vosRouter.post('/:id/transfer-ownership', async (req, res) => {
  * POST /api/vos/:id/request-deviation
  * Request an exception deviation
  */
-vosRouter.post('/:id/request-deviation', async (req, res) => {
+vosRouter.post('/:id/request-deviation', authenticateJwt, requireVosRoles([...VOS_SERVICE_ROLES, ...VOS_CONTROL_ROLES]), async (req: any, res) => {
   try {
     const { id } = req.params;
-    const { deviationType, reason, requestedBy } = req.body;
+    const { deviationType, reason } = req.body;
 
     const deviation = await VosCorePlatform.vos.requestDeviation(
       id,
       deviationType,
       reason,
-      requestedBy || 'usr_sa_1'
+      authenticatedActor(req).id
     );
 
     return res.status(201).json({ success: true, data: deviation });
@@ -150,14 +173,12 @@ vosRouter.post('/:id/request-deviation', async (req, res) => {
  * POST /api/vos/deviations/:id/approve
  * Approve an exception deviation
  */
-vosRouter.post('/deviations/:id/approve', async (req, res) => {
+vosRouter.post('/deviations/:id/approve', authenticateJwt, requireVosRoles(VOS_DEVIATION_APPROVER_ROLES), async (req: any, res) => {
   try {
     const { id } = req.params;
-    const { approvedBy } = req.body;
-
     const deviation = await VosCorePlatform.vos.approveDeviation(
       id,
-      approvedBy || 'usr_gm_1'
+      authenticatedActor(req).id
     );
 
     return res.json({ success: true, data: deviation });
@@ -170,15 +191,13 @@ vosRouter.post('/deviations/:id/approve', async (req, res) => {
  * POST /api/vos/:id/gate-out
  * Gate Out / Close VOS (requires OEM Job Card OR Approved Deviation)
  */
-vosRouter.post('/:id/gate-out', async (req, res) => {
+vosRouter.post('/:id/gate-out', authenticateJwt, requireVosRoles(VOS_GATE_ROLES), async (req: any, res) => {
   try {
     const { id } = req.params;
-    const { actorId, actorRole } = req.body;
-
     const session = await VosCorePlatform.vos.gateOut(
       id,
-      actorId || 'usr_sec_agent',
-      actorRole || 'security_agent'
+      authenticatedActor(req).id,
+      authenticatedActor(req).role
     );
 
     return res.json({ success: true, data: session });
@@ -221,7 +240,7 @@ vosRouter.get('/all', authenticateJwt, (req: any, res: any) => {
  * GET /api/vos/:id
  * Retrieve VOS session details
  */
-vosRouter.get('/:id', (req, res) => {
+vosRouter.get('/:id', authenticateJwt, (req, res) => {
   try {
     const session = VosCorePlatform.vos.getSession(req.params.id);
     const deviations = VosCorePlatform.vos.getDeviationsForVos(req.params.id);
@@ -246,7 +265,7 @@ vosRouter.get('/:id', (req, res) => {
  * GET /api/vos/:id/timeline
  * Retrieve dual timeline nodes
  */
-vosRouter.get('/:id/timeline', (req, res) => {
+vosRouter.get('/:id/timeline', authenticateJwt, (req, res) => {
   const { type } = req.query;
   const nodes = VosCorePlatform.timeline.getTimelineForVos(
     req.params.id,

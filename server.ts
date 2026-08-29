@@ -1482,7 +1482,7 @@ async function startServer() {
     "workshop_manager", "service_manager", "admin", "developer",
   ];
 
-  const requireRoles = (allowedRoles: string[]) => {
+  const requireRoles = (allowedRoles: readonly string[]) => {
     const allowed = allowedRoles.map(normaliseRoleName);
     return (req: any, res: any, next: any) => {
       if (!req.user || !allowed.includes(normaliseRoleName(req.user.role))) {
@@ -4957,7 +4957,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
 
   // Cashier queue (invoice-driven, Phase A): jobs with a raised invoice (= billing
   // evidence) and no active gate pass yet. Enriched with live job-card + payment state.
-  app.get("/api/gate-out/cashier-queue", authenticateToken, async (_req: any, res: any) => {
+  app.get("/api/gate-out/cashier-queue", authenticateToken, requireRoles(GATE_PASS_ISSUE_ROLES), async (_req: any, res: any) => {
     try {
       await markSlaBreaches();
       const [invoices]: any = await dbPool.execute(`
@@ -5012,13 +5012,13 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       if (!billed) {
         return res.status(400).json({ error: "GATE_PASS_NOT_ELIGIBLE: no invoice raised for this job yet." });
       }
-      // Release basis is DERIVED from real records (client can't claim PAID). A manager may
-      // force a manual exception by passing releaseBasis = MANUAL_GATE_PASS.
+      // Release basis is derived exclusively from persisted payment or GM-credit records.
+      // Manual gate passes are governed by the BillingEngine workflow; this legacy endpoint
+      // must never mint one from a client-supplied releaseBasis value.
       let basis: string;
       if (hasPayment) basis = "PAID";
       else if (hasCredit) basis = "CREDIT_APPROVED";
-      else if (String(releaseBasis || "").toUpperCase() === "MANUAL_GATE_PASS") basis = "MANUAL_GATE_PASS";
-      else return res.status(400).json({ error: "GATE_PASS_NOT_ELIGIBLE: record a payment, get credit approved, or issue a manual override." });
+      else return res.status(400).json({ error: "GATE_PASS_NOT_ELIGIBLE: record a payment or obtain GM-approved credit." });
       // A pass with a mandatory reference for non-cash modes (mirror engine rule).
       if (paymentMode && ["UPI", "NEFT", "RTGS", "IMPS", "CARD", "CHEQUE"].includes(String(paymentMode).toUpperCase()) && !String(referenceNumber || "").trim()) {
         return res.status(400).json({ error: `PAYMENT_REFERENCE_REQUIRED: reference is mandatory for ${paymentMode}.` });
@@ -5051,7 +5051,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // Security exit queue: issued passes not yet gated out.
-  app.get("/api/gate-out/security-queue", authenticateToken, async (_req: any, res: any) => {
+  app.get("/api/gate-out/security-queue", authenticateToken, requireRoles(GATE_OUT_SECURITY_ROLES), async (_req: any, res: any) => {
     try {
       await markSlaBreaches();
       const [rows]: any = await dbPool.execute(`
@@ -5078,8 +5078,13 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
 
     // Phase C: a gate-out must be backed by a real rear-plate evidence record.
     if (evidenceId) {
-      const [ev]: any = await dbPool.execute(`SELECT evidence_id FROM tbl_evidence WHERE evidence_id = ? LIMIT 1`, [evidenceId]);
-      if ((ev || []).length === 0) throw new Error("REAR_EVIDENCE_REQUIRED: evidence id not found.");
+      const [ev]: any = await dbPool.execute(
+        `SELECT evidence_id FROM tbl_evidence
+         WHERE evidence_id = ? AND job_id = ? AND gate_pass_id = ? AND evidence_type = 'REAR_PLATE'
+         LIMIT 1`,
+        [evidenceId, String(pass.job_id), pass.gate_pass_id]
+      );
+      if ((ev || []).length === 0) throw new Error("REAR_EVIDENCE_REQUIRED: evidence must belong to this job and gate pass.");
     } else if (source === "ANPR") {
       // ANPR read is itself the capture — persist it as an evidence record.
       evidenceId = genId("EVID");
@@ -5098,6 +5103,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'VERIFIED', ?)`,
       [goId, pass.gate_pass_id, String(pass.job_id), operatorId || null, evidenceId || null, source, normVrn(pass.vrn), normVrn(detectedVrn), imageUrl || null]
     );
+    await dbPool.execute(`UPDATE tbl_evidence SET lifecycle_status = 'VERIFIED' WHERE evidence_id = ?`, [evidenceId]);
     await dbPool.execute(`UPDATE tbl_gate_pass SET status = 'VERIFIED' WHERE gate_pass_id = ?`, [pass.gate_pass_id]);
     await closeSla("SLA_CASHIER_TO_SECURITY", pass.job_id); // Phase B: security accepted.
     // Mark the in-memory job card delivered / gated out.
@@ -5155,7 +5161,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       const [rows]: any = await dbPool.execute(`SELECT * FROM tbl_gate_pass WHERE gate_pass_id = ? LIMIT 1`, [gatePassId]);
       const pass = (rows || [])[0];
       if (!pass) return res.status(404).json({ error: "GATE_PASS_INVALID" });
-      if (pass.status === "REVOKED") return res.status(400).json({ error: "GATE_PASS_INVALID: revoked." });
+      if (pass.status !== "ISSUED") return res.status(400).json({ error: "GATE_PASS_INVALID: pass is not active." });
 
       const expect = normVrn(expectedVrn || pass.vrn);
       if (expect && normVrn(detectedVrn) !== expect) {
@@ -5173,17 +5179,21 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // Cashier claims a job (optional soft-lock so two cashiers don't double-process).
-  app.post("/api/gate-out/claim-task", authenticateToken, async (req: any, res: any) => {
+  app.post("/api/gate-out/claim-task", authenticateToken, requireRoles([...GATE_PASS_ISSUE_ROLES, ...GATE_OUT_SECURITY_ROLES]), async (req: any, res: any) => {
     try {
       const { jobId, taskType } = req.body || {};
-      if (!jobId || !taskType) return res.status(400).json({ error: "Missing jobId or taskType." });
+      const task = String(taskType || "").toUpperCase();
+      const role = normaliseRoleName(req.user?.role);
+      if (!jobId || !["CASHIER", "SECURITY"].includes(task)) return res.status(400).json({ error: "jobId and taskType (CASHIER/SECURITY) are required." });
+      if (task === "CASHIER" && !GATE_PASS_ISSUE_ROLES.includes(role)) return res.status(403).json({ error: "Cashier task claim is not permitted for this role." });
+      if (task === "SECURITY" && !GATE_OUT_SECURITY_ROLES.includes(role)) return res.status(403).json({ error: "Security task claim is not permitted for this role." });
       const owner = String(req.user?.user_id ?? "");
-      const [rows]: any = await dbPool.execute(`SELECT owner_id FROM tbl_task_claims WHERE job_id = ? AND task_type = ? LIMIT 1`, [String(jobId), String(taskType)]);
+      const [rows]: any = await dbPool.execute(`SELECT owner_id FROM tbl_task_claims WHERE job_id = ? AND task_type = ? LIMIT 1`, [String(jobId), task]);
       if ((rows || []).length > 0) {
         if (rows[0].owner_id !== owner) return res.status(409).json({ error: "TASK_ALREADY_CLAIMED" });
         return res.json({ success: true, ownerId: owner });
       }
-      await dbPool.execute(`INSERT INTO tbl_task_claims (claim_id, job_id, task_type, owner_id) VALUES (?, ?, ?, ?)`, [genId("CLAIM"), String(jobId), String(taskType), owner]);
+      await dbPool.execute(`INSERT INTO tbl_task_claims (claim_id, job_id, task_type, owner_id) VALUES (?, ?, ?, ?)`, [genId("CLAIM"), String(jobId), task, owner]);
       res.json({ success: true, ownerId: owner });
     } catch (err: any) {
       console.error("[GATE-OUT] claim-task:", err.message);
@@ -5265,7 +5275,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       res.json(rows || []);
     } catch (err: any) { res.status(500).json({ error: "Failed to load credit requests." }); }
   });
-  app.get("/api/gate-out/gm-pending-credits", authenticateToken, async (_req: any, res: any) => {
+  app.get("/api/gate-out/gm-pending-credits", authenticateToken, requireRoles(["admin", "developer", "gm_service"]), async (_req: any, res: any) => {
     try {
       const [rows]: any = await dbPool.execute(`SELECT * FROM tbl_credit_requests WHERE status = 'REQUESTED' ORDER BY requested_at DESC LIMIT 200`);
       res.json(rows || []);
@@ -5277,7 +5287,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       res.json(rows || []);
     } catch (err: any) { res.status(500).json({ error: "Failed to load payments." }); }
   });
-  app.get("/api/gate-out/gate-pass-ready", authenticateToken, async (_req: any, res: any) => {
+  app.get("/api/gate-out/gate-pass-ready", authenticateToken, requireRoles(GATE_OUT_SECURITY_ROLES), async (_req: any, res: any) => {
     try {
       const [rows]: any = await dbPool.execute(`
         SELECT gp.* FROM tbl_gate_pass gp
@@ -5319,14 +5329,25 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // Phase C: register a rear-plate (or other) evidence capture, returns its id.
-  app.post("/api/gate-out/evidence", authenticateToken, express.json({ limit: "8mb" }), async (req: any, res: any) => {
+  app.post("/api/gate-out/evidence", authenticateToken, requireRoles(GATE_OUT_SECURITY_ROLES), express.json({ limit: "8mb" }), async (req: any, res: any) => {
     try {
       const { jobId, gatePassId, type, imageUrl } = req.body || {};
+      if (!gatePassId || String(type || "REAR_PLATE").toUpperCase() !== "REAR_PLATE" || !String(imageUrl || "").trim()) {
+        return res.status(400).json({ error: "gatePassId, REAR_PLATE evidence, and imageUrl are required." });
+      }
+      const [passes]: any = await dbPool.execute(
+        `SELECT job_id, status FROM tbl_gate_pass WHERE gate_pass_id = ? LIMIT 1`, [gatePassId]
+      );
+      const pass = (passes || [])[0];
+      if (!pass || pass.status !== "ISSUED") return res.status(400).json({ error: "GATE_PASS_INVALID: active pass required for evidence." });
+      if (jobId != null && String(jobId) !== String(pass.job_id)) {
+        return res.status(400).json({ error: "EVIDENCE_JOB_MISMATCH" });
+      }
       const evId = genId("EVID");
       await dbPool.execute(
         `INSERT INTO tbl_evidence (evidence_id, job_id, gate_pass_id, evidence_type, image_url, capture_source, captured_by, lifecycle_status)
          VALUES (?, ?, ?, ?, ?, 'MANUAL_CAMERA', ?, 'CAPTURED')`,
-        [evId, jobId != null ? String(jobId) : null, gatePassId || null, String(type || "REAR_PLATE"), imageUrl || null, String(req.user?.user_id ?? "")]
+        [evId, String(pass.job_id), gatePassId, "REAR_PLATE", imageUrl || null, String(req.user?.user_id ?? "")]
       );
       res.status(201).json({ evidenceId: evId });
     } catch (err: any) {
@@ -5336,7 +5357,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // Open/breached handoff SLA clocks (dashboard). Optional ?stage= filter.
-  app.get("/api/gate-out/sla-breaches", authenticateToken, async (req: any, res: any) => {
+  app.get("/api/gate-out/sla-breaches", authenticateToken, requireRoles(["admin", "developer", "gm_service", "workshop_manager", "service_manager", "cashier", "security_agent", "gate_personnel"]), async (req: any, res: any) => {
     try {
       await markSlaBreaches();
       const stage = String(req.query?.stage || "");
@@ -12232,14 +12253,15 @@ Respond with valid JSON only:
   // --- PIPELINE STATUS ENFORCEMENT ENDPOINTS ---
 
   // POST /api/job-cards/:id/estimate-approval
-  app.post("/api/job-cards/:id/estimate-approval", jobCardEditGuard, express.json(), async (req, res) => {
+  app.post("/api/job-cards/:id/estimate-approval", authenticateToken, requireRoles(["service_advisor", "service_manager", "works_manager", "workshop_manager", "gm_service", "admin", "developer"]), jobCardEditGuard, express.json(), async (req, res) => {
     try {
       const { id } = req.params;
-      const { status, approved_by, notes } = req.body;
+      const { status, notes } = req.body;
 
-      if (!id || !status) {
+      if (!id || !["approved", "rejected"].includes(status)) {
         return res.status(400).json({ success: false, error: 'Missing job_id or status' });
       }
+      const approvedBy = req.user?.full_name || req.user?.username || String(req.user?.id || req.user?.user_id);
 
       const jobId = parseInt(id);
       const index = cachedDB.jobCards.findIndex((jc: any) => jc.job_id === jobId);
@@ -12256,7 +12278,7 @@ Respond with valid JSON only:
         status: newStatus,
         customer_approval_status: status,
         estimate_approval_notes: notes || null,
-        estimate_approved_by: approved_by || null
+        estimate_approved_by: approvedBy
       };
 
       // If estimate is rejected, trigger an alert to the Service Advisor
@@ -12279,8 +12301,8 @@ Respond with valid JSON only:
           await operationalEventService.publish({
             job_id: jobId,
             job_card_no: jobCard.job_card_no,
-            user: approved_by || "Customer",
-            role: "Customer",
+            user: approvedBy,
+            role: req.user?.role || "Service Advisor",
             workshop_id: jobCard.workshop_id || 1,
             source: "API",
             event_category: "Operational",
@@ -12316,14 +12338,15 @@ Respond with valid JSON only:
   });
 
   // POST /api/job-cards/:id/qc-check
-  app.post("/api/job-cards/:id/qc-check", jobCardEditGuard, express.json(), async (req, res) => {
+  app.post("/api/job-cards/:id/qc-check", authenticateToken, requireRoles(["qc", "qc_inspector", "quality_inspector", "service_manager", "works_manager", "workshop_manager", "gm_service", "admin", "developer"]), jobCardEditGuard, express.json(), async (req, res) => {
     try {
       const { id } = req.params;
-      const { qc_status, checked_by, fail_reason, checklist } = req.body;
+      const { qc_status, fail_reason, checklist } = req.body;
 
-      if (!id || !qc_status) {
+      if (!id || !["passed", "failed"].includes(qc_status)) {
         return res.status(400).json({ success: false, error: 'Missing job_id or qc_status' });
       }
+      const checkedBy = req.user?.full_name || req.user?.username || String(req.user?.id || req.user?.user_id);
 
       const jobId = parseInt(id);
       const index = cachedDB.jobCards.findIndex((jc: any) => jc.job_id === jobId);
@@ -12339,7 +12362,7 @@ Respond with valid JSON only:
         ...jobCard,
         status: newStatus,
         qc_status: qc_status,
-        qc_checked_by: checked_by || null,
+        qc_checked_by: checkedBy,
         qc_checked_at: new Date().toISOString(),
         qc_fail_reason: fail_reason || null,
         qc_checklist: checklist || []
@@ -12367,8 +12390,8 @@ Respond with valid JSON only:
         await operationalEventService.publish({
           job_id: jobId,
           job_card_no: jobCard.job_card_no,
-          user: checked_by || "QC Inspector",
-          role: "QC Inspector",
+          user: checkedBy,
+          role: req.user?.role || "QC Inspector",
           workshop_id: jobCard.workshop_id || 1,
           source: "MOBILE",
           event_category: "Mobile",
@@ -12384,8 +12407,8 @@ Respond with valid JSON only:
           await operationalEventService.publish({
             job_id: jobId,
             job_card_no: jobCard.job_card_no,
-            user: checked_by || "QC Inspector",
-            role: "QC Inspector",
+            user: checkedBy,
+            role: req.user?.role || "QC Inspector",
             workshop_id: jobCard.workshop_id || 1,
             source: "MOBILE",
             event_category: "Operational",
@@ -12400,8 +12423,8 @@ Respond with valid JSON only:
           await operationalEventService.publish({
             job_id: jobId,
             job_card_no: jobCard.job_card_no,
-            user: checked_by || "QC Inspector",
-            role: "QC Inspector",
+            user: checkedBy,
+            role: req.user?.role || "QC Inspector",
             workshop_id: jobCard.workshop_id || 1,
             source: "MOBILE",
             event_category: "Operational",
@@ -12504,14 +12527,15 @@ Respond with valid JSON only:
   });
 
   // POST /api/job-cards/:id/manager-approve
-  app.post("/api/job-cards/:id/manager-approve", jobCardEditGuard, express.json(), async (req, res) => {
+  app.post("/api/job-cards/:id/manager-approve", authenticateToken, requireRoles(["service_manager", "works_manager", "workshop_manager", "gm_service", "dealer_principal", "admin", "developer"]), jobCardEditGuard, express.json(), async (req, res) => {
     try {
       const { id } = req.params;
-      const { approved_by, notes } = req.body;
+      const { notes } = req.body;
 
       if (!id) {
         return res.status(400).json({ success: false, error: 'Missing job_id' });
       }
+      const approvedBy = req.user?.full_name || req.user?.username || String(req.user?.id || req.user?.user_id);
 
       const jobId = parseInt(id);
       const index = cachedDB.jobCards.findIndex((jc: any) => jc.job_id === jobId);
@@ -12526,7 +12550,7 @@ Respond with valid JSON only:
       cachedDB.jobCards[index] = {
         ...jobCard,
         status: newStatus,
-        manager_approved_by: approved_by || null,
+        manager_approved_by: approvedBy,
         manager_approval_notes: notes || null,
         manager_approved_at: new Date().toISOString()
       };
@@ -12868,5 +12892,3 @@ Respond with valid JSON only:
 }
 
 startServer();
-
-
