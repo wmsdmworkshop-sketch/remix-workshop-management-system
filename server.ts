@@ -9336,7 +9336,10 @@ Respond with valid JSON only:
                 sf.ai_suggested_fix, sf.ai_status, sf.device_info, sf.ide_agent_prompt, sf.in_house_action, sf.created_at,
                 em.full_name as employee_name, em.employee_code
          FROM staff_feedback sf
-         LEFT JOIN employee_master em ON sf.employee_id = em.employee_id
+         -- employees is the Employee Register and the single source of truth.
+         -- This joined the legacy employee_master roster, so reporter names came
+         -- from a stale list that is being retired.
+         LEFT JOIN employees em ON em.employee_id = sf.employee_id
          ORDER BY sf.created_at DESC
          LIMIT 100`
       );

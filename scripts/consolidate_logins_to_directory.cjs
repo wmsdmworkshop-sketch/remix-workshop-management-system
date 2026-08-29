@@ -57,10 +57,22 @@ const DEACTIVATE = [
   // delete admin logins. Deactivated rather than removed so it is reversible.
   { id: 31, who: "admin (Admin Operator) — generic admin, no employee record" },
   { id: 47, who: "workshop_admin — generic admin, no employee record" },
+  // The generic developer operator. The developer login that is kept is Sayeed's
+  // (48, wmsdmworkshop@gmail.com); this one is not in the register.
+  { id: 30, who: "developer (Developer Operator) — superseded by 48 (Sayeed)" },
+  // Google Play's review account. Deactivated rather than deleted: Play reviewers
+  // may still need it to sign in during an app review, and losing it mid-review
+  // is far more costly than leaving a disabled row in place.
+  { id: 75, who: "play_reviewer (Google Play review account)" },
 ];
 
-/** Explicitly retained by the owner. */
-const KEEP = [29, 30, 48, 75];
+/**
+ * The Employee Directory (Workforce -> Employee Directory) is the source of
+ * truth for the Sedam Road workshop. Exactly two logins are allowed outside it:
+ *   48 wmsdmworkshop@gmail.com — "Sayeed (Developer)", the developer login
+ *   29 hr_dapl                 — the HR admin login
+ */
+const KEEP = [29, 48];
 
 (async () => {
   const db = await mysql.createConnection({
@@ -162,6 +174,30 @@ const KEEP = [29, 30, 48, 75];
     const n = await run(`  ${d.who}`, "UPDATE user_access_master SET is_active = 0 WHERE user_id = ?", [d.id]);
     if (n === 0) console.log(`  (no change) ${d.who}`);
   }
+
+  // Retire the legacy `employee_master` roster. `employees` is the Employee
+  // Register and the single source of truth; employee_master still held people
+  // who are not in it (MOHAMMED ZAKI, HANUMATH RAYA, javeed j, ...). After the
+  // two FK drops above, the only tables referencing it are empty or all-NULL,
+  // and the one query that read it (the live-bug listing) now joins `employees`.
+  const [[emCount]] = await db.query("SELECT COUNT(*) n FROM employee_master");
+  const stillReferenced = await (async () => {
+    const [fks] = await db.query(
+      `SELECT TABLE_NAME t, COLUMN_NAME c FROM information_schema.KEY_COLUMN_USAGE
+        WHERE TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME = 'employee_master'`,
+      [process.env.DB_DATABASE]);
+    const hits = [];
+    for (const { t, c } of fks) {
+      const [[r]] = await db.query(`SELECT COUNT(*) n FROM \`${t}\` WHERE \`${c}\` IS NOT NULL`);
+      if (r.n > 0) hits.push(`${t}.${c} (${r.n})`);
+    }
+    return hits;
+  })();
+  if (stillReferenced.length) {
+    // Refuse rather than cascade-break something unexamined.
+    throw new Error(`employee_master is still referenced by ${stillReferenced.join(", ")} — refusing to purge it.`);
+  }
+  await run(`PURGE legacy employee_master (${emCount.n} rows)`, "DELETE FROM employee_master", []);
 
   await db.execute(
     "INSERT INTO security_audit_logs (user_id, username, action, details) VALUES (?, ?, ?, ?)",
