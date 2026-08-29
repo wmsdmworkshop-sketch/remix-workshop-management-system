@@ -45,6 +45,26 @@ const asStr = (d) => {
     database: process.env.DB_DATABASE,
   });
 
+  // `job_cards.created_by` holds a USER id — isOwnedBy() in
+  // src/core/jobcard-relevance.ts compares it against user.user_id — but
+  // fk_job_cards_creator constrains it to employees.employee_id. All 43 rows
+  // carry created_by = 20 (afroz_rp, a user id; employee 20 does not exist),
+  // so the constraint contradicts how the application uses the column and
+  // blocks the restore. Drop it and keep the real provenance value rather than
+  // reassigning these cards to an employee who did not create them.
+  // DDL is implicitly committed, so it runs before the data transaction.
+  const [[fk]] = await db.query(
+    `SELECT COUNT(*) n FROM information_schema.TABLE_CONSTRAINTS
+      WHERE CONSTRAINT_SCHEMA = ? AND TABLE_NAME = 'job_cards'
+        AND CONSTRAINT_NAME = 'fk_job_cards_creator'`, [process.env.DB_DATABASE]);
+  if (fk.n > 0) {
+    if (DRY) { console.log("would DROP FOREIGN KEY fk_job_cards_creator"); }
+    else {
+      await db.execute("ALTER TABLE `job_cards` DROP FOREIGN KEY `fk_job_cards_creator`");
+      console.log("Dropped fk_job_cards_creator.");
+    }
+  } else { console.log("fk_job_cards_creator already absent."); }
+
   const [orphans] = await db.query(
     `SELECT m.* FROM job_card_master m
       WHERE NOT EXISTS (SELECT 1 FROM job_cards j WHERE j.job_id = m.job_card_id)
