@@ -37,7 +37,7 @@ export const GROUP3_VIEW_ONLY = ["dkam", "dealer_principal"];
 
 // Roles whose relevance is the workflow STAGE the JC currently sits in.
 // Values are matched against jc.workshop_stage (and a status fallback).
-const STAGE_RULES: Record<string, { states: string[]; statuses?: string[]; flag?: string }> = {
+export const STAGE_RULES: Record<string, { states: string[]; statuses?: string[]; flag?: string }> = {
   reception:      { states: ["GATE_IN", "INTAKE_PENDING", "INTAKE_QUEUE", "RECEPTION_QUEUE"], statuses: ["Gate In", "Draft"] },
   receptionist:   { states: ["GATE_IN", "INTAKE_PENDING", "INTAKE_QUEUE", "RECEPTION_QUEUE"], statuses: ["Gate In", "Draft"] },
   service_advisor:{ states: ["GATE_IN", "INTAKE_PENDING", "INTAKE_QUEUE", "RECEPTION_QUEUE", "WAITING_ADVISOR", "ESTIMATE_PENDING", "ESTIMATE_SUBMITTED", "INSPECTION_PENDING", "CUSTOMER_APPROVAL_PENDING"], statuses: ["Waiting", "Draft", "Gate In", "Open"] },

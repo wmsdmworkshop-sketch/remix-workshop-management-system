@@ -20,10 +20,11 @@ import { pool as dbPool } from "./src/db/index.ts";
 import { startQrtGmailIngestor, runQrtIngestOnce, getQrtPublicConfig, updateQrtSettings } from "./src/integrations/qrt-gmail-ingestor.ts";
 import { ensureOemTable, getPublicConfig as getOemPublicConfig, updateProviderConfig as updateOemProvider, testProvider as testOemProvider, callProvider as callOemProvider, OemNotConfiguredError, ensureVehicleCacheTable, getCachedVehicle, cacheVehicle, type OemProviderKey } from "./src/integrations/oem-api.ts";
 import { ingestAlert as ingestCctvAlert, listAlerts as listCctvAlerts, acknowledgeAlert as ackCctvAlert, listCameras as listCctvCameras, upsertCamera as upsertCctvCamera, deleteCamera as deleteCctvCamera, getCctvConfig, updateCctvConfig, countOpenAlerts as countOpenCctvAlerts } from "./src/integrations/cctv-analytics.ts";
-import { filterViewableJobCards, canEditJobCard, isGmOverride, isOwnedBy, isInMyStage, isFullViewRole, GROUP1_FULL_CONTROL, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
+import { filterViewableJobCards, canEditJobCard, isGmOverride, isOwnedBy, isInMyStage, isFullViewRole, GROUP1_FULL_CONTROL, GROUP2_VIEW_ALL_EDIT_OWN, GROUP3_VIEW_ONLY, GM_OVERRIDE_ROLES, STAGE_RULES, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
 import { parseInHouseAction, applyInHouseAction, buildCumulativeIdePrompt } from "./src/core/pilot/in-house-actions.ts";
 import { enforceFieldPermissions, describeRefusal, FIELD_PERMISSION_LEVELS, type FieldPermissionRule } from "./src/core/security/field-permissions.ts";
 import { BACKDATE_ROLES } from "./src/core/workshop/backdate-policy.ts";
+import { SA_ASSIGNMENT_ROLES } from "./src/core/workshop/assignment-roles.ts";
 import { DEFAULT_CIRCULARS } from "./src/lib/circularsData.ts";
 import { getReworkHistoryForTechnician } from "./src/engines/rework-tracking-service.ts";
 import { validateOvertimeRequest } from "./src/engines/overtime-rules.ts";
@@ -1465,6 +1466,21 @@ async function startServer() {
    */
   const normaliseRoleName = (r: any) =>
     String(r || "").toLowerCase().trim().replace(/[\s_]+/g, "_");
+
+  /**
+   * Who may open a gate entry (create a job card at the gate). Named rather than
+   * inline so the Administration screen can display the live list instead of a
+   * copy that would drift from what is actually enforced.
+   *
+   * bay_reporter: AFROZ works the front desk under that title and held
+   * `reception` on an older login. gm_service: GM overrides job-card edits
+   * everywhere else, so refusing gate-in was inconsistent.
+   */
+  const JOB_CARD_CREATE_ROLES = [
+    "security_agent", "gate_personnel", "reception", "receptionist", "bay_reporter",
+    "gm_service", "service_advisor", "supervisor", "floor_supervisor", "floor_incharge",
+    "workshop_manager", "service_manager", "admin", "developer",
+  ];
 
   const requireRoles = (allowedRoles: string[]) => {
     const allowed = allowedRoles.map(normaliseRoleName);
@@ -4484,27 +4500,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     return newJob;
   }
 
-  app.post("/api/job-cards", requireRoles([
-    "security_agent",
-    "gate_personnel",
-    "reception",
-    "receptionist",
-    // AFROZ works the front desk under the title "BAY REPORTER" and previously
-    // held `reception` on an older login; without this the gate-in register was
-    // refused with "Access denied. Insufficient permissions."
-    "bay_reporter",
-    // GM already overrides job-card edits everywhere else but could not open a
-    // gate entry at all — inconsistent.
-    "gm_service",
-    "service_advisor",
-    "supervisor",
-    "floor_supervisor",
-    "floor_incharge",
-    "workshop_manager",
-    "service_manager",
-    "admin",
-    "developer"
-  ]), async (req: any, res) => {
+  app.post("/api/job-cards", requireRoles(JOB_CARD_CREATE_ROLES), async (req: any, res) => {
     const db = getDB();
     const newJob: JobCard = req.body;
 
@@ -8652,6 +8648,47 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
     return mapped;
   };
+
+  /**
+   * The RBAC rules that live in CODE rather than in a table. Serving the actual
+   * constants (not a transcription of them) means the Administration screen can
+   * never show a policy that differs from the one being enforced.
+   *
+   * Read-only by design: changing any of these is a code change and a deploy.
+   */
+  app.get("/api/rbac/policy", authenticateToken, requirePermission("User Management", "view"), async (_req: any, res: any) => {
+    try {
+      res.json({
+        success: true,
+        editable: false,
+        note: "These rules are defined in source and enforced server-side. Changing them requires a code change and a deploy.",
+        groups: [
+          { key: "GROUP1_FULL_CONTROL", title: "Full control — view and edit every job card",
+            source: "src/core/jobcard-relevance.ts", roles: GROUP1_FULL_CONTROL },
+          { key: "GROUP2_VIEW_ALL_EDIT_OWN", title: "Supervisor — view all, edit only own or in-stage",
+            source: "src/core/jobcard-relevance.ts", roles: GROUP2_VIEW_ALL_EDIT_OWN },
+          { key: "GROUP3_VIEW_ONLY", title: "Observer — view everything, edit nothing",
+            source: "src/core/jobcard-relevance.ts", roles: GROUP3_VIEW_ONLY },
+          { key: "GM_OVERRIDE_ROLES", title: "Scoped override — may edit anything, every out-of-lane action audited",
+            source: "src/core/jobcard-relevance.ts", roles: GM_OVERRIDE_ROLES },
+          { key: "JOB_CARD_CREATE_ROLES", title: "May register a gate entry (create a job card)",
+            source: "server.ts", roles: JOB_CARD_CREATE_ROLES },
+          { key: "BACKDATE_ROLES", title: "May backdate an entry (testing period only)",
+            source: "src/core/workshop/backdate-policy.ts", roles: [...BACKDATE_ROLES] },
+          { key: "SA_ASSIGNMENT_ROLES", title: "May assign a Service Advisor to a job card",
+            source: "src/core/workshop/assignment-roles.ts", roles: [...SA_ASSIGNMENT_ROLES] },
+        ],
+        // Which workflow stage each role owns. A job card in one of these stages
+        // is "relevant" to that role even when nobody has assigned it.
+        stageOwnership: Object.entries(STAGE_RULES).map(([role, rule]) => ({
+          role, states: rule.states, statuses: rule.statuses || [], flag: rule.flag || null,
+        })),
+        fieldLevels: FIELD_PERMISSION_LEVELS,
+      });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
 
   // --- ROLE PERMISSIONS ENDPOINTS ---
   app.get("/api/permissions", authenticateToken, requirePermission("User Management", "view"), async (req, res) => {

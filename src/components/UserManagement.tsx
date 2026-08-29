@@ -60,6 +60,9 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
 
   // Live Testing Bugs & DeepSeek Diagnostics State
   const [liveBugs, setLiveBugs] = useState<any[]>([]);
+  // RBAC rules that live in source rather than a table. Served from the actual
+  // constants, so what is shown here is always what is being enforced.
+  const [rbacPolicy, setRbacPolicy] = useState<any>(null);
   const [bugsLoading, setBugsLoading] = useState<boolean>(false);
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
 
@@ -781,6 +784,25 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
           >
             <Sliders className="h-3.5 w-3.5 text-blue-600" />
             <span>Field-Level Security</span>
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('policy');
+              if (!rbacPolicy) {
+                fetch("/api/rbac/policy", { headers: { Authorization: `Bearer ${token}` } })
+                  .then(r => r.json())
+                  .then(d => { if (d.success) setRbacPolicy(d); else setError(d.error || "Could not load the policy."); })
+                  .catch(e => setError(e.message));
+              }
+            }}
+            className={`pb-3 font-bold text-xs uppercase tracking-wider border-b-2 transition whitespace-nowrap flex items-center gap-1.5 ${
+              activeTab === 'policy'
+                ? 'border-orange-500 text-slate-900'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <Shield className="h-3.5 w-3.5 text-slate-500" />
+            <span>Policy (Read-Only)</span>
           </button>
           <button
             onClick={() => setActiveTab('ai-rbac')}
@@ -1585,6 +1607,92 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'policy' && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+              <Shield className="h-4 w-4 text-amber-600" /> Enforced Policy — Read Only
+            </h3>
+            <p className="text-xs text-slate-600 mt-1">
+              {rbacPolicy?.note || "These rules are defined in source and enforced server-side."}
+              {" "}They are shown here so the full access picture is visible in one place.
+              Unlike the tabs above, they cannot be edited from this screen.
+            </p>
+          </div>
+
+          {!rbacPolicy ? (
+            <div className="flex items-center gap-2 text-slate-500 text-sm p-6">
+              <RefreshCw className="h-4 w-4 animate-spin" /> Loading policy…
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                {rbacPolicy.groups?.map((g: any) => (
+                  <div key={g.key} className="rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                      <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">{g.title}</h4>
+                      <code className="text-[10px] text-slate-400 font-mono">{g.source}</code>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mt-2.5">
+                      {g.roles?.length ? g.roles.map((r: string) => (
+                        <span key={r} className="text-[11px] font-mono font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded px-2 py-0.5">
+                          {r}
+                        </span>
+                      )) : <span className="text-[11px] text-slate-400 italic">No roles.</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  Stage Ownership
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-1 mb-3">
+                  A job card sitting in one of these stages is treated as that role&apos;s
+                  responsibility even when nobody has assigned it.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                        <th className="py-2 pr-4 font-bold">Role</th>
+                        <th className="py-2 pr-4 font-bold">Workflow stages</th>
+                        <th className="py-2 pr-4 font-bold">Status fallback</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rbacPolicy.stageOwnership?.map((s: any) => (
+                        <tr key={s.role} className="border-b border-slate-100 align-top">
+                          <td className="py-2 pr-4 text-xs font-mono font-bold text-slate-800 whitespace-nowrap">{s.role}</td>
+                          <td className="py-2 pr-4 text-[11px] text-slate-600 font-mono">
+                            {s.states?.join(", ") || "—"}
+                            {s.flag && <div className="text-[10px] text-indigo-600 mt-0.5">flag: {s.flag}</div>}
+                          </td>
+                          <td className="py-2 pr-4 text-[11px] text-slate-500">{s.statuses?.join(", ") || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Field Permission Levels</h4>
+                <p className="text-[11px] text-slate-500 mt-1 mb-2.5">
+                  The only values Field-Level Security accepts. Anything else is refused on save.
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {rbacPolicy.fieldLevels?.map((l: string) => (
+                    <span key={l} className="text-[11px] font-mono font-bold text-blue-800 bg-blue-50 border border-blue-200 rounded px-2 py-0.5">{l}</span>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
