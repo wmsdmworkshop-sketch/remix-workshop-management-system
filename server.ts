@@ -4489,6 +4489,13 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     "gate_personnel",
     "reception",
     "receptionist",
+    // AFROZ works the front desk under the title "BAY REPORTER" and previously
+    // held `reception` on an older login; without this the gate-in register was
+    // refused with "Access denied. Insufficient permissions."
+    "bay_reporter",
+    // GM already overrides job-card edits everywhere else but could not open a
+    // gate entry at all — inconsistent.
+    "gm_service",
     "service_advisor",
     "supervisor",
     "floor_supervisor",
