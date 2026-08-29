@@ -21,6 +21,7 @@ import { startQrtGmailIngestor, runQrtIngestOnce, getQrtPublicConfig, updateQrtS
 import { ensureOemTable, getPublicConfig as getOemPublicConfig, updateProviderConfig as updateOemProvider, testProvider as testOemProvider, callProvider as callOemProvider, OemNotConfiguredError, ensureVehicleCacheTable, getCachedVehicle, cacheVehicle, type OemProviderKey } from "./src/integrations/oem-api.ts";
 import { ingestAlert as ingestCctvAlert, listAlerts as listCctvAlerts, acknowledgeAlert as ackCctvAlert, listCameras as listCctvCameras, upsertCamera as upsertCctvCamera, deleteCamera as deleteCctvCamera, getCctvConfig, updateCctvConfig, countOpenAlerts as countOpenCctvAlerts } from "./src/integrations/cctv-analytics.ts";
 import { filterViewableJobCards, canEditJobCard, isGmOverride, isOwnedBy, isInMyStage, isFullViewRole, GROUP1_FULL_CONTROL, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
+import { parseInHouseAction, applyInHouseAction, buildCumulativeIdePrompt } from "./src/core/pilot/in-house-actions.ts";
 import { DEFAULT_CIRCULARS } from "./src/lib/circularsData.ts";
 import { getReworkHistoryForTechnician } from "./src/engines/rework-tracking-service.ts";
 import { validateOvertimeRequest } from "./src/engines/overtime-rules.ts";
@@ -9187,7 +9188,14 @@ Perform instant triage and provide:
 1. Root Cause Analysis (why did this issue occur?)
 2. Severity Rating (CRITICAL, HIGH, MEDIUM, LOW)
 3. Actionable Code / Configuration Fix Recommendation.
-4. In-House Action (any direct SQL/RBAC/configuration fix that can be applied in-house immediately).
+4. In-House Action. This is EXECUTED AUTOMATICALLY, so it must be a structured
+   action from this catalogue and nothing else - never prose, never raw SQL:
+     {"kind":"permission","role":"<role name>","module":"<module name>","grants":{"can_view":1,"can_edit":0}}
+     {"kind":"setting","key":"<snake_case_key>","value":"<value>"}
+   Use "permission" only for an RBAC grant that genuinely resolves the report, and
+   "setting" only for a known configuration flag. If the report needs a code change
+   - which is the common case - return an EMPTY STRING "" for inHouseAction so it is
+   routed to the development queue instead.
 5. IDE Agent Prompt (a complete, ready-to-run prompt formatted for the Antigravity AI Agent in the IDE, specifying target files, function/component names, and exact fix instructions).
 
 Respond with valid JSON only:
@@ -9277,14 +9285,51 @@ Respond with valid JSON only:
   app.post("/api/v1/pilot/feedback/:id/apply-in-house-fix", authenticateToken, requireRoles(["admin", "developer"]), express.json(), async (req: any, res: any) => {
     try {
       const feedbackId = req.params.id;
-      const { sqlAction } = req.body;
 
-      if (sqlAction && typeof sqlAction === "string" && !sqlAction.toLowerCase().includes("drop") && !sqlAction.toLowerCase().includes("truncate")) {
-        await dbPool.query(sqlAction);
+      // The action is read from the stored triage row, never from the request
+      // body. A client must not be able to hand this endpoint something to run.
+      const [rows]: any = await dbPool.query(
+        "SELECT in_house_action FROM staff_feedback WHERE feedback_id = ?", [feedbackId]);
+      if (!rows?.length) {
+        return res.status(404).json({ success: false, error: "Feedback report not found." });
       }
 
-      await dbPool.query("UPDATE staff_feedback SET ai_status = 'RESOLVED_IN_HOUSE' WHERE feedback_id = ?", [feedbackId]);
-      res.json({ success: true, message: "In-house fix applied and feedback marked resolved." });
+      const parsed = parseInHouseAction(rows[0].in_house_action);
+      if (!parsed.applicable) {
+        // Not auto-applicable: mark it so it is picked up by the cumulative IDE
+        // prompt rather than silently sitting as TRIAGED forever.
+        await dbPool.query(
+          "UPDATE staff_feedback SET ai_status = 'NEEDS_CODE_FIX' WHERE feedback_id = ?", [feedbackId]);
+        return res.status(422).json({
+          success: false, applicable: false, status: "NEEDS_CODE_FIX", error: parsed.reason,
+        });
+      }
+
+      const applied = await applyInHouseAction(dbPool, parsed.action!);
+      await dbPool.query(
+        "UPDATE staff_feedback SET ai_status = 'RESOLVED_IN_HOUSE' WHERE feedback_id = ?", [feedbackId]);
+      await AuditService.logAction(
+        req.user?.user_id, req.user?.username, "IN_HOUSE_FIX_APPLIED",
+        `Feedback ${feedbackId}: ${applied}`);
+      res.json({ success: true, applicable: true, message: applied });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // One prompt covering every report that needs a code fix, so the IDE agent
+  // gets a single cumulative pass instead of one prompt per bug.
+  app.get("/api/v1/pilot/feedback/ide-prompt", authenticateToken, requireRoles(["admin", "developer"]), async (req: any, res: any) => {
+    try {
+      const [rows]: any = await dbPool.query(
+        `SELECT sf.feedback_id, sf.role, sf.screen_id, sf.feedback_type, sf.message,
+                sf.ai_analysis, sf.ai_severity, sf.ai_suggested_fix, sf.ide_agent_prompt,
+                sf.created_at, e.full_name AS reporter_name
+           FROM staff_feedback sf
+           LEFT JOIN employees e ON e.employee_id = sf.employee_id
+          WHERE sf.ai_status NOT IN ('RESOLVED_IN_HOUSE', 'RESOLVED', 'CLOSED')
+          ORDER BY FIELD(sf.ai_severity, 'BLOCKER', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'), sf.created_at ASC`);
+      res.json({ success: true, count: rows.length, prompt: buildCumulativeIdePrompt(rows) });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }

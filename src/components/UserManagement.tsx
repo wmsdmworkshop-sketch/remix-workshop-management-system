@@ -1805,6 +1805,31 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                 <RefreshCw className={`h-3.5 w-3.5 ${bugsLoading ? "animate-spin" : ""}`} />
                 <span>Refresh</span>
               </button>
+              {/* One cumulative prompt for everything that needs a code fix,
+                  rather than copying each bug's prompt separately. */}
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch("/api/v1/pilot/feedback/ide-prompt", {
+                      headers: { "Authorization": `Bearer ${token}` }
+                    });
+                    const data = await res.json();
+                    if (!res.ok || !data.success) {
+                      setError(data.error || "Could not build the IDE prompt.");
+                      return;
+                    }
+                    await navigator.clipboard.writeText(data.prompt);
+                    setSuccess(`Copied one cumulative IDE prompt covering ${data.count} report(s).`);
+                    setTimeout(() => setSuccess(null), 4000);
+                  } catch (e: any) {
+                    setError(e.message);
+                  }
+                }}
+                className="bg-purple-100 hover:bg-purple-200 text-purple-800 text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <Bot className="h-3.5 w-3.5" />
+                <span>Copy Cumulative IDE Prompt</span>
+              </button>
             </div>
           </div>
 
@@ -1896,20 +1921,26 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                           <button
                             onClick={async () => {
                               try {
+                                // The server reads the stored action itself; it
+                                // must never be handed something to execute.
                                 const res = await fetch(`/api/v1/pilot/feedback/${bug.feedback_id}/apply-in-house-fix`, {
                                   method: "POST",
                                   headers: {
                                     "Content-Type": "application/json",
                                     "Authorization": `Bearer ${token}`
                                   },
-                                  body: JSON.stringify({ sqlAction: bug.in_house_action })
                                 });
                                 const data = await res.json();
                                 if (res.ok && data.success) {
-                                  setSuccess("In-house fix applied and marked resolved!");
-                                  setTimeout(() => setSuccess(null), 3000);
+                                  setSuccess(data.message || "In-house fix applied and marked resolved.");
+                                  setTimeout(() => setSuccess(null), 4000);
                                   bug.ai_status = "RESOLVED_IN_HOUSE";
                                   setLiveBugs([...liveBugs]);
+                                } else if (res.status === 422) {
+                                  // Needs a code change - it moves to the IDE queue.
+                                  bug.ai_status = "NEEDS_CODE_FIX";
+                                  setLiveBugs([...liveBugs]);
+                                  setError(data.error || "This report needs a code fix.");
                                 } else {
                                   setError(data.error || "Failed to apply in-house fix.");
                                 }
