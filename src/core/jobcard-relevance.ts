@@ -109,7 +109,9 @@ export function isInMyStage(jc: any, role?: string): boolean {
 /** Can this user SEE this job card? Group 1/2/3 all view everything. */
 export function canViewJobCard(jc: any, user: RelevanceUser): boolean {
   const role = user?.role;
-  if (!role) return true; // unauthenticated / unknown → no scoping (legacy behaviour)
+  // Fail CLOSED. This previously returned true for a caller with no role, so an
+  // unauthenticated or role-less request saw every job card in the workshop.
+  if (!role) return false;
   if (GROUP1_FULL_CONTROL.includes(normRole(role)) || GROUP2_VIEW_ALL_EDIT_OWN.includes(normRole(role)) || GROUP3_VIEW_ONLY.includes(normRole(role))) {
     return true;
   }
@@ -119,7 +121,8 @@ export function canViewJobCard(jc: any, user: RelevanceUser): boolean {
 /** Can this user EDIT / take action on this job card? (Phase 2 enforcement.) */
 export function canEditJobCard(jc: any, user: RelevanceUser): boolean {
   const role = user?.role;
-  if (!role) return true; // legacy — Phase 2 will require auth on actions
+  // Fail CLOSED. A role-less caller must never be able to edit a job card.
+  if (!role) return false;
   if (GROUP1_FULL_CONTROL.includes(normRole(role))) return true;
   if (GROUP3_VIEW_ONLY.includes(normRole(role))) return false; // observer: never edits
   // GM: allowed to edit anything (override), but the caller audits it.
@@ -150,6 +153,8 @@ export function isFullViewRole(role?: string): boolean {
 
 /** Filter a job-card array to those the user may view. */
 export function filterViewableJobCards<T = any>(jobCards: T[], user: RelevanceUser): T[] {
-  if (!user?.role || isFullViewRole(user.role)) return jobCards;
+  // Fail CLOSED: a caller with no role sees nothing, rather than everything.
+  if (!user?.role) return [];
+  if (isFullViewRole(user.role)) return jobCards;
   return (jobCards || []).filter(jc => canViewJobCard(jc, user));
 }

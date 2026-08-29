@@ -22,6 +22,8 @@ import { ensureOemTable, getPublicConfig as getOemPublicConfig, updateProviderCo
 import { ingestAlert as ingestCctvAlert, listAlerts as listCctvAlerts, acknowledgeAlert as ackCctvAlert, listCameras as listCctvCameras, upsertCamera as upsertCctvCamera, deleteCamera as deleteCctvCamera, getCctvConfig, updateCctvConfig, countOpenAlerts as countOpenCctvAlerts } from "./src/integrations/cctv-analytics.ts";
 import { filterViewableJobCards, canEditJobCard, isGmOverride, isOwnedBy, isInMyStage, isFullViewRole, GROUP1_FULL_CONTROL, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
 import { parseInHouseAction, applyInHouseAction, buildCumulativeIdePrompt } from "./src/core/pilot/in-house-actions.ts";
+import { enforceFieldPermissions, describeRefusal, type FieldPermissionRule } from "./src/core/security/field-permissions.ts";
+import { BACKDATE_ROLES } from "./src/core/workshop/backdate-policy.ts";
 import { DEFAULT_CIRCULARS } from "./src/lib/circularsData.ts";
 import { getReworkHistoryForTechnician } from "./src/engines/rework-tracking-service.ts";
 import { validateOvertimeRequest } from "./src/engines/overtime-rules.ts";
@@ -1489,7 +1491,11 @@ async function startServer() {
         }
       } catch { /* invalid token → legacy passthrough */ }
     }
-    if (!user || !user.role) return next(); // unauthenticated → legacy behaviour
+    // Fail CLOSED. This used to fall through to next() for a caller with no
+    // valid token, so any route relying on this guard alone was unprotected.
+    if (!user || !user.role) {
+      return res.status(401).json({ error: "Authentication required." });
+    }
     const id = parseInt(req.params.id);
     const jc = (getDB().jobCards || []).find((j: any) => Number(j.job_id) === id);
     if (jc && !canEditJobCard(jc, user)) {
@@ -1500,6 +1506,23 @@ async function startServer() {
       logGmOverride(user, jc, `${req.method} ${req.originalUrl || req.url}`).catch(() => {});
     }
     next();
+  };
+
+  // Field-level rules, cached briefly. The admin screen edits this table, so the
+  // cache is short rather than boot-lifetime; a failed read returns the last good
+  // snapshot, and an empty first read fails CLOSED for the caller (see usage).
+  let fieldPermCache: { rules: FieldPermissionRule[]; at: number } | null = null;
+  const getFieldPermissions = async (): Promise<FieldPermissionRule[]> => {
+    if (fieldPermCache && Date.now() - fieldPermCache.at < 60_000) return fieldPermCache.rules;
+    try {
+      const [rows]: any = await dbPool.query(
+        "SELECT role, workflow_stage, field_name, permission_level FROM field_permissions");
+      fieldPermCache = { rules: (rows || []) as FieldPermissionRule[], at: Date.now() };
+    } catch (e: any) {
+      console.error("[FIELD-PERMS] read failed:", e.message);
+      if (!fieldPermCache) throw e; // no snapshot to fall back on — refuse the write
+    }
+    return fieldPermCache!.rules;
   };
 
   // Append a GM override to the audit trail. Best-effort; never blocks the request.
@@ -5488,7 +5511,11 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
-  app.post("/api/job-cards/bulk-import-backdated", (req, res) => {
+  // Backdating is restricted to admin / developer / GM for the testing period
+  // (see src/core/workshop/backdate-policy.ts). This route creates job cards with
+  // arbitrary past dates and previously carried NO role check at all — any
+  // authenticated account, down to a technician, could backfill the register.
+  app.post("/api/job-cards/bulk-import-backdated", authenticateToken, requireRoles(BACKDATE_ROLES), (req: any, res: any) => {
     const db = getDB();
     const { rows } = req.body; // Array of job card rows to import
 
@@ -5900,6 +5927,33 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       if (!_isGateFieldApprover) {
         delete (incoming as any).vrn;
         delete (incoming as any).km_reading;
+      }
+
+      // FIELD-LEVEL SECURITY (field_permissions). These rules were configurable
+      // in Administration but had never been enforced on any write path, so
+      // every LOCKED / REQUIRES_APPROVAL rule was decorative. A refusal is
+      // explicit rather than a silent strip, so the user learns why.
+      try {
+        const _fieldRules = await getFieldPermissions();
+        const _verdict = enforceFieldPermissions(
+          _fieldRules, _role, oldJob.workshop_stage || oldJob.status, incoming, oldJob);
+        if (_verdict.locked.length || _verdict.needsApproval.length) {
+          return res.status(403).json({
+            error: describeRefusal(_verdict),
+            locked: _verdict.locked,
+            requires_approval: _verdict.needsApproval,
+          });
+        }
+        if (_verdict.overridden.length) {
+          await AuditService.logAction(
+            req.user?.user_id, req.user?.username, "FIELD_OVERRIDE",
+            `Job card ${oldJob.job_card_no || id}: overrode ${_verdict.overridden.join(", ")}`);
+        }
+        incoming = _verdict.allowed;
+      } catch (e: any) {
+        // No rule snapshot available — refuse rather than write unchecked.
+        console.error("[FIELD-PERMS] enforcement unavailable:", e.message);
+        return res.status(503).json({ error: "Field security rules are unavailable. Try again shortly." });
       }
 
       const updatedJob = { ...oldJob, ...incoming, updated_at: new Date().toISOString() };
