@@ -33,5 +33,17 @@ const u = enforceFieldPermissions(rules, "service_advisor", "Work In Progress",
   { odometer: 100 }, { odometer: 100 });
 eq("unchanged locked field passes", u.locked, []);
 
+
+// READ_ONLY and HIDDEN are two of the six ENUM values. An unhandled level
+// resolves to "no rule", which means ALLOWED — a silent fail-open.
+const extra: any = [
+  { role: "technician", workflow_stage: "ANY", field_name: "discount", permission_level: "READ_ONLY" },
+  { role: "technician", workflow_stage: "ANY", field_name: "basic_salary", permission_level: "HIDDEN" },
+];
+const v2 = enforceFieldPermissions(extra, "technician", "ANY",
+  { discount: 10, basic_salary: 1 }, { discount: 0, basic_salary: 0 });
+eq("READ_ONLY refused", v2.locked.includes("discount"), true);
+eq("HIDDEN refused", v2.locked.includes("basic_salary"), true);
+eq("nothing allowed through", Object.keys(v2.allowed), []);
 console.log(fail === 0 ? "\nALL PASS" : `\n${fail} FAILED`);
 process.exit(fail === 0 ? 0 : 1);

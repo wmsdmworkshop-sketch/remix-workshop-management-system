@@ -22,7 +22,17 @@
  * =============================================================================
  */
 
-export type FieldPermissionLevel = "EDIT" | "LOCKED" | "REQUIRES_APPROVAL" | "OVERRIDE";
+/**
+ * These are exactly the six values of the `permission_level` ENUM. Every one
+ * must be handled: an unrecognised level resolves to "no rule", which means
+ * ALLOWED, so a missing case is a silent fail-open.
+ */
+export type FieldPermissionLevel =
+  | "EDIT" | "LOCKED" | "REQUIRES_APPROVAL" | "OVERRIDE" | "READ_ONLY" | "HIDDEN";
+
+export const FIELD_PERMISSION_LEVELS: readonly FieldPermissionLevel[] = [
+  "EDIT", "READ_ONLY", "HIDDEN", "REQUIRES_APPROVAL", "OVERRIDE", "LOCKED",
+];
 
 export interface FieldPermissionRule {
   role: string;
@@ -72,8 +82,7 @@ export function resolveFieldPermission(
 
   if (!hit) return undefined;
   const level = String(hit.permission_level || "").trim().toUpperCase();
-  return (["EDIT", "LOCKED", "REQUIRES_APPROVAL", "OVERRIDE"] as const)
-    .includes(level as FieldPermissionLevel)
+  return FIELD_PERMISSION_LEVELS.includes(level as FieldPermissionLevel)
     ? (level as FieldPermissionLevel)
     : undefined;
 }
@@ -113,6 +122,8 @@ export function enforceFieldPermissions(
 
     switch (resolveFieldPermission(rules, role, stage, field)) {
       case "LOCKED":
+      case "READ_ONLY": // visible but not writable
+      case "HIDDEN":    // not even visible — writing it is always a refusal
         result.locked.push(field);
         break;
       case "REQUIRES_APPROVAL":

@@ -22,7 +22,7 @@ import { ensureOemTable, getPublicConfig as getOemPublicConfig, updateProviderCo
 import { ingestAlert as ingestCctvAlert, listAlerts as listCctvAlerts, acknowledgeAlert as ackCctvAlert, listCameras as listCctvCameras, upsertCamera as upsertCctvCamera, deleteCamera as deleteCctvCamera, getCctvConfig, updateCctvConfig, countOpenAlerts as countOpenCctvAlerts } from "./src/integrations/cctv-analytics.ts";
 import { filterViewableJobCards, canEditJobCard, isGmOverride, isOwnedBy, isInMyStage, isFullViewRole, GROUP1_FULL_CONTROL, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
 import { parseInHouseAction, applyInHouseAction, buildCumulativeIdePrompt } from "./src/core/pilot/in-house-actions.ts";
-import { enforceFieldPermissions, describeRefusal, type FieldPermissionRule } from "./src/core/security/field-permissions.ts";
+import { enforceFieldPermissions, describeRefusal, FIELD_PERMISSION_LEVELS, type FieldPermissionRule } from "./src/core/security/field-permissions.ts";
 import { BACKDATE_ROLES } from "./src/core/workshop/backdate-policy.ts";
 import { DEFAULT_CIRCULARS } from "./src/lib/circularsData.ts";
 import { getReworkHistoryForTechnician } from "./src/engines/rework-tracking-service.ts";
@@ -8623,6 +8623,36 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
+  /**
+   * `field_permissions.permission_level` is an ENUM of exactly six values. The
+   * DeepSeek copilot and the RBAC screen both emit friendlier wordings ("View
+   * Only", "Full (Edit)", "No Access"), and MySQL in STRICT_TRANS_TABLES answers
+   * an out-of-range ENUM with "Data truncated for column 'permission_level' at
+   * row 1" — the error shown on the Field-Level Security screen. Map the known
+   * synonyms, and refuse anything genuinely unrecognised rather than silently
+   * storing a level that would not be enforced.
+   */
+  const FIELD_LEVEL_SYNONYMS: Record<string, string> = {
+    edit: "EDIT", full: "EDIT", "full_(edit)": "EDIT", full_edit: "EDIT", write: "EDIT",
+    view_only: "READ_ONLY", view: "READ_ONLY", read_only: "READ_ONLY", readonly: "READ_ONLY",
+    "view_+_comment": "READ_ONLY", comment: "READ_ONLY",
+    no_access: "HIDDEN", hidden: "HIDDEN", none: "HIDDEN",
+    locked: "LOCKED", lock: "LOCKED",
+    requires_approval: "REQUIRES_APPROVAL", approval: "REQUIRES_APPROVAL",
+    override: "OVERRIDE",
+  };
+  const normaliseFieldLevel = (raw: any, field?: string): string => {
+    const key = String(raw ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+    const mapped = FIELD_LEVEL_SYNONYMS[key] || (FIELD_PERMISSION_LEVELS as readonly string[])
+      .find(l => l.toLowerCase() === key);
+    if (!mapped) {
+      throw new Error(
+        `Unrecognised permission level "${raw}"${field ? ` for field "${field}"` : ""}. ` +
+        `Allowed: ${FIELD_PERMISSION_LEVELS.join(", ")}.`);
+    }
+    return mapped;
+  };
+
   // --- ROLE PERMISSIONS ENDPOINTS ---
   app.get("/api/permissions", authenticateToken, requirePermission("User Management", "view"), async (req, res) => {
     try {
@@ -8688,7 +8718,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
           `INSERT INTO field_permissions (role, workflow_stage, field_name, permission_level)
            VALUES (?, ?, ?, ?)
            ON DUPLICATE KEY UPDATE permission_level = VALUES(permission_level)`,
-          [fp.role, fp.workflow_stage || "ANY", fp.field_name, fp.permission_level]
+          [fp.role, fp.workflow_stage || "ANY", fp.field_name, normaliseFieldLevel(fp.permission_level, fp.field_name)]
         );
       }
 
