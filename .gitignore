@@ -6,3 +6,32 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+ENV/
+pyvenv.cfg
+.pytest_cache/
+
+# SQLite / DB / generated validation DBs
+*.db
+*.sqlite
+DWIP/database/*.db
+DWIP/database/*.sqlite
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# Other
+*.egg-info/
+*.eggs/
+.venv/
+
