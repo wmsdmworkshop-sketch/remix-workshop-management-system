@@ -18,6 +18,7 @@ import {
   TMSA_PRODUCTION_BASE_URL,
   TMSA_MICROSERVICE_ENDPOINTS,
   TMSA_ENDPOINT_CATALOG,
+  getTmsaAppRequestHeaders,
   type TmsaEndpointKey,
 } from "./tmsa/endpoints";
 
@@ -297,7 +298,8 @@ export async function callProvider(
     if (v != null) url.searchParams.set(k, String(v));
   }
 
-  const headers: Record<string, string> = { Accept: "application/json", ...(opts.headers || {}) };
+  const baseHeaders = key === "tmsa_cv" ? getTmsaAppRequestHeaders(opts.headers) : { Accept: "application/json", ...(opts.headers || {}) };
+  const headers: Record<string, string> = { ...baseHeaders };
   if (opts.body && typeof opts.body === "object" && !(opts.body instanceof Uint8Array)) {
     headers["Content-Type"] = headers["Content-Type"] || "application/json";
   }

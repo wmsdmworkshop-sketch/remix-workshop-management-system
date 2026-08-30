@@ -12,7 +12,7 @@
  * - Trailer Media Upload (TA)
  */
 
-import { TMSA_MICROSERVICE_ENDPOINTS, TMSA_PRODUCTION_BASE_URL } from "./endpoints";
+import { TMSA_MICROSERVICE_ENDPOINTS, TMSA_PRODUCTION_BASE_URL, getTmsaAppRequestHeaders } from "./endpoints";
 
 export interface TmsaClientOptions {
   baseUrl?: string;
@@ -47,7 +47,7 @@ export class TmsaClient {
         path: opts.path,
         query: opts.query,
         body: opts.body,
-        headers: opts.headers,
+        headers: getTmsaAppRequestHeaders(opts.headers),
         timeoutMs: this.timeoutMs,
       });
     }
@@ -60,10 +60,7 @@ export class TmsaClient {
       }
     }
 
-    const headers: Record<string, string> = {
-      Accept: "application/json",
-      ...(opts.headers || {}),
-    };
+    const headers: Record<string, string> = getTmsaAppRequestHeaders(opts.headers);
 
     if (this.bearerToken) {
       headers["Authorization"] = `Bearer ${this.bearerToken}`;

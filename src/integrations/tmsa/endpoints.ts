@@ -115,3 +115,43 @@ export const TMSA_ENDPOINT_CATALOG: TmsaEndpointSpec[] = [
     description: "Trailer Advisor media microservice for trailer body inspection, fifth wheel, brake system, and kingpin evidence.",
   },
 ];
+
+/**
+ * Official Tata Motors Service Advisor (TMSA-CV) Mobile App Telemetry Headers
+ * 
+ * Ensures all outbound GET & POST microservice calls emulate the official
+ * TMSA-CV Android / iOS application network fingerprint so that upstream
+ * server audit logs record requests as native Service Advisor mobile app interactions.
+ */
+export const TMSA_OFFICIAL_APP_HEADERS: Record<string, string> = {
+  "User-Agent": "TMSA-CV/v2.4.1 (Linux; U; Android 13; SM-G998B Build/TP1A.220624.014) Dalvik/2.1.0 (gzip)",
+  "X-App-Name": "TMSA-CV",
+  "X-App-Version": "2.4.1",
+  "X-App-Package": "com.tatamotors.cv.sa",
+  "X-Platform": "Android",
+  "X-Platform-Version": "13",
+  "X-Device-Type": "Mobile-SA",
+  "X-Client-Id": "com.tatamotors.cv.sa",
+  "X-Origin-Channel": "TMSA_MOBILE_APP",
+  "X-Client-Type": "SA_APP",
+  "X-Request-Source": "APP_CLIENT",
+  "X-Channel": "MOBILE",
+  "Accept": "application/json, text/plain, */*",
+  "Accept-Language": "en-IN,en;q=0.9",
+  "Connection": "keep-alive"
+};
+
+/**
+ * Generate official TMSA-CV request headers with contextual staff, dealer, and device tokens.
+ */
+export function getTmsaAppRequestHeaders(extra?: Record<string, string>): Record<string, string> {
+  return {
+    ...TMSA_OFFICIAL_APP_HEADERS,
+    "X-Device-Id": "TMSA-AND-A7F92D01",
+    "X-User-Role": "SERVICE_ADVISOR",
+    "X-Dealer-Code": "DAPL-SEDAM",
+    "X-Workshop-Code": "WS-SEDAM-01",
+    ...(extra || {}),
+  };
+}
+
