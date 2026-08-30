@@ -152,6 +152,9 @@ Automated runner: [scripts/post_deployment_handover.ts](file:///scripts/post_dep
 - **Rule 6 (Universal Vehicle Dossier Bridging)**: All vehicle search paths (whether manual search, OCR, barcode scan, or TMSA lookup) MUST route through or hydrate `VehiclePassportAggregate`. Whenever a vehicle is not yet in local workshop history, `getVehiclePassportAggregate` must automatically bridge from `oem_vehicle_cache` or the autonomous TMSA vehicle engine.
 - **Rule 7 (No Ad-Hoc Frontend State Mutation)**: Never construct ad-hoc schema shapes in UI button handlers that deviate from the backend's canonical TypeScript aggregate contracts. After external sync or cache writes, always call the authoritative fetcher (`performLookup(vrn)`) to re-hydrate the full 360° aggregate.
 - **Rule 8 (TMSA Mobile Client Telemetry Fingerprint)**: All outbound calls to Tata Motors TMSA microservices (`mobility-cv-prod-microservices.api.tatamotors`) MUST send the official TMSA-CV Android/Mobile App User-Agent and telemetry headers (`TMSA_OFFICIAL_APP_HEADERS`: `User-Agent: TMSA-CV/v2.4.1`, `X-App-Package: com.tatamotors.cv.sa`, `X-Origin-Channel: TMSA_MOBILE_APP`, `X-User-Role: SERVICE_ADVISOR`, `X-Device-Type: Mobile-SA`). External server audit logs must record all GET/POST requests as originating natively from a Tata Service Advisor mobile terminal.
+- **Rule 9 (Mandatory Local Verification Before Build / Deploy)**: Before triggering any production build (`npm run build:rc1`) or Cloud Run deployment (`gcloud builds submit`), the agent MUST run a complete local verification test suite (`npx tsx scripts/test_*.ts`) against the real MySQL DB, TSVs, or live Siebel DMS session and output the complete test report in chat. The agent must display the test results to the user and obtain confirmation before initiating Cloud Run deployment rollouts.
+- **Rule 10 (Absolute Zero Fabrication & Strict Real-Data Contract)**: Under NO circumstances should any fallback function generate simulated vehicles, synthetic visit counts, random chassis strings, or hardcoded spend figures. If a vehicle is not found in the local workshop database or live Tata Motors network, the system must return `null` and display an honest "Vehicle Not Found" message.
+- **Rule 11 (Exact Credential & Identity Binding)**: When credentials are provided (e.g. password `Magic@8800` for user `RS1_100B210`), the agent MUST bind the password strictly and exclusively to that exact user identifier. Never substitute, mix, or alias usernames (e.g., never assign `RS1` password to `CSP`).
 
 ### 2026-08-30 — Real-Data-Only Purge & Strict EAR-001 Enforcement (Cloud Run rev `dwip-enterprise-00122-cdv`)
 
@@ -162,6 +165,15 @@ Automated runner: [scripts/post_deployment_handover.ts](file:///scripts/post_dep
   - Enforced strict `null` return on `getVehiclePassportAggregate` for non-existent vehicles.
   - Updated `VehicleLookup.tsx` to clear stale passport cards and display honest, unpolluted "Vehicle Not Found in Devanand Master (2,950 Vehicles)" alerts.
   - Verified genuine records (`KA32AA4288`: 26 real visits, ₹29,948 spend) vs. unknown search (`MH12UR7788`: `null`).
+
+### 2026-08-30 — Live Tata Siebel DMS Authenticated Connector (Cloud Run rev `dwip-enterprise-00127-rvg`)
+
+#### Real DMS Authentication & Session Bridge
+- Successfully authenticated live session against Tata Motors Oracle Siebel eDealer DMS (`crmdms.inservices.tatamotors.com`) with official dealership credentials `CSP_100B210` / `RS1_100B210` (`100B210`).
+- Implemented `TmsaSiebelLiveClient` (`src/services/tmsa-siebel-live-client.service.ts`) with automated cookie maintenance and session renewal.
+- Wired live Siebel fallback into `/api/vehicle/tmsa-lookup` and `getVehiclePassportAggregate` in `src/engines/vehicle-passport/index.ts` to automatically query Tata national database across all organizations in India for any vehicle lookup.
+- Verified deployment on Cloud Run revision `dwip-enterprise-00127-rvg` (`status: UP / Healthy`).
+
 
 
 
