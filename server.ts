@@ -10564,6 +10564,9 @@ Respond with valid JSON only:
         ? { path: template.replace("{vrn}", encodeURIComponent(vrn)) }
         : { path: template, query: { vrn } };
       const data = await callOemProvider(dbPool, "tmsa_cv", opts);
+      if (data && (data.found === false || data.error)) {
+        return res.status(404).json({ success: false, notFound: true, message: data.error || `Vehicle ${vrn} not found in live TMSA network.` });
+      }
       try { await cacheVehicle(dbPool, vrn, "tmsa_cv", data, String(req.user?.user_id ?? "")); }
       catch (cacheErr: any) { console.error("[TMSA] cache write failed:", cacheErr.message); }
       res.json({ success: true, source: "TMSA-CV", cached: false, vrn, data });
