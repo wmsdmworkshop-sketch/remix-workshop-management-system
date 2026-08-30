@@ -1,11 +1,11 @@
 {
   "version": "v1.1.0-rc.1",
   "release": "DWIP-v2.0.0-GA",
-  "tag": "v1.1.8-vehicle-dossier-bridge",
+  "tag": "v1.1.9-tmsa-siebel-identity",
   "enterprise": "Devanand Automobiles (Motors) LLP",
-  "buildTime": "2026-08-30T08:52:00.000+05:30",
+  "buildTime": "2026-08-30T09:15:00.000+05:30",
   "environment": "production",
-  "buildNumber": "115",
-  "commit": "200fc6d",
-  "updatedAt": "2026-08-30T03:22:45.000Z"
+  "buildNumber": "117",
+  "commit": "HEAD",
+  "updatedAt": "2026-08-30T03:45:00.000Z"
 }

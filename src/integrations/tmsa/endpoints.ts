@@ -144,29 +144,37 @@ export const TMSA_OFFICIAL_APP_HEADERS: Record<string, string> = {
 /**
  * Generate official TMSA-CV request headers with contextual staff, dealer, and device tokens.
  * Grounded in official Tata Motors Siebel eDealer session context:
- * - Active Position: TMCV-Ser-S-HBL-100B210-Sedamroad-DSvGM
- * - Authorized User: SAYEED JAFFER (DEVANAND AUTOMOBILES LLP)
+ * - Service Advisor (SA) Login: CSP_100B210 (SHASHIKUMAR PATIL, Position: DSvADV)
+ * - Service GM (DSvGM) Login: CSJ_100B210 (SAYEED JAFFER, Position: DSvGM)
+ * - Dealership: DEVANAND AUTOMOBILES LLP (100B210 - Sedam Road)
  */
 export function getTmsaAppRequestHeaders(extra?: Record<string, string>): Record<string, string> {
   return {
     ...TMSA_OFFICIAL_APP_HEADERS,
     "X-Device-Id": "TMSA-AND-A7F92D01",
     "X-User-Role": "SERVICE_ADVISOR",
+    "X-Position-Role": "DSvADV",
     "X-Dealer-Code": "100B210",
     "X-Dealer-Name": "DEVANAND AUTOMOBILES LLP",
     "X-Workshop-Code": "100B210-Sedamroad",
-    "X-Active-Position": "TMCV-Ser-S-HBL-100B210-Sedamroad-DSvGM",
+    "X-Active-Position": "TMCV-Ser-S-HBL-100B210-Sedamroad-DSvADV",
     "X-User-Login": "CSP_100B210",
     "X-User-Id": "CSP_100B210",
-    "X-User-Name": "SAYEED JAFFER",
+    "X-User-Name": "SHASHIKUMAR PATIL",
     "X-Staff-Id": "CSP_100B210",
     "X-Username": "CSP_100B210",
+    "X-Manager-Login": "CSJ_100B210",
+    "X-Manager-Name": "SAYEED JAFFER",
+    "X-Manager-Role": "DSvGM",
+    "X-Manager-Position": "TMCV-Ser-S-HBL-100B210-Sedamroad-DSvGM",
     "X-Division": "CVBU",
-    "X-Position-Role": "DSvGM",
     "X-Territory-Hub": "HBL",
     ...(extra || {}),
   };
 }
+
+
+
 
 
 
