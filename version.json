@@ -1,11 +1,11 @@
 {
   "version": "v1.1.0-rc.1",
   "release": "DWIP-v2.0.0-GA",
-  "tag": "v1.1.6-tmsa-microservices-integration",
+  "tag": "v1.1.7-tmsa-autonomous-engine",
   "enterprise": "Devanand Automobiles (Motors) LLP",
-  "buildTime": "2026-08-30T08:20:00.000+05:30",
+  "buildTime": "2026-08-30T08:36:00.000+05:30",
   "environment": "production",
-  "buildNumber": "113",
-  "commit": "74f8d82",
-  "updatedAt": "2026-08-30T02:50:35.000Z"
+  "buildNumber": "114",
+  "commit": "fc856d5",
+  "updatedAt": "2026-08-30T03:06:30.000Z"
 }
