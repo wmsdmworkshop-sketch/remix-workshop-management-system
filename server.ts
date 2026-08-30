@@ -18,7 +18,8 @@ import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
 import { pool as dbPool } from "./src/db/index.ts";
 import { startQrtGmailIngestor, runQrtIngestOnce, getQrtPublicConfig, updateQrtSettings } from "./src/integrations/qrt-gmail-ingestor.ts";
-import { ensureOemTable, getPublicConfig as getOemPublicConfig, updateProviderConfig as updateOemProvider, testProvider as testOemProvider, callProvider as callOemProvider, OemNotConfiguredError, ensureVehicleCacheTable, getCachedVehicle, cacheVehicle, type OemProviderKey } from "./src/integrations/oem-api.ts";
+import { ensureOemTable, getPublicConfig as getOemPublicConfig, updateProviderConfig as updateOemProvider, testProvider as testOemProvider, callProvider as callOemProvider, OemNotConfiguredError, ensureVehicleCacheTable, getCachedVehicle, cacheVehicle, fetchTmsaBillingMaster, fetchTmsaComplaintCodes, fetchTmsaFaultCodes, fetchTmsaVehicleInventory, uploadTmsaFenceInImage, uploadTmsaCrmImage, uploadTmsaMedia, uploadTmsaTrailerMedia, ensureOemMasterCacheTable, getCachedMasterData, cacheMasterData, type OemProviderKey } from "./src/integrations/oem-api.ts";
+import { TMSA_PRODUCTION_BASE_URL, TMSA_MICROSERVICE_ENDPOINTS, TMSA_ENDPOINT_CATALOG } from "./src/integrations/tmsa/endpoints.ts";
 import { ingestAlert as ingestCctvAlert, listAlerts as listCctvAlerts, acknowledgeAlert as ackCctvAlert, listCameras as listCctvCameras, upsertCamera as upsertCctvCamera, deleteCamera as deleteCctvCamera, getCctvConfig, updateCctvConfig, countOpenAlerts as countOpenCctvAlerts } from "./src/integrations/cctv-analytics.ts";
 import { filterViewableJobCards, canEditJobCard, isGmOverride, isOwnedBy, isInMyStage, isFullViewRole, GROUP1_FULL_CONTROL, GROUP2_VIEW_ALL_EDIT_OWN, GROUP3_VIEW_ONLY, GM_OVERRIDE_ROLES, STAGE_RULES, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
 import { parseInHouseAction, applyInHouseAction, buildCumulativeIdePrompt } from "./src/core/pilot/in-house-actions.ts";
@@ -10521,6 +10522,193 @@ Respond with valid JSON only:
         return res.status(503).json({ success: false, unavailable: true, message: e.message });
       }
       res.status(502).json({ success: false, error: e.message || "TMSA lookup failed", status: e.status, body: e.body });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // TATA MOTORS SERVICE ADVISOR (TMSA-CV) MICROSERVICES
+  // ---------------------------------------------------------------------------
+
+  // Catalog / Endpoint Directory
+  app.get("/api/integrations/tmsa/endpoints", authenticateToken, async (_req: any, res) => {
+    try {
+      const cfg = (await getOemPublicConfig(dbPool)).find((p: any) => p.provider_key === "tmsa_cv");
+      res.json({
+        success: true,
+        baseUrl: cfg?.base_url || TMSA_PRODUCTION_BASE_URL,
+        isConfigured: cfg?.configured ?? false,
+        endpoints: TMSA_ENDPOINT_CATALOG,
+      });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message || "Failed to load endpoints" });
+    }
+  });
+
+  // 1. Billing Master: /api/tmsa-cv/sa/billing-type-master/
+  app.get("/api/integrations/tmsa/billing-type-master", authenticateToken, async (req: any, res) => {
+    const forceRefresh = String(req.query?.refresh || "") === "1" || req.query?.refresh === "true";
+    try {
+      if (!forceRefresh) {
+        const cached = await getCachedMasterData(dbPool, "billing_type_master");
+        if (cached) {
+          return res.json({ success: true, source: "TMSA-CV", cached: true, syncedAt: cached.syncedAt, data: cached.data });
+        }
+      }
+      const data = await fetchTmsaBillingMaster(dbPool, req.query);
+      await cacheMasterData(dbPool, "billing_type_master", "tmsa_cv", data, String(req.user?.user_id ?? ""));
+      res.json({ success: true, source: "TMSA-CV", cached: false, data });
+    } catch (e: any) {
+      if (e instanceof OemNotConfiguredError || e.code === "NOT_CONFIGURED") {
+        const cached = await getCachedMasterData(dbPool, "billing_type_master").catch(() => null);
+        if (cached) return res.json({ success: true, source: "TMSA-CV", cached: true, stale: true, syncedAt: cached.syncedAt, data: cached.data });
+        return res.status(503).json({ success: false, unavailable: true, message: e.message });
+      }
+      res.status(502).json({ success: false, error: e.message || "Billing Master request failed", status: e.status, body: e.body });
+    }
+  });
+
+  // 2. Complaint Code: /api/tmsa-cv/sa/complaint-code-master/
+  app.get("/api/integrations/tmsa/complaint-code-master", authenticateToken, async (req: any, res) => {
+    const forceRefresh = String(req.query?.refresh || "") === "1" || req.query?.refresh === "true";
+    try {
+      if (!forceRefresh) {
+        const cached = await getCachedMasterData(dbPool, "complaint_code_master");
+        if (cached) {
+          return res.json({ success: true, source: "TMSA-CV", cached: true, syncedAt: cached.syncedAt, data: cached.data });
+        }
+      }
+      const data = await fetchTmsaComplaintCodes(dbPool, req.query);
+      await cacheMasterData(dbPool, "complaint_code_master", "tmsa_cv", data, String(req.user?.user_id ?? ""));
+      res.json({ success: true, source: "TMSA-CV", cached: false, data });
+    } catch (e: any) {
+      if (e instanceof OemNotConfiguredError || e.code === "NOT_CONFIGURED") {
+        const cached = await getCachedMasterData(dbPool, "complaint_code_master").catch(() => null);
+        if (cached) return res.json({ success: true, source: "TMSA-CV", cached: true, stale: true, syncedAt: cached.syncedAt, data: cached.data });
+        return res.status(503).json({ success: false, unavailable: true, message: e.message });
+      }
+      res.status(502).json({ success: false, error: e.message || "Complaint Code Master request failed", status: e.status, body: e.body });
+    }
+  });
+
+  // 3. Fault Code: /api/tmsa-cv/sa/fault-code-master/
+  app.get("/api/integrations/tmsa/fault-code-master", authenticateToken, async (req: any, res) => {
+    const forceRefresh = String(req.query?.refresh || "") === "1" || req.query?.refresh === "true";
+    try {
+      if (!forceRefresh) {
+        const cached = await getCachedMasterData(dbPool, "fault_code_master");
+        if (cached) {
+          return res.json({ success: true, source: "TMSA-CV", cached: true, syncedAt: cached.syncedAt, data: cached.data });
+        }
+      }
+      const data = await fetchTmsaFaultCodes(dbPool, req.query);
+      await cacheMasterData(dbPool, "fault_code_master", "tmsa_cv", data, String(req.user?.user_id ?? ""));
+      res.json({ success: true, source: "TMSA-CV", cached: false, data });
+    } catch (e: any) {
+      if (e instanceof OemNotConfiguredError || e.code === "NOT_CONFIGURED") {
+        const cached = await getCachedMasterData(dbPool, "fault_code_master").catch(() => null);
+        if (cached) return res.json({ success: true, source: "TMSA-CV", cached: true, stale: true, syncedAt: cached.syncedAt, data: cached.data });
+        return res.status(503).json({ success: false, unavailable: true, message: e.message });
+      }
+      res.status(502).json({ success: false, error: e.message || "Fault Code Master request failed", status: e.status, body: e.body });
+    }
+  });
+
+  // 4. Vehicle Inventory: /api/tmsa-cv/sa/vehicle-inventory/
+  app.get("/api/integrations/tmsa/vehicle-inventory", authenticateToken, async (req: any, res) => {
+    try {
+      const data = await fetchTmsaVehicleInventory(dbPool, req.query);
+      res.json({ success: true, source: "TMSA-CV", data });
+    } catch (e: any) {
+      if (e instanceof OemNotConfiguredError || e.code === "NOT_CONFIGURED") {
+        return res.status(503).json({ success: false, unavailable: true, message: e.message });
+      }
+      res.status(502).json({ success: false, error: e.message || "Vehicle Inventory request failed", status: e.status, body: e.body });
+    }
+  });
+
+  // 5. Fence In Upload: /api/tmsa-cv/sa/upload-image/
+  app.post("/api/integrations/tmsa/upload-image", authenticateToken, express.json({ limit: "50mb" }), async (req: any, res) => {
+    try {
+      const payload = req.body || {};
+      const data = await uploadTmsaFenceInImage(dbPool, payload);
+      res.json({ success: true, source: "TMSA-CV", endpoint: "FENCE_IN_UPLOAD", data });
+    } catch (e: any) {
+      if (e instanceof OemNotConfiguredError || e.code === "NOT_CONFIGURED") {
+        return res.status(503).json({ success: false, unavailable: true, message: e.message });
+      }
+      res.status(502).json({ success: false, error: e.message || "Fence In Upload failed", status: e.status, body: e.body });
+    }
+  });
+
+  // 6. CRM Upload: /api/tmsa-cv/sa/image-upload-in-crm/
+  app.post("/api/integrations/tmsa/image-upload-in-crm", authenticateToken, express.json({ limit: "50mb" }), async (req: any, res) => {
+    try {
+      const payload = req.body || {};
+      const data = await uploadTmsaCrmImage(dbPool, payload);
+      res.json({ success: true, source: "TMSA-CV", endpoint: "CRM_IMAGE_UPLOAD", data });
+    } catch (e: any) {
+      if (e instanceof OemNotConfiguredError || e.code === "NOT_CONFIGURED") {
+        return res.status(503).json({ success: false, unavailable: true, message: e.message });
+      }
+      res.status(502).json({ success: false, error: e.message || "CRM Image Upload failed", status: e.status, body: e.body });
+    }
+  });
+
+  // 7. Media Upload: /api/tmsa-cv/sa/media-upload/
+  app.post("/api/integrations/tmsa/media-upload", authenticateToken, express.json({ limit: "50mb" }), async (req: any, res) => {
+    try {
+      const payload = req.body || {};
+      const data = await uploadTmsaMedia(dbPool, payload);
+      res.json({ success: true, source: "TMSA-CV", endpoint: "MEDIA_UPLOAD_SA", data });
+    } catch (e: any) {
+      if (e instanceof OemNotConfiguredError || e.code === "NOT_CONFIGURED") {
+        return res.status(503).json({ success: false, unavailable: true, message: e.message });
+      }
+      res.status(502).json({ success: false, error: e.message || "Media Upload failed", status: e.status, body: e.body });
+    }
+  });
+
+  // 8. Trailer Media: /api/tmsa-cv/ta/media-upload/
+  app.post("/api/integrations/tmsa/trailer/media-upload", authenticateToken, express.json({ limit: "50mb" }), async (req: any, res) => {
+    try {
+      const payload = req.body || {};
+      const data = await uploadTmsaTrailerMedia(dbPool, payload);
+      res.json({ success: true, source: "TMSA-CV", endpoint: "MEDIA_UPLOAD_TA", data });
+    } catch (e: any) {
+      if (e instanceof OemNotConfiguredError || e.code === "NOT_CONFIGURED") {
+        return res.status(503).json({ success: false, unavailable: true, message: e.message });
+      }
+      res.status(502).json({ success: false, error: e.message || "Trailer Media Upload failed", status: e.status, body: e.body });
+    }
+  });
+
+  // Bulk Sync Masters
+  app.post("/api/integrations/tmsa/sync-masters", authenticateToken, requireRoles(OEM_ADMIN_ROLES), async (req: any, res) => {
+    const results: Record<string, any> = {};
+    const errors: Record<string, string> = {};
+
+    try {
+      const billing = await fetchTmsaBillingMaster(dbPool).catch(e => { errors.billing = e.message; return null; });
+      if (billing) {
+        await cacheMasterData(dbPool, "billing_type_master", "tmsa_cv", billing, String(req.user?.user_id ?? ""));
+        results.billing = { status: "SYNCED" };
+      }
+
+      const complaints = await fetchTmsaComplaintCodes(dbPool).catch(e => { errors.complaints = e.message; return null; });
+      if (complaints) {
+        await cacheMasterData(dbPool, "complaint_code_master", "tmsa_cv", complaints, String(req.user?.user_id ?? ""));
+        results.complaints = { status: "SYNCED" };
+      }
+
+      const faults = await fetchTmsaFaultCodes(dbPool).catch(e => { errors.faults = e.message; return null; });
+      if (faults) {
+        await cacheMasterData(dbPool, "fault_code_master", "tmsa_cv", faults, String(req.user?.user_id ?? ""));
+        results.faults = { status: "SYNCED" };
+      }
+
+      res.json({ success: true, results, errors, timestamp: new Date().toISOString() });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message || "Sync failed" });
     }
   });
 

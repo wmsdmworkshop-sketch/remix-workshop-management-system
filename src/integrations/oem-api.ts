@@ -14,11 +14,23 @@
  * =============================================================================
  */
 
+import {
+  TMSA_PRODUCTION_BASE_URL,
+  TMSA_MICROSERVICE_ENDPOINTS,
+  TMSA_ENDPOINT_CATALOG,
+  type TmsaEndpointKey,
+} from "./tmsa/endpoints";
+
 export type OemProviderKey = "tmsa_cv" | "qrt" | "fleet_edge";
 export type OemAuthMode = "api_key" | "bearer" | "oauth2";
 
-export const OEM_PROVIDERS: { key: OemProviderKey; label: string; blurb: string }[] = [
-  { key: "tmsa_cv", label: "TMSA-CV", blurb: "Tata Motors Service App (CV) — vehicle master, service history, billing/fault codes." },
+export const OEM_PROVIDERS: { key: OemProviderKey; label: string; blurb: string; defaultBaseUrl?: string }[] = [
+  {
+    key: "tmsa_cv",
+    label: "TMSA-CV",
+    blurb: "Tata Motors Service App (CV) — billing master, complaint/fault codes, vehicle inventory & media upload microservices.",
+    defaultBaseUrl: TMSA_PRODUCTION_BASE_URL,
+  },
   { key: "qrt", label: "QRT (Breakdown)", blurb: "Quick Response Team — live breakdown cases & status." },
   { key: "fleet_edge", label: "Fleet Edge", blurb: "Tata Fleet Edge telematics / vehicle live data." },
 ];
@@ -54,8 +66,8 @@ export async function ensureOemTable(pool: any): Promise<void> {
   // Seed one empty (inert) row per provider so the settings UI always has all three.
   for (const p of OEM_PROVIDERS) {
     await pool.execute(
-      `INSERT IGNORE INTO oem_api_providers (provider_key, label, auth_mode, key_header, enabled) VALUES (?, ?, 'api_key', 'X-API-Key', 0)`,
-      [p.key, p.label]
+      `INSERT IGNORE INTO oem_api_providers (provider_key, label, base_url, auth_mode, key_header, enabled) VALUES (?, ?, ?, 'api_key', 'X-API-Key', 0)`,
+      [p.key, p.label, p.defaultBaseUrl || null]
     );
   }
 }
@@ -85,7 +97,7 @@ export async function getPublicConfig(pool: any): Promise<any[]> {
       provider_key: p.key,
       label: p.label,
       blurb: p.blurb,
-      base_url: r.base_url || "",
+      base_url: r.base_url || p.defaultBaseUrl || "",
       auth_mode: r.auth_mode || "api_key",
       key_header: r.key_header || "X-API-Key",
       token_url: r.token_url || "",
@@ -162,7 +174,7 @@ export async function callProvider(
   const row = await getProviderRow(pool, key);
   if (!isConfigured(row)) throw new OemNotConfiguredError(key);
 
-  const base = String(row.base_url).replace(/\/+$/, "");
+  const base = String(row.base_url || "").replace(/\/+$/, "");
   const path = opts.path.startsWith("/") ? opts.path : `/${opts.path}`;
   const url = new URL(base + path);
   for (const [k, v] of Object.entries(opts.query || {})) {
@@ -170,7 +182,9 @@ export async function callProvider(
   }
 
   const headers: Record<string, string> = { Accept: "application/json", ...(opts.headers || {}) };
-  if (opts.body) headers["Content-Type"] = headers["Content-Type"] || "application/json";
+  if (opts.body && typeof opts.body === "object" && !(opts.body instanceof Uint8Array)) {
+    headers["Content-Type"] = headers["Content-Type"] || "application/json";
+  }
   if (row.auth_mode === "api_key") headers[row.key_header || "X-API-Key"] = row.api_key;
   else if (row.auth_mode === "bearer") headers["Authorization"] = `Bearer ${row.api_key}`;
   else if (row.auth_mode === "oauth2") headers["Authorization"] = `Bearer ${await getBearerToken(row)}`;
@@ -181,7 +195,7 @@ export async function callProvider(
     const resp = await fetch(url.toString(), {
       method: opts.method || "GET",
       headers,
-      body: opts.body ? (typeof opts.body === "string" ? opts.body : JSON.stringify(opts.body)) : undefined,
+      body: opts.body ? (typeof opts.body === "string" || opts.body instanceof Uint8Array ? opts.body : JSON.stringify(opts.body)) : undefined,
       signal: ctrl.signal,
     });
     const text = await resp.text();
@@ -196,6 +210,74 @@ export async function callProvider(
   } finally {
     clearTimeout(timer);
   }
+}
+
+// =============================================================================
+// TMSA MICROSERVICES CONVENIENCE WRAPPERS
+// =============================================================================
+
+export async function fetchTmsaBillingMaster(pool: any, query?: Record<string, any>): Promise<any> {
+  return callProvider(pool, "tmsa_cv", {
+    method: "GET",
+    path: TMSA_MICROSERVICE_ENDPOINTS.BILLING_TYPE_MASTER,
+    query,
+  });
+}
+
+export async function fetchTmsaComplaintCodes(pool: any, query?: Record<string, any>): Promise<any> {
+  return callProvider(pool, "tmsa_cv", {
+    method: "GET",
+    path: TMSA_MICROSERVICE_ENDPOINTS.COMPLAINT_CODE_MASTER,
+    query,
+  });
+}
+
+export async function fetchTmsaFaultCodes(pool: any, query?: Record<string, any>): Promise<any> {
+  return callProvider(pool, "tmsa_cv", {
+    method: "GET",
+    path: TMSA_MICROSERVICE_ENDPOINTS.FAULT_CODE_MASTER,
+    query,
+  });
+}
+
+export async function fetchTmsaVehicleInventory(pool: any, query?: Record<string, any>): Promise<any> {
+  return callProvider(pool, "tmsa_cv", {
+    method: "GET",
+    path: TMSA_MICROSERVICE_ENDPOINTS.VEHICLE_INVENTORY,
+    query,
+  });
+}
+
+export async function uploadTmsaFenceInImage(pool: any, body: Record<string, any>): Promise<any> {
+  return callProvider(pool, "tmsa_cv", {
+    method: "POST",
+    path: TMSA_MICROSERVICE_ENDPOINTS.FENCE_IN_UPLOAD,
+    body,
+  });
+}
+
+export async function uploadTmsaCrmImage(pool: any, body: Record<string, any>): Promise<any> {
+  return callProvider(pool, "tmsa_cv", {
+    method: "POST",
+    path: TMSA_MICROSERVICE_ENDPOINTS.CRM_IMAGE_UPLOAD,
+    body,
+  });
+}
+
+export async function uploadTmsaMedia(pool: any, body: Record<string, any>): Promise<any> {
+  return callProvider(pool, "tmsa_cv", {
+    method: "POST",
+    path: TMSA_MICROSERVICE_ENDPOINTS.MEDIA_UPLOAD_SA,
+    body,
+  });
+}
+
+export async function uploadTmsaTrailerMedia(pool: any, body: Record<string, any>): Promise<any> {
+  return callProvider(pool, "tmsa_cv", {
+    method: "POST",
+    path: TMSA_MICROSERVICE_ENDPOINTS.MEDIA_UPLOAD_TA,
+    body,
+  });
 }
 
 // --- Vehicle record cache: once fetched from TMSA, keep it in our DB so the same
@@ -249,6 +331,42 @@ export async function cacheVehicle(pool: any, vrn: string, provider: string, pay
      VALUES (?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE provider=VALUES(provider), chassis_no=VALUES(chassis_no), model=VALUES(model), payload=VALUES(payload), fetched_by=VALUES(fetched_by)`,
     [key, provider, chassis, model, typeof payload === "string" ? payload : JSON.stringify(payload), fetchedBy || null]
+  );
+}
+
+// --- Master Data Cache Table (Billing, Complaint, Fault Code Masters) ---
+export async function ensureOemMasterCacheTable(pool: any): Promise<void> {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS oem_master_cache (
+      master_type VARCHAR(60) PRIMARY KEY,
+      provider VARCHAR(40) NOT NULL DEFAULT 'tmsa_cv',
+      item_count INT NOT NULL DEFAULT 0,
+      payload LONGTEXT DEFAULT NULL,
+      synced_by VARCHAR(50) DEFAULT NULL,
+      synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+}
+
+export async function getCachedMasterData(pool: any, masterType: string): Promise<any | null> {
+  await ensureOemMasterCacheTable(pool);
+  const [rows]: any = await pool.execute(`SELECT * FROM oem_master_cache WHERE master_type = ? LIMIT 1`, [masterType]);
+  const row = (rows || [])[0];
+  if (!row) return null;
+  let data: any = row.payload;
+  try { data = JSON.parse(row.payload); } catch { /* leave as text */ }
+  return { masterType: row.master_type, provider: row.provider, itemCount: row.item_count, data, syncedAt: row.synced_at };
+}
+
+export async function cacheMasterData(pool: any, masterType: string, provider: string, payload: any, syncedBy?: string): Promise<void> {
+  await ensureOemMasterCacheTable(pool);
+  const items = Array.isArray(payload) ? payload : (payload?.items || payload?.data || []);
+  const count = Array.isArray(items) ? items.length : 1;
+  await pool.execute(
+    `INSERT INTO oem_master_cache (master_type, provider, item_count, payload, synced_by)
+     VALUES (?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE provider=VALUES(provider), item_count=VALUES(item_count), payload=VALUES(payload), synced_by=VALUES(synced_by)`,
+    [masterType, provider, count, typeof payload === "string" ? payload : JSON.stringify(payload), syncedBy || null]
   );
 }
 

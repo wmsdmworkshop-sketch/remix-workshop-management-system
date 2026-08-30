@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Plug, ShieldCheck, Save, Loader2, CheckCircle2, XCircle, RefreshCw, KeyRound } from "lucide-react";
+import { Plug, ShieldCheck, Save, Loader2, CheckCircle2, XCircle, RefreshCw, KeyRound, Server, Database, ArrowRight, Layers, UploadCloud } from "lucide-react";
 import { getStaffToken } from "../lib/authToken";
+import { TMSA_ENDPOINT_CATALOG, TMSA_PRODUCTION_BASE_URL, type TmsaEndpointSpec } from "../integrations/tmsa/endpoints";
 
 /**
  * External Integrations — paste the OFFICIAL Tata API base URL + credentials for
@@ -25,16 +26,6 @@ interface Provider {
   updated_at: string | null;
 }
 
-/**
- * Uses the shared accessor rather than reading localStorage directly.
- *
- * This previously looked only at "dwip_token" and "token" — both LEGACY keys.
- * The canonical key is "wms_token" (STAFF_TOKEN_KEY), so for any normally
- * logged-in user this returned an empty string and the page sent no
- * Authorization header at all, rendering "Access denied. No token provided."
- * every time. getStaffToken() checks the canonical key first and then the same
- * legacy keys, so old sessions keep working.
- */
 const authHeaders = (): Record<string, string> => {
   const token = getStaffToken();
   const h: Record<string, string> = { "Content-Type": "application/json" };
@@ -54,6 +45,8 @@ export default function ExternalIntegrations() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<Record<string, { ok: boolean; message: string }>>({});
+  const [syncResult, setSyncResult] = useState<{ ok: boolean; message: string; data?: any } | null>(null);
+  const [showTmsaCatalog, setShowTmsaCatalog] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
   const load = async () => {
@@ -66,9 +59,15 @@ export default function ExternalIntegrations() {
       const init: Record<string, any> = {};
       (d.providers || []).forEach((p: Provider) => {
         init[p.provider_key] = {
-          base_url: p.base_url, auth_mode: p.auth_mode, key_header: p.key_header || "X-API-Key",
-          token_url: p.token_url, client_id: p.client_id, lookup_path: p.lookup_path,
-          enabled: p.enabled, api_key: "", client_secret: "",
+          base_url: p.base_url || (p.provider_key === "tmsa_cv" ? TMSA_PRODUCTION_BASE_URL : ""),
+          auth_mode: p.auth_mode,
+          key_header: p.key_header || "X-API-Key",
+          token_url: p.token_url,
+          client_id: p.client_id,
+          lookup_path: p.lookup_path,
+          enabled: p.enabled,
+          api_key: "",
+          client_secret: "",
         };
       });
       setDrafts(init);
@@ -102,7 +101,28 @@ export default function ExternalIntegrations() {
     setBusy(null);
   };
 
+  const syncTmsaMasters = async () => {
+    setBusy("sync-tmsa"); setSyncResult(null);
+    try {
+      const r = await fetch("/api/integrations/tmsa/sync-masters", { method: "POST", headers: authHeaders() });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Master synchronization failed.");
+      const errorCount = Object.keys(d.errors || {}).length;
+      const successCount = Object.keys(d.results || {}).length;
+      setSyncResult({
+        ok: errorCount === 0 && successCount > 0,
+        message: `Synced ${successCount} master catalogs (${errorCount} errors)`,
+        data: d,
+      });
+    } catch (e: any) {
+      setSyncResult({ ok: false, message: e.message });
+    }
+    setBusy(null);
+  };
+
   if (loading) return <div className="flex items-center gap-2 text-slate-400 p-8 text-sm"><Loader2 className="h-4 w-4 animate-spin" /> Loading integrations…</div>;
+
+  const tmsaProvider = providers.find(p => p.provider_key === "tmsa_cv");
 
   return (
     <div className="space-y-4 max-w-4xl">
@@ -111,7 +131,7 @@ export default function ExternalIntegrations() {
           <h1 className="text-xl font-black text-white flex items-center gap-2"><Plug className="h-5 w-5 text-orange-400" /> External Integrations</h1>
           <p className="text-xs text-slate-400 mt-1">Paste the official Tata API base URL + credentials. Each slot stays inert until saved and enabled — no calls go out before then.</p>
         </div>
-        <button onClick={load} className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-300 bg-slate-800 border border-slate-700 rounded px-3 py-1.5"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>
+        <button onClick={load} className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-300 bg-slate-800 border border-slate-700 rounded px-3 py-1.5 hover:bg-slate-700 transition"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>
       </div>
 
       {err && <p className="text-xs text-red-400 bg-red-950/40 border border-red-900/50 rounded p-2">{err}</p>}
@@ -119,8 +139,10 @@ export default function ExternalIntegrations() {
       {providers.map((p) => {
         const d = drafts[p.provider_key] || {};
         const tr = testResult[p.provider_key];
+        const isTmsa = p.provider_key === "tmsa_cv";
+
         return (
-          <div key={p.provider_key} className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <div key={p.provider_key} className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -131,18 +153,18 @@ export default function ExternalIntegrations() {
                 </h3>
                 <p className="text-[11px] text-slate-500 mt-0.5">{p.blurb}</p>
               </div>
-              <label className="flex items-center gap-2 text-[11px] font-bold text-slate-300">
+              <label className="flex items-center gap-2 text-[11px] font-bold text-slate-300 cursor-pointer">
                 <input type="checkbox" checked={!!d.enabled} onChange={e => setField(p.provider_key, "enabled", e.target.checked)} />
                 Enabled
               </label>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="sm:col-span-2">
                 <label className="text-[10px] font-bold uppercase text-slate-500">Base URL</label>
                 <input value={d.base_url || ""} onChange={e => setField(p.provider_key, "base_url", e.target.value)}
-                  placeholder="https://api.tatamotors.com/tmsa-cv/v1"
-                  className="w-full mt-1 bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-orange-500" />
+                  placeholder={isTmsa ? TMSA_PRODUCTION_BASE_URL : "https://api.tatamotors.com/v1"}
+                  className="w-full mt-1 bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-orange-500 font-mono text-[11px]" />
               </div>
 
               <div>
@@ -192,31 +214,92 @@ export default function ExternalIntegrations() {
                 </>
               )}
 
-              {p.provider_key === "tmsa_cv" && (
+              {isTmsa && (
                 <div className="sm:col-span-2">
-                  <label className="text-[10px] font-bold uppercase text-slate-500">Vehicle lookup path <span className="normal-case text-slate-600">(use {"{vrn}"} placeholder, e.g. /vehicle/{"{vrn}"}/passport)</span></label>
+                  <label className="text-[10px] font-bold uppercase text-slate-500">Vehicle lookup path <span className="normal-case text-slate-600">(use {"{vrn}"} placeholder)</span></label>
                   <input value={d.lookup_path || ""} onChange={e => setField(p.provider_key, "lookup_path", e.target.value)}
-                    placeholder="/vehicle/{vrn}"
-                    className="w-full mt-1 bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-orange-500" />
+                    placeholder="/api/tmsa-cv/sa/vehicle-inventory/"
+                    className="w-full mt-1 bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-orange-500 font-mono text-[11px]" />
                 </div>
               )}
             </div>
 
-            <div className="flex items-center gap-2 mt-3">
+            <div className="flex flex-wrap items-center gap-2 pt-1">
               <button onClick={() => save(p.provider_key)} disabled={busy === p.provider_key}
-                className="inline-flex items-center gap-1.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-bold text-[11px] px-3 py-1.5 rounded uppercase tracking-wider">
+                className="inline-flex items-center gap-1.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-bold text-[11px] px-3 py-1.5 rounded uppercase tracking-wider transition">
                 {busy === p.provider_key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save
               </button>
               <button onClick={() => test(p.provider_key)} disabled={busy === `test-${p.provider_key}`}
-                className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 font-bold text-[11px] px-3 py-1.5 rounded uppercase tracking-wider border border-slate-700">
-                {busy === `test-${p.provider_key}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />} Test
+                className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 font-bold text-[11px] px-3 py-1.5 rounded uppercase tracking-wider border border-slate-700 transition">
+                {busy === `test-${p.provider_key}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />} Test Connection
               </button>
+              {isTmsa && (
+                <button onClick={syncTmsaMasters} disabled={busy === "sync-tmsa" || !p.configured}
+                  className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-sky-300 font-bold text-[11px] px-3 py-1.5 rounded uppercase tracking-wider border border-slate-700 transition">
+                  {busy === "sync-tmsa" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Database className="h-3.5 w-3.5" />} Sync Master Catalogs
+                </button>
+              )}
               {tr && (
-                <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${tr.ok ? "text-emerald-400" : "text-red-400"}`}>
+                <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ml-auto ${tr.ok ? "text-emerald-400" : "text-red-400"}`}>
                   {tr.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />} {tr.message}
                 </span>
               )}
+              {isTmsa && syncResult && (
+                <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ml-auto ${syncResult.ok ? "text-emerald-400" : "text-amber-400"}`}>
+                  {syncResult.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />} {syncResult.message}
+                </span>
+              )}
             </div>
+
+            {/* TMSA Microservices Catalog Table */}
+            {isTmsa && (
+              <div className="mt-4 pt-3 border-t border-slate-800/80">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-orange-400" />
+                    <h4 className="text-xs font-bold text-slate-200">TMSA Microservices Endpoint Directory (8 APIs)</h4>
+                  </div>
+                  <button onClick={() => setShowTmsaCatalog(v => !v)} className="text-[10px] text-orange-400 hover:underline">
+                    {showTmsaCatalog ? "Collapse" : "Expand"}
+                  </button>
+                </div>
+
+                {showTmsaCatalog && (
+                  <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-950/80">
+                    <table className="w-full text-[11px] text-left">
+                      <thead className="bg-slate-900/90 text-slate-400 font-bold uppercase text-[9px] tracking-wider border-b border-slate-800">
+                        <tr>
+                          <th className="px-3 py-2">Microservice</th>
+                          <th className="px-2 py-2">Subsystem</th>
+                          <th className="px-2 py-2">Method</th>
+                          <th className="px-3 py-2">Full URL</th>
+                          <th className="px-3 py-2">Purpose</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/50">
+                        {TMSA_ENDPOINT_CATALOG.map((ep) => (
+                          <tr key={ep.key} className="hover:bg-slate-900/40 transition">
+                            <td className="px-3 py-2 font-bold text-slate-200 whitespace-nowrap">{ep.name}</td>
+                            <td className="px-2 py-2 whitespace-nowrap">
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${ep.subsystem === "SA" ? "bg-blue-900/40 text-blue-300 border border-blue-800/40" : "bg-purple-900/40 text-purple-300 border border-purple-800/40"}`}>
+                                {ep.subsystem}
+                              </span>
+                            </td>
+                            <td className="px-2 py-2 whitespace-nowrap">
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${ep.method === "GET" ? "bg-emerald-950/60 text-emerald-300" : "bg-amber-950/60 text-amber-300"}`}>
+                                {ep.method}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 font-mono text-[10px] text-slate-400 break-all select-all">{ep.fullUrl}</td>
+                            <td className="px-3 py-2 text-slate-400 text-[10px] max-w-xs">{ep.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
