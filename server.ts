@@ -4046,6 +4046,18 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
+  app.post("/api/tmsa/mass-sync/diagnose-error", async (req, res) => {
+    try {
+      const { vrn, errorContext } = req.body || {};
+      if (!vrn) return res.status(400).json({ error: "VRN is required" });
+      const diagnosis = await tmsaMassSyncWorker.diagnoseSyncAnomalyWithDeepSeek(vrn, errorContext || {});
+      res.json({ success: true, diagnosis });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+
 
   // GET /api/vehicles/:vrn/schedule-eligibility moved to
   // src/api/routes/ai.routes.ts (mounted below) so it inherits the AI rate

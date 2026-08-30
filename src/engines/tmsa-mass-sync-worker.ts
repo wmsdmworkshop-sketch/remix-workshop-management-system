@@ -417,6 +417,35 @@ class TmsaMassSyncWorker {
     this.multiDealerLedgerByVrn.set(key, visits);
     return visits;
   }
+
+  /**
+   * Resolve and diagnose TMSA data anomalies or sync failures using DeepSeek / SIGNA / SETU reasoning.
+   */
+  public async diagnoseSyncAnomalyWithDeepSeek(vrn: string, errorContext: Record<string, any>): Promise<{ diagnosis: string; remediation: string; brainUsed: string }> {
+    try {
+      const { DeepSeekEngine } = await import("./deepseek-engine.ts");
+      const prompt = `Vehicle Registration Number: ${vrn}\nError Context:\n${JSON.stringify(errorContext, null, 2)}\n\nAnalyze this TMSA sync/data discrepancy, identify root cause, and provide a concrete remediation protocol for the Service Advisor / Workshop Admin.`;
+      
+      const response = await DeepSeekEngine.reason(prompt, {
+        sourceSystem: "TMSA-CV Microservices (100B210)",
+        engineContext: "SETU/SIGNA Multi-Dealer Ledger Reconciliation",
+        activeDealer: "Devanand Automobiles LLP",
+      });
+
+      return {
+        diagnosis: response.reasoning,
+        remediation: response.conclusion,
+        brainUsed: "DeepSeek-V4 (SIGNA/SETU Hybrid)"
+      };
+    } catch (err: any) {
+      return {
+        diagnosis: `Autonomous fallback diagnosis: Discrepancy logged for ${vrn}. Local TSV records remain authoritative.`,
+        remediation: `Verify chassis number in vehicle_master.tsv and re-trigger TMSA sync.`,
+        brainUsed: "Rule-Based Fallback Engine"
+      };
+    }
+  }
 }
 
 export const tmsaMassSyncWorker = new TmsaMassSyncWorker();
+
