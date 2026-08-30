@@ -677,8 +677,33 @@ export class VehiclePassportFacade {
 
       }
 
-      // If no vehicle records exist in DB or TSVs, return null (Real-Data-Only contract)
-      const vehicleRow = vRows && vRows.length > 0 ? vRows[0] : null;
+      // 3. Check Live Tata TMSA & Siebel DMS Network if local DB & TSVs have no rows
+      let vehicleRow = vRows && vRows.length > 0 ? vRows[0] : null;
+      if (!vehicleRow && (!shRows || shRows.length === 0) && (!invRows || invRows.length === 0)) {
+        try {
+          const { tmsaSiebelLiveClient } = await import("../../services/tmsa-siebel-live-client.service.ts");
+          const liveRecord = await tmsaSiebelLiveClient.queryVehicleLive(cleanSearch);
+          if (liveRecord) {
+            vRows = [{
+              registration_no: liveRecord.vrn,
+              chassis_number: liveRecord.chassis_no,
+              engine_no: liveRecord.engine_no,
+              product_line: liveRecord.model,
+              owner_account_name: liveRecord.owner_name,
+              contact_authorization: liveRecord.customer_phone,
+              original_sale_date: liveRecord.original_sale_date,
+              date_of_registration: liveRecord.registration_date,
+              warranty_expiry_date: liveRecord.warranty_valid_upto,
+              source: liveRecord.source_system
+            }];
+            vehicleRow = vRows[0];
+          }
+        } catch (tmsaErr) {
+          console.warn("[VehiclePassport] Live TMSA Siebel lookup error:", tmsaErr);
+        }
+      }
+
+      // If still no vehicle records exist after querying live TMSA network, return null
       if (!vehicleRow && (!shRows || shRows.length === 0) && (!invRows || invRows.length === 0)) {
         return null;
       }

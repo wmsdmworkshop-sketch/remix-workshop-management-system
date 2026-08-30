@@ -66,7 +66,7 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
         return;
       }
       if (!resp.ok) {
-        setTmsa({ loading: false, error: true, canRefetch: false, note: data.error || "TMSA lookup failed." });
+        setTmsa({ loading: false, error: true, canRefetch: false, note: data.message || data.error || "Vehicle not found in Tata Motors network." });
         return;
       }
       const when = data.fetched_at ? new Date(data.fetched_at).toLocaleString() : "";
