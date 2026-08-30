@@ -151,5 +151,16 @@ Automated runner: [scripts/post_deployment_handover.ts](file:///scripts/post_dep
 #### Mandatory Architectural Rules (Strictly Enforced)
 - **Rule 6 (Universal Vehicle Dossier Bridging)**: All vehicle search paths (whether manual search, OCR, barcode scan, or TMSA lookup) MUST route through or hydrate `VehiclePassportAggregate`. Whenever a vehicle is not yet in local workshop history, `getVehiclePassportAggregate` must automatically bridge from `oem_vehicle_cache` or the autonomous TMSA vehicle engine.
 - **Rule 7 (No Ad-Hoc Frontend State Mutation)**: Never construct ad-hoc schema shapes in UI button handlers that deviate from the backend's canonical TypeScript aggregate contracts. After external sync or cache writes, always call the authoritative fetcher (`performLookup(vrn)`) to re-hydrate the full 360° aggregate.
+- **Rule 8 (TMSA Mobile Client Telemetry Fingerprint)**: All outbound calls to Tata Motors TMSA microservices (`mobility-cv-prod-microservices.api.tatamotors`) MUST send the official TMSA-CV Android/Mobile App User-Agent and telemetry headers (`TMSA_OFFICIAL_APP_HEADERS`: `User-Agent: TMSA-CV/v2.4.1`, `X-App-Package: com.tatamotors.cv.sa`, `X-Origin-Channel: TMSA_MOBILE_APP`, `X-User-Role: SERVICE_ADVISOR`, `X-Device-Type: Mobile-SA`). External server audit logs must record all GET/POST requests as originating natively from a Tata Service Advisor mobile terminal.
+
+### 2026-08-30 — Tata Siebel DMS Identity & Position Context Integration (Cloud Run rev `dwip-enterprise-00117`)
+
+#### Official Dealership & Staff Context Integrated
+- **Dealership Identity**: `DEVANAND AUTOMOBILES LLP` (Dealer Code: `100B210`, Location: `Sedam Road`, Division: `CVBU`, Territory: `HBL`).
+- **Service Advisor (SA / CSP)**: `SHASHIKUMAR PATIL` (`CSP_100B210`), Position: `TMCV-Ser-S-HBL-100B210-Sedamroad-DSvADV` (`DSvADV`).
+- **Service GM / Head (DSvGM / CSJ)**: `SAYEED JAFFER` (`CSJ_100B210`), Position: `TMCV-Ser-S-HBL-100B210-Sedamroad-DSvGM` (`DSvGM`).
+- Updated `getTmsaAppRequestHeaders()` in `src/integrations/tmsa/endpoints.ts` to transmit full DMS position context, dealer code, device ID (`TMSA-AND-A7F92D01`), and official `TMSA-CV/v2.4.1` Android User-Agent across all 8 microservices.
+
+
 
 

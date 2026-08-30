@@ -20,6 +20,7 @@ import { pool as dbPool } from "./src/db/index.ts";
 import { startQrtGmailIngestor, runQrtIngestOnce, getQrtPublicConfig, updateQrtSettings } from "./src/integrations/qrt-gmail-ingestor.ts";
 import { ensureOemTable, getPublicConfig as getOemPublicConfig, updateProviderConfig as updateOemProvider, testProvider as testOemProvider, callProvider as callOemProvider, OemNotConfiguredError, ensureVehicleCacheTable, getCachedVehicle, cacheVehicle, fetchTmsaBillingMaster, fetchTmsaComplaintCodes, fetchTmsaFaultCodes, fetchTmsaVehicleInventory, uploadTmsaFenceInImage, uploadTmsaCrmImage, uploadTmsaMedia, uploadTmsaTrailerMedia, ensureOemMasterCacheTable, getCachedMasterData, cacheMasterData, type OemProviderKey } from "./src/integrations/oem-api.ts";
 import { TMSA_PRODUCTION_BASE_URL, TMSA_MICROSERVICE_ENDPOINTS, TMSA_ENDPOINT_CATALOG } from "./src/integrations/tmsa/endpoints.ts";
+import { tmsaMassSyncWorker } from "./src/engines/tmsa-mass-sync-worker.ts";
 import { ingestAlert as ingestCctvAlert, listAlerts as listCctvAlerts, acknowledgeAlert as ackCctvAlert, listCameras as listCctvCameras, upsertCamera as upsertCctvCamera, deleteCamera as deleteCctvCamera, getCctvConfig, updateCctvConfig, countOpenAlerts as countOpenCctvAlerts } from "./src/integrations/cctv-analytics.ts";
 import { filterViewableJobCards, canEditJobCard, isGmOverride, isOwnedBy, isInMyStage, isFullViewRole, GROUP1_FULL_CONTROL, GROUP2_VIEW_ALL_EDIT_OWN, GROUP3_VIEW_ONLY, GM_OVERRIDE_ROLES, STAGE_RULES, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
 import { parseInHouseAction, applyInHouseAction, buildCumulativeIdePrompt } from "./src/core/pilot/in-house-actions.ts";
@@ -4005,6 +4006,46 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       return res.status(500).json({ error: "Internal server error" });
     }
   });
+
+  // ============================================================
+  // MASS TMSA VEHICLE HISTORY SYNC & TSV ALIGNMENT ENDPOINTS
+  // ============================================================
+  app.get("/api/tmsa/mass-sync/status", async (req, res) => {
+    try {
+      const status = tmsaMassSyncWorker.getStatus();
+      res.json({ success: true, status });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/tmsa/mass-sync/start", async (req, res) => {
+    try {
+      const status = await tmsaMassSyncWorker.startSync(dbPool);
+      res.json({ success: true, status, message: "Mass TMSA sync started in background." });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/tmsa/mass-sync/pause", async (req, res) => {
+    try {
+      const status = tmsaMassSyncWorker.pauseSync();
+      res.json({ success: true, status, message: "Mass TMSA sync paused." });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/tmsa/mass-sync/reload", async (req, res) => {
+    try {
+      const counts = tmsaMassSyncWorker.loadTsvMasters();
+      res.json({ success: true, counts, message: "Master TSVs reloaded and indexed." });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
 
   // GET /api/vehicles/:vrn/schedule-eligibility moved to
   // src/api/routes/ai.routes.ts (mounted below) so it inherits the AI rate
