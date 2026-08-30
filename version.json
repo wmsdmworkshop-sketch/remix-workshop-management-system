@@ -1,11 +1,11 @@
 {
   "version": "v1.1.0-rc.1",
   "release": "DWIP-v2.0.0-GA",
-  "tag": "v1.1.12-universal-tmsa-search",
+  "tag": "v1.1.13-ap05tb4993-synced",
   "enterprise": "Devanand Automobiles (Motors) LLP",
-  "buildTime": "2026-08-30T12:12:00.000+05:30",
+  "buildTime": "2026-08-30T12:34:00.000+05:30",
   "environment": "production",
-  "buildNumber": "123",
+  "buildNumber": "124",
   "commit": "HEAD",
-  "updatedAt": "2026-08-30T06:42:00.000Z"
+  "updatedAt": "2026-08-30T07:04:00.000Z"
 }
