@@ -75,77 +75,8 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
         : `Fetched fresh from TMSA-CV (${data.source || "TMSA-CV"}).`;
       setTmsa({ loading: false, error: false, canRefetch: true, note });
 
-      if (data.data && typeof data.data === "object") {
-        setPassportAggregate(prev => {
-          if (prev) {
-            return {
-              ...prev,
-              vehicleMaster: {
-                ...prev.vehicleMaster,
-                model: data.data.model || prev.vehicleMaster?.model,
-                vin: data.data.vin || data.data.chassis_no || prev.vehicleMaster?.vin,
-                engineNumber: data.data.engine_no || prev.vehicleMaster?.engineNumber,
-                fuelType: data.data.fuel_type || prev.vehicleMaster?.fuelType,
-                color: data.data.color || prev.vehicleMaster?.color,
-                manufacturingYear: data.data.manufacturing_year || prev.vehicleMaster?.manufacturingYear,
-                warrantyStatus: data.data.warranty_status || prev.vehicleMaster?.warrantyStatus,
-              }
-            };
-          }
-          return {
-            vehicleMaster: {
-              vrn: data.data.vrn || vrn,
-              model: data.data.model || "Tata Signa 2823.K HD 9S",
-              vin: data.data.vin || data.data.chassis_no || `MAT426052N3A89124`,
-              engineNumber: data.data.engine_no || "497SPTC64K89124",
-              fuelType: data.data.fuel_type || "DIESEL",
-              color: data.data.color || "ARIZONA BLUE",
-              manufacturingYear: data.data.manufacturing_year || 2023,
-              customerName: data.data.owner_name || data.data.customer_name || "DEVANAND LOGISTICS & INFRASTRUCTURE",
-              customerPhone: data.data.customer_phone || "9845123456",
-              warrantyStatus: data.data.warranty_status || "ACTIVE",
-            },
-            lifetimeMetrics: {
-              totalVisits: data.data.service_history_count || 4,
-              totalSpend: 34500,
-              averageSpend: 8625,
-              totalDowntimeHours: 8.5,
-              firstVisitDate: "2024-01-15",
-              lastVisitDate: data.data.last_service_date || "2026-06-18",
-              currentOdometer: data.data.odometer_km || 42560,
-              repeatRepairIndex: 0,
-              activeWarrantyStatus: data.data.warranty_status || "ACTIVE",
-              amcPackageStatus: data.data.amc_status || "SAMPOORNA SEVA PLUS",
-              fsvRemainingCount: 1,
-              criticalFailureCount: 0,
-            },
-            visitLedger: [
-              {
-                visitId: "VISIT-TMSA-01",
-                jobCardNumber: `TMSA-JC-${vrn.replace(/[^A-Z0-9]/g, "")}`,
-                visitDate: data.data.last_service_date || "2026-06-18",
-                serviceAdvisorName: "Shashi Patil (SA)",
-                totalAmount: 12450,
-                status: "Completed",
-                odometerAtVisit: data.data.odometer_km || 42560,
-                primaryComplaint: "Periodic Scheduled Maintenance & Fluid Inspection",
-                downtimeHours: 4.5,
-                lineItems: [
-                  { itemId: "LI-01", description: "Engine Oil 15W-40 CI-4 Plus (Synthetic)", quantity: 15, unitPrice: 380, totalPrice: 5700, type: "PART" },
-                  { itemId: "LI-02", description: "Oil Filter Element Cartridge", quantity: 1, unitPrice: 850, totalPrice: 850, type: "PART" },
-                  { itemId: "LI-03", description: "Periodic Maintenance Service Labour", quantity: 1, unitPrice: 2200, totalPrice: 2200, type: "LABOUR" }
-                ],
-                qcPassed: true
-              }
-            ],
-            downtimeTrend: [],
-            predictiveAlerts: [
-              { alertId: "PA-01", title: "Warranty Coverage Valid", severity: "LOW", description: `Vehicle is under active OEM warranty coverage until ${data.data.warranty_valid_upto || "2027-09-14"}.`, recommendation: "Proceed with intake." }
-            ]
-          };
-        });
-        setError(null);
-      }
+      // Automatically refresh the complete 360° passport aggregate view!
+      await performLookup(vrn);
     } catch (e: any) {
       setTmsa({ loading: false, error: true, canRefetch: false, note: e.message || "TMSA lookup failed." });
     }
