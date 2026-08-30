@@ -10563,21 +10563,24 @@ Respond with valid JSON only:
       const opts: any = template.includes("{vrn}")
         ? { path: template.replace("{vrn}", encodeURIComponent(vrn)) }
         : { path: template, query: { vrn } };
-      const data = await callOemProvider(dbPool, "tmsa_cv", opts);
-      if (data && (data.found === false || data.error)) {
-        return res.status(404).json({ success: false, notFound: true, message: data.error || `Vehicle ${vrn} not found in live TMSA network.` });
+      let data: any = null;
+      try {
+        data = await callOemProvider(dbPool, "tmsa_cv", opts);
+      } catch (oemErr: any) {
+        // Fallback to direct authenticated Siebel DMS client
+        const { tmsaSiebelLiveClient } = await import("./src/services/tmsa-siebel-live-client.service.ts");
+        data = await tmsaSiebelLiveClient.queryVehicleLive(vrn);
       }
+
+      if (!data || data.found === false || data.error) {
+        return res.status(404).json({ success: false, notFound: true, message: data?.error || `Vehicle "${vrn}" not found in Tata Motors live database.` });
+      }
+
       try { await cacheVehicle(dbPool, vrn, "tmsa_cv", data, String(req.user?.user_id ?? "")); }
       catch (cacheErr: any) { console.error("[TMSA] cache write failed:", cacheErr.message); }
-      res.json({ success: true, source: "TMSA-CV", cached: false, vrn, data });
+      res.json({ success: true, source: "TMSA-CV (Live Siebel DMS)", cached: false, vrn, data });
     } catch (e: any) {
-      if (e instanceof OemNotConfiguredError || e.code === "NOT_CONFIGURED") {
-        // If we happen to have a stale cache but keys were removed, still serve it.
-        const cached = await getCachedVehicle(dbPool, vrn).catch(() => null);
-        if (cached) return res.json({ success: true, source: "TMSA-CV", cached: true, stale: true, vrn, fetched_at: cached.fetched_at, data: cached.data });
-        return res.status(503).json({ success: false, unavailable: true, message: e.message });
-      }
-      res.status(502).json({ success: false, error: e.message || "TMSA lookup failed", status: e.status, body: e.body });
+      res.status(502).json({ success: false, error: e.message || "TMSA lookup failed" });
     }
   });
 
