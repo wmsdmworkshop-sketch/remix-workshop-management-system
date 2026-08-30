@@ -132,3 +132,24 @@ Automated runner: [scripts/post_deployment_handover.ts](file:///scripts/post_dep
 - Added `/api/integrations/tmsa/*` backend routes in `server.ts` and updated `ExternalIntegrations.tsx` with endpoint directory and 1-click master catalog synchronizer.
 - Cloud Run deployment verified on revision `dwip-enterprise-00113-nxv` (`status: UP / Healthy`).
 
+### 2026-08-30 — TMSA Autonomous Fallback & Vehicle Passport Bridge (Post-Mortem rev `dwip-enterprise-00114-c52`)
+
+#### Root Cause Analysis: Why `dwip-enterprise-00114-c52` (Commit `fc856d5`) failed to display Vehicle Dossier
+1. **Schema & State Shape Contract Mismatch**:
+   - In `src/components/VehicleLookup.tsx`, the JSX template expects the canonical `VehiclePassportAggregate` interface (`src/engines/vehicle-passport/types.ts`):
+     - `passportAggregate.passport` (`registrationNo`, `make`, `model`, `vin`, `engineNo`, `passportScore`, `healthScore`, `trustScore`, etc.)
+     - `passportAggregate.customer` (`customerName`, `customerMobile`)
+     - `passportAggregate.lifetimeSummary` (`totalVisits`, `lifetimeSpend`, `activeWarrantyStatus`, `activeAmcStatus`)
+     - `passportAggregate.visitLedger`
+   - In commit `fc856d5`, the `tmsaLookup` frontend handler attempted to set arbitrary state keys (`vehicleMaster`, `lifetimeMetrics`), which were completely ignored by the JSX template. This caused the UI to continue rendering the unpopulated skeleton (`0 visits`, `₹0 spend`, `0% score`).
+2. **Dual-Path Disconnect (`/api/vehicle/tmsa-lookup` vs `/api/vehicle/history`)**:
+   - `/api/vehicle/tmsa-lookup` cached vehicle payloads into `oem_vehicle_cache`.
+   - However, `/api/vehicle/history` (the primary 360° dossier endpoint consumed by "Retrieve Passport" and the entire workshop UI) only queried `service_history`, `invoices`, and `vehicle_master` — it was isolated from `oem_vehicle_cache` and had no fallback generator when a searched vehicle had no local workshop visits.
+3. **Missing UI Re-hydration Trigger**:
+   - When "TMSA Lookup" succeeded, it updated only its local toast state without re-invoking `performLookup(vrn)`, leaving the main scorecard un-hydrated.
+
+#### Mandatory Architectural Rules (Strictly Enforced)
+- **Rule 6 (Universal Vehicle Dossier Bridging)**: All vehicle search paths (whether manual search, OCR, barcode scan, or TMSA lookup) MUST route through or hydrate `VehiclePassportAggregate`. Whenever a vehicle is not yet in local workshop history, `getVehiclePassportAggregate` must automatically bridge from `oem_vehicle_cache` or the autonomous TMSA vehicle engine.
+- **Rule 7 (No Ad-Hoc Frontend State Mutation)**: Never construct ad-hoc schema shapes in UI button handlers that deviate from the backend's canonical TypeScript aggregate contracts. After external sync or cache writes, always call the authoritative fetcher (`performLookup(vrn)`) to re-hydrate the full 360° aggregate.
+
+
