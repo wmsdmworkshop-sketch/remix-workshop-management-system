@@ -249,8 +249,8 @@ export function getSimulatedTmsaResponse(path: string, query?: Record<string, an
       insurance_valid_upto: "2027-08-30",
       telematics_active: true,
       service_history_count: 4,
-      last_service_date: "2026-06-18",
-      last_service_dealer: "Devanand Automobiles (Motors) LLP - Sedam",
+      last_service_dealer: "Devanand Automobiles (Motors) LLP - Sedam (100B210)",
+      service_advisor_login: "CSP_100B210",
       source_system: "TMSA-CV (Simulation Engine)",
       simulated: true,
       synced_at: new Date().toISOString()

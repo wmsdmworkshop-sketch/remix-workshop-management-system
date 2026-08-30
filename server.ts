@@ -9661,8 +9661,8 @@ Respond with valid JSON only:
       rows.forEach((r: any) => { cfg[r.config_key] = r.config_value; });
       res.json([{
         dealer_id: 1,
-        dealer_code: cfg.tataDealerCode ?? null,
-        dealer_name: cfg.dealerName ?? null,
+        dealer_code: cfg.tataDealerCode ?? "100B210",
+        dealer_name: cfg.dealerName ?? "Devanand Automobiles (Motors) LLP",
         gst_no: cfg.gstNo ?? null,
         is_active: 1
       }]);
@@ -10506,10 +10506,10 @@ Respond with valid JSON only:
       }
       // 2. Cache miss (or refresh) → hit the official API, then persist.
       const cfg = (await getOemPublicConfig(dbPool)).find((p: any) => p.provider_key === "tmsa_cv");
-      const template = cfg?.lookup_path || "";
+      const template = cfg?.lookup_path || "/api/tmsa-cv/sa/vehicle-inventory/";
       const opts: any = template.includes("{vrn}")
         ? { path: template.replace("{vrn}", encodeURIComponent(vrn)) }
-        : { path: template || "/", query: { vrn } };
+        : { path: template, query: { vrn } };
       const data = await callOemProvider(dbPool, "tmsa_cv", opts);
       try { await cacheVehicle(dbPool, vrn, "tmsa_cv", data, String(req.user?.user_id ?? "")); }
       catch (cacheErr: any) { console.error("[TMSA] cache write failed:", cacheErr.message); }

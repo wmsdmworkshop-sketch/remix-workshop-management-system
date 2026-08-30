@@ -149,9 +149,14 @@ export function getTmsaAppRequestHeaders(extra?: Record<string, string>): Record
     ...TMSA_OFFICIAL_APP_HEADERS,
     "X-Device-Id": "TMSA-AND-A7F92D01",
     "X-User-Role": "SERVICE_ADVISOR",
-    "X-Dealer-Code": "DAPL-SEDAM",
-    "X-Workshop-Code": "WS-SEDAM-01",
+    "X-Dealer-Code": "100B210",
+    "X-Workshop-Code": "100B210-WS01",
+    "X-User-Login": "CSP_100B210",
+    "X-User-Id": "CSP_100B210",
+    "X-Staff-Id": "CSP_100B210",
+    "X-Username": "CSP_100B210",
     ...(extra || {}),
   };
 }
+
 
