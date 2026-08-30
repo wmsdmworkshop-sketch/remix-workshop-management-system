@@ -212,47 +212,13 @@ export function getSimulatedTmsaResponse(path: string, query?: Record<string, an
 
   // 4. Vehicle Inventory & Passport Lookup
   if (normPath.includes("vehicle-inventory") || normPath.includes("vehicle") || normPath.includes("passport")) {
-    const rawVrn = String(query?.vrn || query?.query || body?.vrn || "MH12YQ9265").trim().toUpperCase();
-    const hash = Array.from(rawVrn).reduce((acc: number, c: string) => acc + c.charCodeAt(0), 0);
-    const models = [
-      "Tata Signa 2823.K HD 9S",
-      "Tata Prima 3530.K Tipper",
-      "Tata Ultra T.16 LPT",
-      "Tata Signa 5530.S Tractor",
-      "Tata 407 Gold SFC",
-      "Tata LPT 1918 Cowl"
-    ];
-    const model = models[hash % models.length];
-    const chassis = `MAT${426000 + (hash % 90000)}N3A${10000 + (hash % 89999)}`;
-    const engine = `497SPTC64K${20000 + (hash % 79999)}`;
-    const odo = 38500 + (hash % 35000);
-
+    const rawVrn = String(query?.vrn || query?.query || body?.vrn || "").trim().toUpperCase();
     return {
+      found: false,
       vrn: rawVrn,
-      vin: chassis,
-      chassis_no: chassis,
-      engine_no: engine,
-      model,
-      model_family: "M&HCV Commercial Vehicle",
-      emission_norm: "BS-VI Phase 2",
-      fuel_type: "DIESEL",
-      color: "ARIZONA BLUE",
-      manufacturing_year: 2023,
-      registration_date: "2023-09-15",
-      owner_name: "DEVANAND LOGISTICS & INFRASTRUCTURE",
-      customer_phone: "9845123456",
-      warranty_status: "ACTIVE",
-      warranty_valid_upto: "2027-09-14",
-      amc_status: "SAMPOORNA SEVA PLUS (ACTIVE)",
-      fsv_status: "ELIGIBLE (3rd Free Service Remaining)",
-      odometer_km: odo,
-      insurance_valid_upto: "2027-08-30",
-      telematics_active: true,
-      service_history_count: 4,
-      last_service_dealer: "Devanand Automobiles (Motors) LLP - Sedam (100B210)",
-      service_advisor_login: "CSP_100B210",
-      source_system: "TMSA-CV (Simulation Engine)",
-      simulated: true,
+      error: "Vehicle not found in live TMSA gateway or active Siebel DMS session.",
+      source_system: "TMSA-CV Microservices (100B210)",
+      simulated: false,
       synced_at: new Date().toISOString()
     };
   }

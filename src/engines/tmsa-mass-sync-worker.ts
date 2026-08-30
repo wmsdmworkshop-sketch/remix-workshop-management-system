@@ -405,17 +405,8 @@ class TmsaMassSyncWorker {
       return visits;
     }
 
-    // Dynamic generation for ad-hoc searched vehicle
-    const dynamicVeh: MasterVehicleRecord = {
-      chassisNo: `MAT${key.slice(-14)}`,
-      registrationNo: key,
-      engineNo: `ENG${key}`,
-      productLine: "Tata Prima / Signa CV",
-      ownerAccountName: "Commercial Logistics Customer"
-    };
-    const visits = this.generateMultiDealerHistory(dynamicVeh);
-    this.multiDealerLedgerByVrn.set(key, visits);
-    return visits;
+    // Vehicle not found in master list — return empty array (Real-Data-Only contract)
+    return [];
   }
 
   /**

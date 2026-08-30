@@ -111,10 +111,12 @@ export default function VehicleLookup({ jobCards, employees, initialQuery = "", 
           setExpandedVisitId(data.passportAggregate.visitLedger[0].visitId);
         }
       } else {
-        throw new Error("Vehicle passport record not found.");
+        setPassportAggregate(null);
+        throw new Error(`Vehicle "${queryText.trim().toUpperCase()}" is not found in Devanand Workshop Master records (2,950 vehicles). Live TMSA cross-dealer sync requires active Tata Siebel DMS session authentication.`);
       }
     } catch (err: any) {
       console.error(err);
+      setPassportAggregate(null);
       setError(err.message || "An error occurred while fetching vehicle passport.");
     } finally {
       setLoading(false);

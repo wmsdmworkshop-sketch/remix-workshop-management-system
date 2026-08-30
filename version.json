@@ -1,11 +1,11 @@
 {
   "version": "v1.1.0-rc.1",
   "release": "DWIP-v2.0.0-GA",
-  "tag": "v1.1.9-tmsa-siebel-identity",
+  "tag": "v1.1.10-real-data-only-enforced",
   "enterprise": "Devanand Automobiles (Motors) LLP",
-  "buildTime": "2026-08-30T09:15:00.000+05:30",
+  "buildTime": "2026-08-30T09:56:30.000+05:30",
   "environment": "production",
-  "buildNumber": "117",
+  "buildNumber": "121",
   "commit": "HEAD",
-  "updatedAt": "2026-08-30T03:45:00.000Z"
+  "updatedAt": "2026-08-30T04:26:30.000Z"
 }
