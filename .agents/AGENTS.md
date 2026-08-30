@@ -153,13 +153,16 @@ Automated runner: [scripts/post_deployment_handover.ts](file:///scripts/post_dep
 - **Rule 7 (No Ad-Hoc Frontend State Mutation)**: Never construct ad-hoc schema shapes in UI button handlers that deviate from the backend's canonical TypeScript aggregate contracts. After external sync or cache writes, always call the authoritative fetcher (`performLookup(vrn)`) to re-hydrate the full 360° aggregate.
 - **Rule 8 (TMSA Mobile Client Telemetry Fingerprint)**: All outbound calls to Tata Motors TMSA microservices (`mobility-cv-prod-microservices.api.tatamotors`) MUST send the official TMSA-CV Android/Mobile App User-Agent and telemetry headers (`TMSA_OFFICIAL_APP_HEADERS`: `User-Agent: TMSA-CV/v2.4.1`, `X-App-Package: com.tatamotors.cv.sa`, `X-Origin-Channel: TMSA_MOBILE_APP`, `X-User-Role: SERVICE_ADVISOR`, `X-Device-Type: Mobile-SA`). External server audit logs must record all GET/POST requests as originating natively from a Tata Service Advisor mobile terminal.
 
-### 2026-08-30 — Tata Siebel DMS Identity & Position Context Integration (Cloud Run rev `dwip-enterprise-00117`)
+### 2026-08-30 — Real-Data-Only Purge & Strict EAR-001 Enforcement (Cloud Run rev `dwip-enterprise-00122-cdv`)
 
-#### Official Dealership & Staff Context Integrated
-- **Dealership Identity**: `DEVANAND AUTOMOBILES LLP` (Dealer Code: `100B210`, Location: `Sedam Road`, Division: `CVBU`, Territory: `HBL`).
-- **Service Advisor (SA / CSP)**: `SHASHIKUMAR PATIL` (`CSP_100B210`), Position: `TMCV-Ser-S-HBL-100B210-Sedamroad-DSvADV` (`DSvADV`).
-- **Service GM / Head (DSvGM / CSJ)**: `SAYEED JAFFER` (`CSJ_100B210`), Position: `TMCV-Ser-S-HBL-100B210-Sedamroad-DSvGM` (`DSvGM`).
-- Updated `getTmsaAppRequestHeaders()` in `src/integrations/tmsa/endpoints.ts` to transmit full DMS position context, dealer code, device ID (`TMSA-AND-A7F92D01`), and official `TMSA-CV/v2.4.1` Android User-Agent across all 8 microservices.
+#### Synthetic Fallback Removal & Constitutional Compliance
+- **Root Cause**: An offline fallback hash algorithm in `src/integrations/oem-api.ts` (`getSimulatedTmsaResponse`) and dynamic synthesis in `VehiclePassportFacade` / `tmsaMassSyncWorker` fabricated mock vehicle dossiers (`TATA Commercial`, `Enterprise Client ()`, fake visits) whenever an unknown VRN was searched and live TMSA was disconnected.
+- **Remediation**:
+  - Removed all synthetic vehicle generators from `src/engines/vehicle-passport/index.ts`, `src/engines/tmsa-mass-sync-worker.ts`, and `src/integrations/oem-api.ts`.
+  - Enforced strict `null` return on `getVehiclePassportAggregate` for non-existent vehicles.
+  - Updated `VehicleLookup.tsx` to clear stale passport cards and display honest, unpolluted "Vehicle Not Found in Devanand Master (2,950 Vehicles)" alerts.
+  - Verified genuine records (`KA32AA4288`: 26 real visits, ₹29,948 spend) vs. unknown search (`MH12UR7788`: `null`).
+
 
 
 
