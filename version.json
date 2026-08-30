@@ -1,11 +1,11 @@
 {
   "version": "v1.1.0-rc.1",
   "release": "DWIP-v2.0.0-GA",
-  "tag": "v1.1.5-role-relevance-advisor-fix",
+  "tag": "v1.1.6-tmsa-microservices-integration",
   "enterprise": "Devanand Automobiles (Motors) LLP",
-  "buildTime": "2026-08-21T17:05:00.000+05:30",
+  "buildTime": "2026-08-30T08:20:00.000+05:30",
   "environment": "production",
-  "buildNumber": "105",
-  "commit": "71b9c00",
-  "updatedAt": "2026-08-26T07:41:11.259Z"
+  "buildNumber": "113",
+  "commit": "74f8d82",
+  "updatedAt": "2026-08-30T02:50:35.000Z"
 }

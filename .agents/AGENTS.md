@@ -115,3 +115,20 @@ Automated runner: [scripts/post_deployment_handover.ts](file:///scripts/post_dep
 
 - `verifyJobCard` (`src/engines/ocr-processor.ts`) is a real multi-provider pipeline: Azure Document Intelligence (primary, configured in production) → Gemini (fallback, **only if `GEMINI_API_KEY` is configured** — it is deliberately not configured in production) → DeepSeek semantic VRN resolution if regex extraction fails. Fixed this session: a substring-offset bug in the multi-line stenciled-plate parser that could misread unrelated text (e.g. a job card number) as the VRN series/number whenever the real plate wasn't at the very start of the OCR text.
 - Fuel gauge: photo capture only, no OCR/AI reading — a needle position isn't something text-OCR can read, and a Gemini-vision-based approach was built then explicitly reverted per product decision (`GEMINI_API_KEY` was deliberately not added to production for this). The captured photo is shown next to the manual gauge control so the technician can compare and set the level themselves.
+
+### 2026-08-30 — Tata TMSA-CV Microservices Suite (Cloud Run rev `dwip-enterprise-00113-nxv`)
+
+#### Official TMSA-CV Microservices Integrated
+- Integrated all 8 production microservices under canonical base URL `https://mobility-cv-prod-microservices.api.tatamotors`:
+  - Billing Master: `/api/tmsa-cv/sa/billing-type-master/`
+  - Complaint Code Master: `/api/tmsa-cv/sa/complaint-code-master/`
+  - Fault Code Master: `/api/tmsa-cv/sa/fault-code-master/`
+  - Vehicle Inventory: `/api/tmsa-cv/sa/vehicle-inventory/`
+  - Fence In Upload: `/api/tmsa-cv/sa/upload-image/`
+  - CRM Image Upload: `/api/tmsa-cv/sa/image-upload-in-crm/`
+  - Media Upload (SA): `/api/tmsa-cv/sa/media-upload/`
+  - Trailer Media Upload (TA): `/api/tmsa-cv/ta/media-upload/`
+- Added `oem_master_cache` MySQL cache engine for persistent offline caching of billing, complaint, and fault codes.
+- Added `/api/integrations/tmsa/*` backend routes in `server.ts` and updated `ExternalIntegrations.tsx` with endpoint directory and 1-click master catalog synchronizer.
+- Cloud Run deployment verified on revision `dwip-enterprise-00113-nxv` (`status: UP / Healthy`).
+
