@@ -31,6 +31,7 @@ import {
   Check,
   Loader2,
   History,
+  HelpCircle,
   X
 } from "lucide-react";
 import { JobCard, Bay, SRType, Employee, JobTechnicianMap, JobRevenue, JobRevenueSplitDetail, User } from "../types";
@@ -2005,6 +2006,15 @@ export default function JobCardManager({
               <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                 <DollarSign className="h-4.5 w-4.5 text-orange-600" />
                 Dynamic Revenue Splitting (DMS Sync)
+                <span
+                  tabIndex={0}
+                  role="img"
+                  aria-label="What is Dynamic Revenue Splitting? It shares this job card's workshop invoice (labour + parts) among the technicians assigned to it. Only eligible workshop staff — mechanics, technicians and electricians — receive a share; roles such as drivers and breakdown assistants are excluded, and any unallocated remainder is carried forward. The manager locks the labour and parts amounts, then calculates each person's share. '(DMS Sync)' reconciles these figures against the Tata DMS invoice."
+                  title="Dynamic Revenue Splitting shares this job's workshop invoice (labour + parts) among the technicians assigned to it. Only eligible workshop staff — mechanics, technicians and electricians — receive a share; roles such as drivers and breakdown assistants are excluded, and any unallocated remainder is carried forward. The manager locks the labour and parts amounts, then calculates each person's share. '(DMS Sync)' reconciles these figures against the Tata DMS invoice."
+                  className="cursor-help text-slate-400 hover:text-orange-500 focus:text-orange-500 focus:outline-none focus-visible:ring-1 focus-visible:ring-orange-500 rounded"
+                >
+                  <HelpCircle className="h-3.5 w-3.5" />
+                </span>
               </h3>
  
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
