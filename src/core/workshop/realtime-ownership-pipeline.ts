@@ -89,7 +89,13 @@ export class RealtimeOwnershipPipeline {
    */
   public static async createGateIn(payload: GateInPayload, user: any) {
     const vrnClean = payload.vrn.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-    const vinClean = payload.vin || payload.chassisNumber || `VIN-${vrnClean}`;
+    // This workshop identifies vehicles by VRN, never VIN. Store the plain VRN as
+    // the gate-entry identity — never a fabricated `VIN-<vrn>`. The old fallback
+    // buried the plate inside tbl_gate_entry.vin as "VIN-<vrn>", so it was
+    // invisible to every VRN lookup and could not be found or purged by plate.
+    // (The column is named `vin` for legacy reasons but holds the VRN; the proper
+    // structural fix is to rename tbl_gate_entry.vin -> vrn.)
+    const vinClean = vrnClean;
     const branchId = user?.branchId || user?.branch_id || payload.branchId || "BR-SEDAM";
     const gateEntryId = `GE-${randomUUID().substring(0, 8).toUpperCase()}`;
 

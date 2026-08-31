@@ -123,7 +123,7 @@ export class SaTechnicalIntakeEngine {
         intakeId: r.intake_id,
         gateEntryId: r.gate_entry_id,
         vosId: r.vos_id,
-        tokenNumber: r.token_number || "TOK-001",
+        tokenNumber: r.token_number || null,
         vin: r.vin,
         vrn: (r.vin || "").replace("VIN-", ""),
         visitCategory: r.visit_category,

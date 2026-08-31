@@ -6204,6 +6204,29 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       console.error("Failed to delete job_cards row:", e.message);
     }
 
+    // Cascade the delete into the gate-entry lineage, or the vehicle re-appears
+    // as a "ghost" in the reception / manager queues: the job-card delete used to
+    // stop at the two job-card tables and leave tbl_gate_entry + tbl_reception_intake
+    // (and any manager assignment) behind. The `vin` column holds the plate — plain
+    // VRN for new rows, legacy "VIN-<vrn>" for old ones.
+    try {
+      const vrnKey = String(deletedJob.vrn || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      if (vrnKey) {
+        const [gates]: any = await dbPool.query(
+          "SELECT gate_entry_id FROM tbl_gate_entry WHERE REPLACE(REPLACE(UPPER(vin), '-', ''), 'VIN', '') = ? OR UPPER(vin) = ?",
+          [vrnKey, vrnKey]);
+        const geIds = (gates || []).map((g: any) => g.gate_entry_id);
+        if (geIds.length) {
+          const ph = geIds.map(() => "?").join(",");
+          await dbPool.execute(`DELETE FROM tbl_reception_intake WHERE gate_entry_id IN (${ph})`, geIds);
+          await dbPool.execute(`DELETE FROM tbl_manager_assignment WHERE gate_entry_id IN (${ph})`, geIds);
+          await dbPool.execute(`DELETE FROM tbl_gate_entry WHERE gate_entry_id IN (${ph})`, geIds);
+        }
+      }
+    } catch (e: any) {
+      console.error("Failed to delete gate-entry lineage for deleted job card:", e.message);
+    }
+
     await logGmOverride(req.user, deletedJob, `Deleted job card: ${reason}`);
 
     res.json({ success: true, deleted: { job_id: deletedJob.job_id, job_card_no: deletedJob.job_card_no, vrn: deletedJob.vrn } });

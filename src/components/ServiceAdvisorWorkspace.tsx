@@ -437,8 +437,8 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                             gateEntryId: item.gateEntryId || `GE-${item.id}`, 
                             intakeId: item.intakeId || `INT-${item.id}`,
                             vrn: item.vrn, 
-                            tokenNumber: item.tokenNumber || `SEDAM-${item.vrn}`, 
-                            confirmedOdometer: item.odometer || 45000,
+                            tokenNumber: item.tokenNumber || "—",
+                            confirmedOdometer: item.odometer || 0,
                             preliminaryComplaints: item.reason || ""
                           });
                           setShowIntakeModal(true);
