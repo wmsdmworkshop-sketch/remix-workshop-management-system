@@ -27,7 +27,7 @@ export const AICopilotPanel: React.FC<AICopilotPanelProps> = ({
 
   const fetchAnalytics = async () => {
     try {
-      const res = await fetch("/api/v2/graph/analytics");
+      const res = await fetch("/api/v2/graph/analytics", { headers: staffAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setAnalytics(data);
@@ -53,7 +53,7 @@ export const AICopilotPanel: React.FC<AICopilotPanelProps> = ({
     try {
       const res = await fetch("/api/v2/graph/recommendations", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: staffAuthHeaders(),
         body: JSON.stringify({ prompt: finalPrompt, role, context })
       });
 
@@ -100,7 +100,7 @@ export const AICopilotPanel: React.FC<AICopilotPanelProps> = ({
     try {
       const res = await fetch(`/api/v2/graph/recommendations/${result.recommendationId}/reject`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" }
+        headers: staffAuthHeaders()
       });
       if (res.ok) {
         setResult((prev: any) => ({ ...prev, status: "REJECTED" }));
@@ -117,7 +117,7 @@ export const AICopilotPanel: React.FC<AICopilotPanelProps> = ({
     try {
       await fetch(`/api/v2/graph/recommendations/${result.recommendationId}/rate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: staffAuthHeaders(),
         body: JSON.stringify({ rating: stars, comments: feedbackText })
       });
       setRatingSubmitted(true);

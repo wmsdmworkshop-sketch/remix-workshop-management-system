@@ -1589,6 +1589,12 @@ async function startServer() {
   // --- GLOBAL API AUTHENTICATION GATE ---
   // All /api/* routes require a valid JWT EXCEPT the explicit public whitelist below.
   // This fixes SEC-009: previously all data endpoints were open to unauthenticated access.
+  //
+  // NOTE: /api/v2/graph (AICopilotPanel) previously sat in this whitelist with
+  // its source router's original unauthenticated design. It is now REMOVED:
+  // every /api/v2/graph/* endpoint passes through the authenticateToken gate
+  // below like all other data endpoints. AICopilotPanel sends staffAuthHeaders()
+  // on every graph call to satisfy it.
   const PUBLIC_API_PATHS = [
     "/api/health",
     "/api/system/health-gateway",
@@ -1601,7 +1607,6 @@ async function startServer() {
     // a full re-read of the database on every request. It now requires an
     // admin/developer JWT like any other privileged operation.
     "/api/v1/devops/cron/sla-evaluator", // Cloud Scheduler cron — secured by its own Google-OIDC + x-cloudscheduler check below, not the app JWT
-    "/api/v2/graph",            // AICopilotPanel — matches its source router's original (unauthenticated) design; used app-wide
   ];
 
   app.use("/api", (req: any, res: any, next: any) => {
@@ -9033,9 +9038,11 @@ Given the administrator's request in plain English, produce ONLY a valid JSON ob
 
   // --- AI COPILOT (v2 GRAPH) — backs AICopilotPanel.tsx, embedded app-wide ---
   // Real, DB-backed logic (AiCopilotOrchestrator + EkgEngine) that was already fully
-  // built but only ever reachable through an unmounted router. Ported here verbatim
-  // (same unauthenticated design as the source router — AICopilotPanel itself only
-  // sends an auth header on /approve, and the original route never checked it either).
+  // built but only ever reachable through an unmounted router. Ported here verbatim.
+  // SECURITY: no longer in the PUBLIC_API_PATHS whitelist — the global /api auth
+  // gate (authenticateToken) protects every route below. AICopilotPanel sends
+  // staffAuthHeaders() on each call; /approve additionally resolves the user id
+  // from the authenticated session (no placeholder fallback).
   app.post("/api/v2/graph/reasoning", express.json(), async (req: any, res: any) => {
     const { message } = req.body;
     if (!message || typeof message !== "string" || message.trim().length === 0) {
