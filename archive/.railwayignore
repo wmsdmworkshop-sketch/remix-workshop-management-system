@@ -1,6 +1,0 @@
-node_modules
-.git
-*.log
-workshop_db.json
-gsheets_backdate_import.cjs
-JC_Backdate_June2026 - Sheet.csv
