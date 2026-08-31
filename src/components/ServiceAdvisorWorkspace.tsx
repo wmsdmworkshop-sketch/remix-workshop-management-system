@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { 
   ClipboardCopy, Search, Sparkles, Send, CheckCircle2, AlertTriangle, 
   Activity, DollarSign, Users, Clock, History, Camera, User, FileText, 
@@ -124,9 +124,64 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
     return currentUser?.full_name || currentUser?.fullName || currentUser?.name || currentUser?.username || "Service Advisor";
   }, [currentUser]);
 
+  // Handoff-SLA breach alerts are suppressed during the production-testing
+  // period (admin/developer toggle). Default suppressed until we hear otherwise.
+  const [slaAlertsEnabled, setSlaAlertsEnabled] = useState<boolean>(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = getStaffToken();
+        const res = await fetch("/api/admin/sla-alert-policy", {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) setSlaAlertsEnabled(Boolean(data?.enabled));
+        }
+      } catch { /* leave suppressed on error */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const advisorRole = "Service Advisor";
   const advisorBranch = currentUser?.branch_name || currentUser?.branchName || currentUser?.branchId || currentUser?.branch_id || "Primary Branch";
   const advisorShift = "Active Shift • Online";
+
+  // Open the SA Technical Intake modal for an attention item. The authoritative
+  // odometer readings live on the assigned-intake record (real gate OCR +
+  // reception-confirmed km), not on the job-card-derived attention list — so we
+  // fetch the SA's assigned queue and match by VRN. If no live record is found
+  // we fall back to whatever the job card carries; never to an invented number.
+  const openIntakeForItem = async (item: any) => {
+    const norm = (v: any) => String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const jc = item.jobCard || {};
+    let real: any = null;
+    try {
+      const token = getStaffToken();
+      const res = await fetch("/api/sa-intake/queue", {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const list = Array.isArray(data?.data) ? data.data : [];
+        real = list.find((q: any) => norm(q.vrn) === norm(item.vrn)) || null;
+      }
+    } catch { /* fall back to job-card values below */ }
+
+    setSelectedIntakeItem({
+      gateEntryId: real?.gateEntryId ?? item.gateEntryId ?? jc.gate_entry_id ?? null,
+      intakeId: real?.intakeId ?? item.intakeId ?? jc.intake_id ?? null,
+      vosId: real?.vosId ?? null,
+      jobId: jc.job_id ?? item.id,
+      vrn: item.vrn,
+      tokenNumber: real?.tokenNumber ?? item.tokenNumber ?? jc.token_number ?? null,
+      gateOdometer: real?.gateOdometer ?? null,
+      confirmedOdometer: real?.confirmedOdometer ?? (jc.odometer_reading ?? jc.km_reading ?? null),
+      preliminaryComplaints: real?.preliminaryComplaints ?? item.reason ?? jc.complaints ?? "",
+    });
+    setShowIntakeModal(true);
+  };
 
   // Selected vehicle object derivation
   const selectedJob = useMemo(() => {
@@ -143,14 +198,14 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
     const pendingApprovals = advisorJcs.filter(j => j.status === "Approval Pending" || j.current_workflow_state === "ESTIMATE_SENT").length;
     const readyForDelivery = advisorJcs.filter(j => j.status === "Ready" || j.current_workflow_state === "QC_PASSED" || j.status === "QC Passed").length;
     const deliveredToday = advisorJcs.filter(j => j.status === "Delivered" || j.current_workflow_state === "DELIVERED").length;
-    const breaches = alertLogs.filter(a => a.alert_type === "SLA_BREACH").length;
+    const breaches = slaAlertsEnabled ? alertLogs.filter(a => a.alert_type === "SLA_BREACH").length : 0;
     const productivity = jcCount > 0 ? `${Math.round(((jcCount - breaches) / jcCount) * 100)}%` : "100%";
 
     return {
       totalRev, jcCount, openCount, pendingEstimates, pendingApprovals, readyForDelivery, deliveredToday, breaches,
       productivity
     };
-  }, [jobCards, alertLogs]);
+  }, [jobCards, alertLogs, slaAlertsEnabled]);
 
   // Canonical 5-minute handoff SLA threshold
   const HANDOFF_SLA_MINS = 5;
@@ -163,7 +218,7 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
     jobCards.forEach(j => {
       const createdTime = j.created_at ? new Date(j.created_at).getTime() : now - 5 * 60 * 1000;
       const elapsedMins = Math.floor((now - createdTime) / 60000);
-      const isBreached = elapsedMins >= HANDOFF_SLA_MINS;
+      const isBreached = slaAlertsEnabled && elapsedMins >= HANDOFF_SLA_MINS;
       const slaRemaining = Math.max(0, HANDOFF_SLA_MINS - elapsedMins);
 
       if (j.status === "Approval Pending" || j.current_workflow_state === "ESTIMATE_SENT") {
@@ -234,7 +289,7 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
     });
 
     return items.sort((a, b) => b.waitingMins - a.waitingMins);
-  }, [jobCards]);
+  }, [jobCards, slaAlertsEnabled]);
 
   // Filtered Vehicles Today
   const filteredVehicles = useMemo(() => {
@@ -432,17 +487,7 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                     </button>
 
                       <button
-                        onClick={() => {
-                          setSelectedIntakeItem({ 
-                            gateEntryId: item.gateEntryId || `GE-${item.id}`, 
-                            intakeId: item.intakeId || `INT-${item.id}`,
-                            vrn: item.vrn, 
-                            tokenNumber: item.tokenNumber || "—",
-                            confirmedOdometer: item.odometer || 0,
-                            preliminaryComplaints: item.reason || ""
-                          });
-                          setShowIntakeModal(true);
-                        }}
+                        onClick={() => { openIntakeForItem(item); }}
                         className="w-1/2 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
                       >
                       <Wrench className="h-3.5 w-3.5" />
@@ -700,9 +745,9 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
         />
       )}
 
-      {showIntakeModal && (
+      {showIntakeModal && selectedIntakeItem && (
         <SaTechnicalIntakeModal
-          assignedItem={selectedIntakeItem || { gateEntryId: "GE-001", vrn: selectedJob?.vrn || "KA32M9988", tokenNumber: "SEDAM-20260803-001", confirmedOdometer: 45000 }}
+          assignedItem={selectedIntakeItem}
           onClose={() => setShowIntakeModal(false)}
           onRefresh={onRefresh}
         />

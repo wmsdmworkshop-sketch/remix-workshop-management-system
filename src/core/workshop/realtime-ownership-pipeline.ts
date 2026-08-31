@@ -9,6 +9,7 @@ import { VosCorePlatform } from "../vos";
 import { makeSystemContext } from "../business-context";
 import { canAssignServiceAdvisor } from "./assignment-roles";
 import { resolveEventTimestamp } from "./backdate-policy";
+import { areSlaBreachAlertsEnabled } from "./sla-alert-policy";
 import { AuditService } from "../identity";
 
 export interface GateInPayload {
@@ -248,13 +249,16 @@ export class RealtimeOwnershipPipeline {
 
     const items = Array.isArray(rows) ? rows : [];
     const now = Date.now();
+    // Breach badges are suppressed during the testing period; the waiting clock
+    // still shows, but an overdue card reads MONITORING, not red BREACHED.
+    const alertsOn = await areSlaBreachAlertsEnabled();
 
     return items.map((r: any) => {
       let driver = {};
       try { driver = JSON.parse(r.driver_details || "{}"); } catch {}
       const arrival = r.arrival_time ? new Date(r.arrival_time).getTime() : now;
       const waitingMins = Math.floor((now - arrival) / 60000);
-      const isBreached = waitingMins >= 5;
+      const isBreached = alertsOn && waitingMins >= 5;
 
       return {
         gateEntryId: r.gate_entry_id,
@@ -266,7 +270,7 @@ export class RealtimeOwnershipPipeline {
         arrivalTime: r.arrival_time,
         waitingMins,
         isBreached,
-        slaStatus: isBreached ? "BREACHED" : "ON_TRACK"
+        slaStatus: isBreached ? "BREACHED" : (waitingMins >= 5 ? "MONITORING" : "ON_TRACK")
       };
     });
   }
@@ -385,11 +389,13 @@ export class RealtimeOwnershipPipeline {
 
     const items = Array.isArray(rows) ? rows : [];
     const now = Date.now();
+    // Breach badges suppressed during the testing period (see sla-alert-policy).
+    const alertsOn = await areSlaBreachAlertsEnabled();
 
     return items.map((r: any) => {
       const accepted = r.accepted_at ? new Date(r.accepted_at).getTime() : now;
       const waitingMins = Math.floor((now - accepted) / 60000);
-      const isBreached = waitingMins >= 5;
+      const isBreached = alertsOn && waitingMins >= 5;
 
       return {
         intakeId: r.intake_id,
@@ -404,7 +410,7 @@ export class RealtimeOwnershipPipeline {
         acceptedAt: r.accepted_at,
         waitingMins,
         isBreached,
-        slaStatus: isBreached ? "BREACHED" : "ON_TRACK"
+        slaStatus: isBreached ? "BREACHED" : (waitingMins >= 5 ? "MONITORING" : "ON_TRACK")
       };
     });
   }

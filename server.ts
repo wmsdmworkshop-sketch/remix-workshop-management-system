@@ -27,6 +27,13 @@ import { parseInHouseAction, applyInHouseAction, buildCumulativeIdePrompt } from
 import { enforceFieldPermissions, describeRefusal, FIELD_PERMISSION_LEVELS, type FieldPermissionRule } from "./src/core/security/field-permissions.ts";
 import { BACKDATE_ROLES } from "./src/core/workshop/backdate-policy.ts";
 import { SA_ASSIGNMENT_ROLES } from "./src/core/workshop/assignment-roles.ts";
+import {
+  areSlaBreachAlertsEnabled,
+  invalidateSlaAlertPolicyCache,
+  parseSlaAlertSetting,
+  SLA_ALERT_SETTING_KEY,
+  SLA_ALERT_TOGGLE_ROLES,
+} from "./src/core/workshop/sla-alert-policy.ts";
 import { DEFAULT_CIRCULARS } from "./src/lib/circularsData.ts";
 import { getReworkHistoryForTechnician } from "./src/engines/rework-tracking-service.ts";
 import { validateOvertimeRequest } from "./src/engines/overtime-rules.ts";
@@ -727,9 +734,18 @@ async function startServer() {
       `);
 
     await dbPool.execute(`
-        INSERT IGNORE INTO system_settings (setting_key, setting_value) 
+        INSERT IGNORE INTO system_settings (setting_key, setting_value)
         VALUES ('profile_update_approval', 'auto_approve');
       `);
+
+    // Handoff-SLA breach alerts start SUPPRESSED for the production-testing
+    // period — an admin/developer flips them on from the Operations Cockpit once
+    // the SLA is trusted against real arrivals. The clocks keep running either
+    // way; this only governs whether breaches are surfaced to users.
+    await dbPool.execute(
+      `INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES (?, 'false');`,
+      [SLA_ALERT_SETTING_KEY]
+    );
 
     await dbPool.execute(`
         CREATE TABLE IF NOT EXISTS profile_update_requests (
@@ -2808,6 +2824,51 @@ async function startServer() {
       res.json({ success: true, message: "Approval workflow settings updated." });
     } catch (err: any) {
       res.status(500).json({ error: "Failed to save settings." });
+    }
+  });
+
+  // --- Handoff-SLA breach alert toggle (production-testing switch) ---
+  // Any authenticated user may READ the current state (the Service Advisor
+  // workspace needs it to gate its client-side attention wall); only admin /
+  // developer may WRITE it.
+
+  app.get("/api/admin/sla-alert-policy", authenticateToken, async (_req: any, res) => {
+    try {
+      const [rows]: any = await dbPool.query(
+        "SELECT setting_value FROM system_settings WHERE setting_key = ?",
+        [SLA_ALERT_SETTING_KEY]
+      );
+      res.json({ success: true, enabled: parseSlaAlertSetting(rows) });
+    } catch (err: any) {
+      // Fail closed to match the policy default — suppressed.
+      res.json({ success: true, enabled: false });
+    }
+  });
+
+  app.put("/api/admin/sla-alert-policy", authenticateToken, async (req: any, res) => {
+    if (!SLA_ALERT_TOGGLE_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: "Access denied. Only admin or developer may change SLA breach alerts." });
+    }
+    if (typeof req.body?.enabled !== "boolean") {
+      return res.status(400).json({ error: "Invalid body. Expected { enabled: boolean }." });
+    }
+    const value = req.body.enabled ? "true" : "false";
+    try {
+      await dbPool.execute(
+        "INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)",
+        [SLA_ALERT_SETTING_KEY, value]
+      );
+      invalidateSlaAlertPolicyCache();
+      try {
+        await dbPool.execute(
+          "INSERT INTO security_audit_logs (user_id, username, action, details) VALUES (?, ?, ?, ?)",
+          [req.user.user_id || req.user.id || 0, req.user.username || req.user.full_name || "unknown",
+           "SLA_ALERT_TOGGLE", `Handoff-SLA breach alerts ${req.body.enabled ? "ENABLED" : "SUPPRESSED"}.`]
+        );
+      } catch { /* audit table optional — non-fatal */ }
+      res.json({ success: true, enabled: req.body.enabled });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to update SLA alert policy." });
     }
   });
 
@@ -5122,7 +5183,13 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         LEFT JOIN tbl_handoff_sla s ON s.job_id = gp.job_id AND s.stage_name = 'SLA_CASHIER_TO_SECURITY'
         WHERE gp.status = 'ISSUED' AND go.gate_out_id IS NULL
         ORDER BY gp.issued_at DESC`);
-      res.json(rows || []);
+      // When breach alerts are suppressed (testing period), don't surface the red
+      // BREACHED badge — report a neutral MONITORING state instead. The clock row
+      // is unchanged in the DB.
+      const alertsOn = await areSlaBreachAlertsEnabled();
+      res.json((rows || []).map((r: any) =>
+        alertsOn || r.sla_status !== "BREACHED" ? r : { ...r, sla_status: "MONITORING" }
+      ));
     } catch (err: any) {
       console.error("[GATE-OUT] security-queue:", err.message);
       res.status(500).json({ error: "Failed to load security queue." });
@@ -5420,6 +5487,9 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   app.get("/api/gate-out/sla-breaches", authenticateToken, requireRoles(["admin", "developer", "gm_service", "workshop_manager", "service_manager", "cashier", "security_agent", "gate_personnel"]), async (req: any, res: any) => {
     try {
       await markSlaBreaches();
+      // Suppressed during the testing period — return an empty dashboard rather
+      // than the breach list (clocks still recorded server-side).
+      if (!(await areSlaBreachAlertsEnabled())) { return res.json([]); }
       const stage = String(req.query?.stage || "");
       const params: any[] = [];
       let where = `status IN ('ON_TRACK','BREACHED')`;
@@ -6719,17 +6789,21 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     // app (a vehicle sitting unowned between stages), so they are surfaced
     // first and routed to My Workspace where the breach list actually lives.
     try {
-      const [rows]: any = await dbPool.query(
-        "SELECT COUNT(*) AS n FROM tbl_handoff_sla WHERE status = 'BREACHED'"
-      );
-      const n = Number(rows?.[0]?.n || 0);
-      if (n > 0) {
-        notifications.unshift({
-          id: "sla-breaches", type: "sla", severity: "critical",
-          title: "SLA Breaches",
-          message: `${n} handoff SLA${n === 1 ? "" : "s"} breached — action required now`,
-          link: "my-workspace"
-        });
+      // Suppressed during the testing period (see sla-alert-policy). The clocks
+      // still record breaches; we just don't raise the alarm until enabled.
+      if (await areSlaBreachAlertsEnabled()) {
+        const [rows]: any = await dbPool.query(
+          "SELECT COUNT(*) AS n FROM tbl_handoff_sla WHERE status = 'BREACHED'"
+        );
+        const n = Number(rows?.[0]?.n || 0);
+        if (n > 0) {
+          notifications.unshift({
+            id: "sla-breaches", type: "sla", severity: "critical",
+            title: "SLA Breaches",
+            message: `${n} handoff SLA${n === 1 ? "" : "s"} breached — action required now`,
+            link: "my-workspace"
+          });
+        }
       }
     } catch (e) { /* tbl_handoff_sla absent — skip */ }
 
@@ -8081,15 +8155,19 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         Number(r.employee_id) === Number(empId) && String(r.shift_date || "").startsWith(ym)
       );
 
-      // Phase B: SLA breaches owned by my stage (cashier / security).
+      // Phase B: SLA breaches owned by my stage (cashier / security). The clock
+      // sweep still runs so the data stays truthful; the count is only surfaced
+      // when breach alerts are enabled (suppressed during the testing period).
       let slaBreaches = 0;
       const OWNER_BY_ROLE: Record<string, string> = { cashier: "CASHIER", security_agent: "SECURITY", gate_personnel: "SECURITY" };
       const ownerRole = OWNER_BY_ROLE[String(me.role || "")];
       if (ownerRole) {
         try {
           await dbPool.execute(`UPDATE tbl_handoff_sla SET status = 'BREACHED' WHERE status = 'ON_TRACK' AND sla_due_at < NOW()`);
-          const [sb]: any = await dbPool.execute(`SELECT COUNT(*) AS n FROM tbl_handoff_sla WHERE status = 'BREACHED' AND owner_role = ?`, [ownerRole]);
-          slaBreaches = Number((sb || [])[0]?.n || 0);
+          if (await areSlaBreachAlertsEnabled()) {
+            const [sb]: any = await dbPool.execute(`SELECT COUNT(*) AS n FROM tbl_handoff_sla WHERE status = 'BREACHED' AND owner_role = ?`, [ownerRole]);
+            slaBreaches = Number((sb || [])[0]?.n || 0);
+          }
         } catch (e: any) { console.error("[MY-SUMMARY] sla:", e.message); }
       }
 

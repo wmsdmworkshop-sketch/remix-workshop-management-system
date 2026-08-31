@@ -18,8 +18,15 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
   const [step, setStep] = useState<number>(1);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
-  // Step 1: Odometer Verification
-  const [saOdometer, setSaOdometer] = useState<number>(assignedItem?.confirmedOdometer || 45000);
+  // Step 1: Odometer Verification.
+  // Real readings only — never a fabricated fallback. The reception-confirmed
+  // reading is the baseline the SA verifies against; if reception never captured
+  // one, fall back to the gate OCR reading; if neither exists, start blank so the
+  // SA must physically enter the true reading rather than confirm an invented one.
+  const receptionOdo: number | null = assignedItem?.confirmedOdometer ?? null;
+  const gateOdo: number | null = assignedItem?.gateOdometer ?? null;
+  const odoBaseline: number | null = receptionOdo ?? gateOdo;
+  const [saOdometer, setSaOdometer] = useState<number | "">(odoBaseline ?? "");
   const [odoCorrectionReason, setOdoCorrectionReason] = useState<string>("");
   const [odoVerified, setOdoVerified] = useState<boolean>(false);
 
@@ -57,8 +64,10 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
   const [eligibilityData, setEligibilityData] = useState<any | null>(null);
   const [loadingEligibility, setLoadingEligibility] = useState<boolean>(false);
 
-  const fetchScheduleEligibility = async (odometer: number, complaints: string) => {
+  const fetchScheduleEligibility = async (odometer: number | "", complaints: string) => {
     if (!assignedItem?.vrn) return;
+    // No reading yet → don't query eligibility against a blank/zero odometer.
+    if (odometer === "" || !(Number(odometer) > 0)) return;
     setLoadingEligibility(true);
     try {
       const res = await fetch(`/api/vehicles/${encodeURIComponent(assignedItem.vrn)}/schedule-eligibility?odometer=${odometer}&complaint=${encodeURIComponent(complaints)}`);
@@ -80,7 +89,13 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
   }, [assignedItem?.vrn]);
 
   const handleVerifyOdometer = async () => {
-    if (saOdometer !== assignedItem.confirmedOdometer && !odoCorrectionReason) {
+    // The SA must enter a real physical reading — no confirming a blank/invented one.
+    if (saOdometer === "" || Number.isNaN(Number(saOdometer)) || Number(saOdometer) <= 0) {
+      alert("Enter the physically verified odometer reading (km).");
+      return;
+    }
+    // A correction reason is required only when a real baseline existed and the SA changed it.
+    if (odoBaseline != null && Number(saOdometer) !== odoBaseline && !odoCorrectionReason) {
       alert("Please provide a Correction Reason for the odometer reading.");
       return;
     }
@@ -118,7 +133,7 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
           gateEntryId: assignedItem.gateEntryId,
           intakeId: assignedItem.intakeId,
           vosId: assignedItem.vosId,
-          saVerifiedOdometer: saOdometer,
+          saVerifiedOdometer: Number(saOdometer),
           complaintSource,
           authenticatedComplaints: [
             { complaintText, category: complaintCategory, symptom, whenOccurs, isRepeat, isImmobilized, isSafetyCritical }
@@ -229,11 +244,15 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
             <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 space-y-3 text-xs">
               <div className="flex justify-between">
                 <span className="text-slate-400">Gate OCR Reading:</span>
-                <span className="font-mono font-bold text-slate-300">45,000 km</span>
+                <span className="font-mono font-bold text-slate-300">
+                  {gateOdo != null ? `${gateOdo.toLocaleString("en-IN")} km` : "Not captured"}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Reception Confirmed Reading:</span>
-                <span className="font-mono font-bold text-slate-300">{assignedItem?.confirmedOdometer || 45000} km</span>
+                <span className="font-mono font-bold text-slate-300">
+                  {receptionOdo != null ? `${receptionOdo.toLocaleString("en-IN")} km` : "Not captured"}
+                </span>
               </div>
 
               <div>
@@ -241,12 +260,13 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
                 <input
                   type="number"
                   value={saOdometer}
-                  onChange={(e) => setSaOdometer(Number(e.target.value))}
+                  placeholder={odoBaseline == null ? "Enter physically verified reading" : undefined}
+                  onChange={(e) => setSaOdometer(e.target.value === "" ? "" : Number(e.target.value))}
                   className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2.5 font-mono text-sm text-white"
                 />
               </div>
 
-              {saOdometer !== (assignedItem?.confirmedOdometer || 45000) && (
+              {odoBaseline != null && saOdometer !== "" && Number(saOdometer) !== odoBaseline && (
                 <div>
                   <label className="block text-[10px] font-bold text-amber-400 uppercase mb-1">Correction Reason (Required)</label>
                   <input

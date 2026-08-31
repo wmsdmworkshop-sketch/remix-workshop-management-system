@@ -101,7 +101,7 @@ export class SaTechnicalIntakeEngine {
    */
   public static async getSaAssignedQueue(saId: string, saName: string, branchId: string) {
     const [rows]: any = await this.execute(
-      `SELECT ma.*, ri.visit_category, ri.preliminary_complaints, ri.confirmed_odometer, ge.vin, ge.arrival_time as gate_arrival_time
+      `SELECT ma.*, ri.visit_category, ri.preliminary_complaints, ri.confirmed_odometer, ge.vin, ge.odometer AS gate_odometer, ge.arrival_time as gate_arrival_time
        FROM tbl_manager_assignment ma
        JOIN tbl_reception_intake ri ON ma.intake_id = ri.intake_id
        JOIN tbl_gate_entry ge ON ma.gate_entry_id = ge.gate_entry_id
@@ -128,7 +128,11 @@ export class SaTechnicalIntakeEngine {
         vrn: (r.vin || "").replace("VIN-", ""),
         visitCategory: r.visit_category,
         preliminaryComplaints: r.preliminary_complaints,
-        confirmedOdometer: r.confirmed_odometer,
+        // Real readings only. gate_odometer = OCR captured at gate-in;
+        // confirmed_odometer = what reception verified. Either may be null when
+        // it was never captured — the UI must show that honestly, not invent one.
+        gateOdometer: r.gate_odometer ?? null,
+        confirmedOdometer: r.confirmed_odometer ?? null,
         assignedAt: r.assigned_at,
         waitingMins,
         isBreached,

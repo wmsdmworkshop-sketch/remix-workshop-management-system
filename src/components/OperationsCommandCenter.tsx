@@ -20,9 +20,47 @@ export default function OperationsCommandCenter() {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [toast, setToast] = useState<string | null>(null);
 
+  // Handoff-SLA breach alert toggle (real system_settings-backed control).
+  const [slaAlertsEnabled, setSlaAlertsEnabled] = useState<boolean | null>(null);
+  const [slaToggleSaving, setSlaToggleSaving] = useState(false);
+
+  const authHeaders = (): Record<string, string> => {
+    const token = typeof localStorage !== "undefined" ? localStorage.getItem("wms_token") : null;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
+  };
+
+  const fetchSlaAlertPolicy = () => {
+    fetch("/api/admin/sla-alert-policy", { headers: authHeaders() })
+      .then(res => res.json())
+      .then(data => { if (data && typeof data.enabled === "boolean") setSlaAlertsEnabled(data.enabled); })
+      .catch(() => { /* leave unknown */ });
+  };
+
+  const setSlaAlerts = async (enabled: boolean) => {
+    setSlaToggleSaving(true);
+    try {
+      const res = await fetch("/api/admin/sla-alert-policy", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ enabled }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSlaAlertsEnabled(Boolean(data.enabled));
+        showToast(`SLA breach alerts ${data.enabled ? "ENABLED" : "SUPPRESSED"}.`);
+      } else {
+        showToast(data?.error || "Failed to update SLA alert policy.");
+      }
+    } catch {
+      showToast("Failed to update SLA alert policy.");
+    } finally {
+      setSlaToggleSaving(false);
+    }
   };
 
   const fetchAllData = () => {
@@ -46,6 +84,7 @@ export default function OperationsCommandCenter() {
 
   useEffect(() => {
     fetchAllData();
+    fetchSlaAlertPolicy();
     const interval = setInterval(fetchAllData, 3000);
     return () => clearInterval(interval);
   }, []);
@@ -430,7 +469,48 @@ export default function OperationsCommandCenter() {
         {activeTab === "maintenance" && (
           <div className="space-y-6">
             <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider">Pilot Control Panel</h3>
-            
+
+            {/* Real, system_settings-backed control: suppress handoff-SLA breach
+                alerts across the app during the production-testing period. */}
+            <div className="bg-slate-950 border border-slate-850 p-4 rounded-xl flex flex-wrap items-center justify-between gap-4">
+              <div className="space-y-1 max-w-xl">
+                <h4 className="text-xs font-bold text-orange-400 uppercase flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4" /> Handoff-SLA Breach Alerts
+                </h4>
+                <p className="text-[11px] text-slate-400">
+                  When suppressed, the 5-minute handoff SLA clocks keep running and recording, but breaches are
+                  not surfaced — no alert-bell notification, no red BREACHED badges, no My Workspace counts.
+                  Keep this off until the workflow is realtime-tested against live arrivals, then enable it.
+                </p>
+                <p className="text-[10px] font-bold uppercase tracking-wider mt-1">
+                  Status:{" "}
+                  {slaAlertsEnabled === null ? (
+                    <span className="text-slate-500">Checking…</span>
+                  ) : slaAlertsEnabled ? (
+                    <span className="text-emerald-400">Alerts ENABLED (breaches surfaced)</span>
+                  ) : (
+                    <span className="text-amber-400">SUPPRESSED (testing mode)</span>
+                  )}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setSlaAlerts(false)}
+                  disabled={slaToggleSaving || slaAlertsEnabled === false}
+                  className={`px-4 py-2 rounded text-xs font-bold transition-all ${slaAlertsEnabled === false ? "bg-amber-600 text-white" : "bg-slate-800 hover:bg-slate-700 text-slate-300"} disabled:opacity-60`}
+                >
+                  Suppress
+                </button>
+                <button
+                  onClick={() => setSlaAlerts(true)}
+                  disabled={slaToggleSaving || slaAlertsEnabled === true}
+                  className={`px-4 py-2 rounded text-xs font-bold transition-all ${slaAlertsEnabled === true ? "bg-emerald-600 text-white" : "bg-slate-800 hover:bg-slate-700 text-slate-300"} disabled:opacity-60`}
+                >
+                  Enable
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-slate-950 border border-slate-850 p-4 rounded-xl space-y-2">
                 <h4 className="text-xs font-bold text-orange-400 uppercase">Pilot Mode Settings</h4>
