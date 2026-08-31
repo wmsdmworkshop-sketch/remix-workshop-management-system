@@ -31,8 +31,10 @@ class TmsaSiebelLiveClient {
   private sessionExpiry: number = 0;
   private isAuthenticating: boolean = false;
 
-  private primaryUser = process.env.TATA_DMS_USER || "CSP_100B210";
-  private primaryPass = process.env.TATA_DMS_PASSWORD || "Magic@8800";
+  // Fail closed: no hardcoded credential fallback. If these env vars are unset the
+  // connector refuses to authenticate rather than silently using a baked-in login.
+  private primaryUser = process.env.TATA_DMS_USER || "";
+  private primaryPass = process.env.TATA_DMS_PASSWORD || "";
 
   /**
    * Send HTTPS request to Tata Siebel server
@@ -71,6 +73,23 @@ class TmsaSiebelLiveClient {
     });
   }
 
+  private mergeCookies(existing: string, setCookieHeader: string[] | undefined): string {
+    if (!setCookieHeader || !Array.isArray(setCookieHeader)) return existing;
+    const map = new Map<string, string>();
+    if (existing) {
+      existing.split(";").forEach(pair => {
+        const idx = pair.indexOf("=");
+        if (idx > 0) map.set(pair.slice(0, idx).trim(), pair.slice(idx + 1).trim());
+      });
+    }
+    setCookieHeader.forEach(sc => {
+      const main = sc.split(";")[0];
+      const idx = main.indexOf("=");
+      if (idx > 0) map.set(main.slice(0, idx).trim(), main.slice(idx + 1).trim());
+    });
+    return Array.from(map.entries()).map(([k, v]) => `${k}=${v}`).join("; ");
+  }
+
   /**
    * Authenticate with Tata Siebel and establish a live session
    */
@@ -84,34 +103,52 @@ class TmsaSiebelLiveClient {
       return this.ensureAuthenticated(false);
     }
 
+    if (!this.primaryUser || !this.primaryPass) {
+      this.isAuthenticating = false;
+      throw new Error(
+        "Tata DMS credentials are not configured. Set TATA_DMS_USER and TATA_DMS_PASSWORD " +
+        "in the environment; this connector refuses to authenticate without them."
+      );
+    }
+
     this.isAuthenticating = true;
     try {
       console.log(`[SiebelLiveClient] Initiating live handshake with Tata Motors for ${this.primaryUser}...`);
 
-      // 1. Initial Handshake for route cookies
-      const initRes = await this.sendRequest("/siebel/app/workshop/enu", undefined, "");
-      const rawInitCookies = initRes.headers["set-cookie"] || [];
-      let cookies = Array.isArray(rawInitCookies) ? rawInitCookies.map(c => c.split(";")[0]).join("; ") : "";
+      // 1. Clear any stale session lock
+      let res = await this.sendRequest("/siebel/app/workshop/enu?SWENeedContext=false&SWECmd=Logoff", undefined, "");
+      let cookies = this.mergeCookies("", res.headers["set-cookie"]);
 
-      // 2. Login POST
+      // 2. Initial Handshake for entry form
+      res = await this.sendRequest("/siebel/app/workshop/enu", undefined, cookies);
+      cookies = this.mergeCookies(cookies, res.headers["set-cookie"]);
+
+      // 3. Submit ExecuteLogin POST
       const loginPostData = new URLSearchParams({
         "SWEUserName": this.primaryUser,
         "SWEPassword": this.primaryPass,
-        "SWECmd": "Login",
-        "SWEView": "Login View",
-        "SWEApplet": "Login Applet",
-        "SWETS": String(Date.now())
+        "SWEFo": "SWEEntryForm",
+        "SWESD": "1",
+        "SWENeedContext": "false",
+        "SWENoHttpRedir": "false",
+        "SWECmd": "ExecuteLogin",
+        "W": "t",
+        "SWEC": "1",
+        "SWEBID": "-1"
       }).toString();
 
-      const loginRes = await this.sendRequest("/siebel/app/workshop/enu?SWECmd=Login", loginPostData, cookies);
-      const rawLoginCookies = loginRes.headers["set-cookie"] || [];
-      const authCookies = Array.isArray(rawLoginCookies) ? rawLoginCookies.map(c => c.split(";")[0]).join("; ") : "";
+      res = await this.sendRequest("/siebel/app/workshop/enu", loginPostData, cookies);
+      cookies = this.mergeCookies(cookies, res.headers["set-cookie"]);
 
-      this.currentCookies = `${cookies}; ${authCookies}`.replace(/^;\s*/, "");
+      // 4. Enter Main Workshop View
+      res = await this.sendRequest("/siebel/app/workshop/enu?SWECmd=Login&SWEPL=1&SRN=&SWETS=" + Date.now(), undefined, cookies);
+      cookies = this.mergeCookies(cookies, res.headers["set-cookie"]);
+
+      this.currentCookies = cookies;
       // Valid for 60 minutes
       this.sessionExpiry = Date.now() + 60 * 60 * 1000;
 
-      console.log("[SiebelLiveClient] ✓ Live Session established with Tata Motors Siebel eDealer DMS!");
+      console.log("[SiebelLiveClient] ✓ Clean live session established with Tata Motors Siebel eDealer DMS!");
       return true;
     } catch (err: any) {
       console.error("[SiebelLiveClient] Authentication failed:", err.message);

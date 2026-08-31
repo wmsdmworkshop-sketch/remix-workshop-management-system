@@ -12,6 +12,7 @@ dist/
 
 # Scratch/migration scripts — not needed in production
 scratch/
+scripts/
 *.cjs
 gsheets_backdate_import.cjs
 migrate_local.cjs

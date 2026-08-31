@@ -39,6 +39,7 @@ android/
 bucket_iam_backup.json
 db_schema.txt
 dev/
+scripts/
 src/scripts/
 test_engine.js
 .artifacts/

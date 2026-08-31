@@ -3063,8 +3063,9 @@ async function startServer() {
     }
   });
 
-  // API: Clear all job cards data to start fresh with real data
-  app.post("/api/db/clear-job-cards", async (req, res) => {
+  // API: Clear all job cards data to start fresh with real data.
+  // Destructive and irreversible — restricted to admin/developer, matching /api/db/reload.
+  app.post("/api/db/clear-job-cards", authenticateToken, requireRoles(["admin", "developer"]), async (req, res) => {
     try {
       console.log("Request received to clear all job card-related data...");
 
