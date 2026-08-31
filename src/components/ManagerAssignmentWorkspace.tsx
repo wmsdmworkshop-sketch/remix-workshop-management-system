@@ -62,7 +62,9 @@ export const ManagerAssignmentWorkspace: React.FC<ManagerAssignmentWorkspaceProp
         const data = await res.json();
         const rec = data.data;
         setRecommendation(rec);
-        setSelectedSaId(rec.recommendedSaId);
+        // Keep selectedSaId a string so it compares cleanly against the <option>
+        // values (always strings) and against e.target.value on change.
+        setSelectedSaId(String(rec.recommendedSaId ?? ""));
         setSelectedSaName(rec.recommendedSaName);
       }
     } catch (err) {
@@ -251,7 +253,7 @@ export const ManagerAssignmentWorkspace: React.FC<ManagerAssignmentWorkspaceProp
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Confidence Score:</span>
-                    <span className="font-mono font-bold text-emerald-400">{Math.round(recommendation.confidenceScore * 100)}%</span>
+                    <span className="font-mono font-bold text-emerald-400">{recommendation.confidenceScore == null ? "N/A" : `${Math.round(recommendation.confidenceScore * 100)}%`}</span>
                   </div>
                   <p className="text-[11px] text-slate-300 italic pt-1 border-t border-slate-850">
                     📌 {recommendation.reason}
@@ -268,13 +270,13 @@ export const ManagerAssignmentWorkspace: React.FC<ManagerAssignmentWorkspaceProp
                   onChange={(e) => {
                     const saId = e.target.value;
                     setSelectedSaId(saId);
-                    const found = recommendation?.availableAdvisors?.find((a: any) => a.id === saId);
+                    // a.id is a numeric user_id; e.target.value is a string. Compare
+                    // as strings, or the lookup never matches and the advisor NAME
+                    // stays frozen on the recommendation — the exact cause of a card
+                    // being assigned to the recommended SA instead of the chosen one.
+                    const found = recommendation?.availableAdvisors?.find((a: any) => String(a.id) === saId);
                     if (found) setSelectedSaName(found.name);
-                    if (saId !== recommendation?.recommendedSaId) {
-                      setIsOverride(true);
-                    } else {
-                      setIsOverride(false);
-                    }
+                    setIsOverride(saId !== String(recommendation?.recommendedSaId ?? ""));
                   }}
                   className="w-full bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-xs text-slate-200 outline-none"
                 >

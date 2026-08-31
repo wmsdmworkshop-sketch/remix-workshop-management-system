@@ -510,6 +510,22 @@ export class RealtimeOwnershipPipeline {
       throw new Error(`Intake ${payload.intakeId} is already assigned to a Service Advisor. Use override to reassign.`);
     }
 
+    // Resolve the advisor NAME from the authoritative user_id — never trust the
+    // client-supplied assignedSaName. The job card's `service_advisor` field is
+    // stamped by name and the SA workspace filters on it, so a stale/mismatched
+    // name (e.g. a UI that failed to update its label when the dropdown changed)
+    // would silently route the card to the wrong advisor. The id is the single
+    // source of truth; if it does not resolve to an active advisor, fail closed.
+    const [saRows]: any = await RealtimeOwnershipPipeline.execute(
+      `SELECT full_name FROM user_access_master
+         WHERE user_id = ? AND user_role = 'service_advisor' AND is_active = 1`,
+      [payload.assignedSaId]
+    );
+    if (!saRows || saRows.length === 0) {
+      throw new Error(`Assigned service advisor id '${payload.assignedSaId}' is not a valid active advisor.`);
+    }
+    payload.assignedSaName = saRows[0].full_name;
+
     // 1. Record assignment in tbl_manager_assignment
     await RealtimeOwnershipPipeline.execute(
       `INSERT INTO tbl_manager_assignment (

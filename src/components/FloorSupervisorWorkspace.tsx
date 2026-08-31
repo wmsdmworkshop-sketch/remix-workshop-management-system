@@ -118,7 +118,10 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
           jobCardId: selectedAllocationJob.jobCardId || selectedAllocationJob.vrn,
           bayId: selectedBay,
           technicianId: selectedTech,
-          technicianName: technicianList.find(t => t.id === selectedTech)?.name || "Ravi Kumar",
+          // Compare as strings (ids may be numeric) so the correct technician
+          // name is resolved. Never fabricate a fallback name — an unmatched id
+          // must surface honestly, not silently record a hardcoded technician.
+          technicianName: technicianList.find(t => String(t.id) === selectedTech)?.name || "",
           isOverride,
           overrideReason
         })
