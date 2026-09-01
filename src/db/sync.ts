@@ -743,6 +743,39 @@ export async function ensureTablesExist(): Promise<void> {
   } catch (err) {
     // Ignore error if column already exists
   }
+
+  // Structured customer/driver complaints — the canonical, editable store the
+  // advisor uses (source, category, text, safety flags). Previously complaints
+  // had no persisted home: the intake step only echoed them and the job card had
+  // no complaint column. Multiple complaints per vehicle/job are supported.
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS tbl_job_complaints (
+        complaint_id VARCHAR(40) PRIMARY KEY,
+        job_card_no VARCHAR(50) DEFAULT NULL,
+        job_id INT DEFAULT NULL,
+        vrn VARCHAR(30) DEFAULT NULL,
+        gate_entry_id VARCHAR(50) DEFAULT NULL,
+        intake_id VARCHAR(50) DEFAULT NULL,
+        source VARCHAR(40) DEFAULT NULL,
+        category VARCHAR(60) DEFAULT NULL,
+        complaint_text TEXT NOT NULL,
+        symptom VARCHAR(255) DEFAULT NULL,
+        when_occurs VARCHAR(120) DEFAULT NULL,
+        is_repeat TINYINT(1) DEFAULT 0,
+        is_immobilized TINYINT(1) DEFAULT 0,
+        is_safety_critical TINYINT(1) DEFAULT 0,
+        status VARCHAR(30) DEFAULT 'OPEN',
+        authored_by VARCHAR(100) DEFAULT NULL,
+        authored_by_id VARCHAR(50) DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_jc_complaints_vrn (vrn),
+        INDEX idx_jc_complaints_job (job_card_no)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`);
+  } catch (err) {
+    // Ignore if table already exists
+  }
   try {
     await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `tata_complaint_number` VARCHAR(100) DEFAULT NULL");
   } catch (err) {}

@@ -2872,6 +2872,86 @@ async function startServer() {
     }
   });
 
+  // ---- Customer/Driver Complaints (structured, editable store) ----
+  const COMPLAINT_EDIT_ROLES = ["service_advisor", "service_manager", "workshop_manager", "gm_service", "admin", "developer", "reception"];
+  const normVrnKey = (v: any) => String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+  // List complaints for a vehicle (?vrn=) or a job card (?job_card_no=).
+  app.get("/api/complaints", authenticateToken, async (req: any, res) => {
+    try {
+      const vrn = normVrnKey(req.query.vrn);
+      const jobCardNo = String(req.query.job_card_no || req.query.job || "").trim();
+      if (!vrn && !jobCardNo) return res.status(400).json({ error: "vrn or job_card_no is required." });
+      const where: string[] = []; const params: any[] = [];
+      if (vrn) { where.push("UPPER(REPLACE(vrn,'-','')) = ?"); params.push(vrn); }
+      if (jobCardNo) { where.push("job_card_no = ?"); params.push(jobCardNo); }
+      const [rows]: any = await dbPool.query(
+        `SELECT * FROM tbl_job_complaints WHERE ${where.join(" OR ")} ORDER BY created_at DESC`, params);
+      res.json({ success: true, complaints: rows || [] });
+    } catch (err: any) {
+      console.error("[COMPLAINTS] list:", err.message);
+      res.status(500).json({ error: "Failed to load complaints." });
+    }
+  });
+
+  // Add a complaint.
+  app.post("/api/complaints", authenticateToken, async (req: any, res) => {
+    if (!COMPLAINT_EDIT_ROLES.includes(String(req.user.role))) {
+      return res.status(403).json({ error: "You are not permitted to add complaints." });
+    }
+    const b = req.body || {};
+    const text = String(b.complaint_text || "").trim();
+    if (!text) return res.status(400).json({ error: "Complaint text is required." });
+    if (!normVrnKey(b.vrn) && !b.job_card_no) return res.status(400).json({ error: "vrn or job_card_no is required." });
+    const id = genId("CMP");
+    try {
+      await dbPool.execute(
+        `INSERT INTO tbl_job_complaints
+           (complaint_id, job_card_no, job_id, vrn, gate_entry_id, intake_id, source, category, complaint_text,
+            symptom, when_occurs, is_repeat, is_immobilized, is_safety_critical, status, authored_by, authored_by_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, b.job_card_no || null, b.job_id != null ? Number(b.job_id) : null, b.vrn || null,
+         b.gate_entry_id || null, b.intake_id || null, b.source || null, b.category || null, text,
+         b.symptom || null, b.when_occurs || null, b.is_repeat ? 1 : 0, b.is_immobilized ? 1 : 0,
+         b.is_safety_critical ? 1 : 0, b.status || "OPEN",
+         req.user.full_name || req.user.username || null, String(req.user.user_id ?? "")]
+      );
+      const [row]: any = await dbPool.query("SELECT * FROM tbl_job_complaints WHERE complaint_id = ?", [id]);
+      res.status(201).json({ success: true, complaint: (row || [])[0] });
+    } catch (err: any) {
+      console.error("[COMPLAINTS] add:", err.message);
+      res.status(500).json({ error: "Failed to add complaint." });
+    }
+  });
+
+  // Edit a complaint.
+  app.put("/api/complaints/:id", authenticateToken, async (req: any, res) => {
+    if (!COMPLAINT_EDIT_ROLES.includes(String(req.user.role))) {
+      return res.status(403).json({ error: "You are not permitted to edit complaints." });
+    }
+    const b = req.body || {};
+    const fields: string[] = []; const params: any[] = [];
+    const set = (col: string, val: any) => { fields.push(`${col} = ?`); params.push(val); };
+    if (b.complaint_text !== undefined) {
+      const t = String(b.complaint_text).trim();
+      if (!t) return res.status(400).json({ error: "Complaint text cannot be empty." });
+      set("complaint_text", t);
+    }
+    ["source", "category", "symptom", "when_occurs", "status"].forEach((c) => { if (b[c] !== undefined) set(c, b[c] || null); });
+    ["is_repeat", "is_immobilized", "is_safety_critical"].forEach((c) => { if (b[c] !== undefined) set(c, b[c] ? 1 : 0); });
+    if (!fields.length) return res.status(400).json({ error: "No fields to update." });
+    params.push(req.params.id);
+    try {
+      const [r]: any = await dbPool.execute(`UPDATE tbl_job_complaints SET ${fields.join(", ")} WHERE complaint_id = ?`, params);
+      if (!r.affectedRows) return res.status(404).json({ error: "Complaint not found." });
+      const [row]: any = await dbPool.query("SELECT * FROM tbl_job_complaints WHERE complaint_id = ?", [req.params.id]);
+      res.json({ success: true, complaint: (row || [])[0] });
+    } catch (err: any) {
+      console.error("[COMPLAINTS] edit:", err.message);
+      res.status(500).json({ error: "Failed to update complaint." });
+    }
+  });
+
   // GET All Pending Profile requests (Admin/HR only)
   app.get("/api/my-profile/pending-requests", authenticateToken, async (req: any, res) => {
     const allowed = ["developer", "admin", "dealer_principal", "service_manager", "supervisor"];

@@ -8,6 +8,7 @@ import {
 import { AICopilotPanel } from "./AICopilotPanel";
 import { VehiclePassportModal } from "./VehiclePassportModal";
 import { SaTechnicalIntakeModal } from "./SaTechnicalIntakeModal";
+import { ComplaintsManagerModal } from "./ComplaintsManagerModal";
 import { getStaffToken } from "../lib/authToken";
 
 export interface ServiceAdvisorWorkspaceProps {
@@ -114,10 +115,8 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
     exterior: true, interior: true, tyres: false, battery: true, leaks: false, lights: true, brakes: false, suspension: false
   });
 
-  // Complaint form states
-  const [complaints, setComplaints] = useState<string>("");
-  const [remarks, setRemarks] = useState<string>("");
-  const [priority, setPriority] = useState<string>("Normal");
+  // Complaints add/edit modal (structured store). Target vehicle for the modal.
+  const [complaintsTarget, setComplaintsTarget] = useState<{ vrn: string; jobCardNo?: string | null; gateEntryId?: string | null } | null>(null);
 
   // Identity extraction from currentUser
   const advisorName = useMemo(() => {
@@ -318,22 +317,12 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
     };
   }, [selectedJob]);
 
-  // Handle complaint submission
-  const handleSubmitComplaints = async () => {
-    if (!selectedJob) return;
-    try {
-      const updatedRemarks = `${selectedJob.remarks || ""}\n[Complaint Registered]: ${complaints} | Remarks: ${remarks}`;
-      await onUpdateJob(selectedJob.job_id, {
-        remarks: updatedRemarks,
-        priority: priority as any
-      });
-      setComplaints("");
-      setRemarks("");
-      alert("Complaints successfully registered for vehicle.");
-      onRefresh();
-    } catch (e) {
-      alert("Failed to submit complaints.");
-    }
+  // Open the structured complaints add/edit modal for a vehicle (works at any
+  // stage — during or after intake).
+  const openComplaints = (opts: { vrn?: string; jobCardNo?: string | null; gateEntryId?: string | null }) => {
+    const vrn = opts.vrn || selectedJob?.vrn;
+    if (!vrn) return;
+    setComplaintsTarget({ vrn, jobCardNo: opts.jobCardNo ?? selectedJob?.job_card_no ?? null, gateEntryId: opts.gateEntryId ?? null });
   };
 
   return (
@@ -605,17 +594,28 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Labour & Spares Estimate Builder</h3>
               </div>
 
-              <select
-                value={selectedJobId || (selectedJob?.job_id || "")}
-                onChange={(e) => setSelectedJobId(Number(e.target.value))}
-                className="bg-slate-950 border border-slate-850 text-white text-xs font-bold px-3 py-1.5 rounded-lg outline-none"
-              >
-                {jobCards.map(j => (
-                  <option key={j.job_id} value={j.job_id}>
-                    {j.job_card_no || `TEMP-${j.job_id}`} — {j.vrn} ({j.customer_name})
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedJobId || (selectedJob?.job_id || "")}
+                  onChange={(e) => setSelectedJobId(Number(e.target.value))}
+                  className="bg-slate-950 border border-slate-850 text-white text-xs font-bold px-3 py-1.5 rounded-lg outline-none"
+                >
+                  {jobCards.map(j => (
+                    <option key={j.job_id} value={j.job_id}>
+                      {j.job_card_no || `TEMP-${j.job_id}`} — {j.vrn} ({j.customer_name})
+                    </option>
+                  ))}
+                </select>
+                {selectedJob && (
+                  <button
+                    onClick={() => openComplaints({ vrn: selectedJob.vrn, jobCardNo: selectedJob.job_card_no })}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold rounded-lg whitespace-nowrap cursor-pointer"
+                    title="Add or edit customer/driver complaints for this vehicle"
+                  >
+                    <AlertOctagon className="h-3.5 w-3.5" /> Complaints
+                  </button>
+                )}
+              </div>
             </div>
 
             {selectedJob ? (
@@ -750,6 +750,15 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
           assignedItem={selectedIntakeItem}
           onClose={() => setShowIntakeModal(false)}
           onRefresh={onRefresh}
+        />
+      )}
+
+      {complaintsTarget && (
+        <ComplaintsManagerModal
+          vrn={complaintsTarget.vrn}
+          jobCardNo={complaintsTarget.jobCardNo}
+          gateEntryId={complaintsTarget.gateEntryId}
+          onClose={() => setComplaintsTarget(null)}
         />
       )}
     </div>
