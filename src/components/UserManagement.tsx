@@ -187,7 +187,9 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
     { key: 'security_agent', label: 'Security Agent' },
     { key: 'tools_incharge', label: 'Tools Incharge' },
     { key: 'dkam', label: 'DKAM' },
-    { key: 'developer', label: 'Developer' }
+    // Presented as "Superadmin" in the UI; the underlying role value stays
+    // 'developer' so all existing permissions/route-guards keep working.
+    { key: 'developer', label: 'Superadmin' }
   ];
 
   const fetchPermissions = async () => {
