@@ -3843,9 +3843,9 @@ async function startServer() {
     } catch { return []; }
   };
 
-  // Read the configured workshop geofence perimeter. Public read (the
-  // self-service punch screen, which is itself unauthenticated, needs it to show
-  // whether the user is inside); the coordinates are not sensitive.
+  // Read the configured workshop geofence perimeter. Sits behind the global /api
+  // JWT gate (not in PUBLIC_API_PATHS); the punch screen runs inside the
+  // authenticated app and sends the staff token.
   app.get("/api/workshop/geofence", async (_req: any, res) => {
     const poly = await readGeofencePolygon();
     res.json({ success: true, polygon: poly, enforced: poly.length >= 3 });

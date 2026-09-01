@@ -194,7 +194,14 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
 
   const fetchGeofence = async () => {
     try {
-      const res = await fetch("/api/workshop/geofence");
+      // The perimeter endpoint is behind the global /api JWT gate; the punch
+      // screen runs inside the authenticated app, so send the staff token.
+      const token = typeof localStorage !== "undefined"
+        ? (localStorage.getItem("wms_token") || localStorage.getItem("token"))
+        : null;
+      const res = await fetch("/api/workshop/geofence", {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
       const data = await res.json();
       if (Array.isArray(data?.polygon)) setGeoPolygon(data.polygon);
     } catch { /* leave unconfigured → not enforced */ }
