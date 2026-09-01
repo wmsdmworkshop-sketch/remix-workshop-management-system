@@ -3820,10 +3820,56 @@ async function startServer() {
     return R * c;
   }
 
-  // Devanand Workshop central coordinates (Pune)
-  const WORKSHOP_LAT = 18.5204;
-  const WORKSHOP_LNG = 73.8567;
-  const GEOFENCE_RADIUS_METERS = 200;
+  // Attendance geofence is a CONFIGURABLE POLYGON — the workshop's corner
+  // coordinates stored in system_settings ('workshop_geofence_polygon' as a JSON
+  // array of [lat, lng] points). Ray-casting point-in-polygon test. When no valid
+  // polygon (>=3 corners) is configured the geofence is NOT enforced, so a missing
+  // config never silently blocks every punch; it starts enforcing once set.
+  const pointInPolygon = (lat: number, lng: number, poly: number[][]): boolean => {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const yi = poly[i][0], xi = poly[i][1];
+      const yj = poly[j][0], xj = poly[j][1];
+      const intersect = ((yi > lat) !== (yj > lat)) && (lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  };
+  const readGeofencePolygon = async (): Promise<number[][]> => {
+    try {
+      const [rows]: any = await dbPool.query("SELECT setting_value FROM system_settings WHERE setting_key = 'workshop_geofence_polygon'");
+      const poly = rows && rows[0] ? JSON.parse(rows[0].setting_value || "[]") : [];
+      return Array.isArray(poly) && poly.length >= 3 && poly.every((p: any) => Array.isArray(p) && p.length === 2) ? poly : [];
+    } catch { return []; }
+  };
+
+  // Read the configured workshop geofence perimeter. Public read (the
+  // self-service punch screen, which is itself unauthenticated, needs it to show
+  // whether the user is inside); the coordinates are not sensitive.
+  app.get("/api/workshop/geofence", async (_req: any, res) => {
+    const poly = await readGeofencePolygon();
+    res.json({ success: true, polygon: poly, enforced: poly.length >= 3 });
+  });
+
+  // Set the workshop geofence perimeter (admin / developer). Body: { polygon: [[lat,lng], ...] }.
+  app.put("/api/workshop/geofence", authenticateToken, async (req: any, res) => {
+    if (!["admin", "developer"].includes(String(req.user.role))) {
+      return res.status(403).json({ error: "Only admin or developer may set the workshop geofence." });
+    }
+    const polygon = req.body?.polygon;
+    const valid = Array.isArray(polygon) && (polygon.length === 0 || (polygon.length >= 3 &&
+      polygon.every((p: any) => Array.isArray(p) && p.length === 2 && Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1])))));
+    if (!valid) return res.status(400).json({ error: "polygon must be [] (clear) or an array of >=3 [lat, lng] pairs." });
+    try {
+      await dbPool.execute(
+        "INSERT INTO system_settings (setting_key, setting_value) VALUES ('workshop_geofence_polygon', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)",
+        [JSON.stringify(polygon.map((p: any) => [Number(p[0]), Number(p[1])]))]
+      );
+      res.json({ success: true, polygon, enforced: polygon.length >= 3 });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to save geofence." });
+    }
+  });
 
   app.post("/api/workforce/attendance", async (req, res) => {
     const db = getDB();
@@ -3860,14 +3906,18 @@ async function startServer() {
     }
     const employee = db.employees[empIdx];
 
-    // 1. Geofence Check
+    // 1. Geofence Check — configurable polygon perimeter (workshop corners).
+    // Not enforced until a valid perimeter is configured, so attendance is never
+    // silently blocked by a missing/wrong location config.
+    const geoPoly = await readGeofencePolygon();
     let isWithinGeofence = true;
-    let distanceToWorkshop = 0;
-    if (latitude && longitude) {
-      distanceToWorkshop = getDistanceMeters(latitude, longitude, WORKSHOP_LAT, WORKSHOP_LNG);
-      isWithinGeofence = distanceToWorkshop <= GEOFENCE_RADIUS_METERS;
-    } else {
-      isWithinGeofence = false; // Require location
+    let distanceToWorkshop = 0; // kept for response shape; not meaningful for a polygon
+    if (geoPoly.length >= 3) {
+      if (latitude != null && longitude != null) {
+        isWithinGeofence = pointInPolygon(Number(latitude), Number(longitude), geoPoly);
+      } else {
+        isWithinGeofence = false; // location required once a perimeter is set
+      }
     }
 
     // 2. Face Capture Biometric Matching

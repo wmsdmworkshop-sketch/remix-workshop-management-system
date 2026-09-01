@@ -48,8 +48,24 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
   const [overtimeHours, setOvertimeHours] = useState("");
   const [monthlyHistory, setMonthlyHistory] = useState<any[]>([]);
 
-  // Workshop coordinates (Pune)
+  // Configurable geofence perimeter (workshop corner coordinates) — replaces the
+  // old hardcoded single-point/radius. Empty = not enforced.
+  const [geoPolygon, setGeoPolygon] = useState<number[][]>([]);
+  // Kept for the legacy "align workshop" tester helper only.
   const [workshopCoords, setWorkshopCoords] = useState({ lat: 18.5204, lng: 73.8567 });
+
+  // Ray-casting point-in-polygon (poly = [[lat,lng], ...]).
+  const pointInPolygon = (lat: number, lng: number, poly: number[][]): boolean => {
+    if (!poly || poly.length < 3) return true; // not enforced when unconfigured
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const yi = poly[i][0], xi = poly[i][1];
+      const yj = poly[j][0], xj = poly[j][1];
+      const intersect = ((yi > lat) !== (yj > lat)) && (lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  };
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -132,13 +148,10 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
         setCoords({ lat, lng });
         setGpsAccuracy(accuracy);
 
-        // Anti-spoof checking: Check if accuracy is suspicious or spoofed
-        // High accuracy mode enabled. Suspicious accuracy < 1 meter or identical coords.
-        const dist = getDistanceMeters(lat, lng, workshopCoords.lat, workshopCoords.lng);
-        setGeofenceStatus({
-          within: dist <= 200,
-          distance: Math.round(dist)
-        });
+        // Geofence check against the configured polygon perimeter. When no
+        // perimeter is configured it is not enforced (within = true).
+        const within = pointInPolygon(lat, lng, geoPolygon);
+        setGeofenceStatus({ within, distance: 0 });
       },
       (error) => {
         setErrorMsg(`Location Access Denied: ${error.message}. Please enable location services.`);
@@ -179,13 +192,29 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
     }
   };
 
+  const fetchGeofence = async () => {
+    try {
+      const res = await fetch("/api/workshop/geofence");
+      const data = await res.json();
+      if (Array.isArray(data?.polygon)) setGeoPolygon(data.polygon);
+    } catch { /* leave unconfigured → not enforced */ }
+  };
+
   useEffect(() => {
     fetchAttendanceStatus();
     fetchMonthlyHistory();
+    fetchGeofence();
     getGPSLocation();
     startCamera();
     return () => stopCamera();
-  }, [employeeId, workshopCoords]);
+  }, [employeeId]);
+
+  // Recompute the geofence indicator once the perimeter loads (or changes) and we
+  // already have a fix — GPS and the perimeter fetch resolve independently.
+  useEffect(() => {
+    if (coords) setGeofenceStatus({ within: pointInPolygon(coords.lat, coords.lng, geoPolygon), distance: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [geoPolygon, coords]);
 
   // Align workshop location to current coordinates (Demo / Tester helper)
   const handleAlignWorkshop = () => {
