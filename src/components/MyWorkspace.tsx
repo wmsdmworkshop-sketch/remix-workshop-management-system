@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  ClipboardList, Clock, AlertTriangle, TrendingUp, Gift, CalendarCheck, Loader2, RefreshCw, Bell, CheckCircle2,
+  ClipboardList, Clock, AlertTriangle, TrendingUp, Gift, CalendarCheck, Loader2, RefreshCw, Bell, CheckCircle2, UserX, Wrench,
 } from "lucide-react";
 import { staffAuthHeaders } from "../lib/authToken";
 
@@ -19,7 +19,11 @@ const authHeaders = (): Record<string, string> => staffAuthHeaders();
 
 const inr = (n: any) =>
   n == null ? "—" : "₹" + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 });
-const pct = (n: any) => (n == null ? "—" : `${Number(n).toFixed(0)}%`);
+const pct = (n: any) => {
+  if (n == null) return "—";
+  const v = Number(String(n).replace(/%/g, "").trim());
+  return Number.isFinite(v) ? `${v.toFixed(0)}%` : "—";
+};
 
 function StatCard({ icon: Icon, label, value, tone }: { icon: any; label: string; value: any; tone: string }) {
   return (
@@ -70,6 +74,8 @@ export default function MyWorkspace({ currentUser, onOpenJob }: Props) {
   const perf = data?.performance;
   const counts = data?.counts || {};
   const me = data?.me || {};
+  const isManager = data?.scope === "workshop";
+  const mine = data?.mine || null;
 
   const acknowledgeAlert = async (alertId: number | string) => {
     try {
@@ -104,7 +110,7 @@ export default function MyWorkspace({ currentUser, onOpenJob }: Props) {
           <h1 className="text-xl font-black text-slate-900 tracking-tight">My Workspace</h1>
           <p className="text-xs text-slate-500">
             {me.full_name || currentUser?.full_name || "Me"}
-            {me.role ? ` · ${me.role}` : ""} — only what you own or are responsible for.
+            {me.role ? ` · ${me.role}` : ""} — {isManager ? "live workshop view." : "only what you own or are responsible for."}
           </p>
         </div>
         <button onClick={load} className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded px-3 py-1.5">
@@ -112,13 +118,32 @@ export default function MyWorkspace({ currentUser, onOpenJob }: Props) {
         </button>
       </div>
 
-      {/* Counters */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard icon={ClipboardList} label="My Jobs" value={counts.total ?? jobs.length} tone="bg-slate-50 border-slate-200 text-slate-700" />
-        <StatCard icon={Clock} label="My Pending" value={counts.pending ?? pendingJobs.length} tone="bg-amber-50 border-amber-200 text-amber-700" />
-        <StatCard icon={AlertTriangle} label="My Breaches" value={counts.breaches ?? breachJobs.length} tone="bg-red-50 border-red-200 text-red-700" />
-        <StatCard icon={CalendarCheck} label="Attendance (mo)" value={counts.attendance_days ?? 0} tone="bg-emerald-50 border-emerald-200 text-emerald-700" />
-      </div>
+      {/* Counters — workshop-wide for managers, personal otherwise */}
+      {isManager ? (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatCard icon={Wrench} label="Active Jobs (Workshop)" value={counts.total ?? 0} tone="bg-slate-50 border-slate-200 text-slate-700" />
+            <StatCard icon={UserX} label="Unassigned (No SA)" value={counts.unassigned ?? 0} tone="bg-amber-50 border-amber-200 text-amber-700" />
+            <StatCard icon={AlertTriangle} label="SLA / ETD Breaches" value={counts.breaches ?? 0} tone="bg-red-50 border-red-200 text-red-700" />
+            <StatCard icon={CalendarCheck} label="Attendance (mo)" value={counts.attendance_days ?? 0} tone="bg-emerald-50 border-emerald-200 text-emerald-700" />
+          </div>
+          {mine && (
+            <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-x-4 gap-y-1 px-1">
+              <span className="font-bold uppercase tracking-wider text-slate-400">Assigned to me:</span>
+              <span>{mine.total ?? 0} jobs</span>
+              <span>{mine.pending ?? 0} pending</span>
+              <span>{mine.breaches ?? 0} breaches</span>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <StatCard icon={ClipboardList} label="My Jobs" value={counts.total ?? jobs.length} tone="bg-slate-50 border-slate-200 text-slate-700" />
+          <StatCard icon={Clock} label="My Pending" value={counts.pending ?? pendingJobs.length} tone="bg-amber-50 border-amber-200 text-amber-700" />
+          <StatCard icon={AlertTriangle} label="My Breaches" value={counts.breaches ?? breachJobs.length} tone="bg-red-50 border-red-200 text-red-700" />
+          <StatCard icon={CalendarCheck} label="Attendance (mo)" value={counts.attendance_days ?? 0} tone="bg-emerald-50 border-emerald-200 text-emerald-700" />
+        </div>
+      )}
 
       {/* Personal alerts */}
       <div className="rounded-lg border border-red-200 bg-white p-4">

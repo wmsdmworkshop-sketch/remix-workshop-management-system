@@ -8216,23 +8216,78 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         } catch (e: any) { console.error("[MY-SUMMARY] sla:", e.message); }
       }
 
+      // Management roles are responsible for the whole floor, not a personal
+      // queue — give them LIVE, workshop-wide KPI tiles (computed at request time
+      // over the current job cards), while keeping the personal set as a "mine"
+      // subview. Everyone else keeps the personal scope unchanged.
+      const roleKey = String(me.role || "").toLowerCase().trim().replace(/\s+/g, "_");
+      const MANAGER_ROLES = ["service_manager", "workshop_manager", "gm_service", "admin", "developer"];
+      const isManager = MANAGER_ROLES.includes(roleKey);
+
+      let workshop: { active: number; unassigned: number; breaches: number; revenue: number } | null = null;
+      if (isManager) {
+        const openJobs = (db.jobCards || []).filter((jc: any) => !isClosed(jc.status));
+        const unassigned = openJobs.filter((jc: any) => {
+          const sa = String(jc.service_advisor || "").trim().toLowerCase();
+          return sa === "" || sa === "unassigned";
+        });
+        const wsBreaches = openJobs.filter((jc: any) => {
+          const due = jc.promised_delivery || jc.promised_delivery_date || jc.expected_delivery || jc.due_date;
+          if (!due) return false;
+          const t = new Date(due).getTime();
+          return !isNaN(t) && t < now;
+        });
+        // Real amounts only; 0 when a card carries none — never a fabricated figure.
+        const revenue = openJobs.reduce((sum: number, jc: any) =>
+          sum + Number(jc.labour_amount || jc.labor_price || 0) + Number(jc.spares_amount || jc.parts_price || 0), 0);
+        workshop = {
+          active: openJobs.length,
+          unassigned: unassigned.length,
+          breaches: wsBreaches.length + slaBreaches,
+          revenue: Math.round(revenue),
+        };
+      }
+
+      // Percentages are stored as formatted strings ("0.00%") or even "NaN%"
+      // (divide-by-zero for staff with no advisor cards). Coerce to a real number
+      // or null so the UI shows "—", never "NaN%".
+      const numPct = (v: any): number | null => {
+        if (v == null) return null;
+        const n = Number(String(v).replace(/%/g, "").trim());
+        return Number.isFinite(n) ? n : null;
+      };
+
       res.json({
         me: { user_id: me.user_id, employee_id: empId, full_name: me.full_name, role: me.role },
+        scope: isManager ? "workshop" : "personal",
         performance: emp ? {
           allocated_revenue: emp.allocated_revenue ?? 0,
-          paid_percentage: emp.paid_percentage ?? emp.paid_pct ?? null,
-          tml_claim_percentage: emp.tml_claim_percentage ?? emp.tml_claim_pct ?? null,
+          paid_percentage: numPct(emp.paid_percentage ?? emp.paid_pct),
+          tml_claim_percentage: numPct(emp.tml_claim_percentage ?? emp.tml_claim_pct),
           incentive: emp.incentive ?? emp.incentive_amount ?? null,
           score: emp.score ?? emp.performance_score ?? null,
           designation: emp.designation ?? emp.role ?? null,
         } : null,
-        counts: {
+        // Tiles: workshop-wide for managers, personal for everyone else.
+        counts: isManager && workshop ? {
+          total: workshop.active,
+          unassigned: workshop.unassigned,
+          breaches: workshop.breaches,
+          attendance_days: attendance.length,
+        } : {
           total: myJobs.length,
           pending: pending.length,
           breaches: breaches.length + slaBreaches,
           sla_breaches: slaBreaches,
           attendance_days: attendance.length,
         },
+        // "Assigned to me" subview — always the personal figures.
+        mine: {
+          total: myJobs.length,
+          pending: pending.length,
+          breaches: breaches.length + slaBreaches,
+        },
+        workshop, // null for non-managers
         jobs: myJobs,
         attendance,
       });
