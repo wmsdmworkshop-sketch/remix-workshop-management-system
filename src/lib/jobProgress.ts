@@ -88,20 +88,34 @@ export function getJobProgress(job: {
     return { percent: 100, label: "Gate-Out Complete", tone: "done", animated: false };
   }
 
-  const candidates = [job?.current_workflow_state, job?.workshop_stage, job?.status];
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    const stage = STAGE_PROGRESS[candidate];
-    if (stage) {
-      return {
-        percent: stage.percent,
-        label: stage.label,
-        tone: stage.tone,
-        // Only a genuinely moving job pulses; held/failed/finished ones sit still
-        // so a stalled vehicle is visually distinct from one being worked on.
-        animated: stage.tone === "active",
-      };
-    }
+  const toProgress = (s: { percent: number; label: string; tone: JobProgress["tone"] }): JobProgress => ({
+    percent: s.percent,
+    label: s.label,
+    tone: s.tone,
+    // Only a genuinely moving job pulses; held/failed/finished ones sit still
+    // so a stalled vehicle is visually distinct from one being worked on.
+    animated: s.tone === "active",
+  });
+  const resolve = (v?: string | null) => (v && STAGE_PROGRESS[v]) || null;
+
+  // Non-linear states carry real meaning even when they sit "behind" on the bar
+  // (Rework, QC Failed, Estimate Rejected, Carry Forward, Cancelled). They are
+  // respected in preference order — specific fields first, then the coarse status.
+  const NON_LINEAR: ReadonlySet<JobProgress["tone"]> = new Set(["problem", "held", "cancelled"]);
+  for (const candidate of [job?.current_workflow_state, job?.workshop_stage, job?.status]) {
+    const stage = resolve(candidate);
+    if (stage && NON_LINEAR.has(stage.tone)) return toProgress(stage);
+  }
+
+  // Otherwise the bar reflects the FURTHEST-ALONG linear signal across all
+  // fields, so a stale early value (e.g. a lingering live_status="Waiting"
+  // mapped into workshop_stage) can never drag an in-progress, SA-assigned card
+  // back to "Awaiting Gate-In".
+  const linear = [job?.current_workflow_state, job?.workshop_stage, job?.status]
+    .map(resolve)
+    .filter((s): s is NonNullable<typeof s> => !!s && !NON_LINEAR.has(s.tone));
+  if (linear.length) {
+    return toProgress(linear.reduce((best, s) => (s.percent > best.percent ? s : best)));
   }
 
   return { percent: 30, label: "In Workshop", tone: "pending", animated: false };
