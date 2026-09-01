@@ -3315,29 +3315,71 @@ async function startServer() {
     const db = getDB();
     const employeesList = req.body.employees || [];
     const added: Employee[] = [];
+    const rejected: Array<{ row: number; full_name?: string; errors: string[] }> = [];
 
     let nextId = db.employees.reduce((max: number, e: Employee) => Math.max(max, e.employee_id), 0) + 1;
 
-    for (const item of employeesList) {
-      const newEmp: Employee = {
+    // Real-Data-Only: a bulk import must carry real values. Missing required
+    // fields make the row a data-entry error to surface, NEVER a placeholder to
+    // invent — the previous version fabricated "Unknown", role "Technician",
+    // salary 15000 and mobile +919999999999, seeding fake staff records.
+    employeesList.forEach((item: any, idx: number) => {
+      const errors: string[] = [];
+
+      const fullName = String(item.full_name || "").trim();
+      if (!fullName) errors.push("full_name is required");
+
+      const role = String(item.role || "").trim();
+      if (!role) errors.push("role is required");
+
+      const grade = String(item.employee_grade || "").trim();
+      if (grade && grade !== "Junior" && grade !== "Senior") errors.push("employee_grade must be 'Junior' or 'Senior'");
+
+      // Mobile: required and validated with the same rule as single-create — never
+      // a fabricated fallback number.
+      const mob = validateMobileInput(item.mobile, { label: "Mobile number" });
+      if (!mob.ok) errors.push(mob.error || "invalid mobile");
+
+      // Salary: must be a real non-negative number when present. Absent → null
+      // (honest unknown), never an invented 15000.
+      let salary: number | null = null;
+      if (item.basic_salary !== undefined && item.basic_salary !== null && String(item.basic_salary).trim() !== "") {
+        const n = Number(item.basic_salary);
+        if (!Number.isFinite(n) || n < 0) errors.push("basic_salary must be a valid number");
+        else salary = n;
+      }
+
+      if (errors.length) {
+        rejected.push({ row: idx + 1, full_name: fullName || undefined, errors });
+        return;
+      }
+
+      const newEmp: any = {
         employee_id: nextId,
-        full_name: item.full_name || "Unknown",
-        employee_code: item.employee_code || `EMP${String(nextId).padStart(3, "0")}`,
-        role: item.role || "Technician",
-        employee_grade: item.employee_grade || "Junior",
-        basic_salary: Number(item.basic_salary) || 15000,
-        mobile: item.mobile || "+919999999999",
+        full_name: fullName,
+        // employee_code is a generated identifier, not fabricated personal data.
+        employee_code: String(item.employee_code || "").trim() || `EMP${String(nextId).padStart(3, "0")}`,
+        role,
+        employee_grade: (grade || "Junior") as Employee["employee_grade"],
+        basic_salary: salary,
+        mobile: mob.mobile,
         is_active: item.is_active !== undefined ? item.is_active : true,
         created_at: new Date().toISOString()
       };
 
-      db.employees.push(newEmp);
-      added.push(newEmp);
+      db.employees.push(newEmp as Employee);
+      added.push(newEmp as Employee);
       nextId++;
-    }
+    });
 
     setDB(db);
-    res.json({ success: true, count: added.length, added });
+    res.json({
+      success: rejected.length === 0,
+      count: added.length,
+      added,
+      rejected,
+      ...(rejected.length ? { message: `${added.length} imported, ${rejected.length} rejected for missing/invalid data.` } : {})
+    });
   });
 
   app.post("/api/employees/bulk-productivity", (req, res) => {
