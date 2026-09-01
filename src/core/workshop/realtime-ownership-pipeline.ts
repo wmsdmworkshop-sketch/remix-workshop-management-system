@@ -423,10 +423,10 @@ export class RealtimeOwnershipPipeline {
     // hardcoded list. Workload is the real count of open job cards per advisor.
     // If no advisors can be resolved, return an empty list and NO recommendation
     // (do not fabricate names, competencies, workloads, or confidence scores).
-    let availableAdvisors: Array<{ id: any; name: string; role: string; activeJcs: number }> = [];
+    let availableAdvisors: Array<{ id: any; name: string; role: string; crmId: string | null; activeJcs: number }> = [];
     try {
       const [rows]: any = await RealtimeOwnershipPipeline.execute(
-        `SELECT user_id AS id, full_name AS name, user_role AS role
+        `SELECT user_id AS id, full_name AS name, user_role AS role, crm_id AS crmId
            FROM user_access_master
           WHERE user_role = 'service_advisor' AND is_active = 1`
       );
@@ -458,7 +458,7 @@ export class RealtimeOwnershipPipeline {
           console.warn(`[Assignment] Workload count failed for advisor ${a.name}: ${e.message}`);
           activeJcs = 0;
         }
-        return { id: a.id, name: a.name, role: a.role, activeJcs };
+        return { id: a.id, name: a.name, role: a.role, crmId: a.crmId ?? null, activeJcs };
       }));
     } catch {
       availableAdvisors = [];
@@ -481,6 +481,7 @@ export class RealtimeOwnershipPipeline {
       intakeId,
       recommendedSaId: recommended.id,
       recommendedSaName: recommended.name,
+      recommendedSaCrmId: recommended.crmId ?? null,
       confidenceScore: null, // no calibrated model → omit rather than fabricate a score
       reason: `Lowest active workload (${recommended.activeJcs} open job cards).`,
       availableAdvisors
@@ -529,7 +530,7 @@ export class RealtimeOwnershipPipeline {
     // would silently route the card to the wrong advisor. The id is the single
     // source of truth; if it does not resolve to an active advisor, fail closed.
     const [saRows]: any = await RealtimeOwnershipPipeline.execute(
-      `SELECT full_name FROM user_access_master
+      `SELECT full_name, crm_id FROM user_access_master
          WHERE user_id = ? AND user_role = 'service_advisor' AND is_active = 1`,
       [payload.assignedSaId]
     );
@@ -537,6 +538,7 @@ export class RealtimeOwnershipPipeline {
       throw new Error(`Assigned service advisor id '${payload.assignedSaId}' is not a valid active advisor.`);
     }
     payload.assignedSaName = saRows[0].full_name;
+    const assignedSaCrmId = saRows[0].crm_id ?? null;
 
     // 1. Record assignment in tbl_manager_assignment
     await RealtimeOwnershipPipeline.execute(
@@ -689,6 +691,7 @@ export class RealtimeOwnershipPipeline {
       jobCardId,
       assignedSaId: payload.assignedSaId,
       assignedSaName: payload.assignedSaName,
+      assignedSaCrmId,
       assignedAt: now.toISOString(),
       vrn: vrnClean
     };

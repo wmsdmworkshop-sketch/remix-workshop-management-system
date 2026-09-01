@@ -417,6 +417,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
   const [editPassword, setEditPassword] = useState("");
   const [editMobileNo, setEditMobileNo] = useState("");
   const [editEmail, setEditEmail] = useState("");
+  const [editCrmId, setEditCrmId] = useState("");
   const [editLoading, setEditLoading] = useState(false);
 
   const fetchUsers = async () => {
@@ -603,7 +604,8 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
           employee_id: editEmployeeId ? Number(editEmployeeId) : null,
           password: editPassword ? editPassword : undefined,
           mobile_no: editMobileNo.trim() || undefined,
-          email: editEmail.trim() || undefined
+          email: editEmail.trim() || undefined,
+          crm_id: editCrmId.trim()
         })
       });
 
@@ -618,6 +620,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
       setEditPassword("");
       setEditMobileNo("");
       setEditEmail("");
+      setEditCrmId("");
       setEditUsername("");
       await fetchUsers();
     } catch (err: any) {
@@ -665,6 +668,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
     setEditPassword("");
     setEditMobileNo(user.mobile_no || "");
     setEditEmail(user.email || "");
+    setEditCrmId((user as any).crm_id || "");
   };
 
   const filteredUsers = useMemo(() => {
@@ -1201,6 +1205,16 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                                    onChange={(e) => setEditEmail(e.target.value)}
                                    className="px-2.5 py-1.5 bg-black border border-zinc-700 rounded-lg text-xs font-semibold text-zinc-100 placeholder-zinc-500 focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 focus:outline-none block w-full"
                                    placeholder="Email Address"
+                                 />
+                               </div>
+                               <div>
+                                 <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block mb-0.5">CRM / Siebel ID <span className="text-zinc-600 normal-case">(advisors — e.g. CSP_100B210)</span></label>
+                                 <input
+                                   type="text"
+                                   value={editCrmId}
+                                   onChange={(e) => setEditCrmId(e.target.value)}
+                                   className="px-2.5 py-1.5 bg-black border border-zinc-700 rounded-lg text-xs font-mono font-semibold text-zinc-100 placeholder-zinc-500 focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 focus:outline-none block w-full"
+                                   placeholder="e.g. CSP_100B210"
                                  />
                                </div>
                                <div>

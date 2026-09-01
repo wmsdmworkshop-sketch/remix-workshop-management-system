@@ -2016,7 +2016,7 @@ async function startServer() {
   // USER MANAGEMENT API: Get all users
   app.get("/api/users", authenticateToken, requirePermission("User Management", "view"), async (req, res) => {
     try {
-      const [rows] = await dbPool.query("SELECT user_id, full_name, employee_id, username, email, user_role, access_level, is_active, created_at, mobile_no FROM user_access_master ORDER BY user_id DESC") as any[];
+      const [rows] = await dbPool.query("SELECT user_id, full_name, employee_id, username, email, user_role, access_level, is_active, created_at, mobile_no, crm_id FROM user_access_master ORDER BY user_id DESC") as any[];
       // Map user_role to role for frontend compatibility
       const mapped = (rows as any[]).map((u: any) => ({
         user_id: u.user_id,
@@ -2403,7 +2403,7 @@ async function startServer() {
   // USER MANAGEMENT API: Update user
   app.put("/api/users/:user_id", authenticateToken, requirePermission("User Management", "edit"), async (req: any, res) => {
     const userId = Number(req.params.user_id);
-    const { full_name, role, employee_id, is_active, password, mobile_no, email } = req.body;
+    const { full_name, role, employee_id, is_active, password, mobile_no, email, crm_id } = req.body;
 
     try {
       let existingUser: any = null;
@@ -2482,11 +2482,14 @@ async function startServer() {
         finalMobileNo = check.mobile;
       }
       const finalEmail = email !== undefined ? email : existingUser.email;
+      // Per-advisor Siebel/CRM login id (e.g. CSP_100B210). Trimmed; an explicit
+      // empty string clears it. Untouched when the field is absent from the body.
+      const finalCrmId = crm_id !== undefined ? (String(crm_id).trim() || null) : (existingUser.crm_id ?? null);
 
       try {
         await dbPool.execute(
-          "UPDATE user_access_master SET full_name = ?, user_role = ?, access_level = ?, employee_id = ?, is_active = ?, password_hash = ?, mobile_no = ?, email = ? WHERE user_id = ?",
-          [finalFullName, finalRole, finalRole, finalEmployeeId, finalIsActive, password_hash, finalMobileNo || "", finalEmail || null, userId]
+          "UPDATE user_access_master SET full_name = ?, user_role = ?, access_level = ?, employee_id = ?, is_active = ?, password_hash = ?, mobile_no = ?, email = ?, crm_id = ? WHERE user_id = ?",
+          [finalFullName, finalRole, finalRole, finalEmployeeId, finalIsActive, password_hash, finalMobileNo || "", finalEmail || null, finalCrmId, userId]
         );
 
         // Keep users table in sync

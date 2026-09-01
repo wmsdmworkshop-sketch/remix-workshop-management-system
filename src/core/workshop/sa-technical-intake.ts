@@ -101,10 +101,11 @@ export class SaTechnicalIntakeEngine {
    */
   public static async getSaAssignedQueue(saId: string, saName: string, branchId: string) {
     const [rows]: any = await this.execute(
-      `SELECT ma.*, ri.visit_category, ri.preliminary_complaints, ri.confirmed_odometer, ge.vin, ge.odometer AS gate_odometer, ge.arrival_time as gate_arrival_time
+      `SELECT ma.*, ri.visit_category, ri.preliminary_complaints, ri.confirmed_odometer, ge.vin, ge.odometer AS gate_odometer, ge.arrival_time as gate_arrival_time, uam.crm_id AS sa_crm_id
        FROM tbl_manager_assignment ma
        JOIN tbl_reception_intake ri ON ma.intake_id = ri.intake_id
        JOIN tbl_gate_entry ge ON ma.gate_entry_id = ge.gate_entry_id
+       LEFT JOIN user_access_master uam ON uam.user_id = ma.assigned_sa_id
        WHERE (ma.assigned_sa_id = ? OR LOWER(ma.assigned_sa_name) = LOWER(?)) AND ma.branch_id = ? AND ma.status = 'ASSIGNED'
        ORDER BY ma.assigned_at DESC`,
       [saId, saName, branchId]
@@ -123,6 +124,7 @@ export class SaTechnicalIntakeEngine {
         intakeId: r.intake_id,
         gateEntryId: r.gate_entry_id,
         vosId: r.vos_id,
+        saCrmId: r.sa_crm_id ?? null,
         tokenNumber: r.token_number || null,
         vin: r.vin,
         vrn: (r.vin || "").replace("VIN-", ""),

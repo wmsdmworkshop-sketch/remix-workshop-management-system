@@ -717,6 +717,14 @@ export async function ensureTablesExist(): Promise<void> {
   } catch (err) {
     // Ignore error if column already exists
   }
+  // Per-advisor Tata Siebel/CRM login id (e.g. CSP_100B210, RS1_100B210 at dealer
+  // 100B210). Lets CRM job-card creation / reconcile attribute to the advisor's
+  // real CRM identity instead of a single shared dealer login.
+  try {
+    await db.execute("ALTER TABLE `user_access_master` ADD COLUMN `crm_id` VARCHAR(30) DEFAULT NULL");
+  } catch (err) {
+    // Ignore error if column already exists
+  }
   try {
     await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `tata_complaint_number` VARCHAR(100) DEFAULT NULL");
   } catch (err) {}
