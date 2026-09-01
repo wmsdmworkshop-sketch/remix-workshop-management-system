@@ -780,7 +780,12 @@ export default function App() {
     if (!tabs.some(t => t.id === "my-workspace")) {
       tabs.unshift({ id: "my-workspace", label: "My Workspace", icon: ClipboardCheck });
     }
-    const attendanceIdx = tabs.findIndex(t => t.id === "attendance");
+    // Every staff member punches their own attendance (geofenced self-service),
+    // so the Attendance tab must exist for every role — previously it was only on
+    // the roles that listed it explicitly, leaving others with no way to punch.
+    if (!tabs.some(t => t.id === "attendance")) {
+      tabs.push({ id: "attendance", label: "Attendance", icon: ClipboardCheck });
+    }
     const breakdownRoles = ["service_manager", "workshop_manager", "supervisor", "floor_supervisor", "floor_incharge", "admin", "developer"];
     if (breakdownRoles.includes(role) && !tabs.some(t => t.id === "breakdown")) {
       const dbIdx = tabs.findIndex(t => t.id === "dashboard");
