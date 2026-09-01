@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  ClipboardList, Clock, AlertTriangle, TrendingUp, Gift, CalendarCheck, Loader2, RefreshCw, Bell, CheckCircle2, UserX, Wrench,
+  ClipboardList, Clock, AlertTriangle, TrendingUp, Gift, CalendarCheck, Loader2, RefreshCw, Bell, CheckCircle2, UserX, Wrench, ShieldCheck,
 } from "lucide-react";
 import { staffAuthHeaders } from "../lib/authToken";
 
@@ -33,6 +33,61 @@ function StatCard({ icon: Icon, label, value, tone }: { icon: any; label: string
         <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
       </div>
       <p className="text-2xl font-black mt-1 tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+/** Colour band for a compliance score. */
+function band(score: number): { stroke: string; text: string; label: string } {
+  if (score < 60) return { stroke: "#dc2626", text: "text-red-600", label: "Needs attention" };
+  if (score < 85) return { stroke: "#d97706", text: "text-amber-600", label: "On track" };
+  return { stroke: "#16a34a", text: "text-emerald-600", label: "Excellent" };
+}
+
+function ComplianceGauge({ compliance }: { compliance: any }) {
+  const overall: number | null = compliance?.overall ?? null;
+  const components: { key: string; label: string; value: number | null }[] = compliance?.components || [];
+  const r = 52, C = 2 * Math.PI * r;
+  const has = overall != null;
+  const b = has ? band(overall) : { stroke: "#94a3b8", text: "text-slate-400", label: "No data yet" };
+  const dash = has ? (overall / 100) * C : 0;
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-600 flex items-center gap-2 mb-3">
+        <ShieldCheck className="h-4 w-4 text-indigo-600" /> Platform Compliance
+      </h3>
+      <div className="flex flex-col sm:flex-row items-center gap-5">
+        <div className="relative shrink-0" style={{ width: 132, height: 132 }}>
+          <svg width="132" height="132" viewBox="0 0 132 132" className="-rotate-90">
+            <circle cx="66" cy="66" r={r} fill="none" stroke="#e2e8f0" strokeWidth="12" />
+            {has && (
+              <circle cx="66" cy="66" r={r} fill="none" stroke={b.stroke} strokeWidth="12"
+                strokeLinecap="round" strokeDasharray={`${dash} ${C - dash}`} />
+            )}
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className={`text-3xl font-black tabular-nums ${b.text}`}>{has ? overall : "—"}</span>
+            {has && <span className="text-[10px] font-bold text-slate-400 -mt-0.5">/ 100</span>}
+          </div>
+        </div>
+        <div className="flex-1 w-full space-y-2">
+          <p className={`text-xs font-bold ${b.text}`}>{b.label}</p>
+          {components.map((c) => (
+            <div key={c.key}>
+              <div className="flex items-center justify-between text-[11px] mb-0.5">
+                <span className="text-slate-500">{c.label}</span>
+                <span className="font-bold text-slate-700 tabular-nums">{c.value == null ? "—" : `${c.value}%`}</span>
+              </div>
+              <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                <div className="h-full rounded-full transition-all"
+                  style={{ width: `${c.value ?? 0}%`, background: c.value == null ? "#cbd5e1" : band(c.value).stroke }} />
+              </div>
+            </div>
+          ))}
+          <p className="text-[10px] text-slate-400 pt-1">Score reflects how much of your work flows through the platform. Components with no data yet are shown as “—” and don’t count against you.</p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -144,6 +199,9 @@ export default function MyWorkspace({ currentUser, onOpenJob }: Props) {
           <StatCard icon={CalendarCheck} label="Attendance (mo)" value={counts.attendance_days ?? 0} tone="bg-emerald-50 border-emerald-200 text-emerald-700" />
         </div>
       )}
+
+      {/* Platform compliance — shown to every user to encourage platform use */}
+      <ComplianceGauge compliance={data?.compliance} />
 
       {/* Personal alerts */}
       <div className="rounded-lg border border-red-200 bg-white p-4">

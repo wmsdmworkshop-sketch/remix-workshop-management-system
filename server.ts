@@ -8248,6 +8248,62 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         };
       }
 
+      // ---- Platform Compliance score (all users, live) ----
+      // Encourages platform use by scoring how well each person works THROUGH the
+      // system. Real signals only: a component with no measurable basis is null
+      // and simply excluded from the blend — never scored as a fabricated 100.
+      const clampPct = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
+      // The cards this person is accountable for: whole workshop for managers,
+      // personal queue for everyone else.
+      const relevant = isManager ? (db.jobCards || []).filter((jc: any) => !isClosed(jc.status)) : myJobs;
+      const relevantBreaches = isManager ? (workshop?.breaches ?? 0) : (breaches.length + slaBreaches);
+
+      // 1. On-time handling: share of responsible cards with no breach.
+      const onTime = relevant.length
+        ? clampPct((1 - Math.min(relevantBreaches, relevant.length) / relevant.length) * 100) : null;
+
+      // 2. Workflow completeness: core fields captured through the platform
+      //    (advisor assigned AND a real odometer reading present).
+      const complete = relevant.length ? clampPct(
+        relevant.filter((jc: any) => {
+          const sa = String(jc.service_advisor || "").trim().toLowerCase();
+          const hasSa = sa !== "" && sa !== "unassigned";
+          const hasOdo = Number(jc.km_reading || jc.odometer_reading || 0) > 0;
+          return hasSa && hasOdo;
+        }).length / relevant.length * 100) : null;
+
+      // 3. Attendance vs working days elapsed this month (Sundays excluded).
+      const nowD = new Date();
+      let workingDays = 0;
+      for (let d = 1; d <= nowD.getDate(); d++) {
+        if (new Date(nowD.getFullYear(), nowD.getMonth(), d).getDay() !== 0) workingDays++;
+      }
+      const attendancePct = workingDays > 0
+        ? clampPct(Math.min(attendance.length / workingDays, 1) * 100) : null;
+
+      // 4. Platform activity: actions this user logged in the audit trail this
+      //    month, against a light "engaged" target. Null if the trail is absent.
+      let activityPct: number | null = null;
+      try {
+        const [act]: any = await dbPool.execute(
+          "SELECT COUNT(*) AS n FROM security_audit_logs WHERE user_id = ? AND created_at >= ?",
+          [me.user_id ?? 0, `${ym}-01 00:00:00`]);
+        const ACTIVITY_TARGET = 20;
+        activityPct = clampPct(Math.min(Number((act || [])[0]?.n || 0) / ACTIVITY_TARGET, 1) * 100);
+      } catch { activityPct = null; }
+
+      const complianceParts = [
+        { key: "on_time", label: "On-time handling", value: onTime },
+        { key: "completeness", label: "Workflow completeness", value: complete },
+        { key: "attendance", label: "Attendance", value: attendancePct },
+        { key: "activity", label: "Platform activity", value: activityPct },
+      ];
+      const measured = complianceParts.filter((p) => p.value != null) as { key: string; label: string; value: number }[];
+      const compliance = {
+        overall: measured.length ? clampPct(measured.reduce((s, p) => s + p.value, 0) / measured.length) : null,
+        components: complianceParts,
+      };
+
       // Percentages are stored as formatted strings ("0.00%") or even "NaN%"
       // (divide-by-zero for staff with no advisor cards). Coerce to a real number
       // or null so the UI shows "—", never "NaN%".
@@ -8288,6 +8344,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
           breaches: breaches.length + slaBreaches,
         },
         workshop, // null for non-managers
+        compliance, // platform-compliance score for everyone
         jobs: myJobs,
         attendance,
       });
