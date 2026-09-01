@@ -3340,12 +3340,15 @@ async function startServer() {
       const mob = validateMobileInput(item.mobile, { label: "Mobile number" });
       if (!mob.ok) errors.push(mob.error || "invalid mobile");
 
-      // Salary: must be a real non-negative number when present. Absent → null
-      // (honest unknown), never an invented 15000.
-      let salary: number | null = null;
-      if (item.basic_salary !== undefined && item.basic_salary !== null && String(item.basic_salary).trim() !== "") {
+      // Salary: required and a real non-negative number — never an invented
+      // 15000. It is a NOT NULL column that the UI renders unguarded, so a blank
+      // is a data-entry error to surface, not a null to store.
+      let salary = 0;
+      if (item.basic_salary === undefined || item.basic_salary === null || String(item.basic_salary).trim() === "") {
+        errors.push("basic_salary is required");
+      } else {
         const n = Number(item.basic_salary);
-        if (!Number.isFinite(n) || n < 0) errors.push("basic_salary must be a valid number");
+        if (!Number.isFinite(n) || n < 0) errors.push("basic_salary must be a valid non-negative number");
         else salary = n;
       }
 

@@ -1348,7 +1348,19 @@ export default function App() {
         headers: authHeaders(),
         body: JSON.stringify({ employees: employeesList })
       });
-      if (res.ok) fetchAllData();
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) await fetchAllData();
+      // The endpoint rejects rows with missing/invalid data instead of
+      // fabricating values — surface those so a partial import isn't mistaken
+      // for a full one.
+      const rejected = Array.isArray(data?.rejected) ? data.rejected : [];
+      if (rejected.length) {
+        const preview = rejected.slice(0, 8)
+          .map((r: any) => `Row ${r.row}${r.full_name ? ` (${r.full_name})` : ""}: ${(r.errors || []).join("; ")}`)
+          .join("\n");
+        alert(`Imported ${data?.count ?? 0} employee(s).\n${rejected.length} row(s) rejected for missing/invalid data:\n\n${preview}${rejected.length > 8 ? `\n…and ${rejected.length - 8} more.` : ""}`);
+      }
+      return data;
     } catch (e) {
       console.error(e);
     }
