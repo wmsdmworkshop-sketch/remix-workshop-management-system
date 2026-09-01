@@ -426,9 +426,12 @@ export class RealtimeOwnershipPipeline {
     let availableAdvisors: Array<{ id: any; name: string; role: string; crmId: string | null; activeJcs: number }> = [];
     try {
       const [rows]: any = await RealtimeOwnershipPipeline.execute(
-        `SELECT user_id AS id, full_name AS name, user_role AS role, crm_id AS crmId
-           FROM user_access_master
-          WHERE user_role = 'service_advisor' AND is_active = 1`
+        // crm_id is sourced from the EMPLOYEE master (canonical), resolved via the
+        // advisor's linked employee_id — not from user_access_master.
+        `SELECT uam.user_id AS id, uam.full_name AS name, uam.user_role AS role, e.crm_id AS crmId
+           FROM user_access_master uam
+           LEFT JOIN employees e ON e.employee_id = uam.employee_id
+          WHERE uam.user_role = 'service_advisor' AND uam.is_active = 1`
       );
       const advisors = Array.isArray(rows) ? rows : [];
       availableAdvisors = await Promise.all(advisors.map(async (a: any) => {
@@ -530,8 +533,11 @@ export class RealtimeOwnershipPipeline {
     // would silently route the card to the wrong advisor. The id is the single
     // source of truth; if it does not resolve to an active advisor, fail closed.
     const [saRows]: any = await RealtimeOwnershipPipeline.execute(
-      `SELECT full_name, crm_id FROM user_access_master
-         WHERE user_id = ? AND user_role = 'service_advisor' AND is_active = 1`,
+      // Name from the login record; crm_id from the linked EMPLOYEE master.
+      `SELECT uam.full_name, e.crm_id AS crm_id
+         FROM user_access_master uam
+         LEFT JOIN employees e ON e.employee_id = uam.employee_id
+        WHERE uam.user_id = ? AND uam.user_role = 'service_advisor' AND uam.is_active = 1`,
       [payload.assignedSaId]
     );
     if (!saRows || saRows.length === 0) {

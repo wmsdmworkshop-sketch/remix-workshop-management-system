@@ -21,6 +21,8 @@ export interface Employee {
   // New profile fields
   alt_mobile?: string | null;
   email?: string | null;
+  crm_id?: string | null;   // Tata Siebel/CRM login id (e.g. CSP_100B210)
+  lms_id?: string | null;   // Learning Management System (training/certification) id
   department?: string | null;
   designation?: string | null;
   workshop?: string | null;

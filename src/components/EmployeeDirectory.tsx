@@ -254,6 +254,9 @@ export default function EmployeeDirectory({
   const [editCertificationDate, setEditCertificationDate] = useState("");
   const [editCertificationExpiryDate, setEditCertificationExpiryDate] = useState("");
   const [editCertificationRemarks, setEditCertificationRemarks] = useState("");
+  // External-system ids (canonical here on the employee master).
+  const [editCrmId, setEditCrmId] = useState("");
+  const [editLmsId, setEditLmsId] = useState("");
 
   // Bulk CSV import states
   const [showBulkPanel, setShowBulkPanel] = useState(false);
@@ -492,6 +495,8 @@ export default function EmployeeDirectory({
     setEditCertificationDate(emp.certification_date || "");
     setEditCertificationExpiryDate(emp.certification_expiry_date || "");
     setEditCertificationRemarks(emp.certification_remarks || "");
+    setEditCrmId(emp.crm_id || "");
+    setEditLmsId(emp.lms_id || "");
     // Surface a pre-existing bad value immediately rather than only on save.
     setEditMobileError(mobileFieldError(emp.mobile, { required: true }));
   };
@@ -520,7 +525,9 @@ export default function EmployeeDirectory({
       certification_level: editCertificationLevel,
       certification_date: editCertificationDate || null,
       certification_expiry_date: editCertificationExpiryDate || null,
-      certification_remarks: editCertificationRemarks || null
+      certification_remarks: editCertificationRemarks || null,
+      crm_id: editCrmId.trim() || null,
+      lms_id: editLmsId.trim() || null
     });
     setEditingId(null);
   };
@@ -1546,10 +1553,36 @@ export default function EmployeeDirectory({
                           </div>
                         </div>
                       </div>
+
+                      <div className="border-t border-slate-100 pt-2 space-y-2 mt-2">
+                        <span className="text-[9px] font-bold text-indigo-600 uppercase tracking-wider block">External System IDs</span>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="ds-label text-[9px] font-bold uppercase tracking-wider block mb-1">CRM / Siebel ID</label>
+                            <input
+                              type="text"
+                              value={editCrmId}
+                              onChange={(e) => setEditCrmId(e.target.value)}
+                              placeholder="e.g. CSP_100B210"
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 font-mono font-semibold focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                            />
+                          </div>
+                          <div>
+                            <label className="ds-label text-[9px] font-bold uppercase tracking-wider block mb-1">LMS ID <span className="text-slate-400 normal-case">(training)</span></label>
+                            <input
+                              type="text"
+                              value={editLmsId}
+                              onChange={(e) => setEditLmsId(e.target.value)}
+                              placeholder="Learning Mgmt System id"
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 font-mono font-semibold focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
+                            />
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="flex justify-end gap-1.5 pt-2 border-t border-slate-100">
-                      <button 
+                      <button
                         type="button"
                         onClick={() => setEditingId(null)}
                         className="text-[10px] font-bold px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-all cursor-pointer"

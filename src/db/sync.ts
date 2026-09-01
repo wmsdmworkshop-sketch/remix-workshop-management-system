@@ -720,8 +720,26 @@ export async function ensureTablesExist(): Promise<void> {
   // Per-advisor Tata Siebel/CRM login id (e.g. CSP_100B210, RS1_100B210 at dealer
   // 100B210). Lets CRM job-card creation / reconcile attribute to the advisor's
   // real CRM identity instead of a single shared dealer login.
+  //
+  // The canonical home is the EMPLOYEE master (employees.crm_id / lms_id) — that
+  // is the person record edited in Employee Directory and resolved by the
+  // assignment workflow via user_access_master.employee_id. The user_access_master
+  // column below predates that and is retained (harmless, unused) so the earlier
+  // migration stays idempotent.
   try {
     await db.execute("ALTER TABLE `user_access_master` ADD COLUMN `crm_id` VARCHAR(30) DEFAULT NULL");
+  } catch (err) {
+    // Ignore error if column already exists
+  }
+  // Employee-master external-system ids: CRM/Siebel login and LMS (Learning
+  // Management System — technician training/certification) id.
+  try {
+    await db.execute("ALTER TABLE `employees` ADD COLUMN `crm_id` VARCHAR(30) DEFAULT NULL");
+  } catch (err) {
+    // Ignore error if column already exists
+  }
+  try {
+    await db.execute("ALTER TABLE `employees` ADD COLUMN `lms_id` VARCHAR(30) DEFAULT NULL");
   } catch (err) {
     // Ignore error if column already exists
   }
