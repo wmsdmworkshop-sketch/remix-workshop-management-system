@@ -34,6 +34,7 @@ export const ComplaintsManagerModal: React.FC<Props> = ({ vrn, jobCardNo, gateEn
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<any>(blankForm());
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editReason, setEditReason] = useState(""); // required justification when editing
 
   const authHeaders = (): Record<string, string> => {
     const t = getStaffToken();
@@ -66,14 +67,15 @@ export const ComplaintsManagerModal: React.FC<Props> = ({ vrn, jobCardNo, gateEn
     });
   };
 
-  const resetForm = () => { setEditingId(null); setForm(blankForm()); };
+  const resetForm = () => { setEditingId(null); setForm(blankForm()); setEditReason(""); };
 
   const save = async () => {
     if (!form.complaint_text.trim()) { setError("Complaint text is required."); return; }
+    if (editingId && editReason.trim().length < 5) { setError("A reason for this edit is required (min 5 characters)."); return; }
     setSaving(true); setError(null);
     try {
       const res = editingId
-        ? await fetch(`/api/complaints/${encodeURIComponent(editingId)}`, { method: "PUT", headers: authHeaders(), body: JSON.stringify(form) })
+        ? await fetch(`/api/complaints/${encodeURIComponent(editingId)}`, { method: "PUT", headers: authHeaders(), body: JSON.stringify({ ...form, justification: editReason.trim() }) })
         : await fetch(`/api/complaints`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ ...form, vrn, job_card_no: jobCardNo || null, gate_entry_id: gateEntryId || null }) });
       const data = await res.json();
       if (!res.ok) { setError(data?.error || "Failed to save complaint."); setSaving(false); return; }
@@ -167,6 +169,13 @@ export const ComplaintsManagerModal: React.FC<Props> = ({ vrn, jobCardNo, gateEn
                 </label>
               ))}
             </div>
+            {editingId && (
+              <div>
+                <label className="block text-[10px] font-bold text-amber-400 uppercase mb-1">Reason for this edit (required)</label>
+                <input value={editReason} onChange={(e) => setEditReason(e.target.value)} placeholder="Why are you changing this complaint?"
+                  className="w-full bg-slate-900 border border-amber-500/40 rounded-lg p-2 text-xs" />
+              </div>
+            )}
             {error && <p className="text-xs text-red-400 flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" /> {error}</p>}
             <div className="flex gap-2">
               <button onClick={save} disabled={saving}

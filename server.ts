@@ -2924,11 +2924,35 @@ async function startServer() {
     }
   });
 
-  // Edit a complaint.
+  // ---- Edit governance: every edit requires a justification, recorded here ----
+  const getJustification = (req: any) => String(req.body?.justification || req.body?.edit_reason || "").trim();
+  const logEdit = async (req: any, o: { entity_type: string; entity_id?: any; action?: string; justification: string; before?: any; after?: any }) => {
+    try {
+      await dbPool.execute(
+        `INSERT INTO tbl_edit_audit (audit_id, entity_type, entity_id, action, justification, before_json, after_json, changed_by, changed_by_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [genId("EDT"), o.entity_type, o.entity_id != null ? String(o.entity_id) : null, o.action || "EDIT", o.justification,
+         o.before != null ? JSON.stringify(o.before) : null, o.after != null ? JSON.stringify(o.after) : null,
+         req.user?.full_name || req.user?.username || null, String(req.user?.user_id ?? "")]);
+    } catch (e: any) { console.error("[EDIT-AUDIT]", e.message); }
+  };
+
+  // Standalone justification record — used before opening an editor (e.g. the SA
+  // "Edit intake" gate) so the reason is captured even if the edit spans screens.
+  app.post("/api/edit-audit", authenticateToken, async (req: any, res) => {
+    const j = getJustification(req);
+    if (j.length < 5) return res.status(400).json({ error: "A justification (min 5 characters) is required for any edit." });
+    await logEdit(req, { entity_type: String(req.body?.entity_type || "unknown"), entity_id: req.body?.entity_id, action: req.body?.action || "EDIT", justification: j });
+    res.json({ success: true });
+  });
+
+  // Edit a complaint. Justification-gated per the edit-governance rule.
   app.put("/api/complaints/:id", authenticateToken, async (req: any, res) => {
     if (!COMPLAINT_EDIT_ROLES.includes(String(req.user.role))) {
       return res.status(403).json({ error: "You are not permitted to edit complaints." });
     }
+    const justification = getJustification(req);
+    if (justification.length < 5) return res.status(400).json({ error: "A justification (min 5 characters) is required to edit a complaint." });
     const b = req.body || {};
     const fields: string[] = []; const params: any[] = [];
     const set = (col: string, val: any) => { fields.push(`${col} = ?`); params.push(val); };
@@ -2945,6 +2969,7 @@ async function startServer() {
       const [r]: any = await dbPool.execute(`UPDATE tbl_job_complaints SET ${fields.join(", ")} WHERE complaint_id = ?`, params);
       if (!r.affectedRows) return res.status(404).json({ error: "Complaint not found." });
       const [row]: any = await dbPool.query("SELECT * FROM tbl_job_complaints WHERE complaint_id = ?", [req.params.id]);
+      await logEdit(req, { entity_type: "complaint", entity_id: req.params.id, action: "COMPLAINT_EDIT", justification, after: (row || [])[0] });
       res.json({ success: true, complaint: (row || [])[0] });
     } catch (err: any) {
       console.error("[COMPLAINTS] edit:", err.message);

@@ -776,6 +776,28 @@ export async function ensureTablesExist(): Promise<void> {
   } catch (err) {
     // Ignore if table already exists
   }
+
+  // Immutable edit-audit trail. Governance rule: every edit anywhere requires a
+  // justification, recorded here with who/when and (where available) old->new.
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS tbl_edit_audit (
+        audit_id VARCHAR(40) PRIMARY KEY,
+        entity_type VARCHAR(60) NOT NULL,
+        entity_id VARCHAR(80) DEFAULT NULL,
+        action VARCHAR(60) DEFAULT NULL,
+        justification TEXT NOT NULL,
+        before_json MEDIUMTEXT DEFAULT NULL,
+        after_json MEDIUMTEXT DEFAULT NULL,
+        changed_by VARCHAR(100) DEFAULT NULL,
+        changed_by_id VARCHAR(50) DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_edit_audit_entity (entity_type, entity_id),
+        INDEX idx_edit_audit_when (created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`);
+  } catch (err) {
+    // Ignore if table already exists
+  }
   try {
     await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `tata_complaint_number` VARCHAR(100) DEFAULT NULL");
   } catch (err) {}

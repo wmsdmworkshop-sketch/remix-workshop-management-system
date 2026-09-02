@@ -9,6 +9,7 @@ import { AICopilotPanel } from "./AICopilotPanel";
 import { VehiclePassportModal } from "./VehiclePassportModal";
 import { SaTechnicalIntakeModal } from "./SaTechnicalIntakeModal";
 import { ComplaintsManagerModal } from "./ComplaintsManagerModal";
+import { EditJustificationModal } from "./EditJustificationModal";
 import { getStaffToken } from "../lib/authToken";
 
 export interface ServiceAdvisorWorkspaceProps {
@@ -325,6 +326,20 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
     setComplaintsTarget({ vrn, jobCardNo: opts.jobCardNo ?? selectedJob?.job_card_no ?? null, gateEntryId: opts.gateEntryId ?? null });
   };
 
+  // MY ATTENTION primary action — route the vehicle to its real next step
+  // (Create Estimate / Follow-up / Send Pre-Invoice all live in the work tab),
+  // instead of the old hardcoded re-INTAKE.
+  const handleAttentionAction = (item: any) => {
+    const jobId = item.jobCard?.job_id ?? item.id;
+    if (jobId != null) setSelectedJobId(Number(jobId));
+    setActiveTab("my-work");
+  };
+
+  // Edit intake data — justification-gated (every edit needs a reason). The
+  // reason is recorded to the edit-audit trail before the intake editor opens.
+  const [editJustifyItem, setEditJustifyItem] = useState<any | null>(null);
+  const openEditWithJustification = (item: any) => setEditJustifyItem(item);
+
   return (
     <div className="space-y-6 bg-[#0B1220] text-slate-100 min-h-screen p-3 md:p-6 pb-24" lang="en">
       
@@ -464,23 +479,33 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                     📌 {item.reason}
                   </p>
 
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     <button
-                      onClick={() => {
-                        fetchPassportForVrn(item.vrn, item.odometer);
-                      }}
-                      className="w-1/2 py-2 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                      onClick={() => { fetchPassportForVrn(item.vrn, item.odometer); }}
+                      className="py-2 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 font-bold text-[11px] uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
                     >
                       <Eye className="h-3.5 w-3.5 text-blue-400" />
-                      <span>PASSPORT</span>
+                      <span>Passport</span>
                     </button>
 
-                      <button
-                        onClick={() => { openIntakeForItem(item); }}
-                        className="w-1/2 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
-                      >
+                    {/* Primary action reflects the vehicle's REAL stage (Create
+                        Estimate, Follow-up, etc.) — no longer a hardcoded INTAKE
+                        that let a done vehicle be re-intaked. */}
+                    <button
+                      onClick={() => { handleAttentionAction(item); }}
+                      className="py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px] uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                    >
                       <Wrench className="h-3.5 w-3.5" />
-                      <span>INTAKE</span>
+                      <span>{item.actionLabel || "Open"}</span>
+                    </button>
+
+                    {/* Edit is justification-gated (every edit needs a reason). */}
+                    <button
+                      onClick={() => { openEditWithJustification(item); }}
+                      className="py-2 bg-slate-950 border border-amber-600/40 hover:border-amber-500 text-amber-400 font-bold text-[11px] uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      <span>Edit</span>
                     </button>
                   </div>
                 </div>
@@ -759,6 +784,26 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
           jobCardNo={complaintsTarget.jobCardNo}
           gateEntryId={complaintsTarget.gateEntryId}
           onClose={() => setComplaintsTarget(null)}
+        />
+      )}
+
+      {editJustifyItem && (
+        <EditJustificationModal
+          entityLabel={`${editJustifyItem.vrn} — intake`}
+          title="Edit intake — reason required"
+          onConfirm={async (reason) => {
+            const token = getStaffToken();
+            const res = await fetch("/api/edit-audit", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+              body: JSON.stringify({ entity_type: "intake", entity_id: editJustifyItem.jobCard?.job_id ?? editJustifyItem.id, action: "SA_INTAKE_EDIT", justification: reason }),
+            });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Failed to record the edit."); }
+            const item = editJustifyItem;
+            setEditJustifyItem(null);
+            openIntakeForItem(item); // reopen the intake editor now that the reason is logged
+          }}
+          onClose={() => setEditJustifyItem(null)}
         />
       )}
     </div>
