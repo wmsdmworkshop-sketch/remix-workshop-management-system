@@ -5,7 +5,13 @@ const config: CapacitorConfig = {
   appName: 'AiVaahan DWIP',
   webDir: 'dist',
   server: {
-    androidScheme: 'https'
+    androidScheme: 'https',
+    // Load the live deployed web app instead of the bundled assets, so every
+    // future web deploy reaches installed apps instantly — no APK rebuild per UI
+    // change. The bundled `dist` remains only a fallback. Requires a network
+    // connection (native plugins — camera, GPS — still work).
+    url: 'https://devanand.aivaahan.com',
+    cleartext: false
   },
   plugins: {
     SplashScreen: {
