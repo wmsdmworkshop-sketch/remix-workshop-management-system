@@ -2404,6 +2404,9 @@ async function startServer() {
   app.put("/api/users/:user_id", authenticateToken, requirePermission("User Management", "edit"), async (req: any, res) => {
     const userId = Number(req.params.user_id);
     const { full_name, role, employee_id, is_active, password, mobile_no, email } = req.body;
+    // Every edit needs a justification (recorded to the audit trail).
+    const justification = getJustification(req);
+    if (justification.length < 5) return res.status(400).json({ error: "A justification (min 5 characters) is required to edit a user." });
 
     try {
       let existingUser: any = null;
@@ -2504,6 +2507,8 @@ async function startServer() {
           "USER_PROFILE_UPDATE",
           `Updated user '@${existingUser.username}' (ID: ${userId}): role=${finalRole}, employee_id=${finalEmployeeId}, is_active=${finalIsActive}`
         );
+        await logEdit(req, { entity_type: "user", entity_id: userId, action: "USER_EDIT", justification,
+          after: { full_name: finalFullName, role: finalRole, employee_id: finalEmployeeId, is_active: finalIsActive } });
       } catch (dbErr) {
         console.warn("MySQL user update failed, updating local cache only:", dbErr);
       }
@@ -3551,8 +3556,11 @@ async function startServer() {
       // GET route reads from here, so mutations must too (used by edit + deactivate).
       const existing = await EmployeeIdentityService.instance.getEmployeeById(id);
       if (!existing) return res.status(404).json({ error: "Employee not found" });
-      // Strip non-column / computed fields so the UPDATE doesn't hit unknown columns.
-      const { employee_id, target_revenue, ...data } = req.body || {};
+      // Every edit needs a justification (recorded to the audit trail).
+      const justification = getJustification(req);
+      if (justification.length < 5) return res.status(400).json({ error: "A justification (min 5 characters) is required to edit an employee." });
+      // Strip non-column / computed fields (incl. justification) so the UPDATE doesn't hit unknown columns.
+      const { employee_id, target_revenue, justification: _j, edit_reason: _er, ...data } = req.body || {};
 
       // Validate any mobile the edit form submitted. Only fields actually
       // present are checked, so unrelated edits are unaffected.
@@ -3571,6 +3579,7 @@ async function startServer() {
         await EmployeeIdentityService.updateEmployee(id, data);
       }
       const updated = await EmployeeIdentityService.instance.getEmployeeById(id);
+      await logEdit(req, { entity_type: "employee", entity_id: id, action: "EMPLOYEE_EDIT", justification, before: existing, after: updated });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message || "Failed to update employee." });
@@ -6248,6 +6257,13 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       // Update Request (POST /api/job-cards/:id/update-request). So we strip all
       // non-workflow fields for non-owners rather than mutating the core card.
       let incoming = req.body || {};
+      // Edit-governance: capture any justification and strip it so it never leaks
+      // into the column update. The shared job-card PUT also carries system/
+      // workflow transitions (which are not manual "edits"), so a reason is
+      // OPTIONAL here and audited only when a human edit supplies one — never
+      // required, to avoid blocking the workflow.
+      const editJustification = String((incoming as any).justification || (incoming as any).edit_reason || "").trim();
+      delete (incoming as any).justification; delete (incoming as any).edit_reason;
       const _role = req.user?.role;
       // TRUE superusers bypass the ownership lock outright.
       const _isSuper = _role === "admin" || _role === "developer";
@@ -6426,6 +6442,12 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         }
       } catch (alertErr: any) {
         console.error('[ALERT] Role transition alert insert failed:', alertErr.message);
+      }
+
+      // Record a manual edit's justification when one was supplied (workflow-only
+      // transitions carry none and are not audited here).
+      if (editJustification.length >= 5) {
+        await logEdit(req, { entity_type: "job_card", entity_id: id, action: "JOBCARD_EDIT", justification: editJustification, before: oldJob, after: updatedJob });
       }
 
       res.json(updatedJob);

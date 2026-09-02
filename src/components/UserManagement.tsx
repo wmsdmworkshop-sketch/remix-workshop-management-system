@@ -1,5 +1,6 @@
 import FunnySpinner from "./FunnySpinner";
 import React, { useState, useEffect, useMemo } from "react";
+import { EditJustificationModal } from "./EditJustificationModal";
 import { 
   Users, 
   UserPlus, 
@@ -420,6 +421,8 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
   const [editMobileNo, setEditMobileNo] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editLoading, setEditLoading] = useState(false);
+  // Pending edit awaiting its mandatory justification.
+  const [pendingEdit, setPendingEdit] = useState<{ label: string; run: (reason: string) => Promise<void> | void } | null>(null);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -586,76 +589,58 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
     }
   };
 
-  const handleUpdateUser = async (userId: number) => {
-    setError(null);
-    setSuccess(null);
-    setEditLoading(true);
-
-    try {
-      const response = await fetch(`/api/users/${userId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          full_name: editFullName.trim(),
-          username: editUsername.trim().toLowerCase(),
-          role: editRole,
-          employee_id: editEmployeeId ? Number(editEmployeeId) : null,
-          password: editPassword ? editPassword : undefined,
-          mobile_no: editMobileNo.trim() || undefined,
-          email: editEmail.trim() || undefined
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to update user.");
-      }
-
-      setSuccess("User updated successfully!");
-      setEditingUserId(null);
-      setEditPassword("");
-      setEditMobileNo("");
-      setEditEmail("");
-      setEditUsername("");
-      await fetchUsers();
-    } catch (err: any) {
-      setError(err.message || "Failed to update user.");
-    } finally {
-      setEditLoading(false);
-    }
+  // Edit — gated by a mandatory justification (recorded to the edit-audit trail).
+  const handleUpdateUser = (userId: number) => {
+    setPendingEdit({
+      label: `User: @${editUsername.trim().toLowerCase()}`,
+      run: async (justification) => {
+        setError(null); setSuccess(null); setEditLoading(true);
+        try {
+          const response = await fetch(`/api/users/${userId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+            body: JSON.stringify({
+              full_name: editFullName.trim(),
+              username: editUsername.trim().toLowerCase(),
+              role: editRole,
+              employee_id: editEmployeeId ? Number(editEmployeeId) : null,
+              password: editPassword ? editPassword : undefined,
+              mobile_no: editMobileNo.trim() || undefined,
+              email: editEmail.trim() || undefined,
+              justification,
+            })
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Failed to update user.");
+          setSuccess("User updated successfully!");
+          setEditingUserId(null); setEditPassword(""); setEditMobileNo(""); setEditEmail(""); setEditUsername("");
+          await fetchUsers();
+        } catch (err: any) {
+          setError(err.message || "Failed to update user.");
+          throw err; // keep the justification modal open on failure
+        } finally {
+          setEditLoading(false);
+        }
+      },
+    });
   };
 
-  const handleToggleActive = async (user: User) => {
-    setError(null);
-    setSuccess(null);
+  const handleToggleActive = (user: User) => {
     const newActiveState = !user.is_active;
-
-    try {
-      const response = await fetch(`/api/users/${user.user_id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          is_active: newActiveState
-        })
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to toggle user state.");
-      }
-
-      setSuccess(`User "${user.full_name}" has been ${newActiveState ? "activated" : "deactivated"}.`);
-      await fetchUsers();
-    } catch (err: any) {
-      setError(err.message || "Failed to toggle user status.");
-    }
+    setPendingEdit({
+      label: `@${user.username} — ${newActiveState ? "activate" : "deactivate"}`,
+      run: async (justification) => {
+        setError(null); setSuccess(null);
+        const response = await fetch(`/api/users/${user.user_id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify({ is_active: newActiveState, justification })
+        });
+        if (!response.ok) { const data = await response.json(); throw new Error(data.error || "Failed to toggle user state."); }
+        setSuccess(`User "${user.full_name}" has been ${newActiveState ? "activated" : "deactivated"}.`);
+        await fetchUsers();
+      },
+    });
   };
 
   const startEdit = (user: User) => {
@@ -2287,6 +2272,13 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
         </div>
       )}
 
+      {pendingEdit && (
+        <EditJustificationModal
+          entityLabel={pendingEdit.label}
+          onConfirm={async (reason) => { await pendingEdit.run(reason); setPendingEdit(null); }}
+          onClose={() => setPendingEdit(null)}
+        />
+      )}
     </div>
   );
 }

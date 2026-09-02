@@ -27,6 +27,7 @@ import {
   User
 } from "lucide-react";
 import { Employee, Bay, SRType, RevenueSplitMaster } from "../types";
+import { EditJustificationModal } from "./EditJustificationModal";
 
 /**
  * Mobile validation, mirroring the server's validateMobileInput.
@@ -257,6 +258,8 @@ export default function EmployeeDirectory({
   // External-system ids (canonical here on the employee master).
   const [editCrmId, setEditCrmId] = useState("");
   const [editLmsId, setEditLmsId] = useState("");
+  // Pending edit awaiting a justification (every edit must be justified).
+  const [pendingEdit, setPendingEdit] = useState<{ label: string; run: (reason: string) => Promise<void> | void } | null>(null);
 
   // Bulk CSV import states
   const [showBulkPanel, setShowBulkPanel] = useState(false);
@@ -515,7 +518,7 @@ export default function EmployeeDirectory({
     const finalEditRole = editSelectedRole === "custom" ? editCustomRoleText.trim() : editSelectedRole;
     if (!finalEditRole) return;
 
-    onUpdateEmployee(id, {
+    const payload = {
       full_name: editName,
       employee_code: editCode.toUpperCase(),
       role: finalEditRole,
@@ -528,13 +531,18 @@ export default function EmployeeDirectory({
       certification_remarks: editCertificationRemarks || null,
       crm_id: editCrmId.trim() || null,
       lms_id: editLmsId.trim() || null
+    };
+    // Every edit needs a justification.
+    setPendingEdit({
+      label: `Employee: ${editName}`,
+      run: async (reason) => { await onUpdateEmployee(id, { ...payload, justification: reason }); setEditingId(null); },
     });
-    setEditingId(null);
   };
 
   const toggleStatus = (emp: Employee) => {
-    onUpdateEmployee(emp.employee_id, {
-      is_active: !emp.is_active
+    setPendingEdit({
+      label: `${emp.full_name} — ${emp.is_active ? "deactivate" : "activate"}`,
+      run: async (reason) => { await onUpdateEmployee(emp.employee_id, { is_active: !emp.is_active, justification: reason }); },
     });
   };
 
@@ -1810,6 +1818,13 @@ export default function EmployeeDirectory({
         </div>
       )}
 
+      {pendingEdit && (
+        <EditJustificationModal
+          entityLabel={pendingEdit.label}
+          onConfirm={async (reason) => { await pendingEdit.run(reason); setPendingEdit(null); }}
+          onClose={() => setPendingEdit(null)}
+        />
+      )}
     </div>
   );
 }

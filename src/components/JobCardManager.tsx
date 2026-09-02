@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { EditJustificationModal } from "./EditJustificationModal";
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import TruckInfoCard from './TruckInfoCard';
 import FunnySpinner from './FunnySpinner';
@@ -750,6 +751,7 @@ export default function JobCardManager({
   const [showEditModal, setShowEditModal] = useState(false);
   useEscapeKey(() => setShowEditModal(false), showEditModal);
   const [editJobId, setEditJobId] = useState<number | null>(null);
+  const [pendingEdit, setPendingEdit] = useState<{ label: string; run: (reason: string) => Promise<void> | void } | null>(null);
   const [editJobCardNo, setEditJobCardNo] = useState("");
   const [editCrmJobCardNo, setEditCrmJobCardNo] = useState("");
   const [editBayId, setEditBayId] = useState<number | null>(null);
@@ -1293,16 +1295,18 @@ export default function JobCardManager({
       odometer_photo: editOdometerPhoto
     };
 
-    onUpdateJob(editJobId, updatedFields);
-    setShowEditModal(false);
-    
-    // Immediately update selectedJob local state
-    if (selectedJob && selectedJob.job_id === editJobId) {
-      setSelectedJob({
-        ...selectedJob,
-        ...updatedFields
-      });
-    }
+    // Every edit needs a justification (recorded to the edit-audit trail).
+    const jobIdToSave = editJobId;
+    setPendingEdit({
+      label: `Job card ${editJobCardNo || jobIdToSave} — ${editVrn.toUpperCase()}`,
+      run: async (reason) => {
+        await onUpdateJob(jobIdToSave, { ...updatedFields, justification: reason } as any);
+        setShowEditModal(false);
+        if (selectedJob && selectedJob.job_id === jobIdToSave) {
+          setSelectedJob({ ...selectedJob, ...updatedFields });
+        }
+      },
+    });
   };
 
   const addStaffAllocation = () => {
@@ -3834,6 +3838,14 @@ export default function JobCardManager({
             </div>
           </div>
         </div>
+      )}
+
+      {pendingEdit && (
+        <EditJustificationModal
+          entityLabel={pendingEdit.label}
+          onConfirm={async (reason) => { await pendingEdit.run(reason); setPendingEdit(null); }}
+          onClose={() => setPendingEdit(null)}
+        />
       )}
     </div>
   );
