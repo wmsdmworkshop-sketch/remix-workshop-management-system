@@ -11716,24 +11716,9 @@ Respond with valid JSON only:
     }
   });
 
-  // --- APK DOWNLOADS: Serve Android APK files ---
-  app.get("/downloads/:filename", (req: any, res: any) => {
-    const filename = req.params.filename;
-    if (!filename.endsWith(".apk") || filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
-      return res.status(400).json({ error: "Invalid download request." });
-    }
-    const candidatePaths = [
-      path.join(process.cwd(), "public", "downloads", filename),
-      path.join(process.cwd(), "dist", "downloads", filename),
-    ];
-    let targetPath = candidatePaths.find(p => fs.existsSync(p));
-    if (!targetPath) {
-      return res.status(404).json({ error: `APK file '${filename}' not found on server.` });
-    }
-    res.setHeader("Content-Type", "application/vnd.android.package-archive");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    res.sendFile(targetPath);
-  });
+  // APK download serving removed — the app is distributed via the Google Play
+  // Store (Play link + QR on the Mobile Platform page and login footer), not as
+  // raw APKs.
 
   // --- PRIVACY POLICY: public, unauthenticated ---
   // Google Play requires a publicly reachable privacy policy URL for the listing,

@@ -75,7 +75,60 @@ Automated runner: [scripts/post_deployment_handover.ts](file:///scripts/post_dep
 
 ---
 
-## 5. Session Handover Log
+## 5. Model Routing & Token Economy (Smart Model Usage)
+
+This env (Antigravity IDE) has multiple models available — from cheap/fast Gemini
+Flash to premium Claude Opus. **Default to the cheapest model that can do the job
+correctly, and reserve premium models for where they genuinely change the
+outcome.** The goal is to spend the expensive-model budget only where a mistake
+is costly or the reasoning is genuinely hard — chiefly changes that touch the
+LIVE production system.
+
+### Core principle
+
+- **Start cheap; escalate on evidence, not by default.** Only move up a tier when
+  the current model is stuck (2–3 failed attempts) or the task's risk/complexity
+  clearly warrants it. Do not open a task on Opus "to be safe."
+- **Plan/architect/review with a strong model; execute with a cheap one.** Once a
+  change is well-specified, the edit itself is transcription — hand it to a Flash
+  tier. Reserve premium thinking for the design and the final review.
+- **Risk gate:** the deciding factor is blast radius. LIVE-prod / DB-writes /
+  RBAC / auth / money / irreversible → stronger model. Local, test-DB,
+  mechanical, reversible → cheap model.
+
+### Routing table
+
+| Task | Model |
+| --- | --- |
+| Boilerplate, formatting, renames, single-file mechanical edits, doc/comment updates, log/output triage, quick lookups, summarising files | **Gemini 3.6 / 3.7 Flash** |
+| Straightforward CRUD wiring, test scaffolding, multi-file but well-specified changes, standard debugging, small-diff reviews | **Gemini 3.1 Pro** |
+| Complex debugging, non-trivial refactors, integration across subsystems, reviews of substantial diffs, tricky-but-bounded logic | **Claude Sonnet 4.6 (Thinking)** |
+| High-stakes architecture & data-model design, gnarly root-cause hunts that stumped cheaper tiers, RBAC/auth/security logic, cross-cutting or irreversible changes, anything mutating LIVE prod or the real DB, the final whole-branch review before a prod deploy | **Claude Opus 4.6 (Thinking)** — used sparingly |
+| Independent second opinion / cross-check when a Claude answer looks risky | **GPT-OSS 120B** |
+
+### Reserve premium (Opus) for — and ONLY for
+
+- Designing or changing **auth / RBAC / gate-in→gate-out** state machines.
+- **Root-cause** debugging after cheaper tiers have failed (bring the evidence).
+- **Irreversible / production-critical** operations (schema migrations on prod,
+  data purges, deploys) and the **final review** that gates them.
+- Cross-cutting policy changes (e.g. the edit-justification framework).
+
+### Never burn Opus on
+
+Formatting, import fixes, comment/doc edits, simple lookups, restating a plan,
+mechanical find-and-replace, or re-running a build. These are Flash-tier.
+
+### Escalation ladder
+
+Flash → Gemini Pro → Sonnet → Opus. Escalate one rung when stuck or when the
+risk gate trips; never skip straight to Opus for routine work. When delegating to
+subagents, **always name the model explicitly** per this table — an omitted model
+silently inherits the (often premium) session model and defeats this policy.
+
+---
+
+## 6. Session Handover Log
 
 ### 2026-08-22 — AI Brains, Ownership Pipeline, Identity Merge (Cloud Run rev `dwip-enterprise-00086-d2k`)
 
