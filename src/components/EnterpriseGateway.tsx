@@ -31,6 +31,7 @@ import {
   Server
 } from 'lucide-react';
 import { THEME_CONFIGS, ThemeName, applyTheme, getStoredTheme, inspectFontStack } from '../services/themeEngine';
+import { PlayQr, PLAY_URL } from './PlayStoreQr';
 
 interface EnterpriseGatewayProps {
   onLoginSuccess: (token: string, user: any) => void;
@@ -672,6 +673,12 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
           <span>•</span>
           <span>Theme: <strong className="text-slate-400">{THEME_CONFIGS[currentTheme]?.name}</strong></span>
         </div>
+        {/* Get the employee app — scan or tap to install from Google Play. */}
+        <a href={PLAY_URL} target="_blank" rel="noopener noreferrer"
+          className="flex items-center gap-2 hover:text-slate-300 transition-colors" title="Get the AiVaahan DWIP app on Google Play">
+          <span className="bg-white p-0.5 rounded"><PlayQr className="w-8 h-8 block" /></span>
+          <span>Get the app on <strong className="text-slate-300">Google Play</strong></span>
+        </a>
         <div>
           <span>Revision: <strong className="text-slate-400 font-mono">{healthData?.buildInfo?.cloudRunRevision || 'loading...'}</strong></span>
         </div>
