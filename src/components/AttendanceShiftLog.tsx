@@ -24,6 +24,7 @@ import {
   Maximize2
 } from "lucide-react";
 import { Employee, User } from "../types";
+import { getStaffToken } from "../lib/authToken";
 import SelfServiceAttendance from "./SelfServiceAttendance";
 import OvertimeEmployeeDashboard from "./OvertimeEmployeeDashboard";
 import OvertimeApprovalPortal from "./OvertimeApprovalPortal";
@@ -88,9 +89,14 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
   const [formNotes, setFormNotes] = useState("");
 
   const userRole = currentUser?.role || "technician";
-  const isSelfService = userRole === "technician" || userRole === "breakdown";
   const empId = currentUser?.employee_id || 0;
+  // Managers/admin/dev may VIEW the workshop-wide table and APPROVE flagged records.
   const canApprove = ["workshop_manager", "service_manager", "admin", "developer"].includes(userRole);
+  // Only the superadmin tier may CREATE attendance for OTHER employees. (No
+  // dedicated HR role exists yet; add it here and on the server when it does.)
+  const canMarkOthers = ["admin", "developer"].includes(userRole);
+  // Everyone who cannot at least view/approve gets the self-punch screen only.
+  const isSelfService = !canApprove;
 
   const techRoles = ["Technician", "Electrician", "Add Tech"];
   const techEmployees = employees.filter(e => e.is_active && (techRoles.includes(e.role) || e.role.toLowerCase().includes("technician") || e.role.toLowerCase().includes("electrician")));
@@ -98,9 +104,10 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
   const fetchData = async () => {
     setLoading(true);
     try {
+      const authHeaders: HeadersInit = { Authorization: `Bearer ${token || getStaffToken()}` };
       const [attendanceRes, todayRes] = await Promise.all([
-        fetch(`/api/workforce/attendance?start_date=${selectedDate}&end_date=${selectedDate}`),
-        fetch("/api/workforce/attendance/today")
+        fetch(`/api/workforce/attendance?start_date=${selectedDate}&end_date=${selectedDate}`, { headers: authHeaders }),
+        fetch("/api/workforce/attendance/today", { headers: authHeaders })
       ]);
       const attendanceData = await attendanceRes.json();
       const todayData = await todayRes.json();
@@ -129,7 +136,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
     try {
       await fetch("/api/workforce/attendance", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token || getStaffToken()}` },
         body: JSON.stringify({
           employee_id: formEmployeeId,
           shift_date: selectedDate,
@@ -154,7 +161,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
     try {
       const res = await fetch("/api/workforce/attendance", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token || getStaffToken()}` },
         body: JSON.stringify({
           employee_id: record.employee_id,
           shift_date: record.shift_date,
@@ -280,13 +287,15 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
             <RefreshCw className="h-3.5 w-3.5" />
             Refresh
           </button>
-          <button
-            onClick={() => { setShowForm(!showForm); if (!showForm) resetForm(); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/20 rounded-lg text-xs font-bold transition-all"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Mark Attendance
-          </button>
+          {canMarkOthers && (
+            <button
+              onClick={() => { setShowForm(!showForm); if (!showForm) resetForm(); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/20 rounded-lg text-xs font-bold transition-all"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Mark Attendance
+            </button>
+          )}
         </div>
       </div>
 

@@ -3940,6 +3940,29 @@ async function startServer() {
     }
     const employee = db.employees[empIdx];
 
+    // --- AUTHORIZATION (RBAC) ------------------------------------------------
+    // Three distinct rights on this endpoint:
+    //  - Anyone may punch their OWN attendance (self check-in/out/break).
+    //  - Only the superadmin tier may CREATE attendance for ANOTHER employee.
+    //    (No dedicated "HR" role exists yet — add it to ...MARK_OTHERS_ROLES.)
+    //  - Managers + superadmin may APPROVE a flagged record (is_approved flip
+    //    with no new punch payload).
+    const ATTENDANCE_MARK_OTHERS_ROLES = ["admin", "developer"];
+    const ATTENDANCE_APPROVE_ROLES = ["workshop_manager", "service_manager", "admin", "developer"];
+    const callerRole = String(req.user?.role || "").toLowerCase().trim();
+    const callerEmpId = req.user?.employee_id;
+    const markingSelf = callerEmpId != null && Number(callerEmpId) === Number(employee_id);
+    // A pure approval carries an is_approved flag and no punch/verification payload.
+    const isApprovalAction = req.body?.is_approved === true && !face_photo && !check_in && !check_out && !is_break;
+    const isAuthorizedApproval = isApprovalAction && ATTENDANCE_APPROVE_ROLES.includes(callerRole);
+    if (!markingSelf && !ATTENDANCE_MARK_OTHERS_ROLES.includes(callerRole) && !isAuthorizedApproval) {
+      return res.status(403).json({
+        error: markingSelf === false && isApprovalAction
+          ? "Approving attendance requires a manager or admin account."
+          : "You may only mark your own attendance. Marking attendance for other employees requires an HR/admin account."
+      });
+    }
+
     // 1. Geofence Check — configurable polygon perimeter (workshop corners).
     // Not enforced until a valid perimeter is configured, so attendance is never
     // silently blocked by a missing/wrong location config.
@@ -3955,9 +3978,12 @@ async function startServer() {
     }
 
     // 2. Face Capture Biometric Matching
+    // is_approved stays UNDEFINED for a pure manual entry (no face photo / no
+    // GPS) so the UI shows an honest "Manual Entry" instead of a misleading
+    // "Auto-Approved" (which implies biometric + geofence verification ran).
     let faceMatchScore = 1.0;
-    let autoApproved = true;
-    let matchReason = "No reference photo available (Auto-enrolled).";
+    let autoApproved: boolean | undefined = undefined;
+    let matchReason = "Manual entry — no biometric/GPS verification performed.";
 
     if (face_photo) {
       const cleanPhoto = face_photo.replace(/^data:image\/\w+;base64,/, "");
@@ -3965,6 +3991,7 @@ async function startServer() {
       if (!employee.profile_photo) {
         db.employees[empIdx].profile_photo = cleanPhoto;
         setDB(db);
+        autoApproved = true;
         matchReason = "First check-in: profile photo auto-enrolled successfully.";
       } else {
         if (process.env.GEMINI_API_KEY) {
@@ -4024,6 +4051,10 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       }
     }
 
+    // An authorised approval flips the record to approved regardless of the
+    // (absent) biometric/GPS payload — this is the manager vouching for it.
+    if (isAuthorizedApproval) autoApproved = true;
+
     // Check for existing record
     const existingIdx = db.workforceAttendance.findIndex(
       (r: WorkforceAttendance) => r.employee_id === employee_id && r.shift_date === targetDate
@@ -4064,6 +4095,17 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       db.workforceAttendance[existingIdx] = record;
       setDB(db);
       await syncSave(db);
+      await logEdit(req, {
+        entity_type: "workforce_attendance",
+        entity_id: record.attendance_id,
+        action: isAuthorizedApproval ? "APPROVE_ATTENDANCE" : (markingSelf ? "SELF_PUNCH" : "MARK_ATTENDANCE"),
+        justification: isAuthorizedApproval
+          ? `Attendance approved for employee #${employee_id} (${record.status}) by role ${callerRole}`
+          : markingSelf
+          ? `Self ${is_check_out ? "check-out" : (is_break ? "break" : "check-in")} (${record.status})`
+          : `Attendance updated for employee #${employee_id} (${record.status}) by role ${callerRole}`,
+        after: { employee_id, shift_date: targetDate, status: record.status, check_in: record.check_in, check_out: record.check_out, is_approved: record.is_approved }
+      });
       return res.json({ success: true, updated: true, record, matchReason, distanceToWorkshop });
     }
 
@@ -4099,6 +4141,15 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     db.workforceAttendance.push(record);
     setDB(db);
     await syncSave(db);
+    await logEdit(req, {
+      entity_type: "workforce_attendance",
+      entity_id: record.attendance_id,
+      action: isAuthorizedApproval ? "APPROVE_ATTENDANCE" : (markingSelf ? "SELF_PUNCH" : "MARK_ATTENDANCE"),
+      justification: markingSelf
+        ? `Self ${is_check_out ? "check-out" : (is_break ? "break" : "check-in")} (${record.status})`
+        : `Attendance created for employee #${employee_id} (${record.status}) by role ${callerRole}`,
+      after: { employee_id, shift_date: targetDate, status: record.status, check_in: record.check_in, check_out: record.check_out, is_approved: record.is_approved }
+    });
     res.json({ success: true, updated: false, record, matchReason, distanceToWorkshop });
   });
 
