@@ -188,9 +188,26 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
     return jobCards.find(j => j.job_id === selectedJobId) || jobCards[0] || null;
   }, [jobCards, selectedJobId]);
 
-  // Section 1: Dashboard KPIs
+  // Canonical 5-minute handoff SLA threshold
+  const HANDOFF_SLA_MINS = 5;
+
+  // Scope the whole workspace to THIS advisor's own vehicles. A card with no
+  // advisor assigned is the MANAGER's responsibility (assignment SLA) — its
+  // breach must NEVER appear in an advisor's alerts. Cards assigned to another
+  // advisor are likewise not this advisor's concern.
+  const myName = String(currentUser?.full_name || currentUser?.username || "").toLowerCase().trim();
+  const isPrivilegedViewer = ["admin", "developer"].includes(String(currentUser?.role || ""));
+  const myJobCards = useMemo(() => jobCards.filter((j: any) => {
+    const sa = String(j.service_advisor || "").toLowerCase().trim();
+    if (!sa) return false;                 // unassigned = manager's, never an advisor's
+    if (isPrivilegedViewer) return true;   // admin/dev oversight sees all assigned cards
+    if (!myName) return false;
+    return sa === myName || sa.includes(myName) || myName.includes(sa);
+  }), [jobCards, myName, isPrivilegedViewer]);
+
+  // Section 1: Dashboard KPIs (scoped to this advisor's assigned vehicles)
   const dashboardStats = useMemo(() => {
-    const advisorJcs = jobCards.length > 0 ? jobCards : [];
+    const advisorJcs = myJobCards;
     const totalRev = advisorJcs.reduce((sum, j) => sum + Number(j.labor_price || j.labour_amount || 0) + Number(j.parts_price || j.parts_amount || 0), 0);
     const jcCount = advisorJcs.length;
     const openCount = advisorJcs.filter(j => ["Active", "Waiting", "In Progress", "Work in Progress", "Intake"].includes(j.status || j.current_workflow_state)).length;
@@ -198,24 +215,27 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
     const pendingApprovals = advisorJcs.filter(j => j.status === "Approval Pending" || j.current_workflow_state === "ESTIMATE_SENT").length;
     const readyForDelivery = advisorJcs.filter(j => j.status === "Ready" || j.current_workflow_state === "QC_PASSED" || j.status === "QC Passed").length;
     const deliveredToday = advisorJcs.filter(j => j.status === "Delivered" || j.current_workflow_state === "DELIVERED").length;
-    const breaches = slaAlertsEnabled ? alertLogs.filter(a => a.alert_type === "SLA_BREACH").length : 0;
+    // Breaches are counted only over THIS advisor's assigned cards (unassigned
+    // cards are the manager's assignment-SLA breach, not the advisor's).
+    const nowTs = Date.now();
+    const breaches = slaAlertsEnabled ? advisorJcs.filter(j => {
+      const createdTime = j.created_at ? new Date(j.created_at).getTime() : nowTs;
+      return Math.floor((nowTs - createdTime) / 60000) >= HANDOFF_SLA_MINS;
+    }).length : 0;
     const productivity = jcCount > 0 ? `${Math.round(((jcCount - breaches) / jcCount) * 100)}%` : "100%";
 
     return {
       totalRev, jcCount, openCount, pendingEstimates, pendingApprovals, readyForDelivery, deliveredToday, breaches,
       productivity
     };
-  }, [jobCards, alertLogs, slaAlertsEnabled]);
+  }, [myJobCards, slaAlertsEnabled]);
 
-  // Canonical 5-minute handoff SLA threshold
-  const HANDOFF_SLA_MINS = 5;
-
-  // Priority Queue: MY ATTENTION (Sorted by Operational Urgency)
+  // Priority Queue: MY ATTENTION (this advisor's assigned vehicles only)
   const myAttentionItems = useMemo(() => {
     const items: any[] = [];
     const now = Date.now();
 
-    jobCards.forEach(j => {
+    myJobCards.forEach(j => {
       const createdTime = j.created_at ? new Date(j.created_at).getTime() : now - 5 * 60 * 1000;
       const elapsedMins = Math.floor((now - createdTime) / 60000);
       const isBreached = slaAlertsEnabled && elapsedMins >= HANDOFF_SLA_MINS;
@@ -289,18 +309,18 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
     });
 
     return items.sort((a, b) => b.waitingMins - a.waitingMins);
-  }, [jobCards, slaAlertsEnabled]);
+  }, [myJobCards, slaAlertsEnabled]);
 
-  // Filtered Vehicles Today
+  // Filtered Vehicles Today (this advisor's assigned vehicles only)
   const filteredVehicles = useMemo(() => {
-    if (vehicleFilter === "ALL") return jobCards;
-    if (vehicleFilter === "RECEIVED") return jobCards.filter(j => j.status === "Received" || j.current_workflow_state === "GATE_IN");
-    if (vehicleFilter === "IN_PROGRESS") return jobCards.filter(j => ["Active", "In Progress", "Work in Progress"].includes(j.status || j.current_workflow_state));
-    if (vehicleFilter === "WAITING") return jobCards.filter(j => ["Waiting", "Estimate Pending", "Approval Pending"].includes(j.status));
-    if (vehicleFilter === "READY") return jobCards.filter(j => ["Ready", "QC Passed", "QC_PASSED"].includes(j.status || j.current_workflow_state));
-    if (vehicleFilter === "DELIVERED") return jobCards.filter(j => j.status === "Delivered" || j.current_workflow_state === "DELIVERED");
-    return jobCards;
-  }, [jobCards, vehicleFilter]);
+    if (vehicleFilter === "ALL") return myJobCards;
+    if (vehicleFilter === "RECEIVED") return myJobCards.filter(j => j.status === "Received" || j.current_workflow_state === "GATE_IN");
+    if (vehicleFilter === "IN_PROGRESS") return myJobCards.filter(j => ["Active", "In Progress", "Work in Progress"].includes(j.status || j.current_workflow_state));
+    if (vehicleFilter === "WAITING") return myJobCards.filter(j => ["Waiting", "Estimate Pending", "Approval Pending"].includes(j.status));
+    if (vehicleFilter === "READY") return myJobCards.filter(j => ["Ready", "QC Passed", "QC_PASSED"].includes(j.status || j.current_workflow_state));
+    if (vehicleFilter === "DELIVERED") return myJobCards.filter(j => j.status === "Delivered" || j.current_workflow_state === "DELIVERED");
+    return myJobCards;
+  }, [myJobCards, vehicleFilter]);
 
   // AI Copilot Advisor recommendation feed
   const aiCopilotData = useMemo(() => {
