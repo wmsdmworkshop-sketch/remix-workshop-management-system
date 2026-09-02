@@ -4564,6 +4564,42 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
+  // API: Unified media attachment upload (technician work/parts photos, advisor
+  // manual JCs / vehicle-condition / documents, billing invoices). Reuses the
+  // 90-day evidence store; listing is via the /api/evidence/* GETs above.
+  const ATTACHMENT_CATEGORIES = [
+    "WORK_PHOTO", "PARTS_PHOTO", "MANUAL_JOBCARD", "VEHICLE_CONDITION", "DOCUMENT", "INVOICE"
+  ];
+  app.post("/api/attachments", express.json({ limit: "25mb" }), async (req: any, res) => {
+    try {
+      const { base64Image, category, jobCardNo, vrn, gateEntryId, mimeType } = req.body || {};
+      if (!base64Image || typeof base64Image !== "string") {
+        return res.status(400).json({ success: false, error: "base64Image is required." });
+      }
+      const cat = String(category || "DOCUMENT").toUpperCase();
+      if (!ATTACHMENT_CATEGORIES.includes(cat)) {
+        return res.status(400).json({ success: false, error: `Invalid category. Allowed: ${ATTACHMENT_CATEGORIES.join(", ")}` });
+      }
+      if (!jobCardNo && !vrn) {
+        return res.status(400).json({ success: false, error: "A jobCardNo or vrn is required to attach media." });
+      }
+      const record = await evidenceStorageService.storeEvidence({
+        base64Image,
+        ocrType: cat as any,
+        jobCardNo: jobCardNo || null,
+        vrn: vrn || null,
+        gateEntryId: gateEntryId || null,
+        mimeType: mimeType || null,
+        ocrProvider: "user-upload",
+        capturedBy: req.user?.employee_id ?? null,
+      });
+      if (!record) return res.status(500).json({ success: false, error: "Failed to store attachment." });
+      res.json({ success: true, record });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
   // DevOps / Scheduled Cron: 90-Day Evidence Retention Worker
   app.post("/api/v1/devops/cron/evidence-retention", async (req, res) => {
     try {

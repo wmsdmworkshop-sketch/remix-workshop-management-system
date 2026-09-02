@@ -10,6 +10,7 @@ import { VehiclePassportModal } from "./VehiclePassportModal";
 import { SaTechnicalIntakeModal } from "./SaTechnicalIntakeModal";
 import { ComplaintsManagerModal } from "./ComplaintsManagerModal";
 import { EditJustificationModal } from "./EditJustificationModal";
+import MediaAttach from "./MediaAttach";
 import { getStaffToken } from "../lib/authToken";
 
 export interface ServiceAdvisorWorkspaceProps {
@@ -663,8 +664,35 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
               </div>
             </div>
 
+            {selectedJob && (
+              <MediaAttach
+                jobCardNo={selectedJob.job_card_no}
+                vrn={selectedJob.vrn}
+                title="Documents & Photos"
+                categories={[
+                  { key: "MANUAL_JOBCARD", label: "Manual JC" },
+                  { key: "VEHICLE_CONDITION", label: "Vehicle condition" },
+                  { key: "DOCUMENT", label: "Document" },
+                ]}
+              />
+            )}
+
             {selectedJob ? (
               <div className="space-y-4">
+                <div className="bg-slate-950/40 border border-slate-850 rounded-xl px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <Truck className="h-3.5 w-3.5 text-cyan-400" />
+                    <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Gate-In</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold mr-1.5">Date</span>
+                    <span className="text-slate-200 font-mono font-bold">{selectedJob.date_in || (selectedJob.created_at ? selectedJob.created_at.split("T")[0] : "—")}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold mr-1.5">Time</span>
+                    <span className="text-slate-200 font-mono font-bold">{selectedJob.time_in || (selectedJob.created_at ? selectedJob.created_at.split("T")[1]?.substring(0, 5) : "—")}</span>
+                  </div>
+                </div>
                 <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-850 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">

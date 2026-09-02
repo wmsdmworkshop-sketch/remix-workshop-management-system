@@ -22,7 +22,13 @@ export type OcrEvidenceType =
   | "MANUAL_JOBCARD"
   | "PARTS_PHOTO"
   | "FUEL_GAUGE"
-  | "ODOMETER";
+  | "ODOMETER"
+  // User-attached media (technician / advisor / billing) — same store, same
+  // 90-day retention. ocr_type is a plain string column, so these need no
+  // schema change.
+  | "WORK_PHOTO"
+  | "VEHICLE_CONDITION"
+  | "DOCUMENT";
 
 export interface StoreEvidenceParams {
   base64Image: string;

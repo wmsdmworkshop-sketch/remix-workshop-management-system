@@ -4,6 +4,7 @@ import {
   Camera, BarChart3, Clock, AlertTriangle, FileText, CheckCircle2 
 } from "lucide-react";
 import { AICopilotPanel } from "./AICopilotPanel";
+import MediaAttach from "./MediaAttach";
 
 export interface TechnicianWorkspaceProps {
   jobCards: any[];
@@ -311,6 +312,18 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
                 <Square className="h-3.5 w-3.5" /> Complete
               </button>
             </div>
+          </div>
+
+          <div className="lg:col-span-3">
+            <MediaAttach
+              jobCardNo={selectedJob.job_card_no}
+              vrn={selectedJob.vrn}
+              title="Work Photos"
+              categories={[
+                { key: "WORK_PHOTO", label: "Work / progress photo" },
+                { key: "PARTS_PHOTO", label: "Parts photo" },
+              ]}
+            />
           </div>
         </div>
       )}

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import MediaAttach from "./MediaAttach";
 import { 
   FileText, Percent, ShieldCheck, Mail, Send, CheckCircle2, 
   AlertTriangle, DollarSign, Users, Clock, History, FileDown 
@@ -106,7 +107,18 @@ export const BillingWorkspace: React.FC<BillingWorkspaceProps> = React.memo(({
               <FileText className="h-4 w-4 text-emerald-400" />
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Invoice Worksheet ({selectedJob.vrn})</h3>
             </div>
-            
+
+            <MediaAttach
+              jobCardNo={selectedJob.job_card_no}
+              vrn={selectedJob.vrn}
+              title="Bills & Documents"
+              categories={[
+                { key: "INVOICE", label: "Bill / Invoice" },
+                { key: "MANUAL_JOBCARD", label: "Manual JC" },
+                { key: "DOCUMENT", label: "Document" },
+              ]}
+            />
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-[10px] text-slate-500 font-bold uppercase block mb-1">Billing Channel</label>
