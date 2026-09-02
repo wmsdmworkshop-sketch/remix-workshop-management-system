@@ -32,8 +32,8 @@ android {
         applicationId "devanand.aivaahan.com"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10007
-        versionName "1.1.7"
+        versionCode 10008
+        versionName "1.1.8"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -42,19 +42,18 @@ android {
         }
     }
 
+    // Single employee app (all roles resolve via RBAC in the web app). The former
+    // "management" flavor is retired — one app for every employee. The staff
+    // flavor is kept as the sole variant so the published package
+    // (devanand.aivaahan.com) is preserved and existing installs auto-update. A
+    // separate customer app is planned but on hold.
     flavorDimensions "role"
     productFlavors {
         staff {
             dimension "role"
             applicationId "devanand.aivaahan.com"
-            versionCode 10007
-            versionName "1.1.7"
-        }
-        management {
-            dimension "role"
-            applicationId "com.aivaahan.dwip.management"
-            versionCode 10007
-            versionName "1.1.7"
+            versionCode 10008
+            versionName "1.1.8"
         }
     }
 
