@@ -1,4 +1,5 @@
 import FunnySpinner from "./FunnySpinner";
+import { getStaffToken, staffAuthHeaders } from "../lib/authToken";
 import React, { useState, useEffect, useRef } from "react";
 import {
   Camera,
@@ -86,7 +87,7 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
 
   const fetchMonthlyHistory = async () => {
     try {
-      const res = await fetch(`/api/workforce/attendance/history?employee_id=${employeeId}`);
+      const res = await fetch(`/api/workforce/attendance/history?employee_id=${employeeId}`, { headers: { Authorization: `Bearer ${getStaffToken()}` } });
       if (res.ok) {
         const data = await res.json();
         setMonthlyHistory(data);
@@ -99,7 +100,7 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
   const fetchAttendanceStatus = async () => {
     try {
       const today = new Date().toISOString().split("T")[0];
-      const res = await fetch(`/api/workforce/attendance?employee_id=${employeeId}&start_date=${today}&end_date=${today}`);
+      const res = await fetch(`/api/workforce/attendance?employee_id=${employeeId}&start_date=${today}&end_date=${today}`, { headers: { Authorization: `Bearer ${getStaffToken()}` } });
       const data = await res.json();
       if (data && data.length > 0) {
         setAttendance({
@@ -294,7 +295,7 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
     try {
       const response = await fetch("/api/workforce/attendance", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: staffAuthHeaders(),
         body: JSON.stringify({
           employee_id: employeeId,
           shift_date: new Date().toISOString().split("T")[0],
