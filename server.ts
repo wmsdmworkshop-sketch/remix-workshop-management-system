@@ -7863,12 +7863,12 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       const config: any = { systemInstruction };
 
       if (image) {
-        model = "gemini-3.1-pro-preview";
+        model = "gemini-2.5-pro";
       } else if (useThinking) {
-        model = "gemini-3.1-pro-preview";
+        model = "gemini-2.5-pro";
         config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
       } else if (useLite) {
-        model = "gemini-3.1-flash-lite";
+        model = "gemini-2.5-flash-lite";
       }
 
       if (useSearch) {
@@ -11962,7 +11962,7 @@ Respond with valid JSON only:
       });
 
       const session = await ai.live.connect({
-        model: "gemini-3.1-flash-live-preview",
+        model: "gemini-2.0-flash-live-001",
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
