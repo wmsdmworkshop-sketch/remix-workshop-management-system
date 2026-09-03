@@ -3922,6 +3922,8 @@ async function startServer() {
       face_photo,
       is_check_out,
       is_break,
+      is_break_start,
+      is_break_end,
       break_start,
       break_end,
       is_late,
@@ -3930,8 +3932,10 @@ async function startServer() {
       overtime_hours
     } = req.body;
 
-    const targetDate = shift_date || new Date().toISOString().split("T")[0];
-    const timestampStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    // Timestamps must be IST (Asia/Kolkata). Cloud Run runs in UTC, so a naive
+    // new Date().toLocaleTimeString() recorded 07:24 for a 12:54 IST punch.
+    const targetDate = shift_date || new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const timestampStr = new Date().toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: '2-digit', minute: '2-digit', hour12: false });
 
     // Find employee to check profile/reference photo
     const empIdx = db.employees.findIndex((e: Employee) => e.employee_id === employee_id);
@@ -4062,11 +4066,14 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
 
     if (existingIdx !== -1) {
       const record = db.workforceAttendance[existingIdx];
-      if (is_break) {
-        if (break_start) record.break_start = break_start;
-        else if (break_end) record.break_end = break_end;
-        else if (!record.break_start) record.break_start = timestampStr;
-        else record.break_end = timestampStr;
+      if (is_break_start || is_break_end || is_break) {
+        // Explicit start/end flags (sent by the self-punch screen) take
+        // precedence; legacy `is_break` toggles start-then-end.
+        if (is_break_end || (is_break && record.break_start && !record.break_end)) {
+          record.break_end = break_end || timestampStr;
+        } else {
+          record.break_start = break_start || timestampStr;
+        }
         record.notes = notes || record.notes;
       } else if (is_check_out) {
         record.check_out = check_out || timestampStr;

@@ -1,5 +1,6 @@
 import FunnySpinner from "./FunnySpinner";
 import { getStaffToken, staffAuthHeaders } from "../lib/authToken";
+import { Camera as CapacitorCamera, CameraResultType, CameraSource, CameraDirection } from "@capacitor/camera";
 import React, { useState, useEffect, useRef } from "react";
 import {
   Camera,
@@ -260,15 +261,33 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
       return;
     }
     
-    // Capture photo first
-    capturePhoto();
-    let finalPhoto = capturedPhoto;
+    // Face capture is MANDATORY. Prefer the NATIVE camera — inside the Capacitor
+    // WebView, browser getUserMedia often yields a blank/0-size frame, which
+    // silently enrolled an empty face photo. Fall back to the live-video canvas
+    // snapshot only on the web (where getUserMedia works).
+    let finalPhoto: string | null = null;
+    try {
+      const shot = await CapacitorCamera.getPhoto({
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Camera,
+        direction: CameraDirection.Front,
+        quality: 70,
+        allowEditing: false,
+        correctOrientation: true,
+        width: 800,
+        height: 800,
+      });
+      if (shot?.dataUrl) finalPhoto = shot.dataUrl;
+    } catch {
+      /* native camera unavailable (web) or user cancelled — try the web fallback */
+    }
     if (!finalPhoto && videoRef.current && canvasRef.current) {
-      // capture immediately if not already captured
       const video = videoRef.current;
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
-      if (ctx) {
+      // Guard: only snapshot a video that is actually streaming — a 0×0 frame
+      // produced the blank photo bug.
+      if (ctx && video.videoWidth > 0 && video.videoHeight > 0) {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         ctx.translate(canvas.width, 0);
@@ -280,7 +299,7 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
     }
 
     if (!finalPhoto) {
-      setErrorMsg("Face capture image is required for authentication.");
+      setErrorMsg("Face capture is required. Please allow the camera and take your photo to punch.");
       return;
     }
 
