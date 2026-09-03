@@ -1089,7 +1089,7 @@ export default function PartsWarrantyManager({
                 </div>
               </div>
               <div className="flex items-center gap-1 text-[10px] font-mono text-slate-500 bg-slate-950 px-2.5 py-1 rounded border border-slate-800">
-                <span>Model: gemini-3.5-flash</span>
+                <span>Model: gemini-2.5-flash</span>
               </div>
             </div>
 

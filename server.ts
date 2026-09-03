@@ -4016,7 +4016,7 @@ Return EXACTLY a JSON object with this schema:
 Do not include any Markdown or formatting other than the clean JSON object.`;
 
             const aiRes = await ai.models.generateContent({
-              model: "gemini-3.5-flash",
+              model: "gemini-2.5-flash",
               contents: [
                 {
                   inlineData: {
@@ -7859,7 +7859,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       }
 
       // Determine model based on inputs
-      let model = "gemini-3.5-flash";
+      let model = "gemini-2.5-flash";
       const config: any = { systemInstruction };
 
       if (image) {
@@ -8012,7 +8012,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: userPrompt,
         config: {
           systemInstruction,
@@ -8084,7 +8084,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       console.log(`Processing audio file with mimeType: ${mimeType}`);
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: [
           {
             inlineData: {
@@ -8896,7 +8896,7 @@ ${JSON.stringify(headers)}
 Return a JSON object where keys are the uploaded CSV headers, and values are the matching target database columns. If a header does not match any target database column, map it to null. Do not include markdown formatting or quotes.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: prompt,
         config: { responseMimeType: "application/json" }
       });
@@ -9021,7 +9021,7 @@ Extract these fields from the attached document and return EXACTLY a JSON object
 Return only the clean JSON object — no Markdown, no code fences.`;
 
       const aiRes = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: [
           { inlineData: { mimeType: mimeType || "application/pdf", data: fileBase64 } },
           prompt
@@ -9156,7 +9156,7 @@ You MUST search the provided circular rules and output a JSON response. Ensure y
 Do not include any Markdown or formatting other than the clean JSON object.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: systemPrompt,
         config: {
           responseMimeType: "application/json"
@@ -9199,7 +9199,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       console.log(`Performing OCR on image, extracting parts, mime: ${mimeType}`);
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: [
           {
             inlineData: {

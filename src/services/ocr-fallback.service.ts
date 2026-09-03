@@ -245,7 +245,7 @@ Output ONLY a JSON object matching this schema:
 }`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: [
         { inlineData: { data: base64Data, mimeType } },
         { text: prompt },
@@ -288,7 +288,7 @@ Output ONLY a JSON object matching this schema:
       "Include a confidence score from 0.0 to 1.0.";
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: [
         { inlineData: { data: base64Data, mimeType } },
         { text: prompt },
@@ -370,7 +370,7 @@ Output ONLY a JSON object matching this schema:
     });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents,
       config: {
         responseMimeType: "application/json",
@@ -416,7 +416,7 @@ Output ONLY a JSON object matching this schema:
     });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: [
         { inlineData: { data: base64Data, mimeType } },
         { text: "Extract all part numbers and part labels from this spare parts or invoice image. Output JSON with partNumbers array and confidence score (0.0 to 1.0)." },
