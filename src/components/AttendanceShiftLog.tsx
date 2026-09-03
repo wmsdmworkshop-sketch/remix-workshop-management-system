@@ -88,6 +88,12 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
   const [formStatus, setFormStatus] = useState<"Present" | "Absent" | "Leave" | "Half Day">("Present");
   const [formNotes, setFormNotes] = useState("");
 
+  // Admin/superadmin manual time correction
+  const [editRow, setEditRow] = useState<any | null>(null);
+  const [editIn, setEditIn] = useState("");
+  const [editOut, setEditOut] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
   const userRole = currentUser?.role || "technician";
   const empId = currentUser?.employee_id || 0;
   // Managers/admin/dev may VIEW the workshop-wide table and APPROVE flagged records.
@@ -95,6 +101,8 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
   // Only the superadmin tier may CREATE attendance for OTHER employees. (No
   // dedicated HR role exists yet; add it here and on the server when it does.)
   const canMarkOthers = ["admin", "developer"].includes(userRole);
+  // Only the superadmin tier may correct a recorded punch time.
+  const canEditTime = ["admin", "developer"].includes(userRole);
   // Everyone who cannot at least view/approve gets the self-punch screen only.
   const isSelfService = !canApprove;
 
@@ -194,11 +202,64 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
 
   const isToday = selectedDate === new Date().toISOString().split("T")[0];
 
+  // Roster view: show ALL active staff for the day (merged with punch records),
+  // so unmarked staff appear too — not just whoever punched.
+  const rosterRows: any[] = (() => {
+    const byEmp = new Map((records || []).map((r) => [Number(r.employee_id), r]));
+    const active = (employees || []).filter((e: any) => e.is_active);
+    const rows: any[] = active.map((e: any) => byEmp.get(Number(e.employee_id)) || {
+      attendance_id: -Number(e.employee_id),
+      employee_id: e.employee_id,
+      employee_name: e.full_name,
+      employee_role: e.role,
+      shift_date: selectedDate,
+      check_in: null, check_out: null, shift_type: "Morning",
+      status: "Not Marked", is_approved: null,
+    });
+    // Safety: any punched record whose employee isn't in the active roster.
+    (records || []).forEach((r) => {
+      if (!active.some((e: any) => Number(e.employee_id) === Number(r.employee_id))) rows.push(r);
+    });
+    return rows.sort((a, b) => (b.check_in ? 1 : 0) - (a.check_in ? 1 : 0));
+  })();
+
+  // Admin/superadmin: save a manual check-in/out time correction.
+  const handleSaveEdit = async () => {
+    if (!editRow) return;
+    setSavingEdit(true);
+    try {
+      const res = await fetch("/api/workforce/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token || getStaffToken()}` },
+        body: JSON.stringify({
+          employee_id: editRow.employee_id,
+          shift_date: selectedDate,
+          check_in: editIn || null,
+          check_out: editOut || null,
+          status: editRow.status === "Not Marked" ? "Present" : undefined,
+          is_edit: true,
+        }),
+      });
+      if (res.ok) {
+        await fetchData();
+        setEditRow(null);
+      } else {
+        const d = await res.json().catch(() => ({}));
+        alert(d.error || "Failed to update attendance time.");
+      }
+    } catch (e: any) {
+      alert(e.message || "Network error while updating time.");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const statusConfig: Record<string, { icon: any; color: string; bg: string }> = {
     Present: { icon: CheckCircle2, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
     Absent: { icon: XCircle, color: "text-rose-400", bg: "bg-rose-500/10 border-rose-500/20" },
     Leave: { icon: Coffee, color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" },
     "Half Day": { icon: AlertCircle, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
+    "Not Marked": { icon: AlertCircle, color: "text-slate-400", bg: "bg-slate-500/10 border-slate-500/20" },
   };
 
   const shiftIcon: Record<string, any> = {
@@ -492,7 +553,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
           <FunnySpinner className="h-5 w-5  text-blue-400" />
           <span className="ml-2 text-slate-400 text-sm">Loading attendance...</span>
         </div>
-      ) : records.length === 0 ? (
+      ) : rosterRows.length === 0 ? (
         <div className="text-center py-12">
           <Calendar className="h-10 w-10 text-slate-600 mx-auto mb-3" />
           <p className="text-sm text-slate-400">No attendance records for {selectedDate}</p>
@@ -516,7 +577,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
               </tr>
             </thead>
             <tbody>
-              {records.map(r => {
+              {rosterRows.map(r => {
                 const sc = statusConfig[r.status] || statusConfig.Present;
                 const StatusIcon = sc.icon;
                 const ShiftIcon = shiftIcon[r.shift_type] || Sun;
@@ -656,15 +717,26 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
 
                     {/* Quick supervisor actions */}
                     <td className="ds-td px-4 py-3 text-center">
-                      {r.is_approved === false && canApprove && (
-                        <button
-                          onClick={() => handleApprove(r)}
-                          className="ds-button-success ds-button-success flex items-center gap-1.5 mx-auto px-2 py-1   hover:  text-white rounded text-[10px] font-black uppercase tracking-wider transition-all"
-                        >
-                          <ThumbsUp className="h-3 w-3" />
-                          Approve
-                        </button>
-                      )}
+                      <div className="flex items-center justify-center gap-1.5">
+                        {r.is_approved === false && canApprove && (
+                          <button
+                            onClick={() => handleApprove(r)}
+                            className="ds-button-success ds-button-success flex items-center gap-1.5 px-2 py-1   hover:  text-white rounded text-[10px] font-black uppercase tracking-wider transition-all"
+                          >
+                            <ThumbsUp className="h-3 w-3" />
+                            Approve
+                          </button>
+                        )}
+                        {canEditTime && (
+                          <button
+                            onClick={() => { setEditRow(r); setEditIn(r.check_in || ""); setEditOut(r.check_out || ""); }}
+                            className="flex items-center gap-1 px-2 py-1 bg-slate-700/60 hover:bg-slate-600 text-slate-200 rounded text-[10px] font-black uppercase tracking-wider transition-all"
+                            title="Correct check-in / check-out time"
+                          >
+                            Edit
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -676,6 +748,40 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
 
           </div>
         )
+      )}
+
+      {/* Admin/superadmin: manual time-correction modal */}
+      {editRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm" onClick={() => !savingEdit && setEditRow(null)}>
+          <div className="relative w-full max-w-sm bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div>
+              <h3 className="text-sm font-black text-white uppercase tracking-wide">Edit Attendance Time</h3>
+              <p className="text-xs text-slate-400 mt-0.5">{editRow.employee_name} • {selectedDate}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Check-in</label>
+                <input type="time" value={editIn} onChange={(e) => setEditIn(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Check-out</label>
+                <input type="time" value={editOut} onChange={(e) => setEditOut(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-500">Recorded to the edit-audit trail. Leave a field blank to clear it.</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setEditRow(null)} disabled={savingEdit}
+                className="ds-button-secondary px-4 py-2 text-slate-300 rounded-lg text-xs font-bold transition-all disabled:opacity-50">Cancel</button>
+              <button onClick={handleSaveEdit} disabled={savingEdit}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-1.5">
+                {savingEdit ? <FunnySpinner className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
+                Save Time
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Profile/Captured Photo Modal Overlay */}

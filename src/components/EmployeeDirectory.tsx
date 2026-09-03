@@ -154,6 +154,9 @@ export default function EmployeeDirectory({
         setLoginCreationResult([{ username: data.username, temp_password: data.temp_password, full_name: data.full_name }]);
         await fetchAccountLinks();
       } else {
+        // Refresh so an "already linked" result updates the badge instead of
+        // leaving it stuck on "Creating…".
+        await fetchAccountLinks();
         alert(data.error || "Failed to create login account.");
       }
     } catch (e: any) {

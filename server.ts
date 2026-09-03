@@ -3929,7 +3929,8 @@ async function startServer() {
       is_late,
       late_reason,
       is_overtime,
-      overtime_hours
+      overtime_hours,
+      is_edit
     } = req.body;
 
     // Timestamps must be IST (Asia/Kolkata). Cloud Run runs in UTC, so a naive
@@ -3965,6 +3966,11 @@ async function startServer() {
           ? "Approving attendance requires a manager or admin account."
           : "You may only mark your own attendance. Marking attendance for other employees requires an HR/admin account."
       });
+    }
+    // Manual time correction is restricted to the superadmin tier regardless of
+    // whose record it is (an advisor must not rewrite their own recorded time).
+    if (is_edit && !ATTENDANCE_MARK_OTHERS_ROLES.includes(callerRole)) {
+      return res.status(403).json({ error: "Editing attendance times requires an admin/superadmin account." });
     }
 
     // 1. Geofence Check — configurable polygon perimeter (workshop corners).
@@ -4066,7 +4072,14 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
 
     if (existingIdx !== -1) {
       const record = db.workforceAttendance[existingIdx];
-      if (is_break_start || is_break_end || is_break) {
+      if (is_edit) {
+        // Admin/superadmin manual correction — set exactly what was sent and
+        // preserve the existing verification/approval (no photo/geofence here).
+        if (check_in !== undefined) record.check_in = check_in || null;
+        if (check_out !== undefined) record.check_out = check_out || null;
+        if (status !== undefined && status) record.status = status;
+        if (notes !== undefined) record.notes = notes || record.notes;
+      } else if (is_break_start || is_break_end || is_break) {
         // Explicit start/end flags (sent by the self-punch screen) take
         // precedence; legacy `is_break` toggles start-then-end.
         if (is_break_end || (is_break && record.break_start && !record.break_end)) {
@@ -4097,7 +4110,8 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         if (is_late !== undefined) record.is_late = is_late;
         if (late_reason !== undefined) record.late_reason = late_reason;
       }
-      record.is_approved = autoApproved;
+      // A manual edit preserves the existing approval; every other path recomputes it.
+      if (!is_edit) record.is_approved = autoApproved;
 
       db.workforceAttendance[existingIdx] = record;
       setDB(db);
@@ -4105,8 +4119,10 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       await logEdit(req, {
         entity_type: "workforce_attendance",
         entity_id: record.attendance_id,
-        action: isAuthorizedApproval ? "APPROVE_ATTENDANCE" : (markingSelf ? "SELF_PUNCH" : "MARK_ATTENDANCE"),
-        justification: isAuthorizedApproval
+        action: is_edit ? "EDIT_ATTENDANCE_TIME" : (isAuthorizedApproval ? "APPROVE_ATTENDANCE" : (markingSelf ? "SELF_PUNCH" : "MARK_ATTENDANCE")),
+        justification: is_edit
+          ? `Attendance time edited for employee #${employee_id} (in=${record.check_in || "—"}, out=${record.check_out || "—"}) by role ${callerRole}`
+          : isAuthorizedApproval
           ? `Attendance approved for employee #${employee_id} (${record.status}) by role ${callerRole}`
           : markingSelf
           ? `Self ${is_check_out ? "check-out" : (is_break ? "break" : "check-in")} (${record.status})`
