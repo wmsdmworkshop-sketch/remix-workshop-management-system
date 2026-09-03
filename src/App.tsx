@@ -766,10 +766,33 @@ export default function App() {
    * role's console is worse than showing them nothing, so there is no
    * cross-role fallback: an unknown role resolves to no tabs.
    */
+  // Known role-title variants stored in user_access_master that map onto a
+  // canonical console. These are the SAME role family (an Electrician is a
+  // technician; a Biller does billing) — so showing them that console is
+  // CORRECT resolution, not the cross-role fallback the note above warns against.
+  const ROLE_ALIASES: Record<string, string> = {
+    electrician: "technician",
+    mechanical_helper: "technician",
+    wheel_alignment: "technician",
+    biller: "billing",
+    parts_picker: "parts",
+    spare_parts_manager: "spares_manager",
+  };
+
   const tabsForRole = (role: any): Array<{ id: string; label: string; icon: any }> => {
     if (!role) return [];
     const key = String(role).toLowerCase().trim().replace(/[\s_]+/g, "_");
-    return ROLE_TABS[key] || ROLE_TABS[String(role)] || [];
+    const resolved = ROLE_TABS[key] || ROLE_TABS[ROLE_ALIASES[key]] || ROLE_TABS[String(role)];
+    if (resolved) return resolved;
+    // Unknown role: never show another role's operational console (worse than
+    // nothing), but never a blank app either. Every authenticated staff member
+    // gets the universal PERSONAL set so they can see their workspace and,
+    // critically, punch their own attendance.
+    return [
+      { id: "my-workspace", label: "My Workspace", icon: ClipboardCheck },
+      { id: "attendance", label: "Attendance", icon: ClipboardCheck },
+      { id: "tech-profile", label: "My Profile", icon: UserIcon },
+    ];
   };
 
   // Dynamically ensure every role has the "My Profile" tab
