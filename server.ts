@@ -8450,7 +8450,16 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
 
       // My job cards = ones I own OR that currently sit in my stage (personal view,
       // independent of manager full-view — this is "mine", not "everything").
-      const myJobs = (db.jobCards || []).filter((jc: any) => isOwnedBy(jc, me) || isInMyStage(jc, me.role));
+      // A card in my stage but with NO service advisor assigned is the MANAGER's
+      // to assign — it must never count in an individual's personal queue (the
+      // same rule the advisor workspace enforces). Cards past intake always carry
+      // an advisor, so downstream stages (billing, gate, parts) are unaffected.
+      const isUnassignedCard = (jc: any) => {
+        const sa = String(jc?.service_advisor || "").trim().toLowerCase();
+        return sa === "" || sa === "unassigned";
+      };
+      const myJobs = (db.jobCards || []).filter((jc: any) =>
+        isOwnedBy(jc, me) || (isInMyStage(jc, me.role) && !isUnassignedCard(jc)));
 
       const isClosed = (s: string) => ["completed", "invoiced", "cancelled"].includes(String(s || "").toLowerCase());
       const pending = myJobs.filter((jc: any) => !isClosed(jc.status));
@@ -8630,7 +8639,15 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   // derived SLA alert is generated for an overdue relevant job card so the
   // personal workspace does not depend on a separate alert-generation job.
   const getMyAlerts = (user: RelevanceUser, db: any) => {
-    const relevantJobs = (db.jobCards || []).filter((jc: any) => isOwnedBy(jc, user) || isInMyStage(jc, user.role));
+    // Unassigned cards (no service advisor) are the manager's, not an
+    // individual's — exclude them from personal alerts (same rule as summary),
+    // so an advisor is never alerted about a card that was never handed to them.
+    const relevantJobs = (db.jobCards || []).filter((jc: any) => {
+      if (isOwnedBy(jc, user)) return true;
+      if (!isInMyStage(jc, user.role)) return false;
+      const sa = String(jc?.service_advisor || "").trim().toLowerCase();
+      return sa !== "" && sa !== "unassigned";
+    });
     const relevantJobIds = new Set(relevantJobs.map((jc: any) => Number(jc.job_id)));
     const jobById = new Map<number, any>(relevantJobs.map((jc: any) => [Number(jc.job_id), jc] as [number, any]));
     const role = String(user.role || "").toLowerCase();
