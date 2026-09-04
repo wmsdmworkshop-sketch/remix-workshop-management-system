@@ -634,17 +634,17 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
       {activeTab === "my-work" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-lg space-y-4 lg:col-span-2">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5 text-emerald-400" />
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2 min-w-0">
+                <DollarSign className="h-5 w-5 text-emerald-400 shrink-0" />
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Labour & Spares Estimate Builder</h3>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-0 w-full sm:w-auto">
                 <select
                   value={selectedJobId || (selectedJob?.job_id || "")}
                   onChange={(e) => setSelectedJobId(Number(e.target.value))}
-                  className="bg-slate-950 border border-slate-850 text-white text-xs font-bold px-3 py-1.5 rounded-lg outline-none"
+                  className="bg-slate-950 border border-slate-850 text-white text-xs font-bold px-3 py-1.5 rounded-lg outline-none min-w-0 flex-1 sm:flex-none sm:max-w-[16rem] max-w-full truncate"
                 >
                   {jobCards.map(j => (
                     <option key={j.job_id} value={j.job_id}>
@@ -655,7 +655,7 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                 {selectedJob && (
                   <button
                     onClick={() => openComplaints({ vrn: selectedJob.vrn, jobCardNo: selectedJob.job_card_no })}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold rounded-lg whitespace-nowrap cursor-pointer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold rounded-lg whitespace-nowrap cursor-pointer shrink-0"
                     title="Add or edit customer/driver complaints for this vehicle"
                   >
                     <AlertOctagon className="h-3.5 w-3.5" /> Complaints

@@ -129,6 +129,14 @@ body {
   background-attachment: fixed;
 }
 
+/* The page itself must never scroll sideways on mobile. A stray wide element
+   (e.g. a select sized to a long option) used to push the whole layout off-screen.
+   Content that genuinely needs width scrolls inside its own overflow-x-auto box. */
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 h1, h2, h3, h4, h5, h6, .ds-title, .font-display {
   font-family: 'Outfit', 'Plus Jakarta Sans', 'Inter', sans-serif !important;
   letter-spacing: -0.02em;
