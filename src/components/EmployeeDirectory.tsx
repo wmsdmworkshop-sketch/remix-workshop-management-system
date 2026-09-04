@@ -119,8 +119,11 @@ export default function EmployeeDirectory({
   // source of truth: user_access_master / users). Never guessed per-employee.
   const [accountsByEmployeeId, setAccountsByEmployeeId] = useState<Map<number, string>>(new Map());
   const [creatingLoginFor, setCreatingLoginFor] = useState<number | null>(null);
+  const [resettingLoginFor, setResettingLoginFor] = useState<number | null>(null);
   const [bulkCreating, setBulkCreating] = useState(false);
   const [loginCreationResult, setLoginCreationResult] = useState<{ username: string; temp_password: string; full_name: string }[] | null>(null);
+  // Whether the credentials modal is showing freshly-created logins or a reset.
+  const [credentialAction, setCredentialAction] = useState<"created" | "reset">("created");
 
   const fetchAccountLinks = async () => {
     try {
@@ -151,6 +154,7 @@ export default function EmployeeDirectory({
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        setCredentialAction("created");
         setLoginCreationResult([{ username: data.username, temp_password: data.temp_password, full_name: data.full_name }]);
         await fetchAccountLinks();
       } else {
@@ -163,6 +167,28 @@ export default function EmployeeDirectory({
       alert(e.message || "Network error while creating login account.");
     } finally {
       setCreatingLoginFor(null);
+    }
+  };
+
+  const handleResetPassword = async (empId: number, fullName: string) => {
+    if (!confirm(`Reset the login password for ${fullName}? A new temporary password will be generated and shown once — you must hand it to them, and they'll set their own password on next login.`)) return;
+    setResettingLoginFor(empId);
+    try {
+      const res = await fetch(`/api/employees/${empId}/reset-login-password`, {
+        method: "POST",
+        headers: staffAuthHeaders(),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setCredentialAction("reset");
+        setLoginCreationResult([{ username: data.username, temp_password: data.temp_password, full_name: data.full_name }]);
+      } else {
+        alert(data.error || "Failed to reset password.");
+      }
+    } catch (e: any) {
+      alert(e.message || "Network error while resetting password.");
+    } finally {
+      setResettingLoginFor(null);
     }
   };
 
@@ -707,14 +733,16 @@ export default function EmployeeDirectory({
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
                 <User className="h-4.5 w-4.5 text-orange-500" />
-                {loginCreationResult.length} Login{loginCreationResult.length !== 1 ? "s" : ""} Created
+                {credentialAction === "reset"
+                  ? "Password Reset — New Credentials"
+                  : `${loginCreationResult.length} Login${loginCreationResult.length !== 1 ? "s" : ""} Created`}
               </h3>
               <button onClick={() => setLoginCreationResult(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
                 <X className="h-4 w-4" />
               </button>
             </div>
             <p className="text-[10px] text-slate-500">
-              Temporary passwords are shown only once. Share these with each employee — they'll be required to set a real password on first login.
+              Temporary passwords are shown only once. Share {credentialAction === "reset" ? "this" : "these"} with the employee — they'll be required to set a real password on first login.
             </p>
             <div className="max-h-80 overflow-y-auto space-y-2">
               {loginCreationResult.map((r, i) => (
@@ -1690,9 +1718,21 @@ export default function EmployeeDirectory({
                           <User className="h-3.5 w-3.5 text-slate-400 shrink-0" /> Login Account:
                         </span>
                         {accountsByEmployeeId.has(emp.employee_id) ? (
-                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
-                            Active: @{accountsByEmployeeId.get(emp.employee_id)}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
+                              Active: @{accountsByEmployeeId.get(emp.employee_id)}
+                            </span>
+                            {isAdmin && (
+                              <button
+                                onClick={() => handleResetPassword(emp.employee_id, emp.full_name)}
+                                disabled={resettingLoginFor === emp.employee_id}
+                                title="Reset this user's password"
+                                className="text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-wider cursor-pointer hover:bg-amber-100 disabled:opacity-50"
+                              >
+                                {resettingLoginFor === emp.employee_id ? "Resetting..." : "Reset PW"}
+                              </button>
+                            )}
+                          </div>
                         ) : isAdmin ? (
                           <button
                             onClick={() => handleCreateLogin(emp.employee_id)}

@@ -2359,6 +2359,85 @@ async function startServer() {
     }
   });
 
+  // Admin-driven password reset for an existing login. This is the ONLY supported
+  // recovery path for a locked-out staff member: the app "Forgot Password" screen
+  // is a static support message, and the SMS-OTP reset never delivers (the SMS
+  // provider is a stub). An admin/HR user (User Management → edit) resets the
+  // account here; a fresh temporary password is generated and returned ONCE for
+  // the admin to hand over, with must_change_password forcing a change on the
+  // next login. The password itself is never logged.
+  function generateTempPassword(): string {
+    // Unambiguous alphabet (no I/l/O/0/1) so it can be read aloud/written down.
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+    let s = "";
+    for (let i = 0; i < 8; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
+    return s;
+  }
+
+  async function resetLoginPasswordForEmployee(empId: number, actingUser: any) {
+    const [empRows]: any = await dbPool.query("SELECT * FROM employees WHERE employee_id = ?", [empId]);
+    if (!empRows || empRows.length === 0) {
+      return { ok: false, employee_id: empId, error: "Employee not found." };
+    }
+    const employee = empRows[0];
+
+    const [linkRows]: any = await dbPool.query(
+      "SELECT user_id, username FROM user_access_master WHERE employee_id = ? LIMIT 1",
+      [empId]
+    );
+    if (!linkRows || linkRows.length === 0) {
+      return { ok: false, employee_id: empId, employee_code: employee.employee_code, error: `No login exists for '${employee.full_name}'. Use "Create Login" first.` };
+    }
+    const link = linkRows[0];
+
+    const tempPassword = generateTempPassword();
+    const password_hash = await bcrypt.hash(tempPassword, 10);
+
+    // Reset in BOTH tables to keep them in sync (login reads user_access_master;
+    // some flows still touch users). Clear any stale OTP session too.
+    await dbPool.execute(
+      "UPDATE user_access_master SET password_hash = ?, must_change_password = 1, otp_hash = NULL, otp_expiry = NULL WHERE employee_id = ?",
+      [password_hash, empId]
+    );
+    try {
+      await dbPool.execute(
+        "UPDATE users SET password_hash = ?, must_change_password = 1 WHERE username = ? OR employee_id = ?",
+        [password_hash, link.username, empId]
+      );
+    } catch (e) {
+      // users-table row may not exist for every account; user_access_master is authoritative.
+    }
+
+    await AuditService.logAction(
+      actingUser?.user_id || 0,
+      actingUser?.username || "system",
+      "PASSWORD_RESET",
+      `Reset login password for '@${link.username}' (employee '${employee.full_name}', ${employee.employee_code}). Temporary password issued; must change on next login.`
+    );
+
+    return {
+      ok: true,
+      employee_id: empId,
+      employee_code: employee.employee_code,
+      full_name: employee.full_name,
+      username: link.username,
+      temp_password: tempPassword,
+    };
+  }
+
+  app.post("/api/employees/:id/reset-login-password", authenticateToken, requirePermission("User Management", "edit"), async (req: any, res: any) => {
+    const empId = Number(req.params.id);
+    if (!empId || empId <= 0) return res.status(400).json({ success: false, error: "Invalid employee id." });
+    try {
+      const result = await resetLoginPasswordForEmployee(empId, req.user);
+      if (!result.ok) return res.status(400).json({ success: false, ...result });
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      console.error("reset-login-password error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   app.post("/api/employees/bulk-create-logins", authenticateToken, requirePermission("User Management", "edit"), async (req: any, res: any) => {
     try {
       const [rows]: any = await dbPool.query(
