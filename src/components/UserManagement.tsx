@@ -212,12 +212,43 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
     }
   };
 
+  // Load the REAL saved field rules so the matrix shows the truth, not computed
+  // defaults. Without this the tab rendered defaults (service_advisor -> EDIT),
+  // masking a DB value of READ_ONLY: the field looked editable, so nothing was
+  // changed or saved, while the server kept enforcing READ_ONLY. Map the DB's
+  // READ_ONLY onto the dropdown's VIEW_ONLY wording (the save maps it back).
+  const fetchFieldPermissions = async () => {
+    try {
+      const res = await fetch("/api/rbac/field-permissions", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok && data.success && Array.isArray(data.fieldPermissions)) {
+        setFieldPermissionsList(
+          data.fieldPermissions.map((fp: any) => {
+            const lvl = String(fp.permission_level || "").toUpperCase();
+            return {
+              role: fp.role,
+              workflow_stage: fp.workflow_stage || "ANY",
+              field_name: fp.field_name,
+              permission_level: lvl === "READ_ONLY" ? "VIEW_ONLY" : lvl,
+            };
+          })
+        );
+      }
+    } catch (e) {
+      console.error("Failed to load field permissions:", e);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'permissions') {
       fetchPermissions();
     } else if (activeTab === 'profile-approvals') {
       fetchApprovalRequests();
       fetchApprovalSetting();
+    } else if (activeTab === 'field-permissions') {
+      fetchFieldPermissions();
     }
   }, [activeTab]);
 
