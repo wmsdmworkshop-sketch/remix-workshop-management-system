@@ -309,6 +309,10 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
       return;
     }
 
+    // Show the operator the exact frame that was captured/submitted, so they can
+    // see their front-camera selfie (and catch a blank/rear-camera capture).
+    setCapturedPhoto(finalPhoto);
+
     setPunching(true);
     setErrorMsg(null);
     setSuccessMsg(null);
@@ -458,6 +462,21 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
 
       {/* Canvas for snapshot generation (hidden) */}
       <canvas ref={canvasRef} style={{ display: "none" }} />
+
+      {/* Captured image preview — the actual photo submitted for verification. */}
+      {capturedPhoto && (
+        <div className="flex items-center gap-3 bg-slate-950/60 border border-slate-800 rounded-xl p-3">
+          <img
+            src={capturedPhoto}
+            alt="Captured face"
+            className="h-16 w-16 rounded-lg object-cover border border-emerald-500/40 shrink-0"
+          />
+          <div className="text-[10px] text-slate-400 leading-relaxed">
+            <div className="font-black text-emerald-400 uppercase tracking-wider">Captured Image</div>
+            <div>This front-camera photo was submitted for biometric verification.</div>
+          </div>
+        </div>
+      )}
 
       {/* Alert Messages */}
       {errorMsg && (

@@ -811,6 +811,16 @@ export async function ensureTablesExist(): Promise<void> {
   } catch (err) {
     // Ignore error if column already exists
   }
+  // Reference face photo (base64) enrolled on first biometric check-in. The
+  // attendance endpoint writes employees[i].profile_photo, but without this
+  // column the employees upsert threw "Unknown column 'profile_photo'" and, since
+  // syncSave shares one try/catch, aborted EVERY later table — attendance never
+  // persisted. Persisting it here also keeps face matching working across restarts.
+  try {
+    await db.execute("ALTER TABLE `employees` ADD COLUMN `profile_photo` LONGTEXT DEFAULT NULL");
+  } catch (err) {
+    // Ignore error if column already exists
+  }
 
   // Structured customer/driver complaints — the canonical, editable store the
   // advisor uses (source, category, text, safety flags). Previously complaints
@@ -1937,6 +1947,21 @@ export async function syncSave(data: any): Promise<void> {
   try {
     console.log("=== RUNNING ASYNC CLOUD SQL/MYSQL DB SYNC / SAVE ===");
 
+    // Attendance FIRST and independently guarded. It is critical (a person's
+    // punch record) and must persist even if a LATER table in this same function
+    // throws — the whole body shares one try/catch, so an error anywhere below
+    // would otherwise skip everything after it (exactly the profile_photo bug
+    // that left workforce_attendance empty). undefined -> null via the mapper.
+    try {
+      await upsertRows(
+        "workforce_attendance",
+        (data.workforceAttendance || []).map(attendanceToDbRow),
+        "attendance_id"
+      );
+    } catch (attErr: any) {
+      console.error("[syncSave] workforce_attendance failed:", attErr?.message);
+    }
+
     // Sequential batch updates to maintain consistency
     await upsertRows("employees", data.employees, "employee_id");
     await upsertRows("bays", data.bays, "bay_id");
@@ -2003,14 +2028,6 @@ export async function syncSave(data: any): Promise<void> {
     await upsertRows("tbl_workflow_history", sanitizedWorkflowHistory, "history_id");
 
     await upsertRows("tbl_evidence", data.evidence || [], "evidence_id");
-
-    // Workforce attendance — persist the punch log (mapped to a stable, fully
-    // defined row shape; undefined -> null so mysql2 never sees an undefined bind).
-    await upsertRows(
-      "workforce_attendance",
-      (data.workforceAttendance || []).map(attendanceToDbRow),
-      "attendance_id"
-    );
 
     console.log("MySQL DB sync save completed successfully!");
   } catch (error) {
