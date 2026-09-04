@@ -1623,6 +1623,7 @@ async function startServer() {
     // a full re-read of the database on every request. It now requires an
     // admin/developer JWT like any other privileged operation.
     "/api/v1/devops/cron/sla-evaluator", // Cloud Scheduler cron — secured by its own Google-OIDC + x-cloudscheduler check below, not the app JWT
+    "/api/v1/devops/cron/attendance-reminder", // Cloud Scheduler cron — same OIDC + x-cloudscheduler check, not the app JWT
   ];
 
   app.use("/api", (req: any, res: any, next: any) => {
@@ -11750,6 +11751,125 @@ Respond with valid JSON only:
   });
 
   // --- DEVOPS & CRON ENDPOINTS ---
+
+  // Shared Cloud Scheduler auth: Google OIDC (service-account token) + the
+  // x-cloudscheduler header. Returns false (after sending the error) when invalid.
+  const verifyCronRequest = async (req: any, res: any): Promise<boolean> => {
+    if (process.env.NODE_ENV === 'development') return true;
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, error: "MACHINE_AUTH_REQUIRED", message: "Missing Bearer token." });
+      return false;
+    }
+    try {
+      const { OAuth2Client } = await import('google-auth-library');
+      const client = new OAuth2Client();
+      const audience = process.env.CLOUD_RUN_URL || process.env.WORKSHOP_API_URL || 'https://dwip-scheduler-audience';
+      const ticket = await client.verifyIdToken({ idToken: authHeader.split(' ')[1], audience });
+      const payload = ticket.getPayload();
+      if (!payload?.email?.endsWith('.gserviceaccount.com')) {
+        res.status(403).json({ success: false, error: "INVALID_SERVICE_ACCOUNT" });
+        return false;
+      }
+      if (req.headers['x-cloudscheduler'] !== 'true') {
+        res.status(403).json({ success: false, error: "MISSING_SCHEDULER_HEADER" });
+        return false;
+      }
+      return true;
+    } catch (err: any) {
+      res.status(403).json({ success: false, error: "UNAUTHORIZED_INVOCATION", message: err.message });
+      return false;
+    }
+  };
+
+  // Real Meta WhatsApp Cloud API sender. Business-initiated messages require a
+  // pre-approved template. Returns {ok} on a real send; {skipped} when the API
+  // is not configured; {ok:false,error} on a real failure — never a fake success.
+  const sendWhatsAppTemplate = async (toMobile: string, templateName: string, bodyParams: string[], langCode = "en") => {
+    const token = process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const apiVersion = process.env.WHATSAPP_API_VERSION || "v21.0";
+    if (!token || !phoneNumberId) {
+      return { ok: false, skipped: true, error: "WhatsApp Cloud API not configured (set WHATSAPP_ACCESS_TOKEN + WHATSAPP_PHONE_NUMBER_ID)." };
+    }
+    let digits = String(toMobile || "").replace(/[^0-9]/g, "");
+    if (!digits) return { ok: false, error: "No mobile number." };
+    if (digits.length === 10) digits = "91" + digits; // bare Indian 10-digit → E.164
+    try {
+      const resp = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to: digits,
+          type: "template",
+          template: {
+            name: templateName,
+            language: { code: langCode },
+            ...(bodyParams.length ? { components: [{ type: "body", parameters: bodyParams.map((t) => ({ type: "text", text: String(t) })) }] } : {}),
+          },
+        }),
+      });
+      const data: any = await resp.json().catch(() => ({}));
+      if (!resp.ok) return { ok: false, error: data?.error?.message || `HTTP ${resp.status}` };
+      return { ok: true, id: data?.messages?.[0]?.id || null };
+    } catch (e: any) {
+      return { ok: false, error: e.message };
+    }
+  };
+
+  // Daily attendance reminder — WhatsApp (Meta Cloud API) to every ACTIVE
+  // employee who has NOT punched in today. Point Cloud Scheduler at this at
+  // 09:30 IST, Mon–Sat (cron "30 9 * * 1-6", timezone Asia/Kolkata). Sundays are
+  // double-guarded here too. Read-only w.r.t. the DB (it only sends).
+  app.post("/api/v1/devops/cron/attendance-reminder", async (req: any, res: any) => {
+    if (!(await verifyCronRequest(req, res))) return;
+    try {
+      const db = getDB();
+      const istNow = new Date();
+      const todayIST = istNow.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      const istDay = new Date(istNow.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })).getDay(); // 0 = Sunday
+      if (istDay === 0) return res.json({ success: true, skipped: "sunday", date: todayIST });
+
+      const active = (db.employees || []).filter((e: any) => e.is_active);
+      const punchedIds = new Set(
+        (db.workforceAttendance || [])
+          .filter((r: any) => String(r.shift_date) === todayIST && r.check_in)
+          .map((r: any) => Number(r.employee_id))
+      );
+      const unpunched = active.filter((e: any) => !punchedIds.has(Number(e.employee_id)));
+
+      const template = process.env.WHATSAPP_ATTENDANCE_TEMPLATE || "attendance_reminder";
+      const langCode = process.env.WHATSAPP_TEMPLATE_LANG || "en";
+      let sent = 0, failed = 0, skipped = 0;
+      let firstError: string | null = null;
+
+      for (const e of unpunched) {
+        const mobile = e.mobile || e.phone || "";
+        if (!mobile) { skipped++; continue; }
+        const firstName = String(e.full_name || "Team").trim().split(/\s+/)[0];
+        const r: any = await sendWhatsAppTemplate(mobile, template, [firstName], langCode);
+        if (r.ok) sent++;
+        else if (r.skipped) { skipped++; if (!firstError) firstError = r.error || null; }
+        else { failed++; if (!firstError) firstError = r.error || null; }
+      }
+
+      res.json({
+        success: true,
+        date: todayIST,
+        total_active: active.length,
+        unpunched: unpunched.length,
+        whatsapp_sent: sent,
+        whatsapp_failed: failed,
+        whatsapp_skipped: skipped,
+        whatsapp_configured: !!(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID),
+        first_error: firstError,
+      });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
   app.post("/api/v1/devops/cron/sla-evaluator", async (req: any, res: any) => {
     // CONTROL 2: SECURE CLOUD SCHEDULER EXECUTION
     if (process.env.NODE_ENV !== 'development') {
