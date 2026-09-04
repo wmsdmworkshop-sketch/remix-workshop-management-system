@@ -44,6 +44,74 @@ function safeMysqlDatetime(dateVal: any, defaultVal: string | null = null): stri
   return iso.slice(0, 19).replace('T', ' ');
 }
 
+// workforce_attendance <-> in-memory record mapping. Kept in one place so the
+// load-hydrate, the save-upsert, and the write-dedup cache all agree on the exact
+// row shape (and key order) — otherwise the cache never matches and every sync
+// rewrites every attendance row, base64 face photos included.
+//
+// is_approved is TRI-STATE and must survive the round trip: true (verified),
+// false (pending — outside geofence / failed match), and undefined (a manual
+// entry with no biometric/GPS verification, shown as "Manual Entry"). MySQL
+// stores these as 1 / 0 / NULL respectively.
+function attendanceToDbRow(r: any) {
+  return {
+    attendance_id: r.attendance_id,
+    employee_id: r.employee_id,
+    shift_date: r.shift_date ?? null,
+    check_in: r.check_in ?? null,
+    check_out: r.check_out ?? null,
+    shift_type: r.shift_type ?? "Morning",
+    status: r.status ?? "Present",
+    notes: r.notes ?? null,
+    created_at: r.created_at ?? null,
+    check_in_lat: r.check_in_lat ?? null,
+    check_in_lng: r.check_in_lng ?? null,
+    check_out_lat: r.check_out_lat ?? null,
+    check_out_lng: r.check_out_lng ?? null,
+    face_photo_in: r.face_photo_in ?? null,
+    face_photo_out: r.face_photo_out ?? null,
+    face_match_score_in: r.face_match_score_in ?? null,
+    face_match_score_out: r.face_match_score_out ?? null,
+    is_approved: r.is_approved == null ? null : (r.is_approved ? 1 : 0),
+    break_start: r.break_start ?? null,
+    break_end: r.break_end ?? null,
+    is_late: r.is_late ? 1 : 0,
+    late_reason: r.late_reason ?? null,
+    is_overtime: r.is_overtime ? 1 : 0,
+    overtime_hours: r.overtime_hours ?? 0,
+  };
+}
+
+function attendanceFromDbRow(row: any) {
+  return {
+    attendance_id: Number(row.attendance_id),
+    employee_id: Number(row.employee_id),
+    shift_date: row.shift_date,
+    check_in: row.check_in ?? null,
+    check_out: row.check_out ?? null,
+    shift_type: row.shift_type || "Morning",
+    status: row.status || "Present",
+    notes: row.notes ?? "",
+    created_at: row.created_at ?? undefined,
+    check_in_lat: row.check_in_lat ?? null,
+    check_in_lng: row.check_in_lng ?? null,
+    check_out_lat: row.check_out_lat ?? null,
+    check_out_lng: row.check_out_lng ?? null,
+    face_photo_in: row.face_photo_in ?? null,
+    face_photo_out: row.face_photo_out ?? null,
+    face_match_score_in: row.face_match_score_in ?? null,
+    face_match_score_out: row.face_match_score_out ?? null,
+    // NULL -> undefined (manual entry, matching creation semantics); 1/0 -> bool.
+    is_approved: row.is_approved === null || row.is_approved === undefined ? undefined : !!row.is_approved,
+    break_start: row.break_start ?? null,
+    break_end: row.break_end ?? null,
+    is_late: !!row.is_late,
+    late_reason: row.late_reason ?? "",
+    is_overtime: !!row.is_overtime,
+    overtime_hours: Number(row.overtime_hours ?? 0),
+  };
+}
+
 // Helper to upsert rows into a table using ON DUPLICATE KEY UPDATE
 async function upsertRows(tableName: string, rows: any[], primaryKey: string) {
   if (!rows || rows.length === 0) return;
@@ -798,6 +866,48 @@ export async function ensureTablesExist(): Promise<void> {
   } catch (err) {
     // Ignore if table already exists
   }
+
+  // Workforce attendance — the daily punch log (check-in/out, break, geofence
+  // coords, biometric face photos + match scores, approval state). Previously
+  // this table did NOT exist and attendance lived only in the in-memory cache,
+  // so every Cloud Run restart/scale wiped all history. attendance_id is
+  // app-assigned (max+1), NOT auto-increment. Face photos are base64 (LONGTEXT).
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS \`workforce_attendance\` (
+        \`attendance_id\` INT NOT NULL,
+        \`employee_id\` INT NOT NULL,
+        \`shift_date\` VARCHAR(20) NOT NULL,
+        \`check_in\` VARCHAR(20) DEFAULT NULL,
+        \`check_out\` VARCHAR(20) DEFAULT NULL,
+        \`shift_type\` VARCHAR(20) DEFAULT 'Morning',
+        \`status\` VARCHAR(20) DEFAULT 'Present',
+        \`notes\` TEXT DEFAULT NULL,
+        \`created_at\` VARCHAR(40) DEFAULT NULL,
+        \`check_in_lat\` DOUBLE DEFAULT NULL,
+        \`check_in_lng\` DOUBLE DEFAULT NULL,
+        \`check_out_lat\` DOUBLE DEFAULT NULL,
+        \`check_out_lng\` DOUBLE DEFAULT NULL,
+        \`face_photo_in\` LONGTEXT DEFAULT NULL,
+        \`face_photo_out\` LONGTEXT DEFAULT NULL,
+        \`face_match_score_in\` DOUBLE DEFAULT NULL,
+        \`face_match_score_out\` DOUBLE DEFAULT NULL,
+        \`is_approved\` TINYINT(1) DEFAULT NULL,
+        \`break_start\` VARCHAR(20) DEFAULT NULL,
+        \`break_end\` VARCHAR(20) DEFAULT NULL,
+        \`is_late\` TINYINT(1) DEFAULT 0,
+        \`late_reason\` VARCHAR(255) DEFAULT NULL,
+        \`is_overtime\` TINYINT(1) DEFAULT 0,
+        \`overtime_hours\` DOUBLE DEFAULT 0,
+        PRIMARY KEY (\`attendance_id\`),
+        INDEX idx_attendance_emp_date (\`employee_id\`, \`shift_date\`),
+        INDEX idx_attendance_date (\`shift_date\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+    `);
+  } catch (err) {
+    // Ignore if table already exists
+  }
+
   try {
     await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `tata_complaint_number` VARCHAR(100) DEFAULT NULL");
   } catch (err) {}
@@ -1656,6 +1766,15 @@ export async function syncLoad(): Promise<any> {
       };
     });
 
+    // Workforce attendance — hydrate the punch log so history survives restarts.
+    let workforceAttendance: any[] = [];
+    try {
+      const [attRows] = await db.query("SELECT * FROM workforce_attendance") as any[];
+      workforceAttendance = (attRows || []).map(attendanceFromDbRow);
+    } catch (e) {
+      console.error("Could not load workforce_attendance:", e);
+    }
+
     // Populate cache to avoid redundant sync writes
     dbRowCache.clear();
     const cacheRows = (tableName: string, rows: any[], pk: string) => {
@@ -1690,6 +1809,8 @@ export async function syncLoad(): Promise<any> {
     cacheRows("qrt_teams", qrtTeams, "qrt_id");
     cacheRows("breakdown_attachments", breakdownAttachments, "attachment_id");
     cacheRows("breakdown_communications", breakdownCommunications, "communication_id");
+    // Prime with the exact save-shape so unchanged rows are skipped on the next sync.
+    cacheRows("workforce_attendance", workforceAttendance.map(attendanceToDbRow), "attendance_id");
 
     // job_card_master contains mapped representations in database format
     for (const r of jobCardMasterRows) {
@@ -1763,6 +1884,7 @@ export async function syncLoad(): Promise<any> {
       breakdownAttachments: breakdownAttachments || [],
       breakdownCommunications: breakdownCommunications || [],
       workflowHistory: workflowHistory || [],
+      workforceAttendance,
       evidence: []
     };
   } catch (error) {
@@ -1805,6 +1927,7 @@ export async function syncLoad(): Promise<any> {
       breakdownAttachments: [],
       breakdownCommunications: [],
       workflowHistory: [],
+      workforceAttendance: [],
       evidence: []
     };
   }
@@ -1880,6 +2003,14 @@ export async function syncSave(data: any): Promise<void> {
     await upsertRows("tbl_workflow_history", sanitizedWorkflowHistory, "history_id");
 
     await upsertRows("tbl_evidence", data.evidence || [], "evidence_id");
+
+    // Workforce attendance — persist the punch log (mapped to a stable, fully
+    // defined row shape; undefined -> null so mysql2 never sees an undefined bind).
+    await upsertRows(
+      "workforce_attendance",
+      (data.workforceAttendance || []).map(attendanceToDbRow),
+      "attendance_id"
+    );
 
     console.log("MySQL DB sync save completed successfully!");
   } catch (error) {

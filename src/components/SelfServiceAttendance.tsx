@@ -256,11 +256,17 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
   };
 
   const handlePunch = async (action: "check_in" | "check_out" | "break_start" | "break_end") => {
-    if (!coords) {
-      setErrorMsg("Cannot punch: waiting for high-accuracy GPS coordinates.");
+    // OPENING punches (check-in / break-start) require a GPS fix. CLOSING punches
+    // (check-out / break-end) are allowed WITHOUT GPS — a worker who has stepped
+    // outside the workshop, or whose phone lost a fix, must still be able to punch
+    // out. The server records such a punch as PENDING supervisor approval (never
+    // auto-approved) whenever the location is missing or outside the geofence.
+    const requiresGps = action === "check_in" || action === "break_start";
+    if (requiresGps && !coords) {
+      setErrorMsg("Cannot check in without your location. Please enable GPS / location services.");
       return;
     }
-    
+
     // Face capture is MANDATORY. Prefer the NATIVE camera — inside the Capacitor
     // WebView, browser getUserMedia often yields a blank/0-size frame, which
     // silently enrolled an empty face photo. Fall back to the live-video canvas
@@ -318,8 +324,8 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
         body: JSON.stringify({
           employee_id: employeeId,
           shift_date: new Date().toISOString().split("T")[0],
-          latitude: coords.lat,
-          longitude: coords.lng,
+          latitude: coords?.lat ?? null,
+          longitude: coords?.lng ?? null,
           face_photo: finalPhoto,
           is_check_out: isCheckOut,
           is_break_start: isBreakStart,
@@ -553,6 +559,16 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
           </div>
         )}
 
+        {/* Off-site / no-GPS punch-out notice — the punch is allowed but will need approval. */}
+        {attendance?.check_in && !attendance?.check_out && (!coords || geofenceStatus?.within === false) && (
+          <div className="flex items-start gap-2.5 p-3 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-400 text-xs font-semibold">
+            <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <span>
+              You appear to be {coords ? "outside the workshop geofence" : "without a GPS fix"}. You can still punch out — it will be logged and sent for supervisor approval (it will not be auto-approved).
+            </span>
+          </div>
+        )}
+
         {/* Action Punch Buttons */}
         <div className="space-y-2.5">
           {/* BREAK ACTIONS */}
@@ -568,7 +584,7 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
               </button>
               <button
                 onClick={() => handlePunch("break_end")}
-                disabled={punching || !coords || !attendance.break_start || !!attendance.break_end}
+                disabled={punching || !attendance.break_start || !!attendance.break_end}
                 className="ds-button-success ds-button-success py-3 px-4 rounded-xl font-extrabold text-xs uppercase tracking-wider text-white transition-all   hover:  disabled:opacity-40 disabled:bg-slate-850 flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
               >
                 <CheckCircle2 className="h-3.5 w-3.5" />
@@ -580,7 +596,7 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
           {/* MAIN CHECK-IN / CHECK-OUT */}
           <button
             onClick={() => handlePunch(attendance?.check_in ? "check_out" : "check_in")}
-            disabled={punching || !coords || (attendance?.check_in && attendance?.check_out)}
+            disabled={punching || (!attendance?.check_in && !coords) || (attendance?.check_in && attendance?.check_out)}
             className={`w-full py-4.5 rounded-xl font-black text-sm uppercase tracking-wider text-white transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer ${
               attendance?.check_in && attendance?.check_out
                 ? "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50"
