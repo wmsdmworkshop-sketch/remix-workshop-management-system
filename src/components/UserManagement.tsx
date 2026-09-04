@@ -25,7 +25,8 @@ import {
   Edit3,
   Bot,
   Zap,
-  Database
+  Database,
+  Trash2
 } from "lucide-react";
 import { User } from "../types";
 import FunnyLoader from "./FunnyLoader";
@@ -641,6 +642,35 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
         await fetchUsers();
       },
     });
+  };
+
+  // Delete a LOGIN account (not the employee). Gated by the same mandatory
+  // justification modal as edit/deactivate; the person stays in Workforce and
+  // can be given a fresh login later.
+  const handleDeleteUser = (user: User) => {
+    setPendingEdit({
+      label: `Delete login @${user.username}`,
+      run: async (justification) => {
+        setError(null); setSuccess(null);
+        const response = await fetch(`/api/users/${user.user_id}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify({ justification }),
+        });
+        if (!response.ok) { const data = await response.json(); throw new Error(data.error || "Failed to delete user."); }
+        setSuccess(`Login @${user.username} deleted. ${user.full_name} remains an employee and can be given a new login anytime.`);
+        await fetchUsers();
+      },
+    });
+  };
+
+  // True when this account is the only remaining active admin/superadmin — the
+  // one the server refuses to delete, so we disable the button too.
+  const isLastActiveAdmin = (user: User) => {
+    const isAdminRole = (r: string) => r === "admin" || r === "developer";
+    if (!isAdminRole(user.role)) return false;
+    const activeAdmins = users.filter(u => isAdminRole(u.role) && (u.is_active === 1 || (u.is_active as any) === true));
+    return activeAdmins.length <= 1;
   };
 
   const startEdit = (user: User) => {
@@ -1332,12 +1362,30 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                               </button>
                             </div>
                           ) : (
-                            <button
-                              onClick={() => startEdit(user)}
-                              className="px-2.5 py-1.5 border border-slate-200 hover:border-slate-300 rounded font-bold text-[10px] text-slate-600 uppercase tracking-wider transition-all cursor-pointer"
-                            >
-                              Edit Profile
-                            </button>
+                            <div className="flex justify-start md:justify-end gap-2">
+                              <button
+                                onClick={() => startEdit(user)}
+                                className="px-2.5 py-1.5 border border-slate-200 hover:border-slate-300 rounded font-bold text-[10px] text-slate-600 uppercase tracking-wider transition-all cursor-pointer"
+                              >
+                                Edit Profile
+                              </button>
+                              {(currentUser?.role === 'admin' || currentUser?.role === 'developer') && (
+                                <button
+                                  onClick={() => handleDeleteUser(user)}
+                                  disabled={currentUser?.user_id === user.user_id || isLastActiveAdmin(user)}
+                                  title={
+                                    currentUser?.user_id === user.user_id
+                                      ? "You cannot delete your own account"
+                                      : isLastActiveAdmin(user)
+                                      ? "Cannot delete the last active admin/superadmin"
+                                      : "Delete this login account (employee record is kept)"
+                                  }
+                                  className="px-2.5 py-1.5 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  <Trash2 className="h-3 w-3" /> Delete
+                                </button>
+                              )}
+                            </div>
                           )}
                         </td>
                       </tr>

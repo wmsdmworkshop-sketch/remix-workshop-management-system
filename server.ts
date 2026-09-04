@@ -2438,6 +2438,70 @@ async function startServer() {
     }
   });
 
+  // Delete a login account (login-only). Removes the user_access_master row and
+  // the matching users row, but NEVER the employee record — the person stays in
+  // Workforce and can be given a fresh login again later. Deactivate suspends an
+  // account; this removes the credential entirely (wrong/duplicate account, or a
+  // staff member who has left). Guards against self-deletion and deleting the
+  // last active admin, and requires a justification recorded to the edit audit.
+  app.delete("/api/users/:id", authenticateToken, requirePermission("User Management", "edit"), async (req: any, res: any) => {
+    const userId = Number(req.params.id);
+    if (!userId || userId <= 0) return res.status(400).json({ error: "Invalid user id." });
+    const justification = String(req.body?.justification || "").trim();
+    if (justification.length < 5) {
+      return res.status(400).json({ error: "A justification (min 5 characters) is required to delete a user." });
+    }
+
+    try {
+      const [rows]: any = await dbPool.query(
+        "SELECT user_id, username, full_name, user_role, employee_id FROM user_access_master WHERE user_id = ? LIMIT 1",
+        [userId]
+      );
+      if (!rows || rows.length === 0) return res.status(404).json({ error: "User account not found." });
+      const target = rows[0];
+
+      // Guard 1: never delete your own account (would end your own session).
+      if (Number(req.user?.user_id) === userId) {
+        return res.status(400).json({ error: "You cannot delete your own account." });
+      }
+
+      // Guard 2: never delete the last active admin/superadmin — that would lock
+      // everyone out of User Management.
+      const role = String(target.user_role || "").toLowerCase();
+      if (role === "admin" || role === "developer") {
+        const [adminRows]: any = await dbPool.query(
+          "SELECT COUNT(*) AS n FROM user_access_master WHERE is_active = 1 AND LOWER(user_role) IN ('admin','developer')"
+        );
+        if ((adminRows?.[0]?.n || 0) <= 1) {
+          return res.status(400).json({ error: "This is the last active admin/superadmin account — it cannot be deleted." });
+        }
+      }
+
+      await dbPool.execute("DELETE FROM user_access_master WHERE user_id = ?", [userId]);
+      try {
+        await dbPool.execute("DELETE FROM users WHERE username = ? OR employee_id = ?", [target.username, target.employee_id]);
+      } catch (e) {
+        // users-table row may not exist for every account; user_access_master is authoritative.
+      }
+
+      await logEdit(req, {
+        entity_type: "user_account",
+        entity_id: userId,
+        action: "DELETE_USER",
+        justification: `Deleted login '@${target.username}' (${target.full_name}, role ${target.user_role}). ${justification}`,
+        before: { user_id: userId, username: target.username, role: target.user_role, employee_id: target.employee_id },
+      });
+
+      res.json({ success: true, username: target.username });
+    } catch (err: any) {
+      if (err?.code === "ER_ROW_IS_REFERENCED_2" || err?.errno === 1451) {
+        return res.status(409).json({ error: "This account is still referenced by other records and cannot be deleted. Deactivate it instead." });
+      }
+      console.error("delete user error:", err);
+      res.status(500).json({ error: err?.message || "Failed to delete user." });
+    }
+  });
+
   app.post("/api/employees/bulk-create-logins", authenticateToken, requirePermission("User Management", "edit"), async (req: any, res: any) => {
     try {
       const [rows]: any = await dbPool.query(
