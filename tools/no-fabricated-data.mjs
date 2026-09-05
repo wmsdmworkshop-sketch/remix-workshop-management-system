@@ -76,6 +76,11 @@ const RULES = [
   { pattern: /JC-444519/i, label: "Fabricated job-card reference", severity: "ERROR" },
   { pattern: /Mock invoice sent/i, label: "Fake success message (nothing was printed)", severity: "ERROR" },
   { pattern: /Rajesh Kumar/i, label: "Fabricated invoice fallback data", severity: "ERROR" },
+
+  // The inverse failure: a REAL identity used as a sample. The public login page
+  // advertised a genuine username and mobile ("e.g. shashi_sa or 779550899"),
+  // handing out half of a valid credential pair. Placeholders must be generic.
+  { pattern: /placeholder=["'][^"']*(shashi_sa|779550899)/i, label: "Real staff credential used as a placeholder", severity: "ERROR" },
 ];
 
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", "coverage", "tests", "__tests__"]);
