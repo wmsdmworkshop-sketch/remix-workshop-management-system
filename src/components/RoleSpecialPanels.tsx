@@ -1043,7 +1043,7 @@ export function TechnicianProfilePanel({ employees, employeeId: propsEmployeeId 
                 Active Duty
               </span>
               <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border bg-slate-800 text-slate-300 border-slate-700/50 uppercase tracking-wider font-mono">
-                {currentEmp.employee_grade || "Senior"}
+                {currentEmp.employee_grade || "—"}
               </span>
             </div>
           </div>
@@ -1056,7 +1056,7 @@ export function TechnicianProfilePanel({ employees, employeeId: propsEmployeeId 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Department</span>
-              <p className="text-xs font-black text-slate-800 uppercase">{currentEmp.department || "Workshop Operations"}</p>
+              <p className="text-xs font-black text-slate-800 uppercase">{currentEmp.department || "—"}</p>
             </div>
             <div className="space-y-1">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Designation</span>
@@ -1064,25 +1064,25 @@ export function TechnicianProfilePanel({ employees, employeeId: propsEmployeeId 
             </div>
             <div className="space-y-1">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Workshop Terminal</span>
-              <p className="text-xs font-black text-slate-800 uppercase">{currentEmp.workshop || "Devalapura Terminal 1"}</p>
+              <p className="text-xs font-black text-slate-800 uppercase">{currentEmp.workshop || "—"}</p>
             </div>
             <div className="space-y-1">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Reporting Manager</span>
-              <p className="text-xs font-black text-slate-800 uppercase">{currentEmp.reporting_manager || "Workshop Manager (Admin)"}</p>
+              <p className="text-xs font-black text-slate-800 uppercase">{currentEmp.reporting_manager || "—"}</p>
             </div>
             <div className="space-y-1">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Date of Joining</span>
-              <p className="text-xs font-mono font-bold text-slate-800">{currentEmp.date_of_joining || "2026-06-01"}</p>
+              <p className="text-xs font-mono font-bold text-slate-800">{currentEmp.date_of_joining || "—"}</p>
             </div>
             <div className="space-y-1">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Aadhaar (Last 4 digits)</span>
               <p className="text-xs font-mono font-bold text-slate-800">
-                {currentEmp.aadhaar ? `********${currentEmp.aadhaar.slice(-4)}` : "********9088"}
+                {currentEmp.aadhaar ? `********${currentEmp.aadhaar.slice(-4)}` : "Not on file"}
               </p>
             </div>
             <div className="space-y-1">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">PAN Number (Masked)</span>
-              <p className="text-xs font-mono font-bold text-slate-800">{currentEmp.pan ? `${currentEmp.pan.slice(0, 5)}*****` : "ABCDE*****F"}</p>
+              <p className="text-xs font-mono font-bold text-slate-800">{currentEmp.pan ? `${currentEmp.pan.slice(0, 5)}*****` : "Not on file"}</p>
             </div>
             <div className="space-y-1">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Basic Salary Details</span>
@@ -1095,7 +1095,7 @@ export function TechnicianProfilePanel({ employees, employeeId: propsEmployeeId 
               <ShieldCheck className="h-3.5 w-3.5 text-slate-400" /> Bank Account Details (Salary)
             </span>
             <p className="text-xs font-bold text-slate-800">
-              {currentEmp.bank_details || "HDFC Bank Ltd, A/C: *******4521, IFSC: HDFC0002145"}
+              {currentEmp.bank_details || "Not on file"}
             </p>
           </div>
         </div>

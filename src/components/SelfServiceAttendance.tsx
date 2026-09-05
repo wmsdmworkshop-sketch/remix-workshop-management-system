@@ -449,15 +449,21 @@ export default function SelfServiceAttendance({ employeeId, onSuccess }: SelfSer
             className="w-full h-full object-cover scale-x-[-1]"
           />
         ) : (
-          <div className="flex flex-col items-center gap-2 text-slate-600">
-            <Camera className="h-10 w-10 animate-pulse" />
-            <span className="text-xs">Accessing hardware camera...</span>
+          // On the mobile app the live web preview isn't available (Capacitor
+          // WebView), and the actual capture uses the native front camera at punch
+          // time. Show an honest ready-state instead of a stuck "accessing…" icon.
+          <div className="flex flex-col items-center gap-2 text-slate-500 px-4 text-center">
+            <Camera className="h-9 w-9" />
+            <span className="text-xs font-semibold">Front camera opens when you tap Punch</span>
+            <span className="text-[10px] text-slate-600">Your selfie is captured at the moment you punch in or out.</span>
           </div>
         )}
-        <div className="absolute bottom-3 left-3 bg-slate-950/80 backdrop-blur-sm px-2.5 py-1 rounded-lg border border-slate-800 text-[10px] font-mono text-blue-400 flex items-center gap-1">
-          <Clock className="h-3 w-3 animate-spin" />
-          Biometric Feed Live
-        </div>
+        {cameraStream && (
+          <div className="absolute bottom-3 left-3 bg-slate-950/80 backdrop-blur-sm px-2.5 py-1 rounded-lg border border-slate-800 text-[10px] font-mono text-blue-400 flex items-center gap-1">
+            <Clock className="h-3 w-3 animate-spin" />
+            Biometric Feed Live
+          </div>
+        )}
       </div>
 
       {/* Canvas for snapshot generation (hidden) */}
