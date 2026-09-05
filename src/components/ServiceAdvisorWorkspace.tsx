@@ -324,19 +324,11 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
   }, [myJobCards, vehicleFilter]);
 
   // AI Copilot Advisor recommendation feed
+  // Previously contained hardcoded strings ("HV Battery Check", "Synthetic Oil
+  // 5W30", "₹1,200 / ₹1,500 upsell") presented as AI recommendations — nothing
+  // was computed.  Returns null until a real recommendation engine is wired.
   const aiCopilotData = useMemo(() => {
-    if (!selectedJob) return null;
-    const isEV = selectedJob.vehicle_model?.toLowerCase().includes("ev");
-    return {
-      analysis: isEV ? "High-voltage isolator leak code logged in telemetry." : "Periodic maintenance service checklist fits general guidelines.",
-      suggestedJobs: isEV ? ["HV Battery Check", "Isolation Test"] : ["Engine Oil Change", "Oil Filter Replacement"],
-      suggestedParts: isEV ? ["HV Connector Shield", "Coolant Seal"] : ["Synthetic Oil 5W30", "Gasket Kit"],
-      estimatedCost: isEV ? 8500 : 4200,
-      predictedTat: isEV ? "90 mins" : "45 mins",
-      repeatRisk: isEV ? "Low" : "Negligible",
-      warrantyRecommendation: "Approved under standard extended EV coverage.",
-      upsell: isEV ? "Cabin HEPA filter upgrade (₹1,200)" : "Wheel balancing & alignment package (₹1,500)"
-    };
+    return null;
   }, [selectedJob]);
 
   // Open the structured complaints add/edit modal for a vehicle (works at any
@@ -605,10 +597,10 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                     </div>
                   </div>
 
-                  {aiModeEnabled && (
+                  {aiModeEnabled && aiCopilotData && (
                     <div className="flex items-center gap-1.5 text-[10px] bg-emerald-500/10 text-emerald-400 p-1.5 rounded-lg border border-emerald-500/20">
                       <Sparkles className="h-3 w-3 animate-pulse" />
-                      <span>AI SUGGESTION: Prioritize customer approval transmission</span>
+                      <span>AI SUGGESTION: {aiCopilotData.analysis}</span>
                     </div>
                   )}
 

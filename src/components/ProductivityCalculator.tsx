@@ -103,7 +103,7 @@ export default function ProductivityCalculator({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          textInput: textInput || "Tata Motors CRM DMS Invoice Ref: T-0914-26\nVRN: KA-03-MG-5678\nJC No: JC084\nCustomer: Rajesh Kumar\nMobile: 9876543210\nLabour Value: ₹3,500.00\nParts Value: ₹5,400.00\nEngine No: TATA312N9042\nChassis: MAT451092M819042\nMileage: 48500 km\nService Advisor: Anand\nTechs Assigned: Loku, Mohsin Nawaz"
+          textInput: textInput || ""
         })
       });
       
