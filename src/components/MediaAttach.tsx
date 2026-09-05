@@ -50,25 +50,42 @@ export const MediaAttach: React.FC<MediaAttachProps> = ({ jobCardNo, vrn, token,
   // counts (JC opening, invoice/billing). Attaching the document is not enough —
   // a PDF cannot be counted — so the number and time are lifted into real fields.
   // OCR only SUGGESTS; what gets saved is what the advisor confirms.
-  const TAT_DOC: Record<string, { numLabel: string; atLabel: string; numKey: string; atKey: string }> = {
-    MANUAL_JOBCARD: { numLabel: "CRM job card no.", atLabel: "JC opening time", numKey: "crm_jc_no", atKey: "crm_open_at" },
-    INVOICE: { numLabel: "Invoice no.", atLabel: "Invoice / closing time", numKey: "invoice_no", atKey: "invoice_closed_at" },
+  type TatField = { key: string; label: string; type: "text" | "datetime-local" | "date" };
+  const TAT_DOC: Record<string, { title: string; fields: TatField[] }> = {
+    // Straight off the CRM job-card office copy, in the order it is printed.
+    MANUAL_JOBCARD: {
+      title: "CRM job card details",
+      fields: [
+        { key: "crm_jc_no", label: "Job card no.", type: "text" },
+        { key: "crm_arrival_at", label: "Arrival of customer", type: "datetime-local" },
+        { key: "crm_jc_started_at", label: "Job card started", type: "datetime-local" },
+        { key: "crm_expected_delivery_at", label: "Expected delivery", type: "datetime-local" },
+        { key: "crm_jc_completed_at", label: "Job card completed", type: "datetime-local" },
+      ],
+    },
+    // The invoice prints a date with no time, so it never supplies a closing stamp.
+    INVOICE: {
+      title: "Invoice details",
+      fields: [
+        { key: "invoice_no", label: "Invoice no.", type: "text" },
+        { key: "invoice_date", label: "Invoice date", type: "date" },
+      ],
+    },
   };
   const tatDoc = TAT_DOC[category];
-  const [docNo, setDocNo] = useState("");
-  const [docAt, setDocAt] = useState("");
+  const [vals, setVals] = useState<Record<string, string>>({});
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrNote, setOcrNote] = useState<string | null>(null);
   const [savingMeta, setSavingMeta] = useState(false);
   const [metaMsg, setMetaMsg] = useState<string | null>(null);
   const [saved, setSaved] = useState<any>(null);
 
-  const toLocalInput = (v: any) => {
-    if (!v) return "";
-    const d = new Date(v);
-    if (isNaN(d.getTime())) return "";
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  // Values are wall-clock strings ("2026-09-01T12:58") — kept as text end to end
+  // so a timezone conversion can never move a time printed on paper.
+  const trimForInput = (v: any, type: string) => {
+    const s = String(v || "");
+    if (!s) return "";
+    return type === "date" ? s.slice(0, 10) : s.slice(0, 16);
   };
 
   const fetchSaved = useCallback(async () => {
@@ -86,8 +103,9 @@ export const MediaAttach: React.FC<MediaAttachProps> = ({ jobCardNo, vrn, token,
   // Show the currently-saved values for whichever document type is selected.
   useEffect(() => {
     if (!tatDoc || !saved) return;
-    setDocNo(saved[tatDoc.numKey] || "");
-    setDocAt(toLocalInput(saved[tatDoc.atKey]));
+    const next: Record<string, string> = {};
+    for (const f of tatDoc.fields) next[f.key] = trimForInput(saved[f.key], f.type);
+    setVals(next);
     setMetaMsg(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, saved]);
@@ -99,15 +117,23 @@ export const MediaAttach: React.FC<MediaAttachProps> = ({ jobCardNo, vrn, token,
       const res = await fetch("/api/ocr/jc-invoice-extract", {
         method: "POST",
         headers: authHeaders(true),
-        body: JSON.stringify({ base64Image: dataUrl, kind: category, mimeType }),
+        body: JSON.stringify({ base64Image: dataUrl, kind: category === "INVOICE" ? "INVOICE" : "JOBCARD", mimeType }),
       });
       const d = await res.json();
       if (d?.available) {
-        if (d.number) setDocNo(d.number);
-        if (d.datetime) setDocAt(toLocalInput(d.datetime));
+        const got = d.fields || {};
+        let filled = 0;
+        setVals((prev) => {
+          const next = { ...prev };
+          for (const f of (TAT_DOC[category]?.fields || [])) {
+            const v = trimForInput(got[f.key], f.type);
+            if (v) { next[f.key] = v; filled++; }
+          }
+          return next;
+        });
         setOcrNote(
-          d.number || d.datetime
-            ? "Read from the document — please check both values before saving."
+          filled > 0
+            ? "Read from the document — please check each value before saving."
             : "Nothing could be read from the document — enter the details below."
         );
       } else {
@@ -125,10 +151,12 @@ export const MediaAttach: React.FC<MediaAttachProps> = ({ jobCardNo, vrn, token,
     setSavingMeta(true);
     setMetaMsg(null);
     try {
+      const payload: Record<string, any> = {};
+      for (const f of tatDoc.fields) payload[f.key] = vals[f.key] || null;
       const res = await fetch(`/api/job-cards/${encodeURIComponent(jobCardNo)}/crm-timestamps`, {
         method: "POST",
         headers: authHeaders(true),
-        body: JSON.stringify({ [tatDoc.numKey]: docNo, [tatDoc.atKey]: docAt || null }),
+        body: JSON.stringify(payload),
       });
       const d = await res.json();
       if (!res.ok || !d.success) throw new Error(d.error || "Could not save.");
@@ -305,9 +333,7 @@ export const MediaAttach: React.FC<MediaAttachProps> = ({ jobCardNo, vrn, token,
           {tatDoc && jobCardNo && (
             <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-3 space-y-2">
               <div className="flex items-center justify-between gap-2 flex-wrap">
-                <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400">
-                  {category === "INVOICE" ? "Closing details" : "CRM job card details"}
-                </span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400">{tatDoc.title}</span>
                 {ocrBusy && (
                   <span className="text-[10px] text-slate-400 flex items-center gap-1">
                     <Loader2 className="h-3 w-3 animate-spin" /> Reading document…
@@ -315,34 +341,29 @@ export const MediaAttach: React.FC<MediaAttachProps> = ({ jobCardNo, vrn, token,
                 )}
               </div>
               <p className="text-[10px] text-slate-500">
-                Counted in the daily TAT / NC review. Attaching the file alone isn’t enough — confirm the number and time.
+                Counted in the daily TAT / NC review. Attaching the file alone isn’t enough — copy the values exactly as printed.
+                {category === "MANUAL_JOBCARD" && " Leave a row blank if it is blank on the job card."}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <label className="block">
-                  <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1">{tatDoc.numLabel}</span>
-                  <input
-                    value={docNo}
-                    onChange={(e) => setDocNo(e.target.value)}
-                    placeholder="as printed on the document"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"
-                  />
-                </label>
-                <label className="block">
-                  <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1">{tatDoc.atLabel}</span>
-                  <input
-                    type="datetime-local"
-                    value={docAt}
-                    onChange={(e) => setDocAt(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"
-                  />
-                </label>
+                {tatDoc.fields.map((f) => (
+                  <label key={f.key} className="block">
+                    <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1">{f.label}</span>
+                    <input
+                      type={f.type === "text" ? "text" : f.type}
+                      value={vals[f.key] || ""}
+                      onChange={(e) => setVals((p) => ({ ...p, [f.key]: e.target.value }))}
+                      placeholder={f.type === "text" ? "as printed" : undefined}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"
+                    />
+                  </label>
+                ))}
               </div>
               {ocrNote && <p className="text-[10px] text-amber-400">{ocrNote}</p>}
               <div className="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
                   onClick={saveMeta}
-                  disabled={savingMeta || (!docNo && !docAt)}
+                  disabled={savingMeta || !Object.values(vals).some(Boolean)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white rounded-lg text-[11px] font-bold transition-all"
                 >
                   {savingMeta && <Loader2 className="h-3 w-3 animate-spin" />}
@@ -350,13 +371,23 @@ export const MediaAttach: React.FC<MediaAttachProps> = ({ jobCardNo, vrn, token,
                 </button>
                 {metaMsg && <span className="text-[10px] text-slate-300">{metaMsg}</span>}
               </div>
-              {saved && (saved.tat_hours != null || saved.crm_lag_minutes != null) && (
-                <div className="flex flex-wrap gap-x-4 gap-y-1 pt-2 border-t border-slate-800 text-[10px] text-slate-400">
+              {saved && (saved.tat_hours != null || saved.crm_lag_minutes != null || saved.is_nc != null) && (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-2 border-t border-slate-800 text-[10px] text-slate-400">
                   {saved.tat_hours != null && (
                     <span>TAT: <strong className="text-slate-200 font-mono">{saved.tat_hours} h</strong></span>
                   )}
+                  {saved.is_nc === true && (
+                    <span className="px-2 py-0.5 rounded font-black uppercase tracking-wider bg-rose-500/15 text-rose-400 border border-rose-500/30">
+                      NC · {saved.nc_by_minutes} min late
+                    </span>
+                  )}
+                  {saved.is_nc === false && (
+                    <span className="px-2 py-0.5 rounded font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                      Within TAT
+                    </span>
+                  )}
                   {saved.crm_lag_minutes != null && (
-                    <span>Gate-in → CRM open: <strong className="text-slate-200 font-mono">{saved.crm_lag_minutes} min</strong></span>
+                    <span>Gate-in → CRM arrival: <strong className="text-slate-200 font-mono">{saved.crm_lag_minutes} min</strong></span>
                   )}
                 </div>
               )}

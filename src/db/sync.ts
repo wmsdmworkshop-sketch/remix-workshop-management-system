@@ -786,23 +786,36 @@ export async function ensureTablesExist(): Promise<void> {
     // Ignore error if column already exists
   }
 
-  // TAT / NC measurement chain. The workshop's job card is raised in DWIP at
-  // gate-in (the true arrival), while the CRM job card is opened later and the
-  // invoice is produced at billing — both are ATTACHED to DWIP as documents. The
-  // timestamps printed on those documents are what Tata's daily review counts, so
-  // they are captured here as real columns (OCR-suggested, advisor-confirmed):
-  //   crm_open_at      — CRM job-card opening time  (start of Tata's TAT clock)
-  //   invoice_closed_at— invoice/billing time       (end of the TAT clock)
-  // TAT = invoice_closed_at - crm_open_at; the gate-in -> crm_open_at gap is the
-  // control metric only DWIP can produce. These are written directly and are NOT
-  // in saveJobCardsToMaster's column list, so a sync never clobbers them.
+  // TAT / NC measurement chain, taken from the Tata CRM job-card office copy that
+  // the advisor attaches to DWIP. That document prints its own timestamp chain and
+  // — critically — its own deadline, so NC is judged per job card rather than
+  // against a flat configured target:
+  //   crm_arrival_at           — "Arrival of Customer"
+  //   crm_jc_started_at        — "Job Card Started"      (start of the TAT clock)
+  //   crm_expected_delivery_at — "Expected Delivery Date" (the promise)
+  //   crm_jc_completed_at      — "Job Card Completed"     (end of the TAT clock)
+  // NC  = crm_jc_completed_at > crm_expected_delivery_at
+  // TAT = crm_jc_completed_at - crm_jc_started_at
+  // The DWIP gate-in -> crm_arrival_at gap is the control metric only DWIP can
+  // produce, because DWIP holds the true arrival and the CRM does not.
+  // The invoice carries a DATE ONLY (no time), so it can never supply a closing
+  // timestamp — it is kept purely as the billing reference.
+  // All of these are written directly and are NOT in saveJobCardsToMaster's column
+  // list, so a sync never clobbers them.
   for (const ddl of [
     "ALTER TABLE `job_card_master` ADD COLUMN `crm_jc_no` VARCHAR(60) DEFAULT NULL",
-    "ALTER TABLE `job_card_master` ADD COLUMN `crm_open_at` DATETIME DEFAULT NULL",
+    "ALTER TABLE `job_card_master` ADD COLUMN `crm_arrival_at` DATETIME DEFAULT NULL",
+    "ALTER TABLE `job_card_master` ADD COLUMN `crm_jc_started_at` DATETIME DEFAULT NULL",
+    "ALTER TABLE `job_card_master` ADD COLUMN `crm_expected_delivery_at` DATETIME DEFAULT NULL",
+    "ALTER TABLE `job_card_master` ADD COLUMN `crm_jc_completed_at` DATETIME DEFAULT NULL",
     "ALTER TABLE `job_card_master` ADD COLUMN `invoice_no` VARCHAR(60) DEFAULT NULL",
-    "ALTER TABLE `job_card_master` ADD COLUMN `invoice_closed_at` DATETIME DEFAULT NULL",
+    "ALTER TABLE `job_card_master` ADD COLUMN `invoice_date` DATE DEFAULT NULL",
+    // Superseded by the correctly-named columns above (both were verified empty):
+    // the invoice has no time, so "invoice_closed_at" could never have been right.
+    "ALTER TABLE `job_card_master` DROP COLUMN `crm_open_at`",
+    "ALTER TABLE `job_card_master` DROP COLUMN `invoice_closed_at`",
   ]) {
-    try { await db.execute(ddl); } catch (err) { /* column already exists */ }
+    try { await db.execute(ddl); } catch (err) { /* already applied */ }
   }
   // Per-advisor Tata Siebel/CRM login id (e.g. CSP_100B210, RS1_100B210 at dealer
   // 100B210). Lets CRM job-card creation / reconcile attribute to the advisor's

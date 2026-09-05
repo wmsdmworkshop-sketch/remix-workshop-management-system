@@ -4832,34 +4832,58 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   // ==========================================================================
   app.get("/api/job-cards/:jobCardNo/crm-timestamps", authenticateToken, async (req: any, res) => {
     try {
+      // These are wall-clock times printed on a document, not instants. They are
+      // formatted as strings here so no timezone conversion can shift them — a
+      // job card that says 12:58 must always read back as 12:58.
       const [rows]: any = await dbPool.query(
-        `SELECT jcm.job_card_no, jcm.crm_jc_no, jcm.crm_open_at, jcm.invoice_no, jcm.invoice_closed_at,
-                jcm.etd, jcm.vehicle_reg
-           FROM job_card_master jcm WHERE jcm.job_card_no = ? LIMIT 1`,
+        `SELECT job_card_no, vehicle_reg, crm_jc_no, invoice_no,
+                DATE_FORMAT(crm_arrival_at,           '%Y-%m-%dT%H:%i') AS crm_arrival_at,
+                DATE_FORMAT(crm_jc_started_at,        '%Y-%m-%dT%H:%i') AS crm_jc_started_at,
+                DATE_FORMAT(crm_expected_delivery_at, '%Y-%m-%dT%H:%i') AS crm_expected_delivery_at,
+                DATE_FORMAT(crm_jc_completed_at,      '%Y-%m-%dT%H:%i') AS crm_jc_completed_at,
+                DATE_FORMAT(invoice_date,             '%Y-%m-%d')       AS invoice_date
+           FROM job_card_master WHERE job_card_no = ? LIMIT 1`,
         [req.params.jobCardNo]
       );
       if (!rows || rows.length === 0) return res.status(404).json({ success: false, error: "Job card not found." });
       const r = rows[0];
-      // Gate-in (true arrival) comes from the gate entry, keyed by VRN in `vin`.
+      // Gate-in (DWIP's true arrival) comes from the gate entry, keyed by VRN in
+      // `vin`. Formatted the same way so the two are compared like for like.
       let gateInAt: string | null = null;
       try {
         const [g]: any = await dbPool.query(
-          "SELECT arrival_time FROM tbl_gate_entry WHERE vin = ? ORDER BY arrival_time DESC LIMIT 1", [r.vehicle_reg]);
-        gateInAt = g?.[0]?.arrival_time ?? null;
+          "SELECT DATE_FORMAT(arrival_time,'%Y-%m-%dT%H:%i') AS t FROM tbl_gate_entry WHERE vin = ? ORDER BY arrival_time DESC LIMIT 1",
+          [r.vehicle_reg]);
+        gateInAt = g?.[0]?.t ?? null;
       } catch { /* gate entry optional */ }
 
-      const openAt = r.crm_open_at ? new Date(r.crm_open_at).getTime() : null;
-      const closeAt = r.invoice_closed_at ? new Date(r.invoice_closed_at).getTime() : null;
-      const gateAt = gateInAt ? new Date(gateInAt).getTime() : null;
+      const ms = (v: any) => (v ? new Date(v).getTime() : null);
+      const started = ms(r.crm_jc_started_at);
+      const completed = ms(r.crm_jc_completed_at);
+      const expected = ms(r.crm_expected_delivery_at);
+      const arrival = ms(r.crm_arrival_at);
+      const gate = ms(gateInAt);
+
       res.json({
         success: true,
         job_card_no: r.job_card_no,
-        crm_jc_no: r.crm_jc_no, crm_open_at: r.crm_open_at,
-        invoice_no: r.invoice_no, invoice_closed_at: r.invoice_closed_at,
+        crm_jc_no: r.crm_jc_no,
+        crm_arrival_at: r.crm_arrival_at,
+        crm_jc_started_at: r.crm_jc_started_at,
+        crm_expected_delivery_at: r.crm_expected_delivery_at,
+        crm_jc_completed_at: r.crm_jc_completed_at,
+        invoice_no: r.invoice_no,
+        invoice_date: r.invoice_date,
         gate_in_at: gateInAt,
-        // Derived, never stored — so they can never go stale.
-        tat_hours: openAt && closeAt ? Number(((closeAt - openAt) / 3600000).toFixed(2)) : null,
-        crm_lag_minutes: gateAt && openAt ? Math.round((openAt - gateAt) / 60000) : null,
+        // Derived, never stored, so they can never go stale.
+        // TAT runs from "Job Card Started" to "Job Card Completed".
+        tat_hours: started && completed ? Number(((completed - started) / 3600000).toFixed(2)) : null,
+        // NC is judged against the promise printed on THIS job card.
+        is_nc: completed && expected ? completed > expected : null,
+        nc_by_minutes: completed && expected && completed > expected
+          ? Math.round((completed - expected) / 60000) : null,
+        // Control metric: DWIP saw the vehicle this many minutes before the CRM did.
+        crm_lag_minutes: gate && arrival ? Math.round((arrival - gate) / 60000) : null,
       });
     } catch (e: any) {
       res.status(500).json({ success: false, error: e.message });
@@ -4868,26 +4892,38 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
 
   app.post("/api/job-cards/:jobCardNo/crm-timestamps", authenticateToken, express.json(), async (req: any, res) => {
     const jobCardNo = req.params.jobCardNo;
-    const { crm_jc_no, crm_open_at, invoice_no, invoice_closed_at } = req.body || {};
-    // Accept a partial update: the CRM JC arrives hours before the invoice does.
+    const body = req.body || {};
+    // Accept a partial update: the CRM job card is attached hours before it is
+    // completed, and the invoice later still.
     const sets: string[] = [];
     const params: any[] = [];
+    // Wall-clock, never an instant: parse the literal digits rather than going
+    // through Date(), which would re-interpret 12:58 in the server's timezone and
+    // shift every stored TAT figure.
     const toSqlDt = (v: any) => {
       if (!v) return null;
-      const d = new Date(v);
-      return isNaN(d.getTime()) ? undefined : d.toISOString().slice(0, 19).replace("T", " ");
+      const m = String(v).trim().match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+      return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}:00` : undefined;
     };
-    if (crm_jc_no !== undefined) { sets.push("crm_jc_no = ?"); params.push(String(crm_jc_no || "").trim() || null); }
-    if (invoice_no !== undefined) { sets.push("invoice_no = ?"); params.push(String(invoice_no || "").trim() || null); }
-    if (crm_open_at !== undefined) {
-      const v = toSqlDt(crm_open_at);
-      if (v === undefined) return res.status(400).json({ success: false, error: "crm_open_at is not a valid date/time." });
-      sets.push("crm_open_at = ?"); params.push(v);
+    const toSqlDate = (v: any) => {
+      if (!v) return null;
+      const m = String(v).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+      return m ? `${m[1]}-${m[2]}-${m[3]}` : undefined;
+    };
+    for (const col of ["crm_jc_no", "invoice_no"]) {
+      if (body[col] !== undefined) { sets.push(`${col} = ?`); params.push(String(body[col] || "").trim() || null); }
     }
-    if (invoice_closed_at !== undefined) {
-      const v = toSqlDt(invoice_closed_at);
-      if (v === undefined) return res.status(400).json({ success: false, error: "invoice_closed_at is not a valid date/time." });
-      sets.push("invoice_closed_at = ?"); params.push(v);
+    for (const col of ["crm_arrival_at", "crm_jc_started_at", "crm_expected_delivery_at", "crm_jc_completed_at"]) {
+      if (body[col] !== undefined) {
+        const v = toSqlDt(body[col]);
+        if (v === undefined) return res.status(400).json({ success: false, error: `${col} is not a valid date/time.` });
+        sets.push(`${col} = ?`); params.push(v);
+      }
+    }
+    if (body.invoice_date !== undefined) {
+      const v = toSqlDate(body.invoice_date);
+      if (v === undefined) return res.status(400).json({ success: false, error: "invoice_date is not a valid date." });
+      sets.push("invoice_date = ?"); params.push(v);
     }
     if (sets.length === 0) return res.status(400).json({ success: false, error: "Nothing to update." });
 
@@ -4900,7 +4936,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         entity_id: jobCardNo,
         action: "SET_CRM_TIMESTAMPS",
         justification: `TAT chain updated for ${jobCardNo}: ${sets.map((s, i) => `${s.replace(" = ?", "")}=${params[i]}`).join(", ")}`,
-        after: { crm_jc_no, crm_open_at, invoice_no, invoice_closed_at },
+        after: body,
       });
       res.json({ success: true });
     } catch (e: any) {
@@ -4923,17 +4959,38 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
     try {
       const isInvoice = String(kind || "").toUpperCase() === "INVOICE";
-      const label = isInvoice ? "tax invoice / bill" : "job card";
       const ai = new GoogleGenAI({
         apiKey: process.env.GEMINI_API_KEY,
         httpOptions: { headers: { "User-Agent": "aistudio-build" } },
       });
-      const prompt = `You are reading a Tata Motors commercial-vehicle workshop ${label}.
-Extract ONLY what is printed on the document. Return EXACTLY this JSON:
-{"number": "<the ${isInvoice ? "invoice" : "job card"} number, or empty string>",
- "datetime": "<the ${isInvoice ? "invoice/billing" : "job card opening"} date and time as ISO 8601 (YYYY-MM-DDTHH:mm), or empty string>",
+      // Dates on these documents are DAY-FIRST ("01-09-26 12:58" = 1 Sep 2026,
+      // "01/09/2026" = 1 Sep 2026). Saying so explicitly prevents a month/day flip
+      // that would silently corrupt every TAT figure.
+      const DATE_RULE =
+        `Dates are printed DAY-FIRST: "01-09-26 12:58" means 1 September 2026 at 12:58, ` +
+        `and "01/09/2026" means 1 September 2026. Two-digit years are 20xx. ` +
+        `Return every date-time as ISO 8601 "YYYY-MM-DDTHH:mm" and every date as "YYYY-MM-DD".`;
+      const prompt = isInvoice
+        ? `You are reading a Tata Motors commercial-vehicle workshop TAX INVOICE.
+${DATE_RULE}
+Return EXACTLY this JSON, copying only what is printed:
+{"invoice_no": "<value of 'Invoice No'>",
+ "invoice_date": "<value of 'Invoice Date' as YYYY-MM-DD>",
+ "crm_jc_no": "<value of 'Job Card No.' if printed>",
  "confidence": 0.0}
-If a value is not clearly printed, return an empty string for it. Never guess or invent a value.`;
+If a value is not clearly printed, return an empty string. Never guess or invent a value.`
+        : `You are reading a Tata Motors commercial-vehicle workshop JOB CARD (office copy).
+${DATE_RULE}
+Return EXACTLY this JSON, copying only what is printed next to each label:
+{"crm_jc_no": "<value of 'Job Card No.'>",
+ "crm_arrival_at": "<value of 'Arrival of Customer'>",
+ "crm_jc_started_at": "<value of 'Job Card Started'>",
+ "crm_expected_delivery_at": "<value of 'Expected Delivery Date'>",
+ "crm_jc_completed_at": "<value of 'Job Card Completed'>",
+ "confidence": 0.0}
+Several of these rows are often blank on a freshly printed job card — for any label
+with nothing written beside it, return an empty string. Never guess or infer a
+time from another field.`;
       const out = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: [
@@ -4943,12 +5000,20 @@ If a value is not clearly printed, return an empty string for it. Never guess or
         config: { responseMimeType: "application/json" },
       });
       const parsed = JSON.parse((out.text || "{}").trim());
+      const pick = (k: string) => String(parsed?.[k] || "").trim();
       res.json({
         success: true,
         available: true,
-        number: String(parsed.number || ""),
-        datetime: String(parsed.datetime || ""),
-        confidence: Number(parsed.confidence || 0),
+        fields: isInvoice
+          ? { invoice_no: pick("invoice_no"), invoice_date: pick("invoice_date"), crm_jc_no: pick("crm_jc_no") }
+          : {
+              crm_jc_no: pick("crm_jc_no"),
+              crm_arrival_at: pick("crm_arrival_at"),
+              crm_jc_started_at: pick("crm_jc_started_at"),
+              crm_expected_delivery_at: pick("crm_expected_delivery_at"),
+              crm_jc_completed_at: pick("crm_jc_completed_at"),
+            },
+        confidence: Number(parsed?.confidence || 0),
       });
     } catch (e: any) {
       console.error("[jc-invoice-extract]", e?.message);
