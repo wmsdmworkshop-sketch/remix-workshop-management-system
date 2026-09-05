@@ -204,32 +204,10 @@ export class FloorExecutionEngine {
       rows = dbRows || [];
     } catch (e) {}
 
-    if (rows.length === 0) {
-      // Return reference pending job items
-      return [
-        {
-          jobCardId: "JC-TEMP-SEDAM-20260803-001",
-          gateEntryId: "GE-1001",
-          vosId: "vos-1001",
-          vrn: "KA32M9988",
-          vehicleModel: "TATA Signa 2823.K",
-          customerName: "Devanand Logistics",
-          saName: "Sayeed Jaffer",
-          jobType: "Running Repair",
-          complaintCount: 2,
-          priority: "HIGH",
-          isWarranty: true,
-          partsDependency: false,
-          customerApprovalState: "APPROVED",
-          receivedAt: new Date().toISOString(),
-          waitingMins: 2,
-          slaRemainingMins: 3,
-          isSlaBreached: false,
-          suggestedBayId: "B-01",
-          suggestedTechId: "TECH-001"
-        }
-      ];
-    }
+    // No pending handoffs is an honest empty list. This used to return a
+    // fabricated "reference" job (VRN KA32M9988, "Devanand Logistics",
+    // SA "Sayeed Jaffer") that appeared on the supervisor floor as if real.
+    if (rows.length === 0) return [];
 
     const nowMs = Date.now();
 
@@ -244,10 +222,10 @@ export class FloorExecutionEngine {
         jobCardId: r.job_card_id || `JC-TEMP-${r.intake_id}`,
         gateEntryId: r.gate_entry_id,
         vosId: r.vos_id || `vos-${r.gate_entry_id}`,
-        vrn: r.vrn || "KA32M9988",
-        vehicleModel: r.vehicle_model || "TATA Heavy Commercial",
-        customerName: "Devanand Logistics",
-        saName: r.sa_name || "Sayeed Jaffer",
+        vrn: r.vrn || "—",
+        vehicleModel: r.vehicle_model || "—",
+        customerName: r.customer_name || "—",
+        saName: r.sa_name || "Unassigned",
         jobType: r.jc_type || "Running Repair",
         complaintCount: complaints.length || 1,
         priority: isSlaBreached ? "HIGH" : "NORMAL",

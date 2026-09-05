@@ -238,7 +238,7 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
               <div key={j.job_id} className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between gap-4">
                 <div>
                   <span className="font-mono text-base font-black text-white">{j.vrn}</span>
-                  <p className="text-xs text-slate-400">{j.vehicle_model} • SA: {j.sa_name || "Sayeed Jaffer"}</p>
+                  <p className="text-xs text-slate-400">{j.vehicle_model} • SA: {j.sa_name || j.service_advisor || "Unassigned"}</p>
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -278,8 +278,8 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
                 </div>
 
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 text-xs space-y-1">
-                  <div className="flex justify-between"><span className="text-slate-400">SA:</span><span className="font-bold text-slate-200">{j.sa_name || "Sayeed Jaffer"}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Complaints:</span><span className="text-slate-200">Clutch slip under heavy load</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">SA:</span><span className="font-bold text-slate-200">{j.sa_name || j.service_advisor || "Unassigned"}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-slate-400 shrink-0">Complaints:</span><span className="text-slate-200 text-right">{j.job_description || j.complaints || "—"}</span></div>
                 </div>
 
                 <button
