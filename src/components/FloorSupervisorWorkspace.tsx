@@ -347,12 +347,13 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
       {/* TAB 5: MY DELAYS */}
       {activeTab === "my-delays" && (
         <div className="space-y-3 text-xs">
-          <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-2">
-            <div className="flex justify-between text-amber-400 font-bold">
-              <span>WAITING FOR PARTS (18m)</span>
-              <span>VRN: KA32M9988</span>
-            </div>
-            <p className="text-slate-300">Clutch release bearing heavy duty requested by Tech Ravi Kumar.</p>
+          {/* This tab previously showed one hardcoded delay ("WAITING FOR PARTS
+              (18m)", VRN KA32M9988, requested by "Tech Ravi Kumar") that never
+              came from any job. Delay tracking is not wired to this view yet, so
+              it now says so rather than inventing an entry. */}
+          <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl text-center text-slate-500">
+            <p className="font-semibold">No delays recorded</p>
+            <p className="text-[11px] mt-1">Parts and approval delays raised against your jobs will appear here.</p>
           </div>
         </div>
       )}
@@ -366,17 +367,12 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
               <button onClick={() => setShowAllocateModal(false)} className="text-slate-400 text-xs">✕</button>
             </div>
 
-            {/* AI Recommendation Card */}
-            <div className="bg-slate-950 p-3.5 rounded-xl border border-emerald-500/30 space-y-1">
-              <div className="flex items-center gap-1.5 text-emerald-400 font-black text-[10px] uppercase">
-                <Sparkles className="h-3.5 w-3.5" />
-                <span>AI SUGGESTION</span>
-              </div>
-              <p className="text-xs text-slate-300">
-                Recommended: <strong className="text-white">Bay 01</strong> + <strong className="text-white">Ravi Kumar</strong> (HCV Heavy Duty certified, lowest active workload).
-              </p>
-            </div>
-
+            {/* No recommendation is shown here: this panel previously printed a
+                STATIC "AI SUGGESTION" naming a bay and a technician ("Bay 01 +
+                Ravi Kumar, HCV Heavy Duty certified, lowest active workload").
+                Nothing was computed — the text was hardcoded, so it named the
+                same person on every job card regardless of who was available.
+                Choose the bay and technician below. */}
             <div className="space-y-3 text-xs">
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Select Bay</label>

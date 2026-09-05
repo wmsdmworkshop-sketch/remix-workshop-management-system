@@ -136,9 +136,12 @@ export default function CashierManager({
     }, 4000);
   };
 
+  // Counter printing is not wired to a spooler. This used to report "Mock invoice
+  // sent to physical counter spooler!" as a success, so a cashier could believe a
+  // document had printed when nothing was sent anywhere.
   const handlePrintMockInvoice = () => {
-    setSuccess("Mock invoice sent to physical counter spooler!");
-    setTimeout(() => setSuccess(null), 3000);
+    setSuccess("Counter printing isn’t connected yet — use the browser print dialog or the DMS copy.");
+    setTimeout(() => setSuccess(null), 4000);
   };
 
   return (

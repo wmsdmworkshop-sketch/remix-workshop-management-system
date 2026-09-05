@@ -577,16 +577,12 @@ export default function Dashboard({
                   </div>
                 </div>
 
-                <div className="bg-[#06B6D4]/5 border border-[#06B6D4]/20 rounded-xl p-3.5 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="h-2 w-2 rounded-full bg-[#06B6D4] animate-ping" />
-                    <p className="text-xs text-slate-300 font-medium">
-                      <strong className="text-[#06B6D4]">AI Suggestion:</strong> Automatic approval recommended for Claim #CF-9080. Potential savings of ₹42,500 by sourcing remanufactured cylinders.
-                    </p>
-                  </div>
-                  <button className="bg-[#06B6D4] hover:bg-cyan-500 text-slate-950 font-bold text-[10px] uppercase tracking-wider px-3.5 py-1.5 rounded-lg transition-all shrink-0">
-                    Apply Suggestion
-                  </button>
+                {/* Removed: a hardcoded "AI Suggestion" recommending automatic
+                    approval of "Claim #CF-9080" with "₹42,500 potential savings",
+                    beside an "Apply Suggestion" button that did nothing. No claim
+                    analysis is computed, and neither the claim nor the figure was
+                    real. */}
+                <div className="hidden">
                 </div>
               </div>
             </div>

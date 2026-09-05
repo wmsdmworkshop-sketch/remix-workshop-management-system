@@ -103,24 +103,9 @@ export class FloorExecutionEngine {
   }
 
   private seedBaselineExecutions(): void {
-    this.inMemoryExecutions.set("EXEC-501", {
-      execution_id: "EXEC-501",
-      job_card_id: "JC-TEST-501",
-      operation_id: "OP-101",
-      operation_name: "Clutch Assembly Replacement",
-      technician_id: "TECH-001",
-      technician_name: "Ravi Kumar",
-      bay_id: "B-01",
-      status: "NOT_STARTED",
-      planned_duration_mins: 90,
-      started_at: null,
-      paused_at: null,
-      accumulated_productive_seconds: 0,
-      accumulated_paused_seconds: 0,
-      pause_reason: null,
-      completed_at: null,
-      branch_id: "BR-SEDAM"
-    });
+    // Intentionally empty. This used to seed a fabricated in-progress execution
+    // ("Clutch Assembly Replacement" on JC-TEST-501 by technician Ravi Kumar)
+    // that surfaced on the floor alongside genuine work.
   }
 
   /**
@@ -300,11 +285,10 @@ export class FloorExecutionEngine {
       }
     } catch (e) {}
 
-    return [
-      { technicianId: "TECH-001", technicianName: "Ravi Kumar", role: "Senior Technician", certification: "Gold", lobCompetency: "HCV", status: "AVAILABLE", activeWorkload: 0, todayProductiveMins: 180 },
-      { technicianId: "TECH-002", technicianName: "Sanjay Patel", role: "Technician", certification: "Silver", lobCompetency: "MCV_LCV", status: "AVAILABLE", activeWorkload: 0, todayProductiveMins: 210 },
-      { technicianId: "TECH-003", technicianName: "Anand Shinde", role: "Electrician", certification: "EV Certified", lobCompetency: "EV", status: "AVAILABLE", activeWorkload: 0, todayProductiveMins: 150 }
-    ];
+    // No technicians on file is an honest empty roster. This used to fall back to
+    // three invented technicians (Ravi Kumar / Sanjay Patel / Anand Shinde) who
+    // could then be "recommended" and allocated to a real job.
+    return [];
   }
 
   /**
@@ -320,13 +304,20 @@ export class FloorExecutionEngine {
     const availableBay = bays.find(b => b.status === "AVAILABLE") || bays[0];
     const availableTech = techs.find(t => t.status === "AVAILABLE") || techs[0];
 
+    // Nothing to recommend is an honest null — never invent a pairing.
+    if (!availableBay || !availableTech) return null as any;
+
+    // State plainly what was matched. This previously claimed the bay was
+    // "HCV-compatible" and the technician had the "Lowest active workload" with a
+    // 0.94 confidence score — none of which was computed: activeWorkload is not
+    // yet tracked, so there is no workload ranking behind the choice.
     return {
       bayId: availableBay.bayId,
       bayName: availableBay.bayName,
       technicianId: availableTech.technicianId,
       technicianName: availableTech.technicianName,
-      reason: `HCV-compatible bay ${availableBay.bayId} matched with ${availableTech.certification} certified technician ${availableTech.technicianName} (Lowest active workload).`,
-      confidenceScore: 0.94
+      reason: `First available bay (${availableBay.bayName}) and first available technician (${availableTech.technicianName}). Workload ranking is not yet tracked, so this is availability only — please confirm before allocating.`,
+      confidenceScore: null as any
     };
   }
 

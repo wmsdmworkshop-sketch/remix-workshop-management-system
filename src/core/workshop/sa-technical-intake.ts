@@ -307,27 +307,32 @@ export class SaTechnicalIntakeEngine {
   public static async evaluateRepeatFailures(vrn: string, complaints: any[]) {
     const vrnClean = vrn.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 
-    // Mock query repeat repair history within 5,000 km or 90 days
-    const repeatDetected = complaints.some(c => 
+    // This is a KEYWORD match on the complaint text — not a history lookup. Prior
+    // job cards and odometer readings are not queried here, so the wording must
+    // not imply they were. It previously claimed "Similar clutch/brake complaint
+    // recorded 4,800 km ago. Review previous job card JC-444519" — an invented
+    // distance and a job card number that does not exist, which an advisor could
+    // have gone looking for.
+    const keywordHit = complaints.some(c =>
       (c.complaintText || "").toLowerCase().includes("clutch") ||
       (c.complaintText || "").toLowerCase().includes("brake") ||
       (c.complaintText || "").toLowerCase().includes("noise")
     );
 
-    if (repeatDetected) {
+    if (keywordHit) {
       return {
         hasRepeatWarning: true,
         type: "POSSIBLE_REPEAT_COMPLAINT",
-        suggestion: "AI SUGGESTION: Similar clutch/brake complaint recorded 4,800 km ago. Review previous job card JC-444519 for part warranty & rework eligibility.",
-        confidenceScore: 0.91
+        suggestion: "This complaint mentions a clutch / brake / noise issue — check the vehicle's service history for a possible repeat repair and warranty or rework eligibility.",
+        confidenceScore: null as any
       };
     }
 
     return {
       hasRepeatWarning: false,
       type: "NO_REPEAT_DETECTED",
-      suggestion: "AI SUGGESTION: No repeat failure pattern detected in the last 90 days / 10,000 km.",
-      confidenceScore: 0.98
+      suggestion: "No clutch / brake / noise keywords in this complaint. Service history has not been checked automatically.",
+      confidenceScore: null as any
     };
   }
 
