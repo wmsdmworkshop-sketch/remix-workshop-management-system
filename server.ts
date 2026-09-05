@@ -10334,8 +10334,10 @@ Respond with valid JSON only:
         success: true,
         metrics: {
           totalLaborRevenue, totalPartsRevenue, totalRevenue: totalLaborRevenue + totalPartsRevenue,
-          warrantyRecoveryCount: 12, amcSalesGrowthPercent: 15, fleetRetentionIndex: 94.5,
-          customerRetentionIndex: 91.0, repeatComplaintsRate: 2.1, technicianProductivityPercent: 88,
+          // No backing data source exists for these yet — return null (rendered as
+          // "N/A") rather than inventing figures on a live dashboard.
+          warrantyRecoveryCount: null, amcSalesGrowthPercent: null, fleetRetentionIndex: null,
+          customerRetentionIndex: null, repeatComplaintsRate: null, technicianProductivityPercent: null,
           bayUtilizationRate: utilizationRate, aiTimeSavedMinutes: totalTimeSavedMin
         }
       });

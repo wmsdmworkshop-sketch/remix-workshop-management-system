@@ -31,16 +31,8 @@ export default function QuerySearch({ aiModeEnabled = true }: QuerySearchProps) 
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [selectedPart, setSelectedPart] = useState<string | null>(null);
 
-  // Mock Parts database for lookup matching Tata CV Parts
-  const mockPartsDb = [
-    { partNo: '254715400115', name: 'Lift Axle Control Valve', price: '4,500 INR', stock: 12, bin: 'A-04' },
-    { partNo: '270218130124', name: 'Air Bellow Spring (Signa)', price: '8,200 INR', stock: 5, bin: 'B-12' },
-    { partNo: '570118090215', name: 'Turbocharger Assembly', price: '32,000 INR', stock: 3, bin: 'C-01' },
-    { partNo: '252515200112', name: 'Clutch Disc Assembly (380 Dia)', price: '12,500 INR', stock: 8, bin: 'A-02' },
-    { partNo: '270415300188', name: 'Front Brake Lining Kit', price: '2,800 INR', stock: 25, bin: 'D-05' },
-    { partNo: '278401120234', name: 'Tata Fuel Filter Cartridge', price: '1,200 INR', stock: 45, bin: 'A-01' },
-    { partNo: '254823120199', name: 'Oil Filter Spin-on', price: '950 INR', stock: 60, bin: 'A-03' }
-  ];
+  // No live parts catalog is wired yet. Part lookups return no rows rather than
+  // matching against an invented inventory (EAR-001 real-data-only).
 
   // Voice recording handlers
   const startAudioRecording = async () => {
@@ -150,17 +142,15 @@ export default function QuerySearch({ aiModeEnabled = true }: QuerySearchProps) 
     } catch (err) {
       console.error(err);
       setOcrLoading(false);
-      setExtractedParts(['254715400115', '270218130124']);
+      setExtractedParts([]);
     }
   };
 
   const searchPartInDb = (partNo: string) => {
     setSelectedPart(partNo);
-    const results = mockPartsDb.filter(
-      (p) => p.partNo.toLowerCase().includes(partNo.toLowerCase()) || 
-             p.name.toLowerCase().includes(partNo.toLowerCase())
-    );
-    setSearchResults(results);
+    // No live parts catalog connected — surface an honest empty result instead of
+    // matching against a fabricated inventory.
+    setSearchResults([]);
   };
 
   return (

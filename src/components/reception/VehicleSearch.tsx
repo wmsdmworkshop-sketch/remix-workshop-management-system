@@ -88,14 +88,13 @@ export default function VehicleSearch({
 
       let profile = profilesMap.get(vrn);
       if (!profile) {
-        // Deterministic mock variables for details not present in database
-        const numericPart = vrn.replace(/\D/g, "");
-        const vin = jc.chassis_number || `MAT451206H${numericPart || "0777"}Z`;
-        const engineNo = `6BT5.9-${numericPart || "4512"}-E3`;
-        const fleetNo = jc.priority === "Fleet" ? `FLT-${numericPart.slice(-3) || "99"}` : "N/A";
-        const hasCampaign = parseInt(numericPart || "0") % 2 === 0;
-        const campaigns = hasCampaign ? ["DEF Quality Sensor Software Flash Required"] : [];
-        const fsbs = ["FSB-2026-03: Heavy Axle Alignment Inspection Guidelines"];
+        // Only real, DB-backed values. Fields with no data source show an honest
+        // placeholder rather than values fabricated from the VRN (EAR-001).
+        const vin = jc.chassis_number || "Not on file";
+        const engineNo = jc.engine_number || "Not on file";
+        const fleetNo = jc.fleet_number || (jc.priority === "Fleet" ? "Fleet (number not on file)" : "N/A");
+        const campaigns: string[] = [];
+        const fsbs: string[] = [];
 
         profile = {
           vrn,

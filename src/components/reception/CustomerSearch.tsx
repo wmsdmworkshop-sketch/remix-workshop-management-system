@@ -85,12 +85,12 @@ export default function CustomerSearch({
 
       let profile = profilesMap.get(key);
       if (!profile) {
-        // Deterministic mock generation based on mobile for parameters not in DB
+        // Only real, DB-backed values. GSTIN/AMC have no data source yet, so they
+        // show honest placeholders instead of values fabricated from the mobile.
         const suffix = mobile.slice(-4);
-        const hasGstin = parseInt(suffix) % 2 === 0;
-        const gstin = hasGstin ? `27AAAAA${suffix}A1Z2` : "N/A";
-        const isFleet = jc.priority === "Fleet" || parseInt(suffix) % 3 === 0;
-        const hasActiveAMC = parseInt(suffix) % 4 === 0;
+        const gstin = jc.customer_gstin || "Not on file";
+        const isFleet = jc.priority === "Fleet";
+        const hasActiveAMC = false;
 
         profile = {
           customerCode: `CUST-${suffix}`,

@@ -21,13 +21,10 @@ export const PartsCommandCenter: React.FC<PartsCommandCenterProps> = React.memo(
   const [activeTab, setActiveTab] = useState<string>("inventory");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  // Section 1: Parts inventory mockup database
-  const inventoryItems = [
-    { partNo: "TATA-2541-A1", desc: "Front Brake Pads (LPT 1613)", stock: 45, rack: "A1", bin: "12", demand: "High", price: 2400 },
-    { partNo: "TATA-9982-E2", desc: "EV Coolant Seal Ring", stock: 12, rack: "E2", bin: "04", demand: "Medium", price: 450 },
-    { partNo: "TATA-1123-M5", desc: "Fuel Filter Element (Signa)", stock: 8, rack: "M5", bin: "18", demand: "Critical", price: 1200 },
-    { partNo: "TATA-8872-B3", desc: "HV Isolation Relay Unit", stock: 2, rack: "B3", bin: "01", demand: "High", price: 8500 }
-  ];
+  // No live parts inventory source is connected yet. Show an honest empty state
+  // rather than a fabricated catalog (EAR-001 real-data-only). KPIs computed from
+  // this therefore read zero/empty until a real parts feed exists.
+  const inventoryItems: { partNo: string; desc: string; stock: number; rack: string; bin: string; demand: string; price: number }[] = [];
 
   // Filtered inventory
   const filteredInventory = useMemo(() => {
@@ -111,7 +108,13 @@ export const PartsCommandCenter: React.FC<PartsCommandCenterProps> = React.memo(
                 className="w-full bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-xs text-slate-200 outline-none"
               />
               <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
-                {filteredInventory.map((item, idx) => (
+                {filteredInventory.length === 0 ? (
+                  <div className="text-center py-10 px-4 text-slate-500">
+                    <Package className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                    <p className="text-xs font-semibold">No live parts inventory connected</p>
+                    <p className="text-[10px] mt-1">Stock, bins and valuation will appear here once a parts data source is integrated.</p>
+                  </div>
+                ) : filteredInventory.map((item, idx) => (
                   <div key={idx} className="bg-slate-950/40 border border-slate-850 p-3 rounded-xl flex items-center justify-between">
                     <div>
                       <div className="font-mono text-xs font-bold text-slate-200">{item.partNo}</div>
@@ -170,21 +173,10 @@ export const PartsCommandCenter: React.FC<PartsCommandCenterProps> = React.memo(
             <Truck className="h-4 w-4 text-blue-400" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Emergency & Purchase Orders</h3>
           </div>
-          <div className="space-y-3">
-            <div className="bg-slate-950/40 border border-slate-850 p-3 rounded-xl flex items-center justify-between text-xs">
-              <div>
-                <div className="font-bold text-slate-200">PO #88921-T</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Supplier: Tata Motors Logistics • 45 Items</div>
-              </div>
-              <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 font-bold text-[10px] rounded">In Transit</span>
-            </div>
-            <div className="bg-slate-950/40 border border-slate-850 p-3 rounded-xl flex items-center justify-between text-xs">
-              <div>
-                <div className="font-bold text-slate-200">Emergency Order #9910-VOR</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Vehicle on Road (VOR) priority • 1 HV Relay</div>
-              </div>
-              <span className="px-2 py-0.5 bg-red-500/10 text-red-400 font-bold text-[10px] rounded animate-pulse">Critical</span>
-            </div>
+          <div className="text-center py-10 px-4 text-slate-500">
+            <Truck className="h-8 w-8 mx-auto mb-2 opacity-40" />
+            <p className="text-xs font-semibold">No purchase or emergency orders</p>
+            <p className="text-[10px] mt-1">Orders will appear here once a parts procurement source is integrated.</p>
           </div>
         </div>
       )}

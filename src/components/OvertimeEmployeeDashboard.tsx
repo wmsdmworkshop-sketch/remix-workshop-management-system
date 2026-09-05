@@ -105,9 +105,9 @@ export default function OvertimeEmployeeDashboard({
   // Resolve Employee profile details from global employees list
   const employeeProfile = employees.find(e => e.employee_id === currentUser.employee_id) || {
     full_name: currentUser.name || "Employee",
-    basic_salary: 30000,
+    basic_salary: 0,
     workshop_id: 1,
-    department: "Workshop"
+    department: "—"
   };
 
   useEffect(() => {
@@ -219,7 +219,7 @@ export default function OvertimeEmployeeDashboard({
   })();
 
   const salaryCalculations = (() => {
-    const basic = Number(employeeProfile.basic_salary || 30000);
+    const basic = Number(employeeProfile.basic_salary || 0);
     // Simple 30 days month estimation for client-side preview
     const days = 30;
     const hourlyRate = parseFloat((basic / days / 8).toFixed(2));

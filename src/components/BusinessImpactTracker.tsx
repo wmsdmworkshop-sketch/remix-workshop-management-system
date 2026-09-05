@@ -72,7 +72,7 @@ export default function BusinessImpactTracker() {
         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center justify-between shadow-lg">
           <div>
             <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Technician Productivity</span>
-            <h4 className="text-2xl font-extrabold text-purple-500 mt-1">{metrics.technicianProductivityPercent}%</h4>
+            <h4 className="text-2xl font-extrabold text-purple-500 mt-1">{metrics.technicianProductivityPercent != null ? `${metrics.technicianProductivityPercent}%` : "N/A"}</h4>
             <p className="text-[10px] text-purple-400 mt-0.5">Average across active bays</p>
           </div>
           <Percent className="w-8 h-8 text-purple-600/30" />
@@ -82,8 +82,8 @@ export default function BusinessImpactTracker() {
         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center justify-between shadow-lg">
           <div>
             <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Fleet Retention Index</span>
-            <h4 className="text-2xl font-extrabold text-orange-500 mt-1">{metrics.fleetRetentionIndex}%</h4>
-            <p className="text-[10px] text-orange-400 mt-0.5">Up +2.5% since P1 boot</p>
+            <h4 className="text-2xl font-extrabold text-orange-500 mt-1">{metrics.fleetRetentionIndex != null ? `${metrics.fleetRetentionIndex}%` : "N/A"}</h4>
+            <p className="text-[10px] text-orange-400 mt-0.5">Requires fleet-retention data source</p>
           </div>
           <Award className="w-8 h-8 text-orange-600/30" />
         </div>
@@ -127,11 +127,11 @@ export default function BusinessImpactTracker() {
             <div>
               <div className="flex justify-between text-xs mb-1">
                 <span>Repeat Complaints Rate</span>
-                <span className="font-bold text-green-400">{metrics.repeatComplaintsRate}%</span>
+                <span className="font-bold text-green-400">{metrics.repeatComplaintsRate != null ? `${metrics.repeatComplaintsRate}%` : "N/A"}</span>
               </div>
               <div className="w-full bg-slate-850 h-2 rounded-full overflow-hidden">
                 {/* Lower is better, render green */}
-                <div className="bg-green-500 h-full" style={{ width: `${metrics.repeatComplaintsRate * 10}%` }} />
+                <div className="bg-green-500 h-full" style={{ width: `${(metrics.repeatComplaintsRate ?? 0) * 10}%` }} />
               </div>
             </div>
 
@@ -139,10 +139,10 @@ export default function BusinessImpactTracker() {
             <div>
               <div className="flex justify-between text-xs mb-1">
                 <span>Customer CSAT Rating</span>
-                <span className="font-bold text-blue-400">{metrics.customerRetentionIndex}%</span>
+                <span className="font-bold text-blue-400">{metrics.customerRetentionIndex != null ? `${metrics.customerRetentionIndex}%` : "N/A"}</span>
               </div>
               <div className="w-full bg-slate-850 h-2 rounded-full overflow-hidden">
-                <div className="bg-blue-500 h-full" style={{ width: `${metrics.customerRetentionIndex}%` }} />
+                <div className="bg-blue-500 h-full" style={{ width: `${metrics.customerRetentionIndex ?? 0}%` }} />
               </div>
             </div>
           </div>
