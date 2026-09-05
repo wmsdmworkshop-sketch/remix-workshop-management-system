@@ -3960,28 +3960,43 @@ async function startServer() {
   });
 
   // --- ATTENDANCE ENDPOINTS ---
-  app.get("/api/workforce/attendance", (req, res) => {
+  // Attendance READS are DB-authoritative, not per-instance memory. With multiple
+  // Cloud Run instances a punch persisted on one instance was invisible to a read
+  // routed to another, so after an internet drop/reconnect the screen could show
+  // "Punch Check-In" again for someone already checked in. Reading straight from
+  // workforce_attendance fixes that. Face photos are excluded to keep the payload
+  // small (the screen never renders stored punch photos). Falls back to in-memory
+  // only if the DB read itself fails.
+  const ATT_READ_COLS =
+    "attendance_id, employee_id, shift_date, check_in, check_out, shift_type, status, notes, created_at, " +
+    "check_in_lat, check_in_lng, check_out_lat, check_out_lng, face_match_score_in, face_match_score_out, " +
+    "is_approved, break_start, break_end, is_late, late_reason, is_overtime, overtime_hours";
+
+  app.get("/api/workforce/attendance", async (req, res) => {
     const db = getDB();
     const { start_date, end_date, employee_id } = req.query;
-    let records = db.workforceAttendance || [];
-
-    if (start_date) {
-      records = records.filter((r: WorkforceAttendance) => r.shift_date >= (start_date as string));
-    }
-    if (end_date) {
-      records = records.filter((r: WorkforceAttendance) => r.shift_date <= (end_date as string));
-    }
-    if (employee_id) {
-      records = records.filter((r: WorkforceAttendance) => r.employee_id === parseInt(employee_id as string));
-    }
-
-    // Enrich with employee names
-    const enriched = records.map((r: WorkforceAttendance) => {
+    const enrich = (rows: any[]) => rows.map((r: any) => {
       const emp = db.employees.find((e: Employee) => e.employee_id === r.employee_id);
       return { ...r, employee_name: emp ? emp.full_name : "Unknown", employee_role: emp ? emp.role : "Unknown" };
     });
-
-    res.json(enriched);
+    try {
+      const where: string[] = [];
+      const params: any[] = [];
+      if (start_date) { where.push("shift_date >= ?"); params.push(start_date); }
+      if (end_date) { where.push("shift_date <= ?"); params.push(end_date); }
+      if (employee_id) { where.push("employee_id = ?"); params.push(parseInt(employee_id as string)); }
+      const sql = `SELECT ${ATT_READ_COLS} FROM workforce_attendance` +
+        (where.length ? ` WHERE ${where.join(" AND ")}` : "") + " ORDER BY attendance_id";
+      const [rows]: any = await dbPool.query(sql, params);
+      return res.json(enrich(rows || []));
+    } catch (e: any) {
+      console.error("[attendance GET] DB read failed, using memory:", e?.message);
+      let records = db.workforceAttendance || [];
+      if (start_date) records = records.filter((r: WorkforceAttendance) => r.shift_date >= (start_date as string));
+      if (end_date) records = records.filter((r: WorkforceAttendance) => r.shift_date <= (end_date as string));
+      if (employee_id) records = records.filter((r: WorkforceAttendance) => r.employee_id === parseInt(employee_id as string));
+      return res.json(enrich(records));
+    }
   });
 
   // Haversine formula to check geofence distance in meters
@@ -4209,6 +4224,40 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     // (absent) biometric/GPS payload — this is the manager vouching for it.
     if (isAuthorizedApproval) autoApproved = true;
 
+    // Read-through: pull the authoritative row for this employee+day from the DB
+    // into this instance's memory BEFORE deciding check-in vs check-out. Without
+    // it, a punch routed to a different Cloud Run instance (one that never saw the
+    // check-in) would treat a check-out as a brand-new record — creating a
+    // duplicate/half row and, via the sync upsert, nulling the real check-in.
+    let dbMaxId = 0;
+    try {
+      const [exRows]: any = await dbPool.query(
+        "SELECT * FROM workforce_attendance WHERE employee_id=? AND shift_date=? LIMIT 1", [employee_id, targetDate]);
+      const [mxRows]: any = await dbPool.query("SELECT COALESCE(MAX(attendance_id),0) m FROM workforce_attendance");
+      dbMaxId = Number(mxRows?.[0]?.m || 0);
+      if (exRows && exRows.length) {
+        const d = exRows[0];
+        const rec: any = {
+          attendance_id: Number(d.attendance_id), employee_id: Number(d.employee_id), shift_date: d.shift_date,
+          check_in: d.check_in ?? null, check_out: d.check_out ?? null, shift_type: d.shift_type || "Morning",
+          status: d.status || "Present", notes: d.notes ?? "", created_at: d.created_at ?? undefined,
+          check_in_lat: d.check_in_lat ?? null, check_in_lng: d.check_in_lng ?? null,
+          check_out_lat: d.check_out_lat ?? null, check_out_lng: d.check_out_lng ?? null,
+          face_photo_in: d.face_photo_in ?? null, face_photo_out: d.face_photo_out ?? null,
+          face_match_score_in: d.face_match_score_in ?? null, face_match_score_out: d.face_match_score_out ?? null,
+          is_approved: d.is_approved == null ? undefined : !!d.is_approved,
+          break_start: d.break_start ?? null, break_end: d.break_end ?? null,
+          is_late: !!d.is_late, late_reason: d.late_reason ?? "", is_overtime: !!d.is_overtime,
+          overtime_hours: Number(d.overtime_hours ?? 0),
+        };
+        const i = db.workforceAttendance.findIndex(
+          (r: WorkforceAttendance) => r.employee_id === employee_id && r.shift_date === targetDate);
+        if (i === -1) db.workforceAttendance.push(rec); else db.workforceAttendance[i] = rec;
+      }
+    } catch (e: any) {
+      console.error("[attendance POST] read-through failed:", e?.message);
+    }
+
     // Check for existing record
     const existingIdx = db.workforceAttendance.findIndex(
       (r: WorkforceAttendance) => r.employee_id === employee_id && r.shift_date === targetDate
@@ -4277,7 +4326,12 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
 
     // Create new record
-    const nextId = db.workforceAttendance.reduce((max: number, r: WorkforceAttendance) => Math.max(max, r.attendance_id), 0) + 1;
+    // ID from the DB max as well as memory, so instances with stale/empty memory
+    // never mint an id that collides with (and overwrites) another day's row.
+    const nextId = Math.max(
+      dbMaxId,
+      db.workforceAttendance.reduce((max: number, r: WorkforceAttendance) => Math.max(max, r.attendance_id), 0)
+    ) + 1;
     const record: WorkforceAttendance = {
       attendance_id: nextId,
       employee_id,
@@ -8548,7 +8602,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   });
 
   // --- ATTENDANCE MONTHLY HISTORY ENDPOINT ---
-  app.get("/api/workforce/attendance/history", authenticateToken, (req: any, res) => {
+  app.get("/api/workforce/attendance/history", authenticateToken, async (req: any, res) => {
     const db = getDB();
     let { employee_id } = req.query as any;
     const { month } = req.query as any;
@@ -8568,21 +8622,25 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       return res.status(400).json({ error: "employee_id query parameter is required" });
     }
 
-    let records = db.workforceAttendance || [];
-    records = records.filter((r: any) => r.employee_id === parseInt(employee_id as string));
-
-    if (month) {
-      // month is YYYY-MM
-      records = records.filter((r: any) => r.shift_date.startsWith(month as string));
-    }
-
-    // Enrich with employee names
-    const enriched = records.map((r: any) => {
+    const enrich = (rows: any[]) => rows.map((r: any) => {
       const emp = db.employees.find((e: any) => e.employee_id === r.employee_id);
       return { ...r, employee_name: emp ? emp.full_name : "Unknown", employee_role: emp ? emp.role : "Unknown" };
     });
 
-    res.json(enriched);
+    // DB-authoritative (same multi-instance reasoning as the day-status read).
+    try {
+      const where = ["employee_id = ?"];
+      const params: any[] = [parseInt(employee_id as string)];
+      if (month) { where.push("shift_date LIKE ?"); params.push(`${month}%`); }
+      const sql = `SELECT ${ATT_READ_COLS} FROM workforce_attendance WHERE ${where.join(" AND ")} ORDER BY shift_date DESC, attendance_id DESC`;
+      const [rows]: any = await dbPool.query(sql, params);
+      return res.json(enrich(rows || []));
+    } catch (e: any) {
+      console.error("[attendance history] DB read failed, using memory:", e?.message);
+      let records = (db.workforceAttendance || []).filter((r: any) => r.employee_id === parseInt(employee_id as string));
+      if (month) records = records.filter((r: any) => String(r.shift_date || "").startsWith(month as string));
+      return res.json(enrich(records));
+    }
   });
 
   // ============================================================================

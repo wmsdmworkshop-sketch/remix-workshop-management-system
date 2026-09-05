@@ -917,6 +917,14 @@ export async function ensureTablesExist(): Promise<void> {
   } catch (err) {
     // Ignore if table already exists
   }
+  // One attendance row per employee per day. With multiple Cloud Run instances a
+  // check-out routed to an instance that had not seen the check-in could insert a
+  // second row; this unique key collapses that into an update of the same day-row.
+  try {
+    await db.execute("ALTER TABLE `workforce_attendance` ADD UNIQUE KEY `uq_attendance_emp_date` (`employee_id`, `shift_date`)");
+  } catch (err) {
+    // Ignore if the key already exists (or pre-existing duplicates block it).
+  }
 
   try {
     await db.execute("ALTER TABLE `breakdowns` ADD COLUMN `tata_complaint_number` VARCHAR(100) DEFAULT NULL");
