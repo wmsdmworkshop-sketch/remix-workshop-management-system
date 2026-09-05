@@ -45,6 +45,102 @@ export const MediaAttach: React.FC<MediaAttachProps> = ({ jobCardNo, vrn, token,
   const uploadRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
 
+  // --- TAT chain capture -----------------------------------------------------
+  // A CRM job card and an invoice carry the two timestamps Tata's daily review
+  // counts (JC opening, invoice/billing). Attaching the document is not enough —
+  // a PDF cannot be counted — so the number and time are lifted into real fields.
+  // OCR only SUGGESTS; what gets saved is what the advisor confirms.
+  const TAT_DOC: Record<string, { numLabel: string; atLabel: string; numKey: string; atKey: string }> = {
+    MANUAL_JOBCARD: { numLabel: "CRM job card no.", atLabel: "JC opening time", numKey: "crm_jc_no", atKey: "crm_open_at" },
+    INVOICE: { numLabel: "Invoice no.", atLabel: "Invoice / closing time", numKey: "invoice_no", atKey: "invoice_closed_at" },
+  };
+  const tatDoc = TAT_DOC[category];
+  const [docNo, setDocNo] = useState("");
+  const [docAt, setDocAt] = useState("");
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrNote, setOcrNote] = useState<string | null>(null);
+  const [savingMeta, setSavingMeta] = useState(false);
+  const [metaMsg, setMetaMsg] = useState<string | null>(null);
+  const [saved, setSaved] = useState<any>(null);
+
+  const toLocalInput = (v: any) => {
+    if (!v) return "";
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const fetchSaved = useCallback(async () => {
+    if (!jobCardNo) return;
+    try {
+      const res = await fetch(`/api/job-cards/${encodeURIComponent(jobCardNo)}/crm-timestamps`, { headers: authHeaders() });
+      const d = await res.json();
+      if (res.ok && d.success) setSaved(d);
+    } catch { /* non-fatal */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobCardNo]);
+
+  useEffect(() => { fetchSaved(); }, [fetchSaved]);
+
+  // Show the currently-saved values for whichever document type is selected.
+  useEffect(() => {
+    if (!tatDoc || !saved) return;
+    setDocNo(saved[tatDoc.numKey] || "");
+    setDocAt(toLocalInput(saved[tatDoc.atKey]));
+    setMetaMsg(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, saved]);
+
+  const runOcr = async (dataUrl: string, mimeType: string) => {
+    setOcrBusy(true);
+    setOcrNote(null);
+    try {
+      const res = await fetch("/api/ocr/jc-invoice-extract", {
+        method: "POST",
+        headers: authHeaders(true),
+        body: JSON.stringify({ base64Image: dataUrl, kind: category, mimeType }),
+      });
+      const d = await res.json();
+      if (d?.available) {
+        if (d.number) setDocNo(d.number);
+        if (d.datetime) setDocAt(toLocalInput(d.datetime));
+        setOcrNote(
+          d.number || d.datetime
+            ? "Read from the document — please check both values before saving."
+            : "Nothing could be read from the document — enter the details below."
+        );
+      } else {
+        setOcrNote(d?.reason || "Enter the details below.");
+      }
+    } catch {
+      setOcrNote("Could not read the document — enter the details below.");
+    } finally {
+      setOcrBusy(false);
+    }
+  };
+
+  const saveMeta = async () => {
+    if (!tatDoc || !jobCardNo) return;
+    setSavingMeta(true);
+    setMetaMsg(null);
+    try {
+      const res = await fetch(`/api/job-cards/${encodeURIComponent(jobCardNo)}/crm-timestamps`, {
+        method: "POST",
+        headers: authHeaders(true),
+        body: JSON.stringify({ [tatDoc.numKey]: docNo, [tatDoc.atKey]: docAt || null }),
+      });
+      const d = await res.json();
+      if (!res.ok || !d.success) throw new Error(d.error || "Could not save.");
+      setMetaMsg("Saved.");
+      await fetchSaved();
+    } catch (e: any) {
+      setMetaMsg(e.message || "Could not save.");
+    } finally {
+      setSavingMeta(false);
+    }
+  };
+
   const authHeaders = (json = false): HeadersInit => ({
     ...(json ? { "Content-Type": "application/json" } : {}),
     Authorization: `Bearer ${authToken}`,
@@ -86,6 +182,9 @@ export const MediaAttach: React.FC<MediaAttachProps> = ({ jobCardNo, vrn, token,
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || "Upload failed.");
       await fetchItems();
+      // A CRM job card / invoice carries a timestamp the daily review counts —
+      // offer it for confirmation straight after the upload, while it's in hand.
+      if (TAT_DOC[category] && jobCardNo) await runOcr(dataUrl, mimeType);
     } catch (e: any) {
       setError(e.message || "Upload failed.");
     } finally {
@@ -200,6 +299,67 @@ export const MediaAttach: React.FC<MediaAttachProps> = ({ jobCardNo, vrn, token,
             <div className="flex items-center gap-1.5 text-[11px] text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-lg px-2 py-1.5">
               <AlertCircle className="h-3.5 w-3.5 shrink-0" />
               {error}
+            </div>
+          )}
+
+          {tatDoc && jobCardNo && (
+            <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400">
+                  {category === "INVOICE" ? "Closing details" : "CRM job card details"}
+                </span>
+                {ocrBusy && (
+                  <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Reading document…
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-500">
+                Counted in the daily TAT / NC review. Attaching the file alone isn’t enough — confirm the number and time.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1">{tatDoc.numLabel}</span>
+                  <input
+                    value={docNo}
+                    onChange={(e) => setDocNo(e.target.value)}
+                    placeholder="as printed on the document"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"
+                  />
+                </label>
+                <label className="block">
+                  <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1">{tatDoc.atLabel}</span>
+                  <input
+                    type="datetime-local"
+                    value={docAt}
+                    onChange={(e) => setDocAt(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"
+                  />
+                </label>
+              </div>
+              {ocrNote && <p className="text-[10px] text-amber-400">{ocrNote}</p>}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={saveMeta}
+                  disabled={savingMeta || (!docNo && !docAt)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white rounded-lg text-[11px] font-bold transition-all"
+                >
+                  {savingMeta && <Loader2 className="h-3 w-3 animate-spin" />}
+                  Confirm &amp; save
+                </button>
+                {metaMsg && <span className="text-[10px] text-slate-300">{metaMsg}</span>}
+              </div>
+              {saved && (saved.tat_hours != null || saved.crm_lag_minutes != null) && (
+                <div className="flex flex-wrap gap-x-4 gap-y-1 pt-2 border-t border-slate-800 text-[10px] text-slate-400">
+                  {saved.tat_hours != null && (
+                    <span>TAT: <strong className="text-slate-200 font-mono">{saved.tat_hours} h</strong></span>
+                  )}
+                  {saved.crm_lag_minutes != null && (
+                    <span>Gate-in → CRM open: <strong className="text-slate-200 font-mono">{saved.crm_lag_minutes} min</strong></span>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

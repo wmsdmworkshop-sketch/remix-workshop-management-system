@@ -785,6 +785,25 @@ export async function ensureTablesExist(): Promise<void> {
   } catch (err) {
     // Ignore error if column already exists
   }
+
+  // TAT / NC measurement chain. The workshop's job card is raised in DWIP at
+  // gate-in (the true arrival), while the CRM job card is opened later and the
+  // invoice is produced at billing — both are ATTACHED to DWIP as documents. The
+  // timestamps printed on those documents are what Tata's daily review counts, so
+  // they are captured here as real columns (OCR-suggested, advisor-confirmed):
+  //   crm_open_at      — CRM job-card opening time  (start of Tata's TAT clock)
+  //   invoice_closed_at— invoice/billing time       (end of the TAT clock)
+  // TAT = invoice_closed_at - crm_open_at; the gate-in -> crm_open_at gap is the
+  // control metric only DWIP can produce. These are written directly and are NOT
+  // in saveJobCardsToMaster's column list, so a sync never clobbers them.
+  for (const ddl of [
+    "ALTER TABLE `job_card_master` ADD COLUMN `crm_jc_no` VARCHAR(60) DEFAULT NULL",
+    "ALTER TABLE `job_card_master` ADD COLUMN `crm_open_at` DATETIME DEFAULT NULL",
+    "ALTER TABLE `job_card_master` ADD COLUMN `invoice_no` VARCHAR(60) DEFAULT NULL",
+    "ALTER TABLE `job_card_master` ADD COLUMN `invoice_closed_at` DATETIME DEFAULT NULL",
+  ]) {
+    try { await db.execute(ddl); } catch (err) { /* column already exists */ }
+  }
   // Per-advisor Tata Siebel/CRM login id (e.g. CSP_100B210, RS1_100B210 at dealer
   // 100B210). Lets CRM job-card creation / reconcile attribute to the advisor's
   // real CRM identity instead of a single shared dealer login.

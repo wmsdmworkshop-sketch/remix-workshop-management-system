@@ -4821,6 +4821,141 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
+  // ==========================================================================
+  // TAT / NC MEASUREMENT CHAIN
+  // The CRM job card and the invoice are attached to DWIP as documents; the
+  // timestamps printed on them are what Tata's daily review counts. These
+  // endpoints lift those two timestamps into real columns so TAT, NC and the
+  // gate-in -> CRM-open lag become computable without any Tata API.
+  // Values are OCR-SUGGESTED but ADVISOR-CONFIRMED — the stored field is always
+  // what a person accepted, never an unverified machine read.
+  // ==========================================================================
+  app.get("/api/job-cards/:jobCardNo/crm-timestamps", authenticateToken, async (req: any, res) => {
+    try {
+      const [rows]: any = await dbPool.query(
+        `SELECT jcm.job_card_no, jcm.crm_jc_no, jcm.crm_open_at, jcm.invoice_no, jcm.invoice_closed_at,
+                jcm.etd, jcm.vehicle_reg
+           FROM job_card_master jcm WHERE jcm.job_card_no = ? LIMIT 1`,
+        [req.params.jobCardNo]
+      );
+      if (!rows || rows.length === 0) return res.status(404).json({ success: false, error: "Job card not found." });
+      const r = rows[0];
+      // Gate-in (true arrival) comes from the gate entry, keyed by VRN in `vin`.
+      let gateInAt: string | null = null;
+      try {
+        const [g]: any = await dbPool.query(
+          "SELECT arrival_time FROM tbl_gate_entry WHERE vin = ? ORDER BY arrival_time DESC LIMIT 1", [r.vehicle_reg]);
+        gateInAt = g?.[0]?.arrival_time ?? null;
+      } catch { /* gate entry optional */ }
+
+      const openAt = r.crm_open_at ? new Date(r.crm_open_at).getTime() : null;
+      const closeAt = r.invoice_closed_at ? new Date(r.invoice_closed_at).getTime() : null;
+      const gateAt = gateInAt ? new Date(gateInAt).getTime() : null;
+      res.json({
+        success: true,
+        job_card_no: r.job_card_no,
+        crm_jc_no: r.crm_jc_no, crm_open_at: r.crm_open_at,
+        invoice_no: r.invoice_no, invoice_closed_at: r.invoice_closed_at,
+        gate_in_at: gateInAt,
+        // Derived, never stored — so they can never go stale.
+        tat_hours: openAt && closeAt ? Number(((closeAt - openAt) / 3600000).toFixed(2)) : null,
+        crm_lag_minutes: gateAt && openAt ? Math.round((openAt - gateAt) / 60000) : null,
+      });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post("/api/job-cards/:jobCardNo/crm-timestamps", authenticateToken, express.json(), async (req: any, res) => {
+    const jobCardNo = req.params.jobCardNo;
+    const { crm_jc_no, crm_open_at, invoice_no, invoice_closed_at } = req.body || {};
+    // Accept a partial update: the CRM JC arrives hours before the invoice does.
+    const sets: string[] = [];
+    const params: any[] = [];
+    const toSqlDt = (v: any) => {
+      if (!v) return null;
+      const d = new Date(v);
+      return isNaN(d.getTime()) ? undefined : d.toISOString().slice(0, 19).replace("T", " ");
+    };
+    if (crm_jc_no !== undefined) { sets.push("crm_jc_no = ?"); params.push(String(crm_jc_no || "").trim() || null); }
+    if (invoice_no !== undefined) { sets.push("invoice_no = ?"); params.push(String(invoice_no || "").trim() || null); }
+    if (crm_open_at !== undefined) {
+      const v = toSqlDt(crm_open_at);
+      if (v === undefined) return res.status(400).json({ success: false, error: "crm_open_at is not a valid date/time." });
+      sets.push("crm_open_at = ?"); params.push(v);
+    }
+    if (invoice_closed_at !== undefined) {
+      const v = toSqlDt(invoice_closed_at);
+      if (v === undefined) return res.status(400).json({ success: false, error: "invoice_closed_at is not a valid date/time." });
+      sets.push("invoice_closed_at = ?"); params.push(v);
+    }
+    if (sets.length === 0) return res.status(400).json({ success: false, error: "Nothing to update." });
+
+    try {
+      const [r]: any = await dbPool.execute(
+        `UPDATE job_card_master SET ${sets.join(", ")} WHERE job_card_no = ?`, [...params, jobCardNo]);
+      if (!r.affectedRows) return res.status(404).json({ success: false, error: "Job card not found." });
+      await logEdit(req, {
+        entity_type: "job_card_tat",
+        entity_id: jobCardNo,
+        action: "SET_CRM_TIMESTAMPS",
+        justification: `TAT chain updated for ${jobCardNo}: ${sets.map((s, i) => `${s.replace(" = ?", "")}=${params[i]}`).join(", ")}`,
+        after: { crm_jc_no, crm_open_at, invoice_no, invoice_closed_at },
+      });
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  // OCR assist: suggest the document number + timestamp from an attached CRM job
+  // card or invoice. Returns a SUGGESTION only — the advisor confirms it before
+  // it is saved. Degrades honestly (available:false) when no key is configured or
+  // the file is a PDF, so the form simply falls back to typing.
+  app.post("/api/ocr/jc-invoice-extract", authenticateToken, express.json({ limit: "25mb" }), async (req: any, res) => {
+    const { base64Image, kind, mimeType } = req.body || {};
+    if (!base64Image) return res.status(400).json({ success: false, error: "base64Image is required." });
+    if (!process.env.GEMINI_API_KEY) {
+      return res.json({ success: true, available: false, reason: "OCR is not configured — enter the details manually." });
+    }
+    if (String(mimeType || "").includes("pdf")) {
+      return res.json({ success: true, available: false, reason: "PDF cannot be read automatically — enter the details manually." });
+    }
+    try {
+      const isInvoice = String(kind || "").toUpperCase() === "INVOICE";
+      const label = isInvoice ? "tax invoice / bill" : "job card";
+      const ai = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: { headers: { "User-Agent": "aistudio-build" } },
+      });
+      const prompt = `You are reading a Tata Motors commercial-vehicle workshop ${label}.
+Extract ONLY what is printed on the document. Return EXACTLY this JSON:
+{"number": "<the ${isInvoice ? "invoice" : "job card"} number, or empty string>",
+ "datetime": "<the ${isInvoice ? "invoice/billing" : "job card opening"} date and time as ISO 8601 (YYYY-MM-DDTHH:mm), or empty string>",
+ "confidence": 0.0}
+If a value is not clearly printed, return an empty string for it. Never guess or invent a value.`;
+      const out = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [
+          { inlineData: { mimeType: mimeType || "image/jpeg", data: String(base64Image).replace(/^data:[^;]+;base64,/, "") } },
+          prompt,
+        ],
+        config: { responseMimeType: "application/json" },
+      });
+      const parsed = JSON.parse((out.text || "{}").trim());
+      res.json({
+        success: true,
+        available: true,
+        number: String(parsed.number || ""),
+        datetime: String(parsed.datetime || ""),
+        confidence: Number(parsed.confidence || 0),
+      });
+    } catch (e: any) {
+      console.error("[jc-invoice-extract]", e?.message);
+      res.json({ success: true, available: false, reason: "Could not read the document — enter the details manually." });
+    }
+  });
+
   // DevOps / Scheduled Cron: 90-Day Evidence Retention Worker
   app.post("/api/v1/devops/cron/evidence-retention", async (req, res) => {
     try {
