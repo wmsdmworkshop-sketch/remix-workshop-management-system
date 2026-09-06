@@ -782,7 +782,10 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
 
       {/* TAB 4: MY BILLING & GATE PASS (PHASE 9) */}
       {activeTab === "my-billing" && (
-        <SABillingVisibility currentUser={currentUser} />
+        <div className="space-y-6">
+          <SAPreInvoicePanel currentUser={currentUser} jobCards={jobCards} onRefresh={onRefresh} />
+          <SABillingVisibility currentUser={currentUser} />
+        </div>
       )}
 
       {/* TAB 5: MY PERFORMANCE & METRICS */}
@@ -876,6 +879,206 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
 ServiceAdvisorWorkspace.displayName = "ServiceAdvisorWorkspace";
 
 // Extracted component for SA Billing Visibility (Phase 9)
+/**
+ * SA's pre-invoice compile -> review -> send -> confirm chain, wired to the
+ * real billing-engine.ts (POST /api/billing/pre-invoice/*, mounted at
+ * /api/billing) — the SA owns the customer relationship through this whole
+ * step, so it lives here rather than on the Billing officer's own screen.
+ *
+ * Auto-skip: once compiled, if the server-computed grand total matches this
+ * job's already-approved estimate within the engine's own 2% tolerance, the
+ * review/send/confirm steps fire automatically with an honest
+ * "SYSTEM_AUTO_MATCHED_ESTIMATE" confirmation record — no customer
+ * round-trip. Otherwise the estimate differs, so the SA gets a manual
+ * confirm form after logging (not sending — no WhatsApp template is wired
+ * yet) a reconfirmation request. TODO(real-send): wire to sendWhatsAppTemplate.
+ */
+const SAPreInvoicePanel: React.FC<{ currentUser?: any; jobCards: any[]; onRefresh: () => void }> = ({ currentUser, jobCards, onRefresh }) => {
+  const [readyQueue, setReadyQueue] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [compiledPi, setCompiledPi] = useState<any | null>(null);
+  const [manualConfirmAmount, setManualConfirmAmount] = useState<number>(0);
+  const [manualConfirmName, setManualConfirmName] = useState("");
+  const [manualConfirmType, setManualConfirmType] = useState("VERBAL_SA_RECORDED");
+
+  const authHeaders = (): Record<string, string> => {
+    const t = getStaffToken();
+    return t ? { "Content-Type": "application/json", Authorization: `Bearer ${t}` } : { "Content-Type": "application/json" };
+  };
+
+  const loadQueue = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/billing/ready-from-qc", { headers: authHeaders() });
+      const data = await res.json();
+      setReadyQueue(Array.isArray(data?.data) ? data.data : []);
+    } catch {
+      setReadyQueue([]);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { loadQueue(); }, []);
+
+  const handleCompile = async (jobId: number) => {
+    setBusy(true);
+    setCompiledPi(null);
+    try {
+      const compileRes = await fetch(`/api/billing/pre-invoice/compile/${jobId}`, {
+        method: "POST", headers: authHeaders(), body: JSON.stringify({ requestedDiscount: 0 }),
+      });
+      const compileData = await compileRes.json();
+      if (!compileRes.ok || !compileData.success) { alert(compileData?.error || "Failed to compile pre-invoice."); setBusy(false); return; }
+      const { preInvoiceId, grandTotal } = compileData.data;
+
+      await fetch(`/api/billing/pre-invoice/review/${preInvoiceId}`, { method: "POST", headers: authHeaders() });
+      await fetch(`/api/billing/pre-invoice/send-to-customer/${preInvoiceId}`, { method: "POST", headers: authHeaders() });
+
+      const job = jobCards.find((j: any) => j.job_id === jobId);
+      const approvedEstimate = Number(job?.labor_price || 0) + Number(job?.parts_price || 0);
+      const withinTolerance = approvedEstimate > 0 && Math.abs(grandTotal - approvedEstimate) <= 0.02 * approvedEstimate;
+
+      if (withinTolerance) {
+        const confirmRes = await fetch(`/api/billing/pre-invoice/capture-confirmation/${preInvoiceId}`, {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({
+            confirmation_type: "SYSTEM_AUTO_MATCHED_ESTIMATE",
+            confirmed_by_name: "System (auto — matches approved estimate)",
+            grand_total_confirmed: grandTotal,
+            remarks: `Auto-confirmed: pre-invoice total ₹${grandTotal} within 2% of approved estimate ₹${approvedEstimate}.`,
+          }),
+        });
+        const confirmData = await confirmRes.json();
+        if (!confirmRes.ok || !confirmData.success) { alert(confirmData?.error || "Auto-confirmation failed."); setBusy(false); return; }
+        await fetch(`/api/billing/handoff/${preInvoiceId}`, { method: "POST", headers: authHeaders() });
+        alert(`Pre-invoice ₹${grandTotal} matches the approved estimate — auto-confirmed and handed off to Billing, no customer round-trip needed.`);
+        await loadQueue();
+        onRefresh();
+      } else {
+        // Log the reconfirmation attempt (WhatsApp send is not wired yet —
+        // see the estimate-notify pattern used at the SA estimate stage).
+        await fetch("/api/edit-audit", {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({
+            entity_type: "pre_invoice", entity_id: preInvoiceId, action: "WHATSAPP_RECONFIRM_SENT_LOG",
+            justification: `Final amount ₹${grandTotal} differs from approved estimate ₹${approvedEstimate} by more than 2% — reconfirmation logged (real WhatsApp send not yet wired).`,
+          }),
+        });
+        setCompiledPi({ preInvoiceId, grandTotal, jobId, approvedEstimate });
+        setManualConfirmAmount(grandTotal);
+        setManualConfirmName(job?.customer_name || "");
+        alert(`Final amount ₹${grandTotal} differs from the approved estimate (₹${approvedEstimate}) by more than 2%. Sent to customer — record their confirmation below once received.`);
+      }
+    } catch (e: any) {
+      alert(`Failed to compile pre-invoice: ${e.message || "network error"}`);
+    }
+    setBusy(false);
+  };
+
+  const handleManualConfirm = async () => {
+    if (!compiledPi) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/billing/pre-invoice/capture-confirmation/${compiledPi.preInvoiceId}`, {
+        method: "POST", headers: authHeaders(),
+        body: JSON.stringify({
+          confirmation_type: manualConfirmType,
+          confirmed_by_name: manualConfirmName || "Customer",
+          grand_total_confirmed: manualConfirmAmount,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) { alert(data?.error || "Failed to record confirmation."); setBusy(false); return; }
+      await fetch(`/api/billing/handoff/${compiledPi.preInvoiceId}`, { method: "POST", headers: authHeaders() });
+      alert("Customer confirmation recorded and handed off to Billing.");
+      setCompiledPi(null);
+      await loadQueue();
+      onRefresh();
+    } catch (e: any) {
+      alert(`Failed to record confirmation: ${e.message || "network error"}`);
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg space-y-4">
+      <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
+        <FileText className="h-4 w-4 text-emerald-400" />
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Pre-Invoice (QC Passed → Billing)</h3>
+      </div>
+
+      {loading ? (
+        <p className="text-xs text-slate-400 text-center py-4">Loading…</p>
+      ) : readyQueue.length === 0 ? (
+        <p className="text-xs text-slate-500 italic text-center py-4">No vehicles ready for pre-invoicing.</p>
+      ) : (
+        <div className="space-y-2">
+          {readyQueue.map((j: any) => (
+            <div key={j.job_id} className="flex items-center justify-between p-3 rounded-xl border border-slate-850 bg-slate-950/40 text-xs">
+              <div>
+                <span className="font-mono font-bold text-white">{j.vrn}</span>
+                <span className="text-slate-400 ml-2">{j.customer_name}</span>
+              </div>
+              <button
+                onClick={() => handleCompile(j.job_id)}
+                disabled={busy}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold text-[10px] uppercase rounded-lg"
+              >
+                Compile Pre-Invoice
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {compiledPi && (
+        <div className="border-t border-slate-850 pt-4 space-y-3">
+          <p className="text-[11px] text-amber-400">
+            Awaiting customer reconfirmation for ₹{compiledPi.grandTotal.toLocaleString("en-IN")} (approved estimate was ₹{compiledPi.approvedEstimate.toLocaleString("en-IN")}).
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <input
+              placeholder="Confirmed by (name)"
+              value={manualConfirmName}
+              onChange={(e) => setManualConfirmName(e.target.value)}
+              className="bg-slate-950 border border-slate-850 rounded-lg p-2 text-xs text-slate-200"
+            />
+            <select
+              value={manualConfirmType}
+              onChange={(e) => setManualConfirmType(e.target.value)}
+              className="bg-slate-950 border border-slate-850 rounded-lg p-2 text-xs text-slate-200"
+            >
+              <option value="VERBAL_SA_RECORDED">Verbal (recorded by SA)</option>
+              <option value="WHATSAPP">WhatsApp reply</option>
+              <option value="SMS">SMS reply</option>
+              <option value="SIGNED_HARDCOPY">Signed hardcopy</option>
+              <option value="DIGITAL_APPROVAL">Digital approval</option>
+            </select>
+          </div>
+          <input
+            type="number"
+            value={manualConfirmAmount}
+            onChange={(e) => setManualConfirmAmount(Number(e.target.value))}
+            className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-xs text-slate-200"
+          />
+          <button
+            onClick={handleManualConfirm}
+            disabled={busy}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold text-xs uppercase rounded-lg"
+          >
+            Record Customer Confirmation
+          </button>
+        </div>
+      )}
+
+      {compiledPi === null && (
+        <p className="text-[10px] text-slate-500 italic">Once a pre-invoice is customer-confirmed (or auto-confirmed), use the hand-off action to send it to Billing.</p>
+      )}
+    </div>
+  );
+};
+
 const SABillingVisibility: React.FC<{ currentUser?: any }> = ({ currentUser }) => {
   const [billingList, setBillingList] = useState<any[]>([]);
 

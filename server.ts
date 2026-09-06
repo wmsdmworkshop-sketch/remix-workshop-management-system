@@ -49,6 +49,7 @@ import { pipelineRouter } from "./src/api/routes/pipeline.routes.ts";
 import { saIntakeRouter } from "./src/api/routes/sa-intake.routes.ts";
 import { floorExecutionRouter } from "./src/api/routes/floor-execution.routes.ts";
 import { qcRoutes } from "./src/api/routes/qc.routes.ts";
+import { billingRouter } from "./src/api/routes/billing.routes.ts";
 import { DeepSeekEngine } from "./src/engines/deepseek-engine.ts";
 import { EmployeeIdentityService, RoleService, AuditService } from "./src/core/identity.ts";
 import { EmployeeRepository, PermissionRepository, AuditRepository } from "./src/core/repositories.ts";
@@ -10686,6 +10687,7 @@ Respond with valid JSON only:
   // into the JWT and into auth.ts's decode step.
   app.use("/api/floor-execution", floorExecutionRouter);
   app.use("/api/qc", qcRoutes);
+  app.use("/api/billing", billingRouter);
 
   // --- AI BRAINS: SIGNA (L1 Tactical) / SETU (L2 Coordination) / DISHA (L3 Strategic) ---
   // Handlers now live in src/api/routes/ai.routes.ts. They are mounted here
