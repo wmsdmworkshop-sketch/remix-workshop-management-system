@@ -96,9 +96,12 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
       if (res.ok) {
         alert(`✅ Handoff for ${jobCardId} Acknowledged! SLA timer stopped.`);
         onRefresh();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Acknowledge failed: ${err.error || res.statusText}`);
       }
-    } catch (e) {
-      alert("Acknowledgement submitted.");
+    } catch (e: any) {
+      alert(`Acknowledge failed: ${e.message || "network error"}`);
     }
   };
 

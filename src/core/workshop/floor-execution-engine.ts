@@ -196,15 +196,21 @@ export class FloorExecutionEngine {
 
     const nowMs = Date.now();
 
-    return rows.map((r: any, idx: number) => {
+    // Bay/tech suggestions come from the same real availability logic as
+    // generateBayTechRecommendation — never a round-robin B-01/B-02/B-03
+    // placeholder pattern. Each row gets its own honest recommendation
+    // (or none, if nothing is actually available).
+    return Promise.all(rows.map(async (r: any) => {
       const createdAtMs = r.created_at ? new Date(r.created_at).getTime() : nowMs - 3 * 60 * 1000;
       const waitingMins = Math.max(0, Math.floor((nowMs - createdAtMs) / 60000));
       const slaRemainingMins = Math.max(0, 5 - waitingMins);
       const isSlaBreached = waitingMins > 5;
       const complaints = r.authenticated_complaints_json ? JSON.parse(r.authenticated_complaints_json) : [];
+      const jobCardId = r.job_card_id || `JC-TEMP-${r.intake_id}`;
+      const suggestion = await this.generateBayTechRecommendation(jobCardId, branchId);
 
       return {
-        jobCardId: r.job_card_id || `JC-TEMP-${r.intake_id}`,
+        jobCardId,
         gateEntryId: r.gate_entry_id,
         vosId: r.vos_id || `vos-${r.gate_entry_id}`,
         vrn: r.vrn || "—",
@@ -221,10 +227,10 @@ export class FloorExecutionEngine {
         waitingMins,
         slaRemainingMins,
         isSlaBreached,
-        suggestedBayId: `B-0${(idx % 4) + 1}`,
-        suggestedTechId: `TECH-00${(idx % 3) + 1}`
+        suggestedBayId: suggestion?.bayId,
+        suggestedTechId: suggestion?.technicianId
       };
-    });
+    }));
   }
 
   /**
@@ -377,6 +383,27 @@ export class FloorExecutionEngine {
         metadata: { allocationId, bayId, technicianId, technicianName, isOverride, overrideReason }
       });
     } catch (e) {}
+
+    // Bridge into job_card_master/job_cards (the app-wide record every other
+    // screen reads) so the technician's workspace picks this job up. jobCardId
+    // here may be a real job_card_no or a bare VRN — match on either,
+    // best-effort: never fail the (already-committed) allocation on this.
+    try {
+      await db.execute(
+        `UPDATE job_card_master SET workshop_stage = 'FLOOR_ALLOCATED', technician_name = ?
+          WHERE job_card_no = ? OR vehicle_reg = ?
+          ORDER BY job_card_id DESC LIMIT 1`,
+        [technicianName, jobCardId, jobCardId]
+      );
+      await db.execute(
+        `UPDATE job_cards SET workshop_stage = 'FLOOR_ALLOCATED', technician_name = ?
+          WHERE job_card_no = ? OR vrn = ?
+          ORDER BY created_at DESC LIMIT 1`,
+        [technicianName, jobCardId, jobCardId]
+      );
+    } catch (e: any) {
+      console.error("[FloorExecutionEngine] Failed to bridge allocation into job_cards:", e.message);
+    }
 
     return { success: true, allocationId };
   }
