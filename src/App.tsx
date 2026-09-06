@@ -94,6 +94,11 @@ import { getStaffToken, setStaffToken, clearStaffToken, staffAuthHeaders } from 
 import EmployeeDirectory from "./components/EmployeeDirectory";
 import ProductivityDashboard from "./components/ProductivityDashboard";
 import ActiveBayTatMonitor from "./components/ActiveBayTatMonitor";
+import LeaveManagement from "./components/LeaveManagement";
+import HolidaysManagement from "./components/HolidaysManagement";
+import TrainingDevelopment from "./components/TrainingDevelopment";
+import GrievanceManagement from "./components/GrievanceManagement";
+import EmployeePerformanceHub from "./components/EmployeePerformanceHub";
 import DmsImporter from "./components/DmsImporter";
 import EnterpriseMasterDataHub from "./components/EnterpriseMasterDataHub";
 import AppShell from "./components/AppShell";
@@ -775,6 +780,31 @@ export default function App() {
     }
     if (!tabs.some(t => t.id === "tech-profile")) {
       tabs.push({ id: "tech-profile", label: "My Profile", icon: UserIcon });
+    }
+    // Every employee can request leave, view the holiday calendar, and file
+    // a grievance — these are personal/company-wide HR functions, not role-
+    // gated operational screens. Write/approve actions are still enforced
+    // server-side (HR_APPROVER_ROLES) regardless of nav visibility.
+    if (!tabs.some(t => t.id === "leave-management")) {
+      tabs.push({ id: "leave-management", label: "Leave Management", icon: ClipboardCheck });
+    }
+    if (!tabs.some(t => t.id === "holidays")) {
+      tabs.push({ id: "holidays", label: "Holidays", icon: ClipboardCheck });
+    }
+    if (!tabs.some(t => t.id === "grievance")) {
+      tabs.push({ id: "grievance", label: "Grievance", icon: ShieldAlert });
+    }
+    // Training records and the performance aggregation view are management-
+    // facing (viewing/administering other employees' records), matching the
+    // backend's own HR_APPROVER_ROLES gate.
+    const hrApproverRoles = ["admin", "developer", "workshop_manager", "service_manager", "general_manager", "gm_service"];
+    if (hrApproverRoles.includes(role)) {
+      if (!tabs.some(t => t.id === "training-development")) {
+        tabs.push({ id: "training-development", label: "Training & Development", icon: Shield });
+      }
+      if (!tabs.some(t => t.id === "employee-performance")) {
+        tabs.push({ id: "employee-performance", label: "Employee Performance", icon: TrendingUp });
+      }
     }
   });
 
@@ -1999,6 +2029,26 @@ export default function App() {
 
           {activeTab === "tech-profile" && (
             <TechnicianProfilePanel employees={employees} employeeId={employeeId} />
+          )}
+
+          {activeTab === "leave-management" && (
+            <LeaveManagement currentUser={user} />
+          )}
+
+          {activeTab === "holidays" && (
+            <HolidaysManagement currentUser={user} />
+          )}
+
+          {activeTab === "grievance" && (
+            <GrievanceManagement currentUser={user} />
+          )}
+
+          {activeTab === "training-development" && (
+            <TrainingDevelopment employees={employees} currentUser={user} />
+          )}
+
+          {activeTab === "employee-performance" && (
+            <EmployeePerformanceHub employees={employees} jobCards={jobCards} />
           )}
 
       {showClearConfirmModal && (
