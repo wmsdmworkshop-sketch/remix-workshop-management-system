@@ -531,6 +531,7 @@ export default function App() {
       { id: "devops-dashboard", label: "DevOps Dashboard", icon: Terminal },
     ],
     billing: [
+      { id: "billing-workspace", label: "Billing Workspace", icon: DollarSign },
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "revenue", label: "Revenue Split", icon: DollarSign },
@@ -546,6 +547,7 @@ export default function App() {
     ],
     floor_supervisor: [
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
+      { id: "qc-workspace", label: "QC Workspace", icon: ShieldAlert },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "jobs", label: "Job Cards", icon: Wrench },
@@ -573,6 +575,7 @@ export default function App() {
     ],
     floor_incharge: [
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
+      { id: "qc-workspace", label: "QC Workspace", icon: ShieldAlert },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "jobs", label: "Job Cards", icon: Wrench },
@@ -681,6 +684,7 @@ export default function App() {
     ],
     security_agent: [
       { id: "security-workspace", label: "Security Workspace", icon: ShieldAlert },
+      { id: "delivery-workspace", label: "Vehicle Delivery", icon: Truck },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
     ],
