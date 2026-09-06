@@ -13767,6 +13767,39 @@ Respond with valid JSON only:
     }
   });
 
+  // POST /api/job-cards/:id/estimate-notify
+  // Log-only for now: no Meta-approved WhatsApp/SMS template is wired yet, so
+  // this records the send attempt to the real edit-audit trail (customer
+  // mobile + estimate amount) instead of a fake alert() success message.
+  // TODO(real-send): once a template is approved, replace the WHATSAPP branch
+  // with a real call to sendWhatsAppTemplate(mobile, templateName, bodyParams).
+  app.post("/api/job-cards/:id/estimate-notify", authenticateToken, requireRoles(["service_advisor", "service_manager", "works_manager", "workshop_manager", "gm_service", "admin", "developer"]), express.json(), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { channel } = req.body || {};
+      if (!["whatsapp", "sms"].includes(channel)) {
+        return res.status(400).json({ success: false, error: "channel must be 'whatsapp' or 'sms'." });
+      }
+      const jobId = parseInt(id);
+      const jobCard = cachedDB.jobCards.find((jc: any) => jc.job_id === jobId);
+      if (!jobCard) return res.status(404).json({ success: false, error: "Job card not found" });
+
+      const amount = Number(jobCard.labor_price || 0) + Number(jobCard.parts_price || 0);
+      await logEdit(req, {
+        entity_type: "job_card",
+        entity_id: jobCard.job_card_no || jobId,
+        action: channel === "whatsapp" ? "WHATSAPP_ESTIMATE_SENT_LOG" : "SMS_ESTIMATE_SENT_LOG",
+        justification: `Estimate notification logged (real send not yet wired): ${channel} to ${jobCard.customer_mobile || "unknown number"}, amount ₹${amount.toLocaleString("en-IN")}.`,
+        after: { customer_mobile: jobCard.customer_mobile, amount, job_card_no: jobCard.job_card_no }
+      });
+
+      res.json({ success: true, logged: true, channel, amount });
+    } catch (error: any) {
+      console.error("Estimate notify (log-only) error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   // POST /api/job-cards/:id/qc-check
   app.post("/api/job-cards/:id/qc-check", authenticateToken, requireRoles(["qc", "qc_inspector", "quality_inspector", "service_manager", "works_manager", "workshop_manager", "gm_service", "admin", "developer"]), jobCardEditGuard, express.json(), async (req, res) => {
     try {

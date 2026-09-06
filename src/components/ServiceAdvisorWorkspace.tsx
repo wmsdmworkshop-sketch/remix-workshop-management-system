@@ -735,15 +735,38 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                     Save Estimate & Lock
                   </button>
 
-                  <button 
-                    onClick={() => alert(`WhatsApp estimate link sent to ${selectedJob.customer_name} (${selectedJob.customer_mobile}).`)}
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(`/api/job-cards/${selectedJob.job_id}/estimate-notify`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json", Authorization: `Bearer ${getStaffToken() || ""}` },
+                          body: JSON.stringify({ channel: "whatsapp" }),
+                        });
+                        const data = await res.json();
+                        if (!res.ok) { alert(data?.error || "Failed to log WhatsApp estimate send."); return; }
+                        onUpdateJob(selectedJob.job_id, { current_workflow_state: "SA_ESTIMATE_SENT" });
+                        alert(`Logged: WhatsApp estimate send to ${selectedJob.customer_name} (${selectedJob.customer_mobile}). Real WhatsApp delivery is not yet wired — this is recorded in the edit-audit trail only.`);
+                      } catch { alert("Failed to log WhatsApp estimate send."); }
+                    }}
                     className="px-3.5 py-2 bg-[#25D366] hover:bg-green-600 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer ml-auto"
                   >
                     WhatsApp Approval Link
                   </button>
-                  
-                  <button 
-                    onClick={() => alert(`SMS estimate details sent to ${selectedJob.customer_name} (${selectedJob.customer_mobile}).`)}
+
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(`/api/job-cards/${selectedJob.job_id}/estimate-notify`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json", Authorization: `Bearer ${getStaffToken() || ""}` },
+                          body: JSON.stringify({ channel: "sms" }),
+                        });
+                        const data = await res.json();
+                        if (!res.ok) { alert(data?.error || "Failed to log SMS estimate send."); return; }
+                        alert(`Logged: SMS estimate send to ${selectedJob.customer_name} (${selectedJob.customer_mobile}). Real SMS delivery is not yet wired — this is recorded in the edit-audit trail only.`);
+                      } catch { alert("Failed to log SMS estimate send."); }
+                    }}
                     className="px-3.5 py-2 bg-slate-950 border border-slate-850 hover:border-slate-800 text-slate-300 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
                   >
                     SMS Estimate
