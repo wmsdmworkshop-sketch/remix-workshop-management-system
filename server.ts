@@ -13689,6 +13689,214 @@ Respond with valid JSON only:
     });
   });
 
+  // ─── HR MODULE: LEAVE MANAGEMENT (tbl_leave_requests, migration 012) ───────
+  // Modeled on the overtime request/approve state machine above.
+  const HR_APPROVER_ROLES = ["admin", "developer", "workshop_manager", "service_manager", "general_manager", "gm_service"];
+
+  app.post("/api/leave/request", authenticateToken, async (req: any, res) => {
+    try {
+      const employeeId = req.user?.employee_id;
+      if (!employeeId) return res.status(400).json({ error: "User profile has no associated employee ID." });
+      const { leave_type, start_date, end_date, reason } = req.body || {};
+      if (!leave_type || !start_date || !end_date) {
+        return res.status(400).json({ error: "leave_type, start_date, and end_date are required." });
+      }
+      const leaveId = genId("LV");
+      await dbPool.execute(
+        `INSERT INTO tbl_leave_requests (leave_id, employee_id, leave_type, start_date, end_date, reason, status)
+         VALUES (?, ?, ?, ?, ?, ?, 'PENDING')`,
+        [leaveId, employeeId, leave_type, start_date, end_date, reason || null]
+      );
+      res.status(201).json({ success: true, leave_id: leaveId });
+    } catch (err: any) {
+      console.error("[LEAVE] request:", err.message);
+      res.status(500).json({ error: "Failed to submit leave request." });
+    }
+  });
+
+  app.get("/api/leave/mine", authenticateToken, async (req: any, res) => {
+    try {
+      const employeeId = req.user?.employee_id;
+      if (!employeeId) return res.status(400).json({ error: "User profile has no associated employee ID." });
+      const [rows]: any = await dbPool.query(
+        "SELECT * FROM tbl_leave_requests WHERE employee_id = ? ORDER BY created_at DESC", [employeeId]
+      );
+      res.json({ success: true, requests: rows || [] });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to load leave requests." });
+    }
+  });
+
+  app.get("/api/leave/pending", authenticateToken, requireRoles(HR_APPROVER_ROLES), async (_req: any, res) => {
+    try {
+      const [rows]: any = await dbPool.query(
+        `SELECT l.*, e.full_name AS employee_name FROM tbl_leave_requests l
+         LEFT JOIN employees e ON e.employee_id = l.employee_id
+         WHERE l.status = 'PENDING' ORDER BY l.created_at ASC`
+      );
+      res.json({ success: true, requests: rows || [] });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to load pending leave requests." });
+    }
+  });
+
+  app.post("/api/leave/:id/decide", authenticateToken, requireRoles(HR_APPROVER_ROLES), async (req: any, res) => {
+    try {
+      const { decision } = req.body || {};
+      if (!["APPROVED", "REJECTED"].includes(decision)) {
+        return res.status(400).json({ error: "decision must be APPROVED or REJECTED." });
+      }
+      const [result]: any = await dbPool.execute(
+        `UPDATE tbl_leave_requests SET status = ?, approved_by = ?, decided_at = NOW()
+         WHERE leave_id = ? AND status = 'PENDING'`,
+        [decision, req.user?.full_name || req.user?.username || "unknown", req.params.id]
+      );
+      if (!result.affectedRows) return res.status(404).json({ error: "Leave request not found or already decided." });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to record leave decision." });
+    }
+  });
+
+  // ─── HR MODULE: HOLIDAYS MANAGEMENT (tbl_holidays, migration 013) ──────────
+  app.get("/api/holidays", authenticateToken, async (_req: any, res) => {
+    try {
+      const [rows]: any = await dbPool.query("SELECT * FROM tbl_holidays ORDER BY holiday_date ASC");
+      res.json({ success: true, holidays: rows || [] });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to load holidays." });
+    }
+  });
+
+  app.post("/api/holidays", authenticateToken, requireRoles(HR_APPROVER_ROLES), async (req: any, res) => {
+    try {
+      const { holiday_date, name, is_optional } = req.body || {};
+      if (!holiday_date || !name) return res.status(400).json({ error: "holiday_date and name are required." });
+      const [result]: any = await dbPool.execute(
+        "INSERT INTO tbl_holidays (holiday_date, name, is_optional) VALUES (?, ?, ?)",
+        [holiday_date, name, is_optional ? 1 : 0]
+      );
+      res.status(201).json({ success: true, holiday_id: result.insertId });
+    } catch (err: any) {
+      if (err.code === "ER_DUP_ENTRY") return res.status(409).json({ error: "This holiday already exists." });
+      res.status(500).json({ error: "Failed to add holiday." });
+    }
+  });
+
+  app.delete("/api/holidays/:id", authenticateToken, requireRoles(HR_APPROVER_ROLES), async (req: any, res) => {
+    try {
+      await dbPool.execute("DELETE FROM tbl_holidays WHERE holiday_id = ?", [req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to delete holiday." });
+    }
+  });
+
+  // ─── HR MODULE: TRAINING & DEVELOPMENT (tbl_training_records, migration 014) ──
+  app.get("/api/training/:employeeId", authenticateToken, async (req: any, res) => {
+    try {
+      const [rows]: any = await dbPool.query(
+        "SELECT * FROM tbl_training_records WHERE employee_id = ? ORDER BY created_at DESC", [req.params.employeeId]
+      );
+      res.json({ success: true, records: rows || [] });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to load training records." });
+    }
+  });
+
+  app.post("/api/training", authenticateToken, requireRoles(HR_APPROVER_ROLES), async (req: any, res) => {
+    try {
+      const { employee_id, course_name, status, completed_date, certificate_ref } = req.body || {};
+      if (!employee_id || !course_name) return res.status(400).json({ error: "employee_id and course_name are required." });
+      const recordId = genId("TRN");
+      await dbPool.execute(
+        `INSERT INTO tbl_training_records (record_id, employee_id, course_name, status, completed_date, certificate_ref)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [recordId, employee_id, course_name, status || "NOT_STARTED", completed_date || null, certificate_ref || null]
+      );
+      res.status(201).json({ success: true, record_id: recordId });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to add training record." });
+    }
+  });
+
+  app.put("/api/training/:id", authenticateToken, requireRoles(HR_APPROVER_ROLES), async (req: any, res) => {
+    try {
+      const { status, completed_date, certificate_ref } = req.body || {};
+      await dbPool.execute(
+        `UPDATE tbl_training_records SET status = COALESCE(?, status), completed_date = COALESCE(?, completed_date), certificate_ref = COALESCE(?, certificate_ref)
+         WHERE record_id = ?`,
+        [status || null, completed_date || null, certificate_ref || null, req.params.id]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to update training record." });
+    }
+  });
+
+  // ─── HR MODULE: GRIEVANCE MANAGEMENT (tbl_grievances, migration 015) ───────
+  // Sensitive: filer sees only their own (JWT-scoped, no client id trusted);
+  // HR/admin see all. Deliberately not exposed to general managers.
+  app.post("/api/grievances", authenticateToken, async (req: any, res) => {
+    try {
+      const employeeId = req.user?.employee_id;
+      if (!employeeId) return res.status(400).json({ error: "User profile has no associated employee ID." });
+      const { category, description } = req.body || {};
+      if (!category || !description) return res.status(400).json({ error: "category and description are required." });
+      const grievanceId = genId("GRV");
+      await dbPool.execute(
+        `INSERT INTO tbl_grievances (grievance_id, employee_id, category, description, status)
+         VALUES (?, ?, ?, ?, 'OPEN')`,
+        [grievanceId, employeeId, category, description]
+      );
+      res.status(201).json({ success: true, grievance_id: grievanceId });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to file grievance." });
+    }
+  });
+
+  app.get("/api/grievances/mine", authenticateToken, async (req: any, res) => {
+    try {
+      const employeeId = req.user?.employee_id;
+      if (!employeeId) return res.status(400).json({ error: "User profile has no associated employee ID." });
+      const [rows]: any = await dbPool.query(
+        "SELECT * FROM tbl_grievances WHERE employee_id = ? ORDER BY filed_at DESC", [employeeId]
+      );
+      res.json({ success: true, grievances: rows || [] });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to load your grievances." });
+    }
+  });
+
+  app.get("/api/grievances/all", authenticateToken, requireRoles(["admin", "developer"]), async (_req: any, res) => {
+    try {
+      const [rows]: any = await dbPool.query(
+        `SELECT g.*, e.full_name AS employee_name FROM tbl_grievances g
+         LEFT JOIN employees e ON e.employee_id = g.employee_id
+         ORDER BY g.filed_at DESC`
+      );
+      res.json({ success: true, grievances: rows || [] });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to load grievances." });
+    }
+  });
+
+  app.put("/api/grievances/:id", authenticateToken, requireRoles(["admin", "developer"]), async (req: any, res) => {
+    try {
+      const { status, resolution_notes } = req.body || {};
+      await dbPool.execute(
+        `UPDATE tbl_grievances SET status = COALESCE(?, status), resolution_notes = COALESCE(?, resolution_notes),
+                resolved_by = CASE WHEN ? IN ('RESOLVED','CLOSED') THEN ? ELSE resolved_by END,
+                resolved_at = CASE WHEN ? IN ('RESOLVED','CLOSED') THEN NOW() ELSE resolved_at END
+          WHERE grievance_id = ?`,
+        [status || null, resolution_notes || null, status || "", req.user?.full_name || req.user?.username || "unknown", status || "", req.params.id]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to update grievance." });
+    }
+  });
+
   app.get("/api/rework/technician/:id", async (req, res) => {
     try {
       const techId = parseInt(req.params.id);

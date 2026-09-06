@@ -347,6 +347,32 @@ export class FloorExecutionEngine {
       throw new Error(`[FloorExecutionEngine] Bay ${bayId} is currently ${targetBay.status} and cannot be allocated.`);
     }
 
+    // One-active-job enforcement: Junior technicians may hold only one open
+    // job at a time; Senior technicians may hold multiple. employee_grade
+    // lives on `employees` (default 'Junior'). Checked against job_cards
+    // (not tbl_job_allocations) because that's the table TechnicianWorkspace.tsx
+    // actually reads via technician_name string match — this is a hard block,
+    // unlike the best-effort bridge writes elsewhere in this method.
+    const [gradeRows]: any = await db.execute(
+      `SELECT employee_grade FROM employees WHERE employee_id = ? OR full_name = ? LIMIT 1`,
+      [technicianId, technicianName]
+    );
+    const grade = gradeRows?.[0]?.employee_grade || "Junior";
+    if (grade !== "Senior") {
+      const [openRows]: any = await db.execute(
+        `SELECT job_card_no FROM job_cards
+          WHERE technician_name = ?
+            AND LOWER(status) NOT IN ('completed','delivered','invoiced','cancelled')
+          LIMIT 1`,
+        [technicianName]
+      );
+      if (openRows?.length > 0 && String(openRows[0].job_card_no) !== String(jobCardId)) {
+        throw new Error(
+          `Technician ${technicianName} is Junior grade and already has an open job (${openRows[0].job_card_no}). Junior technicians can only work one job at a time.`
+        );
+      }
+    }
+
     const allocationId = `ALLOC-${randomUUID().substring(0, 8).toUpperCase()}`;
 
     try {

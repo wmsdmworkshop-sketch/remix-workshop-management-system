@@ -74,20 +74,26 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
     return jobCards.find(j => j.job_id === selectedJobId) || jobCards[0] || null;
   }, [jobCards, selectedJobId]);
 
-  // Section 1: Dashboard KPIs
+  // Section 1: Dashboard KPIs — real values only. 0 is a valid, honest count;
+  // no hardcoded fallback numbers or fixed percentage strings.
   const qcStats = useMemo(() => {
     const waiting = jobCards.filter(j => j.current_workflow_state === "QC_PENDING").length;
     const underInspection = jobCards.filter(j => j.status === "Active" && j.remarks?.includes("[QC]")).length;
-    const passedCount = jobCards.filter(j => j.status === "Completed" && !j.remarks?.includes("[Rework]")).length || 6;
-    const failedCount = jobCards.filter(j => j.rework_count > 0).length || 2;
+    const passedCount = jobCards.filter(j => j.status === "Completed" && !j.remarks?.includes("[Rework]")).length;
+    const failedCount = jobCards.filter(j => j.rework_count > 0).length;
+    const totalDecided = passedCount + failedCount;
+    const ftr = totalDecided > 0 ? `${Math.round((passedCount / totalDecided) * 100)}%` : "—";
 
     return {
       waiting,
       underInspection,
       passedCount,
       failedCount,
-      ftr: "94%",
-      avgQcTime: "18 mins"
+      ftr,
+      // No real per-job QC duration data is computed anywhere in this
+      // component — showing a fixed "18 mins" implied a measurement that
+      // was never taken. Honest "—" until real timestamps are wired.
+      avgQcTime: "—"
     };
   }, [jobCards]);
 
@@ -100,7 +106,6 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
       missingChecks: ["Rear brake caliper torque check", "Tire pressure level log"],
       warrantyRisk: "None. Extended warranty coverage active.",
       suggestedChecks: isEV ? ["High Voltage Isolation Test"] : ["Brake fluid level verify"],
-      confidence: "97%"
     };
   }, [selectedJob]);
 
@@ -347,7 +352,6 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
                     </div>
                   </div>
                   <div className="flex justify-between border-t border-slate-850 pt-2.5 text-[10px] text-slate-400 font-bold uppercase">
-                    <span>Inference Confidence: <span className="text-emerald-400">{aiCopilotData.confidence}</span></span>
                     <span>Warranty Risk Status: <span className="text-slate-200">{aiCopilotData.warrantyRisk}</span></span>
                   </div>
                 </div>

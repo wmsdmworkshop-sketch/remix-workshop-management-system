@@ -22,6 +22,10 @@ import billingTables from "./008_billing_tables.ts";
 import gateOutTables from "./009_gate_out_tables.ts";
 import qcRoadTests from "./010_qc_road_tests.ts";
 import floorExecutionTables from "./011_floor_execution_tables.ts";
+import leaveManagement from "./012_leave_management.ts";
+import holidaysManagement from "./013_holidays_management.ts";
+import trainingDevelopment from "./014_training_development.ts";
+import grievanceManagement from "./015_grievance_management.ts";
 export const allMigrations: Migration[] = [
   baseline,
   modulesMasterSeeding,
@@ -33,5 +37,9 @@ export const allMigrations: Migration[] = [
   billingTables,
   gateOutTables,
   qcRoadTests,
-  floorExecutionTables
+  floorExecutionTables,
+  leaveManagement,
+  holidaysManagement,
+  trainingDevelopment,
+  grievanceManagement
 ];
