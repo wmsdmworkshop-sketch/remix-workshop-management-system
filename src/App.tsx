@@ -69,7 +69,6 @@ import GMServiceCommandCenter from "./components/GMServiceCommandCenter";
 import DealerPrincipalCommandCenter from "./components/DealerPrincipalCommandCenter";
 import CustomerExperiencePlatform from "./components/CustomerExperiencePlatform";
 import MobilePlatformWorkspace from "./components/MobilePlatformWorkspace";
-import PowerBiAnalytics from "./components/PowerBiAnalytics";
 import SecurityWorkspace from "./components/SecurityWorkspace";
 import { 
   Employee, 
@@ -98,7 +97,6 @@ import ActiveBayTatMonitor from "./components/ActiveBayTatMonitor";
 import DmsImporter from "./components/DmsImporter";
 import EnterpriseMasterDataHub from "./components/EnterpriseMasterDataHub";
 import AppShell from "./components/AppShell";
-import GoogleIntegration from "./components/GoogleIntegration";
 import GeminiAssistant from "./components/GeminiAssistant";
 import AuthScreen from "./components/AuthScreen";
 import VehicleLookup from "./components/VehicleLookup";
@@ -106,32 +104,24 @@ import CpscCertificationPanel from "./components/CpscCertificationPanel";
 import AttendanceShiftLog from "./components/AttendanceShiftLog";
 import OvertimeEmployeeDashboard from "./components/OvertimeEmployeeDashboard";
 import OvertimeApprovalPortal from "./components/OvertimeApprovalPortal";
-import QuerySearch from "./components/query";
 import BreakdownManagement from "./components/BreakdownManagement";
-import ExceptionReport from "./components/ExceptionReport";
 
 const GateEntryManager = React.lazy(() => import("./components/GateEntryManager"));
 const BillingExit = React.lazy(() => import("./components/billing-exit"));
 import ErrorBoundary from "./components/ErrorBoundary";
 
-import DealerSetupWizard from "./components/DealerSetupWizard";
 import UserOnboardingTour from "./components/UserOnboardingTour";
-import PilotControlRoom from "./components/PilotControlRoom";
 import AiBrainsPanel from "./components/AiBrainsPanel";
 import StaffFeedbackWidget from "./components/StaffFeedbackWidget";
 import BusinessImpactTracker from "./components/BusinessImpactTracker";
 import LiveSupportPanel from "./components/LiveSupportPanel";
-import DevOpsDashboard from "./components/DevOpsDashboard";
-import CctvFloorSafety from "./components/CctvFloorSafety";
 import MyWorkspace from "./components/MyWorkspace";
 import ExternalIntegrations from "./components/ExternalIntegrations";
-import OperationsCommandCenter from "./components/OperationsCommandCenter";
 import PlatformControlCenter from "./components/platform/PlatformControlCenter";
 import { PartsInChargeWorkspace } from "./components/PartsInChargeWorkspace";
 import { WarrantyClerkWorkspace } from "./components/WarrantyClerkWorkspace";
 import ReceptionistWorkspace from "./components/ReceptionistWorkspace";
 import ManagerAssignmentWorkspace from "./components/ManagerAssignmentWorkspace";
-import FleetManagerWorkspace from "./components/FleetManagerWorkspace";
 
 function darkenColor(hex: string, percent: number): string {
   let color = hex.replace("#", "");
@@ -197,10 +187,6 @@ export default function App() {
         "breakdown",
         "customer-portal",
         "assistant",
-        "devops-dashboard",
-        "operations-console",
-        "setup-wizard",
-        "pilot-control-room",
         "roi-tracker",
         "live-support",
         "mobile-platform",
@@ -395,7 +381,6 @@ export default function App() {
     employees: "User Management",
     users: "User Management",
     breakdown: "Breakdowns",
-    query: "Query",
   };
 
   const isTabPermitted = (tabId: string) => {
@@ -434,7 +419,6 @@ export default function App() {
 
   const ROLE_TABS: Record<string, Array<{ id: string; label: string; icon: any }>> = {
     developer: [
-      { id: "operations-console", label: "Operations Cockpit", icon: Activity },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
@@ -450,20 +434,16 @@ export default function App() {
       { id: "dealer-principal-cockpit", label: "Dealer Principal", icon: Sparkles },
       { id: "customer-portal", label: "Customer Portal", icon: UserIcon },
       { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
-      { id: "powerbi-analytics", label: "Power BI Analytics", icon: FileSpreadsheet },
-      { id: "cctv-safety", label: "CCTV & Safety", icon: Video },
       { id: "oem-integrations", label: "External Integrations", icon: Share2 },
       { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
       { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "breakdown", label: "Breakdowns", icon: AlertTriangle },
-      { id: "exception-report", label: "Exceptions", icon: AlertOctagon },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
       { id: "parts-incharge-workspace", label: "Parts Desk (Mobile)", icon: Package },
       { id: "warranty-clerk-workspace", label: "Warranty Desk (Mobile)", icon: ShieldAlert },
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
-      { id: "query", label: "Multimedia Query", icon: HelpCircle },
       { id: "jobs", label: "Job Cards", icon: Wrench },
       { id: "productivity", label: "Productivity", icon: TrendingUp },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
@@ -473,17 +453,12 @@ export default function App() {
       { id: "dms-import", label: "DMS Import", icon: FileDown },
       { id: "master-data-hub", label: "Master Data Hub", icon: Database },
       { id: "users", label: "User Management", icon: ShieldAlert },
-      { id: "google", label: "Google Workspace", icon: Share2 },
       { id: "assistant", label: "Gemini Copilot", icon: Sparkles },
-      { id: "setup-wizard", label: "Setup Wizard", icon: Building },
-      { id: "pilot-control-room", label: "Pilot Control Room", icon: Activity },
       { id: "roi-tracker", label: "Business ROI Tracker", icon: TrendingUp },
       { id: "live-support", label: "Live Support", icon: HelpCircle },
-      { id: "devops-dashboard", label: "DevOps Dashboard", icon: Terminal },
       { id: "ai-brains", label: "AI Brains", icon: Brain },
     ],
     admin: [
-      { id: "operations-console", label: "Operations Cockpit", icon: Activity },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
@@ -499,20 +474,16 @@ export default function App() {
       { id: "dealer-principal-cockpit", label: "Dealer Principal", icon: Sparkles },
       { id: "customer-portal", label: "Customer Portal", icon: UserIcon },
       { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
-      { id: "powerbi-analytics", label: "Power BI Analytics", icon: FileSpreadsheet },
-      { id: "cctv-safety", label: "CCTV & Safety", icon: Video },
       { id: "oem-integrations", label: "External Integrations", icon: Share2 },
       { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
       { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "breakdown", label: "Breakdowns", icon: AlertTriangle },
-      { id: "exception-report", label: "Exceptions", icon: AlertOctagon },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
       { id: "parts-incharge-workspace", label: "Parts Desk (Mobile)", icon: Package },
       { id: "warranty-clerk-workspace", label: "Warranty Desk (Mobile)", icon: ShieldAlert },
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
-      { id: "query", label: "Multimedia Query", icon: HelpCircle },
       { id: "jobs", label: "Job Cards", icon: Wrench },
       { id: "productivity", label: "Productivity", icon: TrendingUp },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
@@ -522,13 +493,9 @@ export default function App() {
       { id: "dms-import", label: "DMS Import", icon: FileDown },
       { id: "master-data-hub", label: "Master Data Hub", icon: Database },
       { id: "users", label: "User Management", icon: ShieldAlert },
-      { id: "google", label: "Google Workspace", icon: Share2 },
       { id: "assistant", label: "Gemini Copilot", icon: Sparkles },
-      { id: "setup-wizard", label: "Setup Wizard", icon: Building },
-      { id: "pilot-control-room", label: "Pilot Control Room", icon: Activity },
       { id: "roi-tracker", label: "Business ROI Tracker", icon: TrendingUp },
       { id: "live-support", label: "Live Support", icon: HelpCircle },
-      { id: "devops-dashboard", label: "DevOps Dashboard", icon: Terminal },
     ],
     billing: [
       { id: "billing-workspace", label: "Billing Workspace", icon: DollarSign },
@@ -735,12 +702,6 @@ export default function App() {
       { id: "tech-kpi", label: "My KPI", icon: TrendingUp },
       { id: "tech-profile", label: "My Profile", icon: UserIcon },
       { id: "attendance", label: "Attendance", icon: ClipboardCheck },
-    ],
-    fleet_manager: [
-      { id: "fleet-manager-workspace", label: "Fleet Intelligence", icon: Truck },
-      { id: "breakdown", label: "Breakdowns", icon: AlertTriangle },
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { id: "vehicle-lookup", label: "Vehicle History", icon: History },
     ],
   };
 
@@ -1559,8 +1520,6 @@ export default function App() {
           setToken(currentToken);
           setNeedsAuth(false);
           
-          // Removed DealerSetupWizard intercept as per GA Release requirements
-          
           // Pass token directly — React state is async so `token` is still null here
           fetchAllData(currentToken || undefined);
         }} 
@@ -1577,10 +1536,6 @@ export default function App() {
           "breakdown",
           "customer-portal",
           "assistant",
-          "devops-dashboard",
-          "operations-console",
-          "setup-wizard",
-          "pilot-control-room",
           "roi-tracker",
           "live-support",
           "mobile-platform",
@@ -1656,10 +1611,6 @@ export default function App() {
 
           {activeTab === "breakdown" && (
             <BreakdownManagement />
-          )}
-
-          {activeTab === "exception-report" && (
-            <ExceptionReport />
           )}
 
           {activeTab === "jobs" && (
@@ -1756,10 +1707,6 @@ export default function App() {
           )}
 
 
-          {activeTab === "query" && (
-            <QuerySearch aiModeEnabled={aiModeEnabled} />
-          )}
-
            {activeTab === "billing-exit" && (
             <React.Suspense fallback={<FunnyLoader message="Loading checkout portal..." />}>
               <BillingExit 
@@ -1768,18 +1715,6 @@ export default function App() {
                 onRefresh={fetchAllData}
               />
             </React.Suspense>
-          )}
-
-          {activeTab === "google" && (
-            <GoogleIntegration 
-              user={user}
-              token={token}
-              needsAuth={needsAuth}
-              isLoggingIn={isLoggingIn}
-              onLogin={handleLogin}
-              onLogout={handleLogout}
-              jobCards={jobCards}
-            />
           )}
 
           {activeTab === "assistant" && aiModeEnabled && (
@@ -1982,14 +1917,6 @@ export default function App() {
             />
           )}
 
-          {activeTab === "fleet-manager-workspace" && (
-            <FleetManagerWorkspace
-              jobCards={jobCards}
-              onRefresh={fetchAllData}
-              aiModeEnabled={aiModeEnabled}
-            />
-          )}
-
           {activeTab === "customer-portal" && (
             <CustomerExperiencePlatform 
               jobCards={jobCards}
@@ -2002,24 +1929,6 @@ export default function App() {
               jobCards={jobCards}
               onRefresh={fetchAllData}
             />
-          )}
-
-          {activeTab === "powerbi-analytics" && (
-            <PowerBiAnalytics 
-              jobCards={jobCards}
-              onRefresh={fetchAllData}
-            />
-          )}
-
-          {activeTab === "setup-wizard" && (
-            <DealerSetupWizard
-              onSetupComplete={fetchAllData}
-              showToast={showToast}
-            />
-          )}
-
-          {activeTab === "pilot-control-room" && (
-            <PilotControlRoom />
           )}
 
           {activeTab === "ai-brains" && user?.role === "developer" && (
@@ -2036,17 +1945,6 @@ export default function App() {
             />
           )}
 
-          {activeTab === "devops-dashboard" && (
-            <DevOpsDashboard />
-          )}
-
-          {activeTab === "cctv-safety" && (
-            <CctvFloorSafety />
-          )}
-
-          {activeTab === "operations-console" && (
-            <OperationsCommandCenter />
-          )}
 
           {activeTab === "gate-entry" && (
             <ErrorBoundary fallbackMessage="Gate Inward Registry encountered an issue. Tap retry to restore.">

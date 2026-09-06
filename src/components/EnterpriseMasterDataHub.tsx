@@ -66,7 +66,6 @@ export default function EnterpriseMasterDataHub() {
 
   // Core Data States
   const [dealers, setDealers] = useState<any[]>([]);
-  const [branches, setBranches] = useState<any[]>([]);
   const [parts, setParts] = useState<any[]>([]);
   const [labour, setLabour] = useState<any[]>([]);
   const [complaints, setComplaints] = useState<any[]>([]);
@@ -124,9 +123,8 @@ export default function EnterpriseMasterDataHub() {
         }
       };
 
-      const [dl, br, pt, lb, cp, wr, prf, emp, veh, cust] = await Promise.all([
+      const [dl, pt, lb, cp, wr, prf, emp, veh, cust] = await Promise.all([
         fetchDomain("/api/master/dealers"),
-        fetchDomain("/api/master/branches"),
         fetchDomain("/api/master/parts"),
         fetchDomain("/api/master/labour"),
         fetchDomain("/api/master/complaints"),
@@ -149,7 +147,6 @@ export default function EnterpriseMasterDataHub() {
       ]);
 
       setDealers(dl);
-      setBranches(br);
       setParts(pt);
       setLabour(lb);
       setComplaints(cp);
@@ -570,7 +567,6 @@ JC-2026-0003,KA32C9999,Karnataka Logistics,9845088888,MUSTAFA,MALLINATH,2026-07-
   const readinessStats = useMemo(() => {
     const stats = {
       dealers: dealers.length > 0,
-      branches: branches.length > 0,
       parts: parts.length > 0,
       labour: labour.length > 0,
       employees: employees.length > 0,
@@ -580,9 +576,8 @@ JC-2026-0003,KA32C9999,Karnataka Logistics,9845088888,MUSTAFA,MALLINATH,2026-07-
     };
 
     let matched = 0;
-    const totalMasters = 7;
+    const totalMasters = 6;
     if (stats.dealers) matched++;
-    if (stats.branches) matched++;
     if (stats.parts) matched++;
     if (stats.labour) matched++;
     if (stats.employees) matched++;
@@ -591,13 +586,12 @@ JC-2026-0003,KA32C9999,Karnataka Logistics,9845088888,MUSTAFA,MALLINATH,2026-07-
 
     stats.totalPercent = Math.round((matched / totalMasters) * 100);
     return stats;
-  }, [dealers, branches, parts, labour, employees, customers, vehicles]);
+  }, [dealers, parts, labour, employees, customers, vehicles]);
 
   // Dynamic row rendering depending on active CRUD selection
   const activeDomainData = useMemo(() => {
     let dataList = [];
     if (selectedDomain === "dealers") dataList = dealers;
-    else if (selectedDomain === "branches") dataList = branches;
     else if (selectedDomain === "parts") dataList = parts;
     else if (selectedDomain === "labour") dataList = labour;
     else if (selectedDomain === "complaints") dataList = complaints;
@@ -610,7 +604,7 @@ JC-2026-0003,KA32C9999,Karnataka Logistics,9845088888,MUSTAFA,MALLINATH,2026-07-
       );
     }
     return dataList;
-  }, [selectedDomain, dealers, branches, parts, labour, complaints, warranties, searchTerm]);
+  }, [selectedDomain, dealers, parts, labour, complaints, warranties, searchTerm]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-8">
@@ -660,7 +654,6 @@ JC-2026-0003,KA32C9999,Karnataka Logistics,9845088888,MUSTAFA,MALLINATH,2026-07-
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {[
                 { label: "Dealers", count: dealers.length, icon: Layers },
-                { label: "Branches", count: branches.length, icon: Sliders },
                 { label: "Parts Catalog", count: parts.length, icon: FileSpreadsheet },
                 { label: "Labour Ops", count: labour.length, icon: RefreshCw },
                 { label: "Complaints", count: complaints.length, icon: ShieldAlert },
@@ -709,7 +702,6 @@ JC-2026-0003,KA32C9999,Karnataka Logistics,9845088888,MUSTAFA,MALLINATH,2026-07-
           <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 flex flex-col gap-2">
             {[
               { id: "dealers", label: "Dealer Master" },
-              { id: "branches", label: "Branch Master" },
               { id: "parts", label: "Parts Master" },
               { id: "labour", label: "Labour Master" },
               { id: "complaints", label: "Complaint Master" },
@@ -1014,7 +1006,6 @@ JC-2026-0003,KA32C9999,Karnataka Logistics,9845088888,MUSTAFA,MALLINATH,2026-07-
           <div className="flex flex-col gap-4">
             {[
               { label: "Dealer Master Configuration", status: readinessStats.dealers },
-              { label: "Branch Master Registration", status: readinessStats.branches },
               { label: "Parts Catalog Uploaded", status: readinessStats.parts },
               { label: "Labour Operations Configured", status: readinessStats.labour },
               { label: "Employee Directory Synchronized", status: readinessStats.employees },
@@ -1062,45 +1053,6 @@ JC-2026-0003,KA32C9999,Karnataka Logistics,9845088888,MUSTAFA,MALLINATH,2026-07-
                       onChange={e => setFormData({ ...formData, dealer_name: e.target.value })}
                       className="w-full bg-slate-950 border border-slate-850 px-3 py-2 rounded-lg text-sm text-white focus:outline-none"
                     />
-                  </div>
-                </>
-              )}
-
-              {selectedDomain === "branches" && (
-                <>
-                  <div>
-                    <label className="text-xs text-slate-400 block mb-1">Branch Code</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.branch_code || ""}
-                      onChange={e => setFormData({ ...formData, branch_code: e.target.value })}
-                      className="w-full bg-slate-950 border border-slate-850 px-3 py-2 rounded-lg text-sm text-white focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-400 block mb-1">Branch Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.branch_name || ""}
-                      onChange={e => setFormData({ ...formData, branch_name: e.target.value })}
-                      className="w-full bg-slate-950 border border-slate-850 px-3 py-2 rounded-lg text-sm text-white focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-400 block mb-1">Dealer ID Reference</label>
-                    <select
-                      value={formData.dealer_id || ""}
-                      required
-                      onChange={e => setFormData({ ...formData, dealer_id: e.target.value })}
-                      className="w-full bg-slate-950 border border-slate-850 px-3 py-2 rounded-lg text-sm text-white focus:outline-none"
-                    >
-                      <option value="">Choose Dealer...</option>
-                      {dealers.map(d => (
-                        <option key={d.dealer_id} value={d.dealer_id}>{d.dealer_name}</option>
-                      ))}
-                    </select>
                   </div>
                 </>
               )}

@@ -43,7 +43,9 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
   const [success, setSuccess] = useState<string | null>(null);
   
   // Tabs and Permissions Matrix State
-  const [activeTab, setActiveTab] = useState<'directory' | 'permissions' | 'field-permissions' | 'ai-rbac' | 'live-bugs' | 'profile-approvals' | 'branches'>('permissions');
+  const [activeTab, setActiveTab] = useState<'directory' | 'permissions' | 'field-permissions' | 'ai-rbac' | 'live-bugs' | 'profile-approvals' | 'branches' | 'system-settings'>('permissions');
+  const [slaAlertsEnabled, setSlaAlertsEnabled] = useState<boolean | null>(null);
+  const [slaToggleSaving, setSlaToggleSaving] = useState(false);
   const [permissionsList, setPermissionsList] = useState<any[]>([]);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
   const [expandedRole, setExpandedRole] = useState<string | null>(null);
@@ -138,6 +140,35 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
 
   useEffect(() => {
     if (activeTab === 'branches') fetchBranches();
+  }, [activeTab]);
+
+  // System Settings: handoff-SLA breach alert suppression toggle. Relocated
+  // here from the now-removed Operations Cockpit — the only genuinely real,
+  // working control that screen had (everything else there pointed at
+  // non-existent telemetry endpoints or was a no-op "triggered!" toast).
+  const fetchSlaAlertPolicy = async () => {
+    try {
+      const res = await fetch("/api/admin/sla-alert-policy", { headers: { "Authorization": `Bearer ${token}` } });
+      const data = await res.json();
+      if (data && typeof data.enabled === "boolean") setSlaAlertsEnabled(data.enabled);
+    } catch { /* leave unknown */ }
+  };
+
+  const setSlaAlerts = async (enabled: boolean) => {
+    setSlaToggleSaving(true);
+    try {
+      const res = await fetch("/api/admin/sla-alert-policy", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ enabled }),
+      });
+      if (res.ok) setSlaAlertsEnabled(enabled);
+    } catch { /* leave state as-is on failure */ }
+    setSlaToggleSaving(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'system-settings') fetchSlaAlertPolicy();
   }, [activeTab]);
 
   // Profile update approvals state
@@ -977,6 +1008,19 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
             <Shield className="h-3.5 w-3.5 text-indigo-600" />
             <span>Branches</span>
           </button>
+          {(currentUser?.role === 'admin' || currentUser?.role === 'developer') && (
+            <button
+              onClick={() => setActiveTab('system-settings')}
+              className={`pb-3 font-bold text-xs uppercase tracking-wider border-b-2 transition whitespace-nowrap flex items-center gap-1.5 ${
+                activeTab === 'system-settings'
+                  ? 'border-orange-500 text-slate-900'
+                  : 'border-transparent text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              <Sliders className="h-3.5 w-3.5 text-orange-500" />
+              <span>System Settings</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -1692,6 +1736,57 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {activeTab === 'system-settings' && (currentUser?.role === 'admin' || currentUser?.role === 'developer') && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+          <div className="border-b pb-4">
+            <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+              <Sliders className="h-4 w-4 text-orange-500" />
+              <span>System Settings</span>
+            </h2>
+            <p className="text-xs text-slate-400 mt-1">Production-support controls, relocated here from the retired Operations Cockpit.</p>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1 max-w-xl">
+              <h4 className="text-xs font-bold text-orange-500 uppercase flex items-center gap-2">
+                <Shield className="w-4 h-4" /> Handoff-SLA Breach Alerts
+              </h4>
+              <p className="text-[11px] text-slate-500">
+                When suppressed, the 5-minute handoff SLA clocks keep running and recording, but breaches are
+                not surfaced — no alert-bell notification, no red BREACHED badges, no My Workspace counts.
+                Keep this off until the workflow is realtime-tested against live arrivals, then enable it.
+              </p>
+              <p className="text-[10px] font-bold uppercase tracking-wider mt-1">
+                Status:{" "}
+                {slaAlertsEnabled === null ? (
+                  <span className="text-slate-400">Checking…</span>
+                ) : slaAlertsEnabled ? (
+                  <span className="text-emerald-600">Alerts ENABLED (breaches surfaced)</span>
+                ) : (
+                  <span className="text-amber-600">SUPPRESSED (testing mode)</span>
+                )}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSlaAlerts(false)}
+                disabled={slaToggleSaving || slaAlertsEnabled === false}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${slaAlertsEnabled === false ? "bg-amber-500 text-white" : "bg-slate-200 hover:bg-slate-300 text-slate-700"} disabled:opacity-60`}
+              >
+                Suppress
+              </button>
+              <button
+                onClick={() => setSlaAlerts(true)}
+                disabled={slaToggleSaving || slaAlertsEnabled === true}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${slaAlertsEnabled === true ? "bg-emerald-600 text-white" : "bg-slate-200 hover:bg-slate-300 text-slate-700"} disabled:opacity-60`}
+              >
+                Enable
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
