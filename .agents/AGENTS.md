@@ -228,8 +228,59 @@ silently inherits the (often premium) session model and defeats this policy.
 - Wired live Siebel fallback into `/api/vehicle/tmsa-lookup` and `getVehiclePassportAggregate` in `src/engines/vehicle-passport/index.ts` to automatically query Tata national database across all organizations in India for any vehicle lookup.
 - Verified deployment on Cloud Run revision `dwip-enterprise-00127-rvg` (`status: UP / Healthy`).
 
+### 2026-09-06 — Linear Job-Card Workflow Redesign (Cloud Run rev `dwip-enterprise-00180-vh5`)
 
+Full re-implementation of the workshop's real physical job flow (gate-in → reception → SA assignment → SA/CRM/estimate → floor allocation → technician + parts → QC → SA pre-invoice → billing → cashier/gate-pass → gate-exit) as an enforced sequence, executed in 11 phases (0–10) plus migration/cleanup (11, 13). Phase 12 (field-level permission seeding) deliberately deferred — requires drafting the rule set with the workshop manager, not something to invent unilaterally.
 
+#### Root finding that reframed the whole effort
 
+- Three "engines" already existed fully built and correct — `floor-execution-engine.ts`, `qc-execution-engine.ts`, `billing-engine.ts`, each with a matching route file — but were **never mounted** in `server.ts`, and ~16 of their backing tables had never been migrated into production. This was not a design gap, it was a wiring gap. Mounting them (Phase 1) plus the missing migration (`011_floor_execution_tables.ts`) fixed two live 404s (Floor Allocation, QC Save) without writing new business logic.
+- `qc-execution-engine.ts` wrote only the legacy `job_cards.status` column; `jobcard-relevance.ts`'s RBAC/view-filter reads `workshop_stage`. Converged the engine to dual-write both rather than migrate RBAC — `status` may still have other readers, unconfirmed.
 
+#### Reception was silently auto-completing itself — real bug, not a wiring gap
 
+- `createJobCardRecord` (server.ts) called `RealtimeOwnershipPipeline.createGateIn()` immediately followed by `acceptReceptionIntake()` with a **hardcoded `visitCategory: "General Check-up"`** on every gate-in — meaning reception's queue was never actually populated; every vehicle self-approved instantly. Confirmed live via a direct DB correlation (gate_entry ↔ job_card_master timestamps 1 second apart) before touching it. Fixed by removing the auto-`acceptReceptionIntake` call — `ReceptionistWorkspace.tsx` already had the correct cross-check-and-submit UI built, it had simply never received anything to act on. Gate-to-reception SLA raised 5→10 min per workshop's own spec.
+
+#### Schema gotcha — do not repeat
+
+- **`job_card_master` has no `workshop_stage` column — only `live_status`.** `saveJobCardsToMaster`/`syncLoad` already silently map `workshop_stage ↔ live_status` at the sync boundary. Two of this session's own bridge writes (`floor-execution-engine.ts`'s `allocateJobAndBay`/`handoffToQc`) were written as `UPDATE job_card_master SET workshop_stage = ...` and **silently failed** (unknown column, swallowed by the file's own best-effort try/catch) from the moment they landed until caught and fixed later the same session. Any future bridge write to `job_card_master` must target `live_status`, not `workshop_stage`; only the real `job_cards` table carries `workshop_stage` directly.
+- `job_cards` (the MySQL table, not the in-memory `cachedDB.jobCards`) holds only a handful of rows in production — the app's real live data (111 job cards) lives in `job_card_master`. Direct SQL queries against `job_cards` from engine code will see almost nothing; the in-memory model is populated from `job_card_master` via `syncLoad()`.
+
+#### Business rules implemented this session
+
+- Technician one-job-at-a-time by grade: `employees.employee_grade` (`Junior`/`Senior`, already existed) is now enforced in `floor-execution-engine.ts`'s `allocateJobAndBay` — Junior techs are hard-blocked from a second open job; Senior techs are unrestricted. Checked against `job_cards.technician_name` (case-insensitive status match against `completed/delivered/invoiced/cancelled`), not `tbl_job_allocations`, because that's the table the technician's own screen actually reads.
+- Odometer plausibility (gate entry): must exceed the vehicle's last recorded reading; implied monthly run-rate flagged (not blocked) outside 3,000–10,000 km/month.
+- SA auto-suggest was already fully built (`generateAdvisorRecommendation`, workload-based) — confirmed working, not re-implemented.
+- Two-part gate-exit completion ("vehicle physically out" + "gate pass verified") is satisfied atomically by the existing `recordGateOut` — the VRN-vs-issued-pass match IS the gate-pass verification, the ANPR/camera event IS the physical-exit confirmation. No redundant second click was added.
+- Parts sub-flow TAT is 15 min for both query and issue (workshop's explicit correction from an earlier 30/15 draft).
+
+#### 111-card migration (one-time, not a permanent feature)
+
+- Backed up to Excel before any write. Of 111 live cards, only 1 had an unambiguous terminal state (`Delivered`+`Paid`+gate-out-completed → `COMPLETED`); 8 got a logged best-guess; **102 (`job_status='In Progress'`) were left untouched** — that single status value is used for every active stage from floor-allocation through QC, so guessing a specific new stage for them would have been fabricated data, not migration. All 111 got a `tbl_edit_audit` (`STAGE_MIGRATION_PHASE11`) record either way, for manager review.
+
+#### Removed as part of this redesign
+
+- `CashierManager.tsx` (confirmed unreachable — no nav tab pointed at it; `CashierWorkspace.tsx` is the live screen) and `PartsCommandCenter.tsx` (reachable but a fabricated-data stub, made redundant by the real parts-request flow wired into `TechnicianWorkspace.tsx` this session).
+
+### 2026-09-06 — DWIP Navigation & Workspace Restructuring (Cloud Run rev `dwip-enterprise-00187-rj9`)
+
+Full menu restructuring executed in 7 phases (A–G), same day as the job-card workflow redesign above, on top of it.
+
+#### Structural change
+
+- Nav groups collapsed from 8 to 5: **My Workspace, Dashboard, Workshop Operations, HR, Administration.** Service Operations and Parts & Warranty dissolved into Workshop Operations; Executive dissolved into Dashboard.
+- **My Workspace is now a role-aware dispatcher**, not a single generic screen: new `src/lib/myWorkspaceRouter.tsx` maps `service_advisor/technician/floor_supervisor/floor_incharge/billing/cashier/reception/receptionist/security_agent` to their own already-real, already-prop-wired dedicated component (same props their old standalone tab passed — no logic duplicated). Any other role falls through to the original generic `MyWorkspace.tsx`, unchanged.
+- **A real gap found and fixed**: `qc-workspace`, `billing-workspace`, and `delivery-workspace` (three fully-built, working screens) had no real staff role pointing at them — only `admin`/`developer` could reach them. Resolved by reuse, not new roles: QC → `floor_supervisor` (same staff already do both jobs at this dealership), Delivery → `security_agent`, Billing's primary view moved from the older `BillingExit.tsx` to `BillingWorkspace.tsx` (wired to the real billing-engine chain earlier this session) — `billing-exit` kept reachable, not deleted.
+- **Dashboard** restricted to `admin, developer, workshop_manager, service_manager, general_manager, gm_service, dealer_principal, works_manager, dkam, accounts`. The 6 former standalone "Executive" tabs (`WorkshopDashboard`, `ExecutiveDashboard`, `GMServiceCommandCenter`, `DealerPrincipalCommandCenter`, `RevenueDashboard`, `BusinessImpactTracker`) are now internal, role-gated sub-tabs of the one Dashboard component — same components, same props, just a different entry point. `PowerBiAnalytics.tsx` (a JSON-export button, not a real dashboard) was dropped rather than folded in.
+- **Administration pruned from 22 tabs to 7**: removed `OperationsCommandCenter.tsx` (most panels called API endpoints that don't exist — confirmed via grep, would 404/hang forever in production), `ExceptionReport.tsx` (genuinely real and working — removed anyway per explicit product decision), `query.tsx` (its core "search parts inventory" function was a permanent no-op stub, plus a leftover hardcoded fake-result array in the OCR-failure fallback path), `PilotControlRoom.tsx` (its one chart was 100% fabricated data), `DevOpsDashboard.tsx` (same broken-endpoint defect as Operations Cockpit), `GoogleIntegration.tsx`, `DealerSetupWizard.tsx`, `CctvFloorSafety.tsx`, `FleetManagerWorkspace.tsx` (+ the entire `fleet_manager` role), `PowerBiAnalytics.tsx`. The one genuinely real feature inside Operations Cockpit (SLA-breach-alert suppression toggle, backed by real `GET/PUT /api/admin/sla-alert-policy`) was relocated into a new "System Settings" tab inside `UserManagement.tsx`, not lost.
+- **Workforce renamed to HR**, absorbed `UserManagement.tsx`'s "Users" tab from Administration, and gained 5 new real modules — each a minimal migration + honest-empty-state UI, no fabricated data: **Leave Management** (`tbl_leave_requests`, modeled directly on `OvertimeEmployeeDashboard.tsx`'s existing request/approve state machine), **Holidays** (`tbl_holidays`), **Grievance Management** (`tbl_grievances`, JWT-scoped to the filer, review queue restricted to `admin`/`developer` only — deliberately not general managers), **Training & Development** (`tbl_training_records`), and **Employee Performance** (aggregation-only — composes already-real numbers from job outcomes + `employee_grade`/`certification_level`, no new ratings table, since the business has no subjective review process to digitize yet).
+
+#### Bugs fixed while touching this area
+
+- `FloorSupervisorWorkspace.tsx` read `t.qualification` for a technician's certification badge — not a real field on `Employee` (the real field is `certification_level`) — always silently fell through to a hardcoded `"Bronze"` display. Fixed, and a `Senior`/`Junior` grade badge added to the same roster row.
+- `QCInspectorWorkspace.tsx` had fabricated KPI fallbacks: `passedCount`/`failedCount` used `|| 6`/`|| 2` literal fallbacks (not divide-by-zero guards), plus fixed `"94%"` FTR, `"18 mins"` avg QC time, and `"97%"` AI-copilot confidence strings that were never computed from anything. Replaced with real computation or honest `"—"`.
+- `DealerPrincipalCommandCenter.tsx`'s "Gross Revenues Today" summed every job card ever passed in, not just today's — now genuinely filtered by `invoiced_at`/`completed_at` matching today's date. The flat 22%-margin profit assumption is a **documented, known limitation, left unfixed** — no real cost-basis data exists yet to compute an actual figure.
+
+#### Known gap — flagged, not yet resolved
+
+- `qc.routes.ts`/`billing.routes.ts` gate their endpoints via a separate DB-driven permission engine (`authorize("qc"/"billing", ...)`), independent of `ROLE_TABS`. Adding `floor_supervisor`/`billing` nav access to these screens does **not** guarantee those roles already have that module permission granted — if not, the screen loads but its API calls will 403 until Phase 12 (deferred, needs workshop-manager input) seeds the permission rows via the existing Field-Level Security admin screen.
