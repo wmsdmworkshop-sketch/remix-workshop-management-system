@@ -219,6 +219,7 @@ async function saveJobCardsToMaster(jobCards: any[]) {
       last_service_date: row.last_service_date || row.completed_at || row.created_at || null,
       odometer_reading: row.odometer_reading || row.km_reading || null,
       chassis_no: row.vin || null,
+      job_type: row.job_type || "Running Repair",
       gate_out_time: safeMysqlDatetime(row.gate_out_time, null)
     };
 
@@ -782,6 +783,19 @@ export async function ensureTablesExist(): Promise<void> {
   }
   try {
     await db.execute("ALTER TABLE `job_card_master` ADD COLUMN `chassis_no` VARCHAR(100) DEFAULT NULL");
+  } catch (err) {
+    // Ignore error if column already exists
+  }
+  // Gate-entry job classification (Running Repair vs Maintenance). No such
+  // field existed at intake before - only a status FILTER on the ledger view,
+  // which is a different concept. Defaults to the implicit prior behaviour.
+  try {
+    await db.execute("ALTER TABLE `job_cards` ADD COLUMN `job_type` VARCHAR(50) DEFAULT 'Running Repair'");
+  } catch (err) {
+    // Ignore error if column already exists
+  }
+  try {
+    await db.execute("ALTER TABLE `job_card_master` ADD COLUMN `job_type` VARCHAR(50) DEFAULT 'Running Repair'");
   } catch (err) {
     // Ignore error if column already exists
   }
@@ -1791,6 +1805,7 @@ export async function syncLoad(): Promise<any> {
         invoice_no: row.invoice_no || null,
         gate_out_time: row.gate_out_time ? safeIsoString(row.gate_out_time, null) : null,
         billing_status: row.billing_status || null,
+        job_type: row.job_type || "Running Repair",
         job_status_master: row.job_status || null,
         live_status_master: row.live_status || null,
         in_job_card_technician: jobCardTechRows.some((t: any) => Number(t.job_card_id) === Number(row.job_card_id)),
@@ -1911,6 +1926,7 @@ export async function syncLoad(): Promise<any> {
         last_service_date: r.last_service_date || r.actual_delivery || r.created_at || null,
         odometer_reading: r.odometer_reading || null,
         chassis_no: r.chassis_no || null,
+        job_type: r.job_type || "Running Repair",
         gate_out_time: safeMysqlDatetime(r.gate_out_time, null)
       };
       dbRowCache.set(`job_card_master:${r.job_card_id}`, JSON.stringify(masterRow));

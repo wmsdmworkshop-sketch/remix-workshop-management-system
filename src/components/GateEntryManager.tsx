@@ -70,6 +70,11 @@ export default function GateEntryManager({
   const [fuelLevel, setFuelLevel] = useState("50%");
   const [fuelPercentage, setFuelPercentage] = useState(50);
   const [complaints, setComplaints] = useState("");
+  // Job type: no such classification existed on gate-entry intake before —
+  // the only <select> in this whole component was a status *filter* on the
+  // ledger view. "Running Repair" stays the default to match every job
+  // created before this field existed.
+  const [jobType, setJobType] = useState<"Running Repair" | "Maintenance">("Running Repair");
   const [success, setSuccess] = useState<string | null>(null);
   // Dedicated OCR error state — never conflated with success notifications.
   // Shown as a red banner; triggers manual VRN entry fallback automatically.
@@ -450,7 +455,7 @@ export default function GateEntryManager({
   // points (never fabricates a "correct" value — only flags an implausible
   // one for the technician to double-check the digits):
   //  1. A truck's odometer cannot go backward from its last recorded reading.
-  //  2. Average usage for these vehicles runs 5,000-12,000 KM/month, so total
+  //  2. Average usage for these vehicles runs 3,000-10,000 KM/month, so total
   //     lifetime KM since the real `original_sale_date` (vehicle_master) should
   //     roughly fall in that band. Generous slack is applied on both sides —
   //     this only needs to catch gross OCR digit errors (e.g. a dropped or
@@ -467,10 +472,10 @@ export default function GateEntryManager({
           1,
           (now.getFullYear() - saleDate.getFullYear()) * 12 + (now.getMonth() - saleDate.getMonth())
         );
-        const minExpected = monthsElapsed * 5000 * 0.3;
-        const maxExpected = monthsElapsed * 12000 * 3;
+        const minExpected = monthsElapsed * 3000 * 0.3;
+        const maxExpected = monthsElapsed * 10000 * 3;
         if (newReading < minExpected || newReading > maxExpected) {
-          return `This reading (${newReading.toLocaleString()} KM) is well outside the typical range for a vehicle sold on ${vehicleSaleDate} (~${Math.round(monthsElapsed * 5000).toLocaleString()}-${Math.round(monthsElapsed * 12000).toLocaleString()} KM at average usage). Please double-check the digits.`;
+          return `This reading (${newReading.toLocaleString()} KM) is well outside the typical range for a vehicle sold on ${vehicleSaleDate} (~${Math.round(monthsElapsed * 3000).toLocaleString()}-${Math.round(monthsElapsed * 10000).toLocaleString()} KM at average usage). Please double-check the digits.`;
         }
       }
     }
@@ -657,6 +662,7 @@ export default function GateEntryManager({
       created_at: new Date().toISOString(),
       remarks: `Virtual Job Card generated at Gate Inward Security. Fuel: ${fuelLevel} | Odometer: ${odometer || 0} KM${anprFailed ? ` | Chassis Scanned: ${chassisNumber}` : ''} | Captured at: ${capturedLocation ? `${capturedLocation.lat}, ${capturedLocation.lng}` : 'N/A'} on ${capturedTime || 'N/A'}`,
       km_reading: odometer ? parseInt(odometer) : 0,
+      job_type: jobType,
       // Evidence: the captured vehicle photo (never the smaller OCR-only copy),
       // kept only when a real photo was captured — never a fabricated placeholder.
       numberplate_photo: evidenceImage || undefined
@@ -690,6 +696,7 @@ export default function GateEntryManager({
     setCustomerMobile("");
     setMake("TATA");
     setModel("Tata Commercial Heavy Vehicle");
+    setJobType("Running Repair");
     setOdometer("");
     setFuelLevel("50%");
     setFuelPercentage(50);
@@ -1029,6 +1036,21 @@ export default function GateEntryManager({
                     className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none text-slate-800 font-medium"
                   />
                 </div>
+              </div>
+
+              {/* Job Type */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  Job Type *
+                </label>
+                <select
+                  value={jobType}
+                  onChange={(e) => setJobType(e.target.value as "Running Repair" | "Maintenance")}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-orange-500 focus:outline-none text-slate-800 font-medium"
+                >
+                  <option value="Running Repair">Running Repair</option>
+                  <option value="Maintenance">Maintenance</option>
+                </select>
               </div>
 
               {/* Odometer Input with camera capture option */}
