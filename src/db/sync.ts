@@ -831,6 +831,16 @@ export async function ensureTablesExist(): Promise<void> {
   } catch (err) {
     // Ignore error if column already exists
   }
+  // Multi-branch: which workshop this login belongs to. Authoritative over
+  // employees.workshop_id when set (an admin can place a login on a branch
+  // directly), read by resolveWorkshopId() at login to populate the JWT's
+  // workshop_id claim. NULL means "not yet assigned to a branch" — never
+  // silently defaulted to a placeholder branch.
+  try {
+    await db.execute("ALTER TABLE `user_access_master` ADD COLUMN `workshop_id` INT DEFAULT NULL");
+  } catch (err) {
+    // Ignore error if column already exists
+  }
   // Employee-master external-system ids: CRM/Siebel login and LMS (Learning
   // Management System — technician training/certification) id.
   try {

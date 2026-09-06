@@ -43,7 +43,7 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
   const [success, setSuccess] = useState<string | null>(null);
   
   // Tabs and Permissions Matrix State
-  const [activeTab, setActiveTab] = useState<'directory' | 'permissions' | 'field-permissions' | 'ai-rbac' | 'live-bugs' | 'profile-approvals'>('permissions');
+  const [activeTab, setActiveTab] = useState<'directory' | 'permissions' | 'field-permissions' | 'ai-rbac' | 'live-bugs' | 'profile-approvals' | 'branches'>('permissions');
   const [permissionsList, setPermissionsList] = useState<any[]>([]);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
   const [expandedRole, setExpandedRole] = useState<string | null>(null);
@@ -67,6 +67,78 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
   const [rbacPolicy, setRbacPolicy] = useState<any>(null);
   const [bugsLoading, setBugsLoading] = useState<boolean>(false);
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
+
+  // Branches (multi-branch workshops) state — superadmin/admin only
+  const [branches, setBranches] = useState<any[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [showAddBranch, setShowAddBranch] = useState(false);
+  const [newBranchName, setNewBranchName] = useState("");
+  const [newBranchLat, setNewBranchLat] = useState("");
+  const [newBranchLng, setNewBranchLng] = useState("");
+  const [newBranchRadius, setNewBranchRadius] = useState("200");
+  const [branchSaving, setBranchSaving] = useState(false);
+
+  const fetchBranches = async () => {
+    setBranchesLoading(true);
+    try {
+      const res = await fetch("/api/workshops", { headers: { "Authorization": `Bearer ${token}` } });
+      if (res.ok) setBranches(await res.json());
+    } catch (e) {
+      console.error("Failed to load branches:", e);
+    } finally {
+      setBranchesLoading(false);
+    }
+  };
+
+  const handleCreateBranch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newBranchName.trim() || !newBranchLat || !newBranchLng) {
+      setError("Branch name, latitude and longitude are required.");
+      return;
+    }
+    setBranchSaving(true);
+    setError(null); setSuccess(null);
+    try {
+      const res = await fetch("/api/workshops", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({
+          workshop_name: newBranchName.trim(),
+          latitude: Number(newBranchLat),
+          longitude: Number(newBranchLng),
+          allowed_gps_radius: Number(newBranchRadius) || 200,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create branch.");
+      setSuccess(`Branch "${newBranchName}" created. You can now assign users and employees to it.`);
+      setNewBranchName(""); setNewBranchLat(""); setNewBranchLng(""); setNewBranchRadius("200");
+      setShowAddBranch(false);
+      await fetchBranches();
+    } catch (e: any) {
+      setError(e.message || "Failed to create branch.");
+    } finally {
+      setBranchSaving(false);
+    }
+  };
+
+  const handleToggleBranchActive = async (branch: any) => {
+    try {
+      const res = await fetch(`/api/workshops/${branch.workshop_id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ is_active: branch.is_active ? 0 : 1 }),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+      await fetchBranches();
+    } catch (e: any) {
+      setError(e.message || "Failed to update branch.");
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'branches') fetchBranches();
+  }, [activeTab]);
 
   // Profile update approvals state
   const [approvalRequests, setApprovalRequests] = useState<any[]>([]);
@@ -894,6 +966,17 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
           >
             Profile Approvals
           </button>
+          <button
+            onClick={() => setActiveTab('branches')}
+            className={`pb-3 font-bold text-xs uppercase tracking-wider border-b-2 transition whitespace-nowrap flex items-center gap-1.5 ${
+              activeTab === 'branches'
+                ? 'border-orange-500 text-slate-900'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <Shield className="h-3.5 w-3.5 text-indigo-600" />
+            <span>Branches</span>
+          </button>
         </div>
       )}
 
@@ -1527,6 +1610,86 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
                   );
                 })}
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'branches' && (currentUser?.role === 'admin' || currentUser?.role === 'developer') && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+          <div className="border-b pb-4 flex justify-between items-center flex-wrap gap-4">
+            <div>
+              <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <Shield className="h-4 w-4 text-indigo-600" />
+                <span>Branch Management</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">This dealership operates across multiple branches. Create a branch here, then assign users and employees to it from Employee Directory.</p>
+            </div>
+            <button
+              onClick={() => setShowAddBranch(!showAddBranch)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg transition-all cursor-pointer"
+            >
+              <Shield className="h-4 w-4" />
+              <span>{showAddBranch ? "Cancel" : "Add New Branch"}</span>
+            </button>
+          </div>
+
+          {showAddBranch && (
+            <form onSubmit={handleCreateBranch} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                  <label className="ds-label block text-[10px] font-bold uppercase tracking-wider mb-1">Branch Name *</label>
+                  <input type="text" required value={newBranchName} onChange={(e) => setNewBranchName(e.target.value)}
+                    placeholder="e.g. Devanand Automobiles - Bidar"
+                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label className="ds-label block text-[10px] font-bold uppercase tracking-wider mb-1">Latitude *</label>
+                  <input type="number" step="any" required value={newBranchLat} onChange={(e) => setNewBranchLat(e.target.value)}
+                    placeholder="17.320000"
+                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label className="ds-label block text-[10px] font-bold uppercase tracking-wider mb-1">Longitude *</label>
+                  <input type="number" step="any" required value={newBranchLng} onChange={(e) => setNewBranchLng(e.target.value)}
+                    placeholder="76.940000"
+                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label className="ds-label block text-[10px] font-bold uppercase tracking-wider mb-1">Geofence Radius (m)</label>
+                  <input type="number" value={newBranchRadius} onChange={(e) => setNewBranchRadius(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <button type="submit" disabled={branchSaving}
+                  className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer">
+                  {branchSaving ? "Creating..." : "Create Branch"}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {branchesLoading ? (
+            <FunnyLoader message="Loading branches..." />
+          ) : branches.length === 0 ? (
+            <p className="text-xs text-slate-500 text-center py-8">No branches created yet. Every current user/employee is unassigned to a branch until one exists.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {branches.map((b) => (
+                <div key={b.workshop_id} className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black text-slate-800 uppercase">{b.workshop_name}</h4>
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border ${b.is_active ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-500 border-slate-200"}`}>
+                      {b.is_active ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-mono">ID #{b.workshop_id} · {Number(b.latitude).toFixed(5)}, {Number(b.longitude).toFixed(5)} · {b.allowed_gps_radius}m radius</p>
+                  <button onClick={() => handleToggleBranchActive(b)} className="text-[10px] font-bold text-slate-500 hover:text-slate-800 underline cursor-pointer">
+                    {b.is_active ? "Deactivate" : "Activate"}
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>

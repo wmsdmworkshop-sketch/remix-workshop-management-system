@@ -80,7 +80,11 @@ export function authenticateJwt(req: Request, res: Response, next: NextFunction)
       role: userRole,
       roleId: decoded.roleId ? Number(decoded.roleId) : 0,
       employee_id: decoded.employee_id ? Number(decoded.employee_id) : (decoded.employeeId ? Number(decoded.employeeId) : null),
-      branchId: decoded.branchId ? Number(decoded.branchId) : (decoded.branch_id ? Number(decoded.branch_id) : undefined),
+      // The app's own multi-branch column is workshop_id (employees.workshop_id,
+      // the `workshops` table) — branchId/branch_id are this middleware's generic
+      // names for the same concept. Fall back to workshop_id last so any JWT that
+      // does carry a real branchId claim still wins.
+      branchId: decoded.branchId ? Number(decoded.branchId) : (decoded.branch_id ? Number(decoded.branch_id) : (decoded.workshop_id != null ? Number(decoded.workshop_id) : undefined)),
       companyId: decoded.companyId ? Number(decoded.companyId) : (decoded.company_id ? Number(decoded.company_id) : undefined),
       dealerId: decoded.dealerId ? Number(decoded.dealerId) : (decoded.dealer_id ? Number(decoded.dealer_id) : undefined),
       department: decoded.department,

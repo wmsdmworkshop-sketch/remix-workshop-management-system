@@ -81,6 +81,28 @@ validateEnvironment();
 
 const JWT_SECRET = envConfig.JWT_SECRET;
 
+/**
+ * Resolve the branch/workshop a user belongs to, for the JWT's workshop_id
+ * claim. This dealership is multi-branch: user_access_master.workshop_id is
+ * authoritative when set (an admin can place a login directly on a branch);
+ * otherwise fall back to the employee record's own workshop_id. Returns null
+ * (not a placeholder) when neither is set, so a caller can tell "no branch
+ * assigned yet" apart from a real branch id.
+ */
+async function resolveWorkshopId(user: { workshop_id?: number | null; employee_id?: number | null }): Promise<number | null> {
+  if (user.workshop_id != null) return Number(user.workshop_id);
+  if (user.employee_id != null) {
+    try {
+      const [rows]: any = await dbPool.query(
+        "SELECT workshop_id FROM employees WHERE employee_id = ? LIMIT 1",
+        [user.employee_id]
+      );
+      if (rows?.[0]?.workshop_id != null) return Number(rows[0].workshop_id);
+    } catch { /* fall through to null */ }
+  }
+  return null;
+}
+
 // Live Customer WebSocket Connections Map
 const customerConnections = new Map<string, WebSocket[]>();
 
@@ -1766,6 +1788,7 @@ async function startServer() {
           full_name: user.full_name || user.username,
           role: user.user_role || "reception",
           employee_id: user.employee_id || null,
+          workshop_id: await resolveWorkshopId(user),
         },
         JWT_SECRET,
         { expiresIn: "24h" }
@@ -1884,6 +1907,7 @@ async function startServer() {
           full_name: user.full_name || user.username,
           role: user.user_role || "reception",
           employee_id: user.employee_id || null,
+          workshop_id: await resolveWorkshopId(user),
         },
         JWT_SECRET,
         { expiresIn: "24h" }
@@ -2334,11 +2358,15 @@ async function startServer() {
       console.warn(`[bulk-create-logins] employee ${employee.employee_code}: ${mobileWarning}`);
     }
 
+    // Copy the employee's branch onto their new login (multi-branch dealership —
+    // this is what lets resolveWorkshopId() put a real workshop_id in the JWT at
+    // login without a separate lookup). Stays NULL, not a placeholder, if the
+    // employee record itself has no branch assigned yet.
     await dbPool.execute(
       `INSERT INTO user_access_master
-        (full_name, employee_id, username, email, user_role, access_level, is_active, mobile_no, password_hash, must_change_password)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 1)`,
-      [employee.full_name, empId, username, employee.email || null, employee.role, employee.role, cleanMobile, password_hash]
+        (full_name, employee_id, username, email, user_role, access_level, is_active, mobile_no, password_hash, must_change_password, workshop_id)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 1, ?)`,
+      [employee.full_name, empId, username, employee.email || null, employee.role, employee.role, cleanMobile, password_hash, employee.workshop_id || null]
     );
     await dbPool.execute(
       `INSERT INTO users (full_name, username, password_hash, role, employee_id, is_active, mobile_no, created_at, must_change_password)
@@ -11932,6 +11960,64 @@ Respond with valid JSON only:
       res.json(rows);
     } catch (e: any) {
       res.status(500).json({ error: e.message || "Failed to load workshops" });
+    }
+  });
+
+  // Branch (workshop) management — superadmin/admin only. This dealership is
+  // multi-branch: creating a branch here is what a superadmin does before
+  // assigning users/employees to it (Employee Directory / Create Login already
+  // reuse `workshop_id` once a branch exists — see Administration -> Branches).
+  const BRANCH_ADMIN_ROLES = ["admin", "developer"];
+  app.post("/api/workshops", authenticateToken, requireRoles(BRANCH_ADMIN_ROLES), express.json(), async (req: any, res) => {
+    try {
+      const { workshop_name, latitude, longitude, allowed_gps_radius } = req.body || {};
+      if (!workshop_name || String(workshop_name).trim().length < 2) {
+        return res.status(400).json({ error: "workshop_name is required." });
+      }
+      if (latitude == null || longitude == null) {
+        return res.status(400).json({ error: "latitude and longitude are required (used for attendance geofencing at this branch)." });
+      }
+      const [result]: any = await dbPool.execute(
+        "INSERT INTO workshops (workshop_name, latitude, longitude, allowed_gps_radius, is_active) VALUES (?, ?, ?, ?, 1)",
+        [String(workshop_name).trim(), Number(latitude), Number(longitude), Number(allowed_gps_radius) || 200]
+      );
+      await logEdit(req, {
+        entity_type: "workshop",
+        entity_id: result.insertId,
+        action: "CREATE_BRANCH",
+        justification: `Created branch '${workshop_name}' by ${req.user?.username || req.user?.role}`,
+        after: { workshop_name, latitude, longitude, allowed_gps_radius },
+      });
+      res.status(201).json({ success: true, workshop_id: result.insertId });
+    } catch (e: any) {
+      if (e?.code === "ER_DUP_ENTRY") return res.status(409).json({ error: "A branch with this name already exists." });
+      res.status(500).json({ error: e.message || "Failed to create branch." });
+    }
+  });
+
+  app.put("/api/workshops/:id", authenticateToken, requireRoles(BRANCH_ADMIN_ROLES), express.json(), async (req: any, res) => {
+    const workshopId = Number(req.params.id);
+    if (!workshopId) return res.status(400).json({ error: "Invalid workshop id." });
+    const body = req.body || {};
+    const sets: string[] = [];
+    const params: any[] = [];
+    for (const [col, key] of [["workshop_name", "workshop_name"], ["latitude", "latitude"], ["longitude", "longitude"], ["allowed_gps_radius", "allowed_gps_radius"], ["is_active", "is_active"]] as const) {
+      if (body[key] !== undefined) { sets.push(`${col} = ?`); params.push(body[key]); }
+    }
+    if (sets.length === 0) return res.status(400).json({ error: "Nothing to update." });
+    try {
+      const [result]: any = await dbPool.execute(`UPDATE workshops SET ${sets.join(", ")} WHERE workshop_id = ?`, [...params, workshopId]);
+      if (!result.affectedRows) return res.status(404).json({ error: "Branch not found." });
+      await logEdit(req, {
+        entity_type: "workshop",
+        entity_id: workshopId,
+        action: "UPDATE_BRANCH",
+        justification: `Updated branch #${workshopId} by ${req.user?.username || req.user?.role}`,
+        after: body,
+      });
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Failed to update branch." });
     }
   });
 
