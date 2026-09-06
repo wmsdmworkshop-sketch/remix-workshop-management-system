@@ -82,8 +82,12 @@ export class RealtimeOwnershipPipeline {
     "Other"
   ];
 
-  // 5-Minute Handoff SLA Threshold in milliseconds
+  // 5-Minute Handoff SLA Threshold in milliseconds (Reception -> Manager, Manager -> SA)
   public static readonly HANDOFF_SLA_MS = 5 * 60 * 1000;
+
+  // Gate-In -> Reception cross-check TAT: 10 minutes (workshop's own spec —
+  // reception now genuinely reviews every vehicle instead of it auto-passing).
+  public static readonly GATE_TO_RECEPTION_SLA_MS = 10 * 60 * 1000;
 
   /**
    * STAGE 01: Vehicle Arrival (Security / Gate)
@@ -117,7 +121,7 @@ export class RealtimeOwnershipPipeline {
     // The SLA clock runs from the moment of arrival. On a backdated entry that
     // means the handoff window may already have elapsed — which is correct:
     // pretending the clock starts now would misreport the delay.
-    const slaDueAt = new Date(now.getTime() + this.HANDOFF_SLA_MS);
+    const slaDueAt = new Date(now.getTime() + this.GATE_TO_RECEPTION_SLA_MS);
 
     if (arrival.backdated) {
       await AuditService.logAction(
@@ -258,7 +262,8 @@ export class RealtimeOwnershipPipeline {
       try { driver = JSON.parse(r.driver_details || "{}"); } catch {}
       const arrival = r.arrival_time ? new Date(r.arrival_time).getTime() : now;
       const waitingMins = Math.floor((now - arrival) / 60000);
-      const isBreached = alertsOn && waitingMins >= 5;
+      const slaMins = this.GATE_TO_RECEPTION_SLA_MS / 60000;
+      const isBreached = alertsOn && waitingMins >= slaMins;
 
       return {
         gateEntryId: r.gate_entry_id,
@@ -270,7 +275,7 @@ export class RealtimeOwnershipPipeline {
         arrivalTime: r.arrival_time,
         waitingMins,
         isBreached,
-        slaStatus: isBreached ? "BREACHED" : (waitingMins >= 5 ? "MONITORING" : "ON_TRACK")
+        slaStatus: isBreached ? "BREACHED" : (waitingMins >= slaMins ? "MONITORING" : "ON_TRACK")
       };
     });
   }

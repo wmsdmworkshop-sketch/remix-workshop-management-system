@@ -5343,22 +5343,21 @@ time from another field.`;
       }).catch(err => console.error("[JobCardCreation] Photo evidence storage failed:", err.message));
     }
 
-    // Drive the real VOS gate-in -> reception-accept pipeline for this vehicle.
-    // GateEntryManager.tsx (the screen receptionists/security actually use)
-    // collects both gate details AND reception details in one manual form, so
-    // both pipeline steps fire together here. This is what makes the vehicle
-    // show up — with a real 5-minute handoff-SLA and breach state — in the
-    // Manager's "SA Assignment" queue (RealtimeOwnershipPipeline.getManagerPendingQueue,
-    // which reads tbl_reception_intake) and lets /api/v1/devops/cron/sla-evaluator
-    // actually escalate it. tbl_gate_entry/tbl_reception_intake/tbl_handoff_sla
-    // are a separate, well-tested tracking layer alongside `job_cards` (the
-    // record every other screen reads) — not a replacement for it. Best-effort:
-    // never block job-card creation on this.
+    // Drive the real VOS gate-in pipeline for this vehicle. GateEntryManager.tsx
+    // (the screen security/gate staff actually use) only collects gate details —
+    // reception's cross-check-and-submit is now a genuine, separate human step
+    // (ReceptionistWorkspace.tsx -> POST /api/pipeline/reception/accept), so we
+    // deliberately do NOT auto-call acceptReceptionIntake here anymore. Until a
+    // receptionist submits, this vehicle sits as a pending row in
+    // tbl_gate_entry / the reception queue. tbl_gate_entry/tbl_reception_intake/
+    // tbl_handoff_sla are a separate, well-tested tracking layer alongside
+    // `job_cards` (the record every other screen reads) — not a replacement
+    // for it. Best-effort: never block job-card creation on this.
     if (newJob.current_workflow_state === "GATE_IN" && (!newJob.service_advisor || newJob.service_advisor === "Unassigned")) {
       try {
         const { RealtimeOwnershipPipeline } = await import('./src/core/workshop/realtime-ownership-pipeline.ts');
         const branchId = req.user?.branchId || req.user?.branch_id || "BR-SEDAM";
-        const gateRes = await RealtimeOwnershipPipeline.createGateIn(
+        await RealtimeOwnershipPipeline.createGateIn(
           {
             vrn: newJob.vrn,
             vin: newJob.chassis_number || undefined,
@@ -5369,18 +5368,8 @@ time from another field.`;
           },
           req.user
         );
-        await RealtimeOwnershipPipeline.acceptReceptionIntake(
-          {
-            gateEntryId: gateRes.gateEntryId,
-            visitCategory: "General Check-up",
-            confirmedOdometer: newJob.km_reading || 0,
-            preliminaryComplaints: newJob.remarks || newJob.job_description || undefined,
-            branchId
-          },
-          req.user
-        );
       } catch (e: any) {
-        console.error("Failed to drive VOS gate-in/reception-accept pipeline for new job card:", e.message);
+        console.error("Failed to drive VOS gate-in pipeline for new job card:", e.message);
       }
     }
 
