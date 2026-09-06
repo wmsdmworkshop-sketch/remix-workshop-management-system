@@ -357,7 +357,11 @@ export class QcExecutionEngine {
           WHERE entity_id = ? AND stage_name = 'SLA_FLOOR_TO_QC' AND status = 'ON_TRACK'`,
         [jobId.toString()]
       );
-      await conn.execute(`UPDATE job_cards SET status = 'QC_IN_PROGRESS' WHERE job_id = ?`, [jobId]);
+      // workshop_stage is set alongside the legacy status column so that
+      // jobcard-relevance.ts's STAGE_RULES (which the RBAC/view-filter every
+      // workspace depends on reads primarily) see this transition too - status
+      // alone was invisible to that system.
+      await conn.execute(`UPDATE job_cards SET status = 'QC_IN_PROGRESS', workshop_stage = 'QC_IN_PROGRESS' WHERE job_id = ?`, [jobId]);
       await conn.commit();
 
       try {
@@ -467,9 +471,9 @@ export class QcExecutionEngine {
             VALUES (?, ?, 'QC_REWORK', 1, NOW(), NOW(), 0, 'QC FAIL', ?, false, 0)`,
           [jobId, jobId, notes || "Failed QC inspection"]
         );
-        await conn.execute(`UPDATE job_cards SET status = 'QC_FAILED_REWORK' WHERE job_id = ?`, [jobId]);
+        await conn.execute(`UPDATE job_cards SET status = 'QC_FAILED_REWORK', workshop_stage = 'QC_FAILED_REWORK' WHERE job_id = ?`, [jobId]);
       } else {
-        await conn.execute(`UPDATE job_cards SET status = 'QC_PASSED' WHERE job_id = ?`, [jobId]);
+        await conn.execute(`UPDATE job_cards SET status = 'QC_PASSED', workshop_stage = 'QC_PASSED' WHERE job_id = ?`, [jobId]);
           await conn.execute(
             `INSERT INTO tbl_handoff_sla (handoff_id, entity_id, stage_name, status, branch_id, owner_id, owner_role, sla_due_at) VALUES (UUID(), ?, 'SLA_QC_TO_SA', 'ON_TRACK', ?, 'SYSTEM', 'SYSTEM', NOW())`,
             [jobId.toString(), branchId.toString()]
@@ -511,7 +515,7 @@ export class QcExecutionEngine {
       }
 
       await conn.execute(`UPDATE rework_tracking SET rework_completed = true WHERE original_job_id = ? AND rework_completed = false`, [jobId]);
-      await conn.execute(`UPDATE job_cards SET status = 'QC_PENDING' WHERE job_id = ?`, [jobId]);
+      await conn.execute(`UPDATE job_cards SET status = 'QC_PENDING', workshop_stage = 'QC_PENDING' WHERE job_id = ?`, [jobId]);
       await conn.commit();
 
       try {
@@ -553,7 +557,7 @@ export class QcExecutionEngine {
           WHERE entity_id = ? AND stage_name = 'SLA_QC_TO_SA' AND status = 'ON_TRACK'`,
         [jobId.toString()]
       );
-      await conn.execute(`UPDATE job_cards SET status = 'PRE_INVOICE_READY' WHERE job_id = ?`, [jobId]);
+      await conn.execute(`UPDATE job_cards SET status = 'PRE_INVOICE_READY', workshop_stage = 'PRE_INVOICE_READY' WHERE job_id = ?`, [jobId]);
       await conn.commit();
 
       try {

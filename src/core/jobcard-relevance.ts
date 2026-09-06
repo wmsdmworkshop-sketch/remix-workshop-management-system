@@ -49,9 +49,17 @@ export const STAGE_RULES: Record<string, { states: string[]; statuses?: string[]
   accounts:       { states: ["BILLING_PENDING"], statuses: ["Completed"] },
   warranty_clerk: { states: ["BILLING_PENDING"], statuses: ["Completed"] },
   cashier:        { states: ["CASHIER_PENDING"], statuses: ["Invoiced"] },
-  qc:             { states: ["QC_PENDING", "QC_FAILED"] },
+  // QC_IN_PROGRESS / QC_FAILED_REWORK added alongside the pre-existing
+  // QC_PENDING/QC_FAILED: qc-execution-engine.ts (now wired) writes these two
+  // additional values across the acknowledge/decision/rework lifecycle.
+  qc:             { states: ["QC_PENDING", "QC_FAILED", "QC_IN_PROGRESS", "QC_FAILED_REWORK"] },
   security_agent: { states: ["GATE_IN", "FINAL_REVIEW", "COMPLETED"], statuses: ["Gate In", "Completed", "Invoiced"] },
   gate_personnel: { states: ["GATE_IN", "FINAL_REVIEW", "COMPLETED"], statuses: ["Gate In", "Completed", "Invoiced"] },
+  // No stage-based relevance existed for the floor supervisor at all before
+  // this — only ownership matched. FLOOR_ALLOCATION_PENDING starts being
+  // written once the SA-assignment/estimate phases of the linear workflow
+  // land; harmless to add now (matches zero cards until then).
+  floor_supervisor: { states: ["FLOOR_ALLOCATION_PENDING"] },
 };
 
 const norm = (v: any): string => String(v ?? "").trim().toLowerCase();

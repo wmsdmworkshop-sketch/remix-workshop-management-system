@@ -47,6 +47,8 @@ import vehiclePassportFacade from "./src/engines/vehicle-passport/index.ts";
 import serviceScheduleEvaluator from "./src/services/service-schedule-evaluator.ts";
 import { pipelineRouter } from "./src/api/routes/pipeline.routes.ts";
 import { saIntakeRouter } from "./src/api/routes/sa-intake.routes.ts";
+import { floorExecutionRouter } from "./src/api/routes/floor-execution.routes.ts";
+import { qcRoutes } from "./src/api/routes/qc.routes.ts";
 import { DeepSeekEngine } from "./src/engines/deepseek-engine.ts";
 import { EmployeeIdentityService, RoleService, AuditService } from "./src/core/identity.ts";
 import { EmployeeRepository, PermissionRepository, AuditRepository } from "./src/core/repositories.ts";
@@ -10686,6 +10688,15 @@ Respond with valid JSON only:
   // role checks, so it's safe to mount as-is.
   app.use("/api/pipeline", pipelineRouter);
   app.use("/api/sa-intake", saIntakeRouter);
+  // Same "fully built, never mounted" situation as the two routers above.
+  // floor-execution.routes.ts backs the Floor Supervisor's Allocate button and
+  // qc.routes.ts backs the QC Inspector's Save action — both have been 404ing
+  // in production. Both bring their own JWT auth (authenticateJwt) the same
+  // way pipelineRouter/saIntakeRouter do, so mounting is safe as-is; the real
+  // prerequisite (their branchId requirement) was fixed by wiring workshop_id
+  // into the JWT and into auth.ts's decode step.
+  app.use("/api/floor-execution", floorExecutionRouter);
+  app.use("/api/qc", qcRoutes);
 
   // --- AI BRAINS: SIGNA (L1 Tactical) / SETU (L2 Coordination) / DISHA (L3 Strategic) ---
   // Handlers now live in src/api/routes/ai.routes.ts. They are mounted here
