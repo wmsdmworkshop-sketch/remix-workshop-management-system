@@ -388,12 +388,16 @@ export class FloorExecutionEngine {
     // screen reads) so the technician's workspace picks this job up. jobCardId
     // here may be a real job_card_no or a bare VRN — match on either,
     // best-effort: never fail the (already-committed) allocation on this.
+    // job_card_master has no workshop_stage/technician_name columns — its
+    // stage analog is `live_status` (syncLoad() already maps live_status back
+    // to workshop_stage in-memory); job_cards is the table that genuinely
+    // carries workshop_stage/technician_name directly.
     try {
       await db.execute(
-        `UPDATE job_card_master SET workshop_stage = 'FLOOR_ALLOCATED', technician_name = ?
+        `UPDATE job_card_master SET live_status = 'FLOOR_ALLOCATED'
           WHERE job_card_no = ? OR vehicle_reg = ?
           ORDER BY job_card_id DESC LIMIT 1`,
-        [technicianName, jobCardId, jobCardId]
+        [jobCardId, jobCardId]
       );
       await db.execute(
         `UPDATE job_cards SET workshop_stage = 'FLOOR_ALLOCATED', technician_name = ?
@@ -976,9 +980,11 @@ export class FloorExecutionEngine {
     // Bridge into job_card_master/job_cards so QCInspectorWorkspace's own
     // stage-based relevance (jobcard-relevance.ts) picks this job up.
     // Best-effort: never fail the (already-committed) handoff on this.
+    // job_card_master has no workshop_stage column — its analog is
+    // `live_status` (see the allocateJobAndBay bridge above for the same fix).
     try {
       await db.execute(
-        `UPDATE job_card_master SET workshop_stage = 'QC_PENDING'
+        `UPDATE job_card_master SET live_status = 'QC_PENDING'
           WHERE job_card_no = ? OR vehicle_reg = ?
           ORDER BY job_card_id DESC LIMIT 1`,
         [jobCardId, vrn || jobCardId]

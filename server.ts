@@ -5919,6 +5919,17 @@ time from another field.`;
       // Phase B: cashier accepted → close billing→cashier, open cashier→security.
       await closeSla("SLA_BILLING_TO_CASHIER", jobId);
       await openSla("SLA_CASHIER_TO_SECURITY", jobId, gpId, "SECURITY");
+      // Mark the gate-pass stage so the security gate's own relevance filter
+      // picks this job up. Best-effort: never fail the already-issued pass.
+      try {
+        const db = getDB();
+        const idx = (db.jobCards || []).findIndex((j: JobCard) => Number(j.job_id) === jobId);
+        if (idx !== -1) {
+          db.jobCards[idx].workshop_stage = "GATEPASS_ISSUED";
+          setDB(db);
+          await syncSave(db);
+        }
+      } catch (e: any) { console.error("[GATE-OUT] Failed to stamp GATEPASS_ISSUED:", e.message); }
       await emitGateEvent("GATE_PASS_CREATED", jobId, { user: req.user?.full_name, role: "Cashier", remarks: `Gate pass ${gpNo} issued (${basis}).`, payload: { gatePassId: gpId, gatePassNo: gpNo, releaseBasis: basis } });
       res.status(201).json({ gatePassId: gpId, gatePassNo: gpNo, vrn: normVrn(jc.vrn) });
     } catch (err: any) {
@@ -5989,13 +6000,19 @@ time from another field.`;
     await dbPool.execute(`UPDATE tbl_evidence SET lifecycle_status = 'VERIFIED' WHERE evidence_id = ?`, [evidenceId]);
     await dbPool.execute(`UPDATE tbl_gate_pass SET status = 'VERIFIED' WHERE gate_pass_id = ?`, [pass.gate_pass_id]);
     await closeSla("SLA_CASHIER_TO_SECURITY", pass.job_id); // Phase B: security accepted.
-    // Mark the in-memory job card delivered / gated out.
+    // Mark the in-memory job card delivered / gated out. This single call is
+    // the two-part gate-exit completion the workshop requires: the detected
+    // VRN was already matched against the ISSUED gate pass above (pass
+    // verified) and this is the physical exit event itself (vehicle
+    // confirmed out — ANPR or manual camera capture), so both conditions are
+    // satisfied atomically here — no separate "mark completed" click needed.
     try {
       const db = getDB();
       const idx = (db.jobCards || []).findIndex((j: JobCard) => Number(j.job_id) === Number(pass.job_id));
       if (idx !== -1) {
         db.jobCards[idx].status = "Delivered";
         db.jobCards[idx].current_workflow_state = "GATE_OUT";
+        db.jobCards[idx].workshop_stage = "COMPLETED";
         db.jobCards[idx].gate_out_time = new Date().toISOString();
         setDB(db);
         await syncSave(db);
