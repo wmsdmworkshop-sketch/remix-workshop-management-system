@@ -16,16 +16,35 @@ function requireFloorRoles(allowedRoles: string[]) {
   };
 }
 
+// Same cross-branch role set AuthorizationService.checkBranchAccess() already
+// treats as global/administrative (src/core/AuthorizationService.ts) — kept in
+// sync here rather than imported so this route stays a self-contained module.
+const GLOBAL_CONTEXT_ROLES = new Set(["admin", "developer", "dealer_principal", "gm", "operations_lead", "gm_service"]);
+
 function requireAuthenticatedUser(req: any): { id: string; name: string; branchId: string; role: string } {
   const user = req.user;
-  if (!user?.id || user.branchId === undefined || user.branchId === null) {
+  if (!user?.id) {
+    throw new Error("AUTHENTICATED_USER_CONTEXT_REQUIRED");
+  }
+  const role = normaliseRole(user.role);
+  if ((user.branchId === undefined || user.branchId === null) && !GLOBAL_CONTEXT_ROLES.has(role)) {
+    // A branch-scoped role with no resolvable branch is a genuine gap (their
+    // account has no employee link and no workshop_id set) — still refuse,
+    // since silently guessing a branch for them would leak cross-branch data.
     throw new Error("AUTHENTICATED_USER_CONTEXT_REQUIRED");
   }
   return {
     id: String(user.id ?? user.userId ?? user.user_id),
     name: user.full_name || user.fullName || user.username || String(user.id),
-    branchId: String(user.branchId),
-    role: normaliseRole(user.role),
+    // Global-context roles with no linked branch get the same "BR-SEDAM"
+    // literal every floor-execution-engine method already defaults its own
+    // `branchId` parameter to when the caller passes nothing — this
+    // subsystem is single-branch today, so that's the real branch, not a
+    // fabricated one. (Passing "" here would NOT trigger those defaults —
+    // JS default params only fire on `undefined` — so it has to be spelled
+    // out explicitly rather than left blank.)
+    branchId: user.branchId != null ? String(user.branchId) : "BR-SEDAM",
+    role,
   };
 }
 

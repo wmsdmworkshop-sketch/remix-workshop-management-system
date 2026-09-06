@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { 
   Wrench, Users, Clock, AlertTriangle, Sparkles, Building2, BarChart3, 
   History, Calendar, CheckSquare, Layers, RefreshCw, CheckCircle2, 
@@ -42,6 +42,44 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
   const [isOverride, setIsOverride] = useState<boolean>(false);
   const [overrideReason, setOverrideReason] = useState<string>("");
   const [submitting, setSubmitting] = useState<boolean>(false);
+
+  // Real bay roster for the allocation modal. This used to be four hardcoded
+  // <option> elements (a stale snapshot of tbl_bays that never picked up new
+  // bays or reflected live status) — now fetched from the same endpoint
+  // getBaysStatus() backs, on demand each time the modal opens.
+  const [floorBays, setFloorBays] = useState<any[]>([]);
+  const [floorBaysLoading, setFloorBaysLoading] = useState<boolean>(false);
+  const [floorBaysError, setFloorBaysError] = useState<string>("");
+
+  useEffect(() => {
+    if (!showAllocateModal) return;
+    let cancelled = false;
+    setFloorBaysLoading(true);
+    setFloorBaysError("");
+    (async () => {
+      try {
+        const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || localStorage.getItem("wms_token");
+        const res = await fetch("/api/floor-execution/bays", {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (cancelled) return;
+        if (res.ok && data.success) {
+          const list = Array.isArray(data.data) ? data.data : [];
+          setFloorBays(list);
+          const firstAvailable = list.find((b: any) => String(b.status || "").toUpperCase() === "AVAILABLE") || list[0];
+          if (firstAvailable) setSelectedBay(firstAvailable.bayId);
+        } else {
+          setFloorBaysError(data.error || "Could not load bays.");
+        }
+      } catch (e: any) {
+        if (!cancelled) setFloorBaysError(e.message || "Network error loading bays.");
+      } finally {
+        if (!cancelled) setFloorBaysLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showAllocateModal]);
 
   // Derive target job card
   const selectedJob = useMemo(() => {
@@ -381,16 +419,28 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
             <div className="space-y-3 text-xs">
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Select Bay</label>
-                <select
-                  value={selectedBay}
-                  onChange={(e) => setSelectedBay(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-slate-200 outline-none"
-                >
-                  <option value="B-01">Bay 01 - Heavy Commercial (HCV)</option>
-                  <option value="B-02">Bay 02 - General Repair</option>
-                  <option value="B-03">Bay 03 - EV & Electrical</option>
-                  <option value="B-04">Bay 04 - Express Bay</option>
-                </select>
+                {floorBaysLoading ? (
+                  <div className="w-full bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-slate-500">Loading bays…</div>
+                ) : floorBaysError ? (
+                  <div className="w-full bg-red-950/40 border border-red-900 rounded-xl p-2.5 text-red-300">{floorBaysError}</div>
+                ) : (
+                  <select
+                    value={selectedBay}
+                    onChange={(e) => setSelectedBay(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-slate-200 outline-none"
+                  >
+                    {floorBays.length === 0 && <option value="">No bays configured</option>}
+                    {floorBays.map((b: any) => {
+                      const status = String(b.status || "").toUpperCase();
+                      const isAvailable = status === "AVAILABLE";
+                      return (
+                        <option key={b.bayId} value={b.bayId} disabled={!isAvailable}>
+                          {b.bayName} {b.bayType ? `(${b.bayType})` : ""}{!isAvailable ? ` — ${status}` : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                )}
               </div>
 
               <div>

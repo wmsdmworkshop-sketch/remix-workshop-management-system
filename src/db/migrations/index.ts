@@ -26,6 +26,7 @@ import leaveManagement from "./012_leave_management.ts";
 import holidaysManagement from "./013_holidays_management.ts";
 import trainingDevelopment from "./014_training_development.ts";
 import grievanceManagement from "./015_grievance_management.ts";
+import jobCardMasterEarlyCreation from "./016_job_card_master_early_creation.ts";
 export const allMigrations: Migration[] = [
   baseline,
   modulesMasterSeeding,
@@ -41,5 +42,6 @@ export const allMigrations: Migration[] = [
   leaveManagement,
   holidaysManagement,
   trainingDevelopment,
-  grievanceManagement
+  grievanceManagement,
+  jobCardMasterEarlyCreation
 ];

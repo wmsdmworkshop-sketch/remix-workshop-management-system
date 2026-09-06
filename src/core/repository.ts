@@ -152,7 +152,33 @@ export class JobCardRepository {
     let jobStatus: string = 'Unassigned';
     const statusLower = String(jobCard.status || '').toLowerCase();
     if (statusLower === 'waiting' || statusLower === 'scheduled') {
-      jobStatus = 'Unassigned';
+      // A row already carrying a Service Advisor (stamped by the SA
+      // Assignment pipeline, which writes job_status='Assigned' directly via
+      // its own SQL and never touches this legacy `status` field) must not
+      // be silently downgraded back to 'Unassigned' just because some other,
+      // unrelated field on the card got edited afterwards. Without this
+      // guard, any save through this repository — even one that never meant
+      // to touch assignment — resets an already-assigned job card back to
+      // "no advisor" in job_card_master, while tbl_manager_assignment still
+      // shows it correctly assigned. Preserve 'Assigned' when an advisor is
+      // on record; only 'Unassigned' when there truly isn't one.
+      let hasAdvisor: boolean;
+      if (typeof jobCard.service_advisor === 'string') {
+        hasAdvisor = jobCard.service_advisor.trim().length > 0;
+      } else if (isUpdate && jobCard.job_id != null) {
+        try {
+          const [existing]: any = await db.query(
+            `SELECT service_advisor FROM job_card_master WHERE job_card_id = ? LIMIT 1`,
+            [jobCard.job_id]
+          );
+          hasAdvisor = !!(existing?.[0]?.service_advisor && String(existing[0].service_advisor).trim());
+        } catch {
+          hasAdvisor = false;
+        }
+      } else {
+        hasAdvisor = false;
+      }
+      jobStatus = hasAdvisor ? 'Assigned' : 'Unassigned';
     } else if (statusLower === 'active' || statusLower === 'in progress') {
       jobStatus = 'In Progress';
     } else if (statusLower === 'completed' || statusLower === 'qc passed') {

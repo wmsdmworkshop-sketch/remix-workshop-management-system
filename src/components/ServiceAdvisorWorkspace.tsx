@@ -189,6 +189,43 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
     return jobCards.find(j => j.job_id === selectedJobId) || jobCards[0] || null;
   }, [jobCards, selectedJobId]);
 
+  // Estimate amount inputs (Labour / Spares): local echo, debounced save.
+  //
+  // These used to be controlled directly off `selectedJob.labor_price`/
+  // `parts_price` — server-round-tripped props, not local state. Every
+  // keystroke fired a PUT + a full fetchAllData() refetch of every job card,
+  // and the digit you typed only appeared once that round trip resolved and
+  // re-rendered. Typing fast fired overlapping requests that raced each
+  // other, so the box looked laggy/stuck or showed leading zeros. Local
+  // state gives instant visual feedback; the save is debounced instead of
+  // firing per keystroke, and flushed immediately on blur.
+  const [labourInput, setLabourInput] = useState<string>("0");
+  const [sparesInput, setSparesInput] = useState<string>("0");
+  const estimateSaveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!selectedJob) return;
+    setLabourInput(String(selectedJob.labor_price ?? selectedJob.labour_amount ?? 0));
+    setSparesInput(String(selectedJob.parts_price ?? selectedJob.parts_amount ?? 0));
+  }, [selectedJob?.job_id]);
+
+  const scheduleEstimateSave = (fields: Record<string, any>) => {
+    if (!selectedJob) return;
+    if (estimateSaveTimer.current) clearTimeout(estimateSaveTimer.current);
+    estimateSaveTimer.current = setTimeout(() => {
+      onUpdateJob(selectedJob.job_id, fields);
+    }, 500);
+  };
+
+  const flushEstimateSave = (fields: Record<string, any>) => {
+    if (!selectedJob) return;
+    if (estimateSaveTimer.current) {
+      clearTimeout(estimateSaveTimer.current);
+      estimateSaveTimer.current = null;
+    }
+    onUpdateJob(selectedJob.job_id, fields);
+  };
+
   // Canonical 5-minute handoff SLA threshold
   const HANDOFF_SLA_MINS = 5;
 
@@ -692,10 +729,16 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                     </label>
                     <input
                       type="number"
-                      value={selectedJob.labor_price || selectedJob.labour_amount || 0}
+                      value={labourInput}
                       onChange={(e) => {
-                        const val = Number(e.target.value);
-                        onUpdateJob(selectedJob.job_id, { labor_price: val, labour_amount: val });
+                        const raw = e.target.value;
+                        setLabourInput(raw);
+                        const val = Number(raw) || 0;
+                        scheduleEstimateSave({ labor_price: val, labour_amount: val });
+                      }}
+                      onBlur={(e) => {
+                        const val = Number(e.target.value) || 0;
+                        flushEstimateSave({ labor_price: val, labour_amount: val });
                       }}
                       className="w-full bg-slate-900 border border-slate-800 text-white font-mono font-bold text-sm px-3 py-2 rounded-lg"
                     />
@@ -707,10 +750,16 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                     </label>
                     <input
                       type="number"
-                      value={selectedJob.parts_price || selectedJob.parts_amount || 0}
+                      value={sparesInput}
                       onChange={(e) => {
-                        const val = Number(e.target.value);
-                        onUpdateJob(selectedJob.job_id, { parts_price: val, parts_amount: val });
+                        const raw = e.target.value;
+                        setSparesInput(raw);
+                        const val = Number(raw) || 0;
+                        scheduleEstimateSave({ parts_price: val, parts_amount: val });
+                      }}
+                      onBlur={(e) => {
+                        const val = Number(e.target.value) || 0;
+                        flushEstimateSave({ parts_price: val, parts_amount: val });
                       }}
                       className="w-full bg-slate-900 border border-slate-800 text-white font-mono font-bold text-sm px-3 py-2 rounded-lg"
                     />
@@ -720,15 +769,21 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                 <div className="flex items-center justify-between bg-slate-950 p-4 rounded-xl border border-slate-850">
                   <span className="text-xs font-bold text-slate-300 uppercase">Total Consolidated Estimate</span>
                   <span className="text-lg font-black text-emerald-400 font-mono">
-                    ₹{((selectedJob.labor_price || selectedJob.labour_amount || 0) + (selectedJob.parts_price || selectedJob.parts_amount || 0)).toLocaleString('en-IN')}
+                    ₹{((Number(labourInput) || 0) + (Number(sparesInput) || 0)).toLocaleString('en-IN')}
                   </span>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 border-t border-slate-850 pt-4">
-                  <button 
+                  <button
                     onClick={() => {
-                      onUpdateJob(selectedJob.job_id, { current_workflow_state: "ESTIMATE_PENDING" });
-                      alert(`Estimate of ₹${((selectedJob.labor_price || 0) + (selectedJob.parts_price || 0)).toLocaleString('en-IN')} saved to ${selectedJob.job_card_no}!`);
+                      const labourVal = Number(labourInput) || 0;
+                      const sparesVal = Number(sparesInput) || 0;
+                      flushEstimateSave({
+                        labor_price: labourVal, labour_amount: labourVal,
+                        parts_price: sparesVal, parts_amount: sparesVal,
+                        current_workflow_state: "ESTIMATE_PENDING"
+                      });
+                      alert(`Estimate of ₹${(labourVal + sparesVal).toLocaleString('en-IN')} saved to ${selectedJob.job_card_no}!`);
                     }}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
                   >

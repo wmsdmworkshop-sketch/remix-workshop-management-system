@@ -496,12 +496,41 @@ export class SaTechnicalIntakeEngine {
     if (ge?.vin) {
       const vrnClean = ge.vin.replace("VIN-", "").trim().toUpperCase();
       try {
-        await this.execute(
-          `UPDATE job_card_master 
+        const updRes: any = await this.execute(
+          `UPDATE job_card_master
            SET job_card_no = ?, job_status = 'Assigned', service_advisor = ?, complaints = ?
            WHERE vehicle_reg = ? OR chassis_no = ?`,
           [jobCardId, saName, payload.authenticatedComplaints[0]?.complaintText || "", vrnClean, vrnClean]
         );
+        const updRows = updRes?.affectedRows ?? updRes?.[0]?.affectedRows ?? 0;
+        if (updRows === 0) {
+          // Defense in depth: normally SA Assignment already created this row
+          // (RealtimeOwnershipPipeline.assignServiceAdvisor). This covers the
+          // case of technical intake being reached without going through that
+          // step first. Same rule as there: never fabricate bay_id/assigned_to
+          // /etd/customer_name — leave them NULL until genuinely known.
+          try {
+            await this.execute(
+              `INSERT INTO job_card_master (
+                job_card_no, vehicle_reg, service_advisor, complaints,
+                job_status, created_by, created_at
+              ) VALUES (?, ?, ?, ?, 'Assigned', ?, ?)`,
+              [
+                jobCardId,
+                vrnClean,
+                saName,
+                payload.authenticatedComplaints[0]?.complaintText || "",
+                user?.employee_id || null,
+                now
+              ]
+            );
+          } catch (insErr: any) {
+            console.error(
+              `[SaTechnicalIntake] Failed to create job_card_master row for VRN ${vrnClean}:`,
+              insErr.message
+            );
+          }
+        }
       } catch (brErr: any) {
         console.warn("[SaTechnicalIntake] Warning bridging to job_card_master:", brErr.message);
       }

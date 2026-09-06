@@ -658,12 +658,48 @@ export class RealtimeOwnershipPipeline {
         );
         const masterRows = masterRes?.affectedRows ?? masterRes?.[0]?.affectedRows ?? 0;
         if (masterRows === 0) {
-          // Expected when the manager assigns before the job card exists. The
-          // SA technical intake stamps it on creation; this records the gap
-          // rather than pretending the bridge succeeded.
-          console.warn(
-            `[Assignment] No job_card_master row for VRN ${vrnClean} yet — advisor ${payload.assignedSaName} will be stamped when the job card is created.`
-          );
+          // No pre-existing row (the normal case for a vehicle that entered
+          // through this pipeline rather than the legacy "New Job" form) —
+          // create it now. bay_id/assigned_to/etd are genuinely not known
+          // yet (floor allocation sets them later) and are left NULL rather
+          // than fabricated; customer_name is resolved from the DMS-sourced
+          // dim_vehicle_master when available, else left NULL — never a
+          // placeholder string.
+          let customerName: string | null = null;
+          try {
+            const [ownerRows]: any = await RealtimeOwnershipPipeline.execute(
+              `SELECT owner_account_name FROM dim_vehicle_master WHERE registration_no = ? LIMIT 1`,
+              [vrnClean]
+            );
+            customerName = ownerRows?.[0]?.owner_account_name || null;
+          } catch (e: any) {
+            console.warn("[Assignment] Could not resolve owner_account_name from dim_vehicle_master:", e.message);
+          }
+
+          let driverName: string | null = null;
+          try {
+            const driver = ge?.driver_details ? JSON.parse(ge.driver_details) : null;
+            driverName = driver?.driverName || null;
+          } catch {
+            /* driver_details not parseable JSON — leave driverName null */
+          }
+
+          const createdBy = user?.employee_id || null;
+
+          try {
+            await RealtimeOwnershipPipeline.execute(
+              `INSERT INTO job_card_master (
+                job_card_no, vehicle_reg, customer_name, driver_name,
+                service_advisor, job_status, created_by, created_at
+              ) VALUES (?, ?, ?, ?, ?, 'Assigned', ?, ?)`,
+              [jobCardId, vrnClean, customerName, driverName, payload.assignedSaName, createdBy, now]
+            );
+          } catch (insErr: any) {
+            console.error(
+              `[Assignment] Failed to create job_card_master row for VRN ${vrnClean}:`,
+              insErr.message
+            );
+          }
         }
       } catch (e: any) {
         console.error("Failed to bridge SA assignment into job_card_master:", e.message);
