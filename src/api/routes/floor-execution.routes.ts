@@ -196,6 +196,21 @@ floorExecutionRouter.post("/parts-request", authenticateJwt, requireFloorRoles(F
 });
 
 /**
+ * GET /api/floor-execution/parts-status/:jobCardId
+ * The technician's own view of parts they've requested for this job —
+ * requested_at/acknowledged_at/fulfilled_at are what make the workshop's
+ * 15-minute query/issue TAT reporting possible.
+ */
+floorExecutionRouter.get("/parts-status/:jobCardId", authenticateJwt, requireFloorRoles(FLOOR_EXECUTION_ROLES), async (req: Request, res: Response) => {
+  try {
+    const requests = await floorExecutionEngine.getPartsRequestsForJob(req.params.jobCardId);
+    res.json({ success: true, data: requests });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * POST /api/floor-execution/warranty-review
  */
 floorExecutionRouter.post("/warranty-review", authenticateJwt, requireFloorRoles(FLOOR_EXECUTION_ROLES), async (req: Request, res: Response) => {
@@ -308,8 +323,12 @@ floorExecutionRouter.post("/tech-complete", authenticateJwt, requireFloorRoles(F
 
 /**
  * POST /api/floor-execution/qc-handoff
+ * The technician who did the work marks it QC-ready — not only a floor
+ * supervisor/manager — per the workshop's own flow ("technician marks the
+ * job status to QC inspection"). Previously gated to FLOOR_CONTROL_ROLES
+ * only, so a technician calling this got a 403.
  */
-floorExecutionRouter.post("/qc-handoff", authenticateJwt, requireFloorRoles(FLOOR_CONTROL_ROLES), async (req: Request, res: Response) => {
+floorExecutionRouter.post("/qc-handoff", authenticateJwt, requireFloorRoles(FLOOR_EXECUTION_ROLES), async (req: Request, res: Response) => {
   try {
     const { jobCardId, vrn, qcInchargeId } = req.body;
     const user = requireAuthenticatedUser(req);

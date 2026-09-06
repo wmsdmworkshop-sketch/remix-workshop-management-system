@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { 
   Wrench, Play, Pause, Square, Sparkles, ClipboardCheck, Package, 
   Camera, BarChart3, Clock, AlertTriangle, FileText, CheckCircle2 
@@ -6,6 +6,7 @@ import {
 import { AICopilotPanel } from "./AICopilotPanel";
 import MediaAttach from "./MediaAttach";
 import { ComplaintsPanel } from "./ComplaintsPanel";
+import { getStaffToken } from "../lib/authToken";
 
 export interface TechnicianWorkspaceProps {
   jobCards: any[];
@@ -36,6 +37,14 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
   const [checklist, setChecklist] = useState<Record<string, boolean>>({
     isolation: true, diagnostic: false, disassembly: false, assembly: false, selfQc: false
   });
+
+  // Parts request form + status
+  const [partDescription, setPartDescription] = useState("");
+  const [partQuantity, setPartQuantity] = useState(1);
+  const [partUrgency, setPartUrgency] = useState<"NORMAL" | "URGENT">("NORMAL");
+  const [partsRequests, setPartsRequests] = useState<any[]>([]);
+  const [submittingPartRequest, setSubmittingPartRequest] = useState(false);
+  const [completingJob, setCompletingJob] = useState(false);
 
   // Target job card lookup
   const selectedJob = useMemo(() => {
@@ -96,27 +105,91 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
     clearInterval(timerIntervalId);
   };
 
+  const authHeaders = (): Record<string, string> => {
+    const t = getStaffToken();
+    return t ? { "Content-Type": "application/json", Authorization: `Bearer ${t}` } : { "Content-Type": "application/json" };
+  };
+
+  // Loads this job's parts requests (for the Parts Desk status list + the
+  // completion gate's "unresolved parts" check the backend also enforces).
+  const loadPartsRequests = useCallback(async (jobCardId: string) => {
+    if (!jobCardId) { setPartsRequests([]); return; }
+    try {
+      const res = await fetch(`/api/floor-execution/parts-status/${encodeURIComponent(jobCardId)}`, { headers: authHeaders() });
+      const data = await res.json();
+      setPartsRequests(Array.isArray(data?.data) ? data.data : []);
+    } catch {
+      setPartsRequests([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedJob?.job_card_no) loadPartsRequests(selectedJob.job_card_no);
+  }, [selectedJob?.job_card_no, loadPartsRequests]);
+
+  // Technician marks the job QC-ready. The backend's completion gate
+  // (validateFloorCompletionGate, inside handoffToQc) blocks this — with the
+  // real reason — if parts requests or customer-approval findings are still
+  // open, so we surface whatever it returns rather than guessing here.
   const handleStopTimer = async () => {
     handlePauseTimer();
     if (!selectedJob) return;
+    setCompletingJob(true);
     try {
       const minutesSpent = Math.max(1, Math.round(timerSeconds / 60));
+      const res = await fetch("/api/floor-execution/qc-handoff", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ jobCardId: selectedJob.job_card_no, vrn: selectedJob.vrn }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data?.error || "Cannot hand off to QC yet.");
+        setCompletingJob(false);
+        return;
+      }
       await onUpdateJob(selectedJob.job_id, {
         actual_tat: (selectedJob.actual_tat || 0) + minutesSpent,
         status: "Completed",
         current_workflow_state: "QC_PENDING"
       });
       setTimerSeconds(0);
-      alert("Job timer stopped. Vehicle routed to QC Inspector.");
+      alert("Job handed off to QC Inspector.");
       onRefresh();
-    } catch (e) {
-      alert("Failed to update job status.");
+    } catch (e: any) {
+      alert(`Failed to hand off to QC: ${e.message || "network error"}`);
     }
+    setCompletingJob(false);
   };
 
-  // Parts request submit
-  const handleRequestParts = () => {
-    alert("Request for parts registered successfully with Parts Inventory.");
+  // Parts request submit — real POST to the parts sub-flow (15-min query/issue
+  // TAT), replacing what used to be a bare alert() with no backing request.
+  const handleRequestParts = async () => {
+    if (!selectedJob) return;
+    if (!partDescription.trim()) { alert("Enter a part number or description first."); return; }
+    setSubmittingPartRequest(true);
+    try {
+      const res = await fetch("/api/floor-execution/parts-request", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          jobCardId: selectedJob.job_card_no,
+          vrn: selectedJob.vrn,
+          partDescription: partDescription.trim(),
+          quantity: partQuantity,
+          urgency: partUrgency,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data?.error || "Failed to submit parts request."); setSubmittingPartRequest(false); return; }
+      setPartDescription("");
+      setPartQuantity(1);
+      setPartUrgency("NORMAL");
+      await loadPartsRequests(selectedJob.job_card_no);
+    } catch (e: any) {
+      alert(`Failed to submit parts request: ${e.message || "network error"}`);
+    }
+    setSubmittingPartRequest(false);
   };
 
   return (
@@ -341,25 +414,63 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
             <div className="space-y-4">
               <div>
                 <label className="text-[10px] text-slate-500 font-bold uppercase block mb-1">Part Number or Description</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
+                  value={partDescription}
+                  onChange={(e) => setPartDescription(e.target.value)}
                   placeholder="e.g. Brake pad kit front, oil filter..."
                   className="ds-input w-full   border border-slate-850 rounded-xl p-2.5 text-xs text-slate-200 outline-none"
                 />
               </div>
-              <button 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-1">Quantity</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={partQuantity}
+                    onChange={(e) => setPartQuantity(Math.max(1, Number(e.target.value)))}
+                    className="w-full bg-slate-900 border border-slate-850 rounded-xl p-2.5 text-xs text-slate-200 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-1">Urgency</label>
+                  <select
+                    value={partUrgency}
+                    onChange={(e) => setPartUrgency(e.target.value as "NORMAL" | "URGENT")}
+                    className="w-full bg-slate-900 border border-slate-850 rounded-xl p-2.5 text-xs text-slate-200 outline-none"
+                  >
+                    <option value="NORMAL">Normal</option>
+                    <option value="URGENT">Urgent</option>
+                  </select>
+                </div>
+              </div>
+              <button
                 onClick={handleRequestParts}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
+                disabled={submittingPartRequest || !selectedJob}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
               >
-                Request Part Reservation
+                {submittingPartRequest ? "Submitting…" : "Request Part Reservation"}
               </button>
             </div>
             <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-850 space-y-3">
-              <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider block">Parts Allocation Status</span>
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-300">Front Brake Pads</span>
-                <span className="text-emerald-400 font-bold">Received (Bay Rack A2)</span>
-              </div>
+              <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider block">Parts Request Status</span>
+              {partsRequests.length === 0 ? (
+                <p className="text-[11px] text-slate-500 italic">No parts requested for this job yet.</p>
+              ) : (
+                partsRequests.map((p) => (
+                  <div key={p.request_id} className="flex justify-between items-center text-xs border-b border-slate-900 pb-2 last:border-0 last:pb-0">
+                    <span className="text-slate-300">{p.part_description} {p.quantity > 1 ? `(x${p.quantity})` : ""}</span>
+                    <span className={`font-bold ${
+                      p.status === "FULFILLED" ? "text-emerald-400" :
+                      p.status === "ACKNOWLEDGED" ? "text-amber-400" :
+                      p.status === "BACKORDERED" ? "text-red-400" : "text-slate-400"
+                    }`}>
+                      {p.status}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

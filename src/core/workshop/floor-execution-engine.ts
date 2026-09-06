@@ -587,6 +587,27 @@ export class FloorExecutionEngine {
   }
 
   /**
+   * 11b. Parts requests raised for a job — for the technician's own screen to
+   * see acknowledge/fulfil status inline, and to report the workshop's
+   * 15-minute query/issue TAT (requested_at -> acknowledged_at -> fulfilled_at).
+   */
+  public async getPartsRequestsForJob(jobCardId: string): Promise<any[]> {
+    try {
+      const [rows] = await db.execute(
+        `SELECT request_id, part_description, quantity, urgency, status,
+                requested_at, acknowledged_at, fulfilled_at
+           FROM tbl_parts_requests
+          WHERE job_card_id = ?
+          ORDER BY requested_at DESC`,
+        [jobCardId]
+      ) as any[];
+      return rows || [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /**
    * 12. Parallel Workstream: WARRANTY REVIEW
    */
   public async raiseWarrantyReview(
@@ -951,6 +972,26 @@ export class FloorExecutionEngine {
         metadata: { handoffId, jobCardId, floorInchargeId, qcInchargeId }
       });
     } catch (e) {}
+
+    // Bridge into job_card_master/job_cards so QCInspectorWorkspace's own
+    // stage-based relevance (jobcard-relevance.ts) picks this job up.
+    // Best-effort: never fail the (already-committed) handoff on this.
+    try {
+      await db.execute(
+        `UPDATE job_card_master SET workshop_stage = 'QC_PENDING'
+          WHERE job_card_no = ? OR vehicle_reg = ?
+          ORDER BY job_card_id DESC LIMIT 1`,
+        [jobCardId, vrn || jobCardId]
+      );
+      await db.execute(
+        `UPDATE job_cards SET workshop_stage = 'QC_PENDING'
+          WHERE job_card_no = ? OR vrn = ?
+          ORDER BY created_at DESC LIMIT 1`,
+        [jobCardId, vrn || jobCardId]
+      );
+    } catch (e: any) {
+      console.error("[FloorExecutionEngine] Failed to bridge QC handoff into job_cards:", e.message);
+    }
 
     return { success: true, handoffId };
   }
