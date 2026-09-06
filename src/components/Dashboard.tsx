@@ -40,6 +40,12 @@ import {
 } from "recharts";
 import { JobCard, Bay, AlertLog, Employee } from "../types";
 import GateProgressBar from "./GateProgressBar";
+import WorkshopDashboard from "./workshop-manager/WorkshopDashboard";
+import ExecutiveDashboard from "./workshop-manager/ExecutiveDashboard";
+import GMServiceCommandCenter from "./GMServiceCommandCenter";
+import DealerPrincipalCommandCenter from "./DealerPrincipalCommandCenter";
+import { RevenueDashboard } from "./RoleSpecialPanels";
+import BusinessImpactTracker from "./BusinessImpactTracker";
 
 interface DashboardProps {
   jobCards: JobCard[];
@@ -54,6 +60,20 @@ interface DashboardProps {
   generatedRevenue?: number;
   aiModeEnabled?: boolean;
   canManageWorkforce?: boolean;
+  currentUser?: any;
+  onRefresh?: () => void;
+  // Passed through, unmodified, to the folded-in cockpit sub-views below —
+  // these are the exact same props App.tsx already gave each cockpit's own
+  // former standalone tab.
+  allocations?: any[];
+  onUpdateJob?: (id: number, updatedFields: Partial<any>) => Promise<void>;
+  onAssignTechnicians?: (id: number, allocs: any[]) => Promise<void>;
+  onResolveCarryForward?: (...args: any[]) => any;
+  onResolveRework?: (id: number, status: "Approved" | "Rejected") => Promise<void>;
+  onRaiseCarryForward?: (id: number, reason: string) => Promise<void>;
+  onRaiseRework?: (id: number, reason: string, originalTechId: number) => Promise<void>;
+  revenues?: any[];
+  splitDetails?: any[];
 }
 
 // Curated Luxury Color Palette
@@ -81,9 +101,34 @@ export default function Dashboard({
   projectedRevenue = 0,
   generatedRevenue = 0,
   aiModeEnabled = true,
-  canManageWorkforce = false
+  canManageWorkforce = false,
+  currentUser,
+  onRefresh,
+  allocations = [],
+  onUpdateJob,
+  onAssignTechnicians,
+  onResolveCarryForward,
+  onResolveRework,
+  onRaiseCarryForward,
+  onRaiseRework,
+  revenues = [],
+  splitDetails = []
 }: DashboardProps) {
-  const [activeSubView, setActiveSubView] = useState<"overview" | "workshop" | "workforce">("overview");
+  type SubView = "overview" | "workshop" | "workforce" | "workshop-cockpit" | "executive-cockpit" | "gm-command" | "dealer-principal-cockpit" | "revenue" | "roi-tracker";
+  const [activeSubView, setActiveSubView] = useState<SubView>("overview");
+  const role = String(currentUser?.role || "");
+  const isAdminOrDev = role === "admin" || role === "developer";
+  // Each cockpit sub-tab is shown only to the role(s) it was originally
+  // scoped to (matching their former standalone-tab ROLE_TABS placement),
+  // plus admin/developer who see everything for oversight.
+  const cockpitVisibility = {
+    "workshop-cockpit": isAdminOrDev || ["workshop_manager", "service_manager", "works_manager", "general_manager", "gm_service"].includes(role),
+    "executive-cockpit": isAdminOrDev || ["workshop_manager", "general_manager", "gm_service"].includes(role),
+    "gm-command": isAdminOrDev || role === "gm_service",
+    "dealer-principal-cockpit": isAdminOrDev || role === "dealer_principal",
+    revenue: isAdminOrDev || ["workshop_manager", "service_manager", "general_manager", "cashier", "billing", "accounts"].includes(role),
+    "roi-tracker": isAdminOrDev,
+  };
   const [warrantySearch, setWarrantySearch] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   // Bay drill-down: tapping a bay tile opens its detail + available actions.
@@ -250,6 +295,26 @@ export default function Dashboard({
                 Team Roster ({employees.length})
               </button>
             )}
+            {([
+              ["workshop-cockpit", "Operational Cockpit"],
+              ["executive-cockpit", "Executive Cockpit"],
+              ["gm-command", "GM Command"],
+              ["dealer-principal-cockpit", "Dealer Principal"],
+              ["revenue", "Revenue Split"],
+              ["roi-tracker", "Business ROI"],
+            ] as const).filter(([id]) => cockpitVisibility[id]).map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setActiveSubView(id)}
+                className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border ${
+                  activeSubView === id
+                    ? "bg-gradient-to-r from-[#2563EB] to-[#06B6D4] text-white border-transparent shadow-lg shadow-[#2563EB]/25"
+                    : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -768,6 +833,64 @@ export default function Dashboard({
             ))}
           </div>
         </div>
+      )}
+
+      {/* ── FOLDED-IN COCKPITS ──────────────────────────────────────────────
+          Formerly separate standalone tabs under the old "Executive" menu;
+          now internal sub-views of the one Dashboard tab, gated by
+          cockpitVisibility above. Each renders the exact same real,
+          already-built component with the exact same props it always had. */}
+      {activeSubView === "workshop-cockpit" && cockpitVisibility["workshop-cockpit"] && (
+        <WorkshopDashboard
+          jobCards={jobCards}
+          bays={bays}
+          employees={employees}
+          allocations={allocations}
+          alertLogs={alerts}
+          onRefresh={onRefresh || (() => {})}
+          onUpdateJob={onUpdateJob || (async () => {})}
+          onAssignTechnicians={onAssignTechnicians || (async () => {})}
+          onResolveCarryForward={onResolveCarryForward || (() => {})}
+          onResolveRework={onResolveRework || (async () => {})}
+          onRaiseCarryForward={onRaiseCarryForward || (async () => {})}
+          onRaiseRework={onRaiseRework || (async () => {})}
+          currentUser={currentUser}
+          aiModeEnabled={aiModeEnabled}
+        />
+      )}
+
+      {activeSubView === "executive-cockpit" && cockpitVisibility["executive-cockpit"] && (
+        <ExecutiveDashboard
+          jobCards={jobCards}
+          bays={bays}
+          employees={employees}
+          alertLogs={alerts}
+          onRefresh={onRefresh || (() => {})}
+          onSelectWorkshopTab={() => setActiveSubView("workshop-cockpit")}
+          onSelectVehicle={(jobId: number) => {
+            const job = jobCards.find((j) => j.job_id === jobId);
+            if (job) onSelectJob(job);
+            onTabChange("jobs");
+          }}
+          onSelectEmployee={() => onTabChange("employees")}
+          aiModeEnabled={aiModeEnabled}
+        />
+      )}
+
+      {activeSubView === "gm-command" && cockpitVisibility["gm-command"] && (
+        <GMServiceCommandCenter jobCards={jobCards} onRefresh={onRefresh || (() => {})} aiModeEnabled={aiModeEnabled} />
+      )}
+
+      {activeSubView === "dealer-principal-cockpit" && cockpitVisibility["dealer-principal-cockpit"] && (
+        <DealerPrincipalCommandCenter jobCards={jobCards} onRefresh={onRefresh || (() => {})} aiModeEnabled={aiModeEnabled} />
+      )}
+
+      {activeSubView === "revenue" && cockpitVisibility.revenue && (
+        <RevenueDashboard employees={employees} jobCards={jobCards} revenues={revenues} splitDetails={splitDetails} onRefresh={onRefresh || (() => {})} />
+      )}
+
+      {activeSubView === "roi-tracker" && cockpitVisibility["roi-tracker"] && (
+        <BusinessImpactTracker />
       )}
 
       {/* ── BAY DETAIL DRILL-DOWN ──────────────────────────────────────────

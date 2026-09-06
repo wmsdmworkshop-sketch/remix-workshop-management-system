@@ -15,9 +15,6 @@ export interface TabItem {
 export const WORKSPACE_MAPPING: Record<string, string> = {
   "my-workspace": "my-workspace",
   dashboard: "dashboard",
-  "workshop-cockpit": "executive",
-  "executive-cockpit": "executive",
-  "dealer-principal-cockpit": "executive",
   jobs: "workshop",
   "gate-entry": "workshop",
   "bay-tat": "workshop",
@@ -50,9 +47,6 @@ export const WORKSPACE_MAPPING: Record<string, string> = {
   "employee-performance": "hr",
   "training-development": "hr",
   grievance: "hr",
-  "gm-command": "executive",
-  "roi-tracker": "executive",
-  revenue: "executive",
   assistant: "admin",
   "live-support": "admin",
   "ai-brains": "admin",
@@ -75,7 +69,6 @@ export const WORKSPACES = [
   { id: "service", label: "Service Operations", icon: Wrench },
   { id: "parts", label: "Parts & Warranty", icon: Package },
   { id: "hr", label: "HR", icon: Users },
-  { id: "executive", label: "Executive", icon: TrendingUp },
   { id: "admin", label: "Administration", icon: Settings },
 ];
 

@@ -46,18 +46,15 @@ import {
   Brain
 } from "lucide-react";
 import UserManagement from "./components/UserManagement";
-import { 
-  RevenueDashboard, 
-  GateEntryPanel, 
-  TechnicianJobsPanel, 
-  TechnicianKpiPanel, 
-  TechnicianProfilePanel 
+import {
+  GateEntryPanel,
+  TechnicianJobsPanel,
+  TechnicianKpiPanel,
+  TechnicianProfilePanel
 } from "./components/RoleSpecialPanels";
 
 import PartsWarrantyManager from "./components/PartsWarrantyManager";
 import FunnyLoader from "./components/FunnyLoader";
-import WorkshopDashboard from "./components/workshop-manager/WorkshopDashboard";
-import ExecutiveDashboard from "./components/workshop-manager/ExecutiveDashboard";
 import ServiceAdvisorWorkspace from "./components/ServiceAdvisorWorkspace";
 import FloorSupervisorWorkspace from "./components/FloorSupervisorWorkspace";
 import TechnicianWorkspace from "./components/TechnicianWorkspace";
@@ -65,8 +62,6 @@ import QCInspectorWorkspace from "./components/QCInspectorWorkspace";
 import BillingWorkspace from "./components/BillingWorkspace";
 import CashierWorkspace from "./components/CashierWorkspace";
 import VehicleDeliveryWorkspace from "./components/VehicleDeliveryWorkspace";
-import GMServiceCommandCenter from "./components/GMServiceCommandCenter";
-import DealerPrincipalCommandCenter from "./components/DealerPrincipalCommandCenter";
 import CustomerExperiencePlatform from "./components/CustomerExperiencePlatform";
 import MobilePlatformWorkspace from "./components/MobilePlatformWorkspace";
 import SecurityWorkspace from "./components/SecurityWorkspace";
@@ -118,7 +113,6 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import UserOnboardingTour from "./components/UserOnboardingTour";
 import AiBrainsPanel from "./components/AiBrainsPanel";
 import StaffFeedbackWidget from "./components/StaffFeedbackWidget";
-import BusinessImpactTracker from "./components/BusinessImpactTracker";
 import LiveSupportPanel from "./components/LiveSupportPanel";
 import MyWorkspace from "./components/MyWorkspace";
 import { resolveMyWorkspaceComponent } from "./lib/myWorkspaceRouter";
@@ -193,7 +187,6 @@ export default function App() {
         "breakdown",
         "customer-portal",
         "assistant",
-        "roi-tracker",
         "live-support",
         "mobile-platform",
         "certification"
@@ -368,9 +361,6 @@ export default function App() {
 
   const TAB_MODULE_MAPPING: Record<string, string> = {
     dashboard: "Dashboard",
-    "workshop-cockpit": "Dashboard",
-    "executive-cockpit": "Dashboard",
-    "dealer-principal-cockpit": "Dashboard",
     "advisor-workspace": "Job Cards",
     "supervisor-workspace": "Job Cards",
     "technician-workspace": "Job Cards",
@@ -436,13 +426,9 @@ export default function App() {
       { id: "manager-assignment-workspace", label: "SA Assignment", icon: Users },
       { id: "security-workspace", label: "Security Gate Out", icon: ShieldAlert },
       { id: "delivery-workspace", label: "Vehicle Delivery", icon: Truck },
-      { id: "gm-command", label: "GM Command", icon: Building },
-      { id: "dealer-principal-cockpit", label: "Dealer Principal", icon: Sparkles },
       { id: "customer-portal", label: "Customer Portal", icon: UserIcon },
       { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
       { id: "oem-integrations", label: "External Integrations", icon: Share2 },
-      { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
-      { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "breakdown", label: "Breakdowns", icon: AlertTriangle },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
@@ -460,7 +446,6 @@ export default function App() {
       { id: "master-data-hub", label: "Master Data Hub", icon: Database },
       { id: "users", label: "User Management", icon: ShieldAlert },
       { id: "assistant", label: "Gemini Copilot", icon: Sparkles },
-      { id: "roi-tracker", label: "Business ROI Tracker", icon: TrendingUp },
       { id: "live-support", label: "Live Support", icon: HelpCircle },
       { id: "ai-brains", label: "AI Brains", icon: Brain },
     ],
@@ -476,13 +461,9 @@ export default function App() {
       { id: "manager-assignment-workspace", label: "SA Assignment", icon: Users },
       { id: "security-workspace", label: "Security Gate Out", icon: ShieldAlert },
       { id: "delivery-workspace", label: "Vehicle Delivery", icon: Truck },
-      { id: "gm-command", label: "GM Command", icon: Building },
-      { id: "dealer-principal-cockpit", label: "Dealer Principal", icon: Sparkles },
       { id: "customer-portal", label: "Customer Portal", icon: UserIcon },
       { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
       { id: "oem-integrations", label: "External Integrations", icon: Share2 },
-      { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
-      { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "breakdown", label: "Breakdowns", icon: AlertTriangle },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
@@ -500,17 +481,13 @@ export default function App() {
       { id: "master-data-hub", label: "Master Data Hub", icon: Database },
       { id: "users", label: "User Management", icon: ShieldAlert },
       { id: "assistant", label: "Gemini Copilot", icon: Sparkles },
-      { id: "roi-tracker", label: "Business ROI Tracker", icon: TrendingUp },
       { id: "live-support", label: "Live Support", icon: HelpCircle },
     ],
     billing: [
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { id: "revenue", label: "Revenue Split", icon: DollarSign },
       { id: "dms-import", label: "DMS Import", icon: FileDown },
     ],
     service_advisor: [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "jobs", label: "Job Cards", icon: Wrench },
@@ -518,7 +495,6 @@ export default function App() {
     ],
     floor_supervisor: [
       { id: "qc-workspace", label: "QC Workspace", icon: ShieldAlert },
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "jobs", label: "Job Cards", icon: Wrench },
       { id: "productivity", label: "Productivity", icon: TrendingUp },
@@ -528,24 +504,20 @@ export default function App() {
     ],
     warranty_advisor: [
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "jobs", label: "Job Cards", icon: Wrench },
     ],
     warranty: [
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
       { id: "warranty-clerk-workspace", label: "Warranty Desk (Mobile)", icon: ShieldAlert },
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "jobs", label: "Job Cards", icon: Wrench },
     ],
     warranty_manager: [
       { id: "warranty-clerk-workspace", label: "Warranty Desk", icon: ShieldAlert },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "jobs", label: "Job Cards", icon: Wrench },
     ],
     floor_incharge: [
       { id: "qc-workspace", label: "QC Workspace", icon: ShieldAlert },
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "jobs", label: "Job Cards", icon: Wrench },
       { id: "productivity", label: "Productivity", icon: TrendingUp },
@@ -556,8 +528,6 @@ export default function App() {
     ],
     workshop_manager: [
       { id: "manager-assignment-workspace", label: "SA Assignment", icon: Users },
-      { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
-      { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
       { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
@@ -571,21 +541,17 @@ export default function App() {
       { id: "certification", label: "CPSC Certification", icon: Shield },
       { id: "attendance", label: "Attendance", icon: ClipboardCheck },
       { id: "dms-import", label: "DMS Import", icon: FileDown },
-      { id: "revenue", label: "Revenue Split", icon: DollarSign },
     ],
     service_manager: [
       { id: "manager-assignment-workspace", label: "SA Assignment", icon: Users },
       { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
-      { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "jobs", label: "Job Cards", icon: Wrench },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
       { id: "productivity", label: "Productivity", icon: TrendingUp },
-      { id: "revenue", label: "Revenue Split", icon: DollarSign },
     ],
     works_manager: [
       { id: "manager-assignment-workspace", label: "SA Assignment", icon: Users },
-      { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "jobs", label: "Job Cards", icon: Wrench },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
@@ -593,27 +559,19 @@ export default function App() {
     ],
     general_manager: [
       { id: "manager-assignment-workspace", label: "SA Assignment", icon: Users },
-      { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
-      { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { id: "revenue", label: "Revenue Split", icon: DollarSign },
     ],
     gm_service: [
-      { id: "gm-command", label: "GM Command", icon: Building },
-      { id: "executive-cockpit", label: "Executive Cockpit", icon: ShieldAlert },
       { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
-      { id: "workshop-cockpit", label: "Operational Cockpit", icon: LayoutDashboard },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
     ],
     spares_manager: [
       { id: "parts-incharge-workspace", label: "Parts Desk (Mobile)", icon: Package },
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
     ],
     parts: [
       { id: "parts-incharge-workspace", label: "Parts Desk (Mobile)", icon: Package },
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
     ],
     parts_incharge: [
@@ -630,23 +588,18 @@ export default function App() {
       { id: "productivity", label: "Productivity", icon: TrendingUp },
     ],
     cashier: [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
-      { id: "revenue", label: "Revenue Split", icon: DollarSign },
     ],
     reception: [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
     ],
     receptionist: [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
     ],
     tools_incharge: [
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     ],
     security_agent: [
       { id: "delivery-workspace", label: "Vehicle Delivery", icon: Truck },
@@ -660,7 +613,6 @@ export default function App() {
       { id: "attendance", label: "Attendance", icon: ClipboardCheck },
     ],
     dealer_principal: [
-      { id: "dealer-principal-cockpit", label: "Dealer Principal", icon: Sparkles },
       { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
@@ -671,11 +623,9 @@ export default function App() {
       { id: "attendance", label: "Attendance", icon: ClipboardCheck },
       { id: "dms-import", label: "DMS Import", icon: FileDown },
       { id: "users", label: "User Management", icon: ShieldAlert },
-      { id: "revenue", label: "Revenue Split", icon: DollarSign },
       { id: "assistant", label: "Gemini Copilot", icon: Sparkles },
     ],
     supervisor: [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
@@ -689,7 +639,6 @@ export default function App() {
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
       { id: "dms-import", label: "DMS Import", icon: FileDown },
-      { id: "revenue", label: "Revenue Split", icon: DollarSign },
     ],
     gate_personnel: [
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
@@ -1558,7 +1507,6 @@ export default function App() {
           "breakdown",
           "customer-portal",
           "assistant",
-          "roi-tracker",
           "live-support",
           "mobile-platform",
           "certification"
@@ -1644,6 +1592,17 @@ export default function App() {
               generatedRevenue={generatedRevenue}
               aiModeEnabled={aiModeEnabled}
               canManageWorkforce={["admin", "developer", "workshop_manager", "service_manager", "gm_service"].includes(userRole)}
+              currentUser={user}
+              onRefresh={fetchAllData}
+              allocations={allocations}
+              onUpdateJob={handleUpdateJob}
+              onAssignTechnicians={handleAssignTechnicians}
+              onResolveCarryForward={handleResolveCarryForward}
+              onResolveRework={handleResolveRework}
+              onRaiseCarryForward={handleRaiseCarryForward}
+              onRaiseRework={handleRaiseRework}
+              revenues={revenues}
+              splitDetails={splitDetails}
             />
           )}
 
@@ -1811,51 +1770,6 @@ export default function App() {
             />
           )}
 
-          {activeTab === "revenue" && (
-            <RevenueDashboard employees={employees} jobCards={jobCards} revenues={revenues} splitDetails={splitDetails} onRefresh={fetchAllData} />
-          )}
-
-          {activeTab === "workshop-cockpit" && (
-            <WorkshopDashboard 
-              jobCards={jobCards}
-              bays={bays}
-              employees={employees}
-              allocations={allocations}
-              alertLogs={alertLogs}
-              onRefresh={fetchAllData}
-              onUpdateJob={handleUpdateJob}
-              onAssignTechnicians={handleAssignTechnicians}
-              onResolveCarryForward={handleResolveCarryForward}
-              onResolveRework={handleResolveRework}
-              onRaiseCarryForward={handleRaiseCarryForward}
-              onRaiseRework={handleRaiseRework}
-              currentUser={user}
-              aiModeEnabled={aiModeEnabled}
-            />
-          )}
-
-          {activeTab === "executive-cockpit" && (
-            <ExecutiveDashboard 
-              jobCards={jobCards}
-              bays={bays}
-              employees={employees}
-              alertLogs={alertLogs}
-              onRefresh={fetchAllData}
-              onSelectWorkshopTab={(workshopName) => {
-                setActiveTab("workshop-cockpit");
-              }}
-              onSelectVehicle={(jobId) => {
-                const job = jobCards.find(j => j.job_id === jobId);
-                if (job) setDashboardSelectedJob(job);
-                setActiveTab("jobs");
-              }}
-              onSelectEmployee={(empId) => {
-                setActiveTab("employees");
-              }}
-              aiModeEnabled={aiModeEnabled}
-            />
-          )}
-
           {activeTab === "advisor-workspace" && (
             <ServiceAdvisorWorkspace 
               jobCards={jobCards}
@@ -1948,22 +1862,6 @@ export default function App() {
             />
           )}
 
-          {activeTab === "gm-command" && (
-            <GMServiceCommandCenter 
-              jobCards={jobCards}
-              onRefresh={fetchAllData}
-              aiModeEnabled={aiModeEnabled}
-            />
-          )}
-
-          {activeTab === "dealer-principal-cockpit" && (
-            <DealerPrincipalCommandCenter 
-              jobCards={jobCards}
-              onRefresh={fetchAllData}
-              aiModeEnabled={aiModeEnabled}
-            />
-          )}
-
           {activeTab === "customer-portal" && (
             <CustomerExperiencePlatform 
               jobCards={jobCards}
@@ -1980,10 +1878,6 @@ export default function App() {
 
           {activeTab === "ai-brains" && user?.role === "developer" && (
             <AiBrainsPanel />
-          )}
-
-          {activeTab === "roi-tracker" && (
-            <BusinessImpactTracker />
           )}
 
           {activeTab === "live-support" && (

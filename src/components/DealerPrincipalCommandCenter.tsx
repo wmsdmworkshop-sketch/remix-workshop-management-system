@@ -18,9 +18,21 @@ export const DealerPrincipalCommandCenter: React.FC<DealerPrincipalCommandCenter
 }) => {
   const [activeTab, setActiveTab] = useState<string>("financials");
 
-  // Calculations for financial dashboard
+  // Calculations for financial dashboard. "Today" previously summed every
+  // job card ever passed in, mislabeled as today's revenue — now genuinely
+  // filtered to jobs whose invoice/completion actually happened today,
+  // matching the same real-date-filter pattern used in Dashboard.tsx.
   const financials = useMemo(() => {
-    const grossTotal = jobCards.reduce((sum, j) => sum + Number(j.labor_price || 0) + Number(j.parts_price || 0), 0);
+    const todayStr = new Date().toDateString();
+    const isToday = (j: any) => {
+      const ts = j.invoiced_at || j.completed_at;
+      return ts ? new Date(ts).toDateString() === todayStr : false;
+    };
+    const todaysJobs = jobCards.filter(isToday);
+    const grossTotal = todaysJobs.reduce((sum, j) => sum + Number(j.labor_price || 0) + Number(j.parts_price || 0), 0);
+    // Margin assumption remains a flat 22% placeholder — no real cost-basis
+    // data exists yet to compute an actual profit figure. Left as a known,
+    // documented limitation rather than fixed here.
     const profitMargin = Math.round(grossTotal * 0.22);
     const outstanding = jobCards.reduce((sum, j) => sum + Number(j.outstanding_balance || 0), 0);
 
