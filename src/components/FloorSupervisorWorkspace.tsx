@@ -4,6 +4,7 @@ import {
   History, Calendar, CheckSquare, Layers, RefreshCw, CheckCircle2, 
   ArrowRight, ShieldCheck, Play, Pause, Send, AlertOctagon, UserCheck, Tag
 } from "lucide-react";
+import { ComplaintsPanel } from "./ComplaintsPanel";
 
 export interface FloorSupervisorWorkspaceProps {
   jobCards: any[];
@@ -279,8 +280,9 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
 
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 text-xs space-y-1">
                   <div className="flex justify-between"><span className="text-slate-400">SA:</span><span className="font-bold text-slate-200">{j.service_advisor || j.sa_name || "Unassigned"}</span></div>
-                  <div className="flex justify-between gap-3"><span className="text-slate-400 shrink-0">Complaints:</span><span className="text-slate-200 text-right">{j.job_description || j.complaints || "—"}</span></div>
                 </div>
+
+                <ComplaintsPanel vrn={j.vrn} compact />
 
                 <button
                   onClick={() => {

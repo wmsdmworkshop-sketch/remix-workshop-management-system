@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Users, Sparkles, CheckCircle2, AlertTriangle, ShieldAlert, RefreshCw, 
+  Users, Sparkles, CheckCircle2, AlertTriangle, ShieldAlert, RefreshCw,
   ArrowRight, UserCheck, ShieldCheck, FileText, Check
 } from "lucide-react";
+import { ComplaintsPanel } from "./ComplaintsPanel";
 
 export interface ManagerAssignmentWorkspaceProps {
   currentUser?: any;
@@ -238,6 +239,8 @@ export const ManagerAssignmentWorkspace: React.FC<ManagerAssignmentWorkspaceProp
               </div>
               <button onClick={() => setSelectedIntake(null)} className="text-slate-400 hover:text-slate-200 font-bold text-sm">✕</button>
             </div>
+
+            <ComplaintsPanel vrn={selectedIntake.vrn} />
 
             {/* AI Recommendation Box */}
             {recommendation && (

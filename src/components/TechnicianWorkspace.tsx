@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { AICopilotPanel } from "./AICopilotPanel";
 import MediaAttach from "./MediaAttach";
+import { ComplaintsPanel } from "./ComplaintsPanel";
 
 export interface TechnicianWorkspaceProps {
   jobCards: any[];
@@ -261,6 +262,7 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
               <ClipboardCheck className="h-4 w-4 text-blue-400" />
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Active Repair Tasks Checklist</h3>
             </div>
+            <ComplaintsPanel vrn={selectedJob.vrn} />
             <div className="space-y-2.5">
               {Object.keys(checklist).map(key => (
                 <button
