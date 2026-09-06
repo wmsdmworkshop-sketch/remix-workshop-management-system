@@ -41,3 +41,6 @@ _quarantine/
 # Uploaded OCR evidence and local uploads
 public/uploads/
 
+# Local DB backups (contain real customer PII — names, mobile numbers)
+backups/
+
