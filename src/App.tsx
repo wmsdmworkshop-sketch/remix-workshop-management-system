@@ -55,7 +55,6 @@ import {
 } from "./components/RoleSpecialPanels";
 
 import PartsWarrantyManager from "./components/PartsWarrantyManager";
-import CashierManager from "./components/CashierManager";
 import FunnyLoader from "./components/FunnyLoader";
 import WorkshopDashboard from "./components/workshop-manager/WorkshopDashboard";
 import ExecutiveDashboard from "./components/workshop-manager/ExecutiveDashboard";
@@ -63,7 +62,6 @@ import ServiceAdvisorWorkspace from "./components/ServiceAdvisorWorkspace";
 import FloorSupervisorWorkspace from "./components/FloorSupervisorWorkspace";
 import TechnicianWorkspace from "./components/TechnicianWorkspace";
 import QCInspectorWorkspace from "./components/QCInspectorWorkspace";
-import PartsCommandCenter from "./components/PartsCommandCenter";
 import BillingWorkspace from "./components/BillingWorkspace";
 import CashierWorkspace from "./components/CashierWorkspace";
 import VehicleDeliveryWorkspace from "./components/VehicleDeliveryWorkspace";
@@ -388,7 +386,6 @@ export default function App() {
     jobs: "Job Cards",
     "gate-entry": "Job Cards",
     "delivery-workspace": "Job Cards",
-    "parts-command": "Warranty",
     "parts-warranty": "Warranty",
     "billing-workspace": "Billing",
     "cashier-workspace": "Billing",
@@ -443,7 +440,6 @@ export default function App() {
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
       { id: "technician-workspace", label: "Technician Workspace", icon: Wrench },
       { id: "qc-workspace", label: "QC Workspace", icon: ClipboardCheck },
-      { id: "parts-command", label: "Parts Command", icon: Package },
       { id: "billing-workspace", label: "Billing Workspace", icon: FileText },
       { id: "cashier-workspace", label: "Cashier Desk", icon: DollarSign },
       { id: "receptionist-workspace", label: "Reception Intake", icon: ClipboardCheck },
@@ -493,7 +489,6 @@ export default function App() {
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
       { id: "technician-workspace", label: "Technician Workspace", icon: Wrench },
       { id: "qc-workspace", label: "QC Workspace", icon: ClipboardCheck },
-      { id: "parts-command", label: "Parts Command", icon: Package },
       { id: "billing-workspace", label: "Billing Workspace", icon: FileText },
       { id: "cashier-workspace", label: "Cashier Desk", icon: DollarSign },
       { id: "receptionist-workspace", label: "Reception Intake", icon: ClipboardCheck },
@@ -641,13 +636,11 @@ export default function App() {
     ],
     spares_manager: [
       { id: "parts-incharge-workspace", label: "Parts Desk (Mobile)", icon: Package },
-      { id: "parts-command", label: "Parts Command", icon: Package },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
     ],
     parts: [
       { id: "parts-incharge-workspace", label: "Parts Desk (Mobile)", icon: Package },
-      { id: "parts-command", label: "Parts Command", icon: Package },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
     ],
@@ -1942,15 +1935,6 @@ export default function App() {
             />
           )}
 
-          {activeTab === "parts-command" && (
-            <PartsCommandCenter 
-              jobCards={jobCards}
-              onRefresh={fetchAllData}
-              currentUser={user}
-              aiModeEnabled={aiModeEnabled}
-            />
-          )}
-
           {activeTab === "billing-workspace" && (
             <BillingWorkspace 
               jobCards={jobCards}
@@ -2096,15 +2080,6 @@ export default function App() {
 
           {activeTab === "parts-warranty" && (
             <PartsWarrantyManager 
-              jobCards={jobCards} 
-              onUpdateJob={handleUpdateJob}
-              onRefresh={fetchAllData} 
-              aiModeEnabled={aiModeEnabled}
-            />
-          )}
-
-          {activeTab === "cashier-exit" && (
-            <CashierManager 
               jobCards={jobCards} 
               onUpdateJob={handleUpdateJob}
               onRefresh={fetchAllData} 
