@@ -121,6 +121,7 @@ import StaffFeedbackWidget from "./components/StaffFeedbackWidget";
 import BusinessImpactTracker from "./components/BusinessImpactTracker";
 import LiveSupportPanel from "./components/LiveSupportPanel";
 import MyWorkspace from "./components/MyWorkspace";
+import { resolveMyWorkspaceComponent } from "./lib/myWorkspaceRouter";
 import ExternalIntegrations from "./components/ExternalIntegrations";
 import PlatformControlCenter from "./components/platform/PlatformControlCenter";
 import { PartsInChargeWorkspace } from "./components/PartsInChargeWorkspace";
@@ -503,14 +504,12 @@ export default function App() {
       { id: "live-support", label: "Live Support", icon: HelpCircle },
     ],
     billing: [
-      { id: "billing-workspace", label: "Billing Workspace", icon: DollarSign },
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "revenue", label: "Revenue Split", icon: DollarSign },
       { id: "dms-import", label: "DMS Import", icon: FileDown },
     ],
     service_advisor: [
-      { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
@@ -518,7 +517,6 @@ export default function App() {
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
     ],
     floor_supervisor: [
-      { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
       { id: "qc-workspace", label: "QC Workspace", icon: ShieldAlert },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
@@ -546,7 +544,6 @@ export default function App() {
       { id: "jobs", label: "Job Cards", icon: Wrench },
     ],
     floor_incharge: [
-      { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
       { id: "qc-workspace", label: "QC Workspace", icon: ShieldAlert },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
@@ -633,20 +630,17 @@ export default function App() {
       { id: "productivity", label: "Productivity", icon: TrendingUp },
     ],
     cashier: [
-      { id: "cashier-workspace", label: "Cashier Desk", icon: DollarSign },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
       { id: "revenue", label: "Revenue Split", icon: DollarSign },
     ],
     reception: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { id: "receptionist-workspace", label: "Reception Intake", icon: ClipboardCheck },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
     ],
     receptionist: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { id: "receptionist-workspace", label: "Reception Intake", icon: ClipboardCheck },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
     ],
@@ -655,7 +649,6 @@ export default function App() {
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     ],
     security_agent: [
-      { id: "security-workspace", label: "Security Workspace", icon: ShieldAlert },
       { id: "delivery-workspace", label: "Vehicle Delivery", icon: Truck },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
@@ -703,7 +696,6 @@ export default function App() {
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
     ],
     technician: [
-      { id: "technician-workspace", label: "Technician Workspace", icon: Wrench },
       { id: "tech-kpi", label: "My KPI", icon: TrendingUp },
       { id: "tech-profile", label: "My Profile", icon: UserIcon },
       { id: "attendance", label: "Attendance", icon: ClipboardCheck },
@@ -1596,15 +1588,40 @@ export default function App() {
       aiModePendingRequests={aiModePending}
     >
 
-          {activeTab === "my-workspace" && (
-            <MyWorkspace
-              currentUser={user}
-              onOpenJob={(job) => {
-                setDashboardSelectedJob(job);
-                setActiveTab("jobs");
-              }}
-            />
-          )}
+          {activeTab === "my-workspace" && (() => {
+            // Individual-operator roles land on their own dedicated, already-
+            // real workspace component (same one their former standalone tab
+            // rendered, same props) instead of the generic summary — this is
+            // what makes "My Workspace" genuinely personal per role. Manager-
+            // tier and other roles with no dedicated component fall back to
+            // the generic MyWorkspace.tsx below, unchanged.
+            const DedicatedWorkspace = resolveMyWorkspaceComponent(user?.role);
+            if (DedicatedWorkspace) {
+              return (
+                <DedicatedWorkspace
+                  jobCards={jobCards}
+                  bays={bays}
+                  employees={employees}
+                  alertLogs={alertLogs}
+                  allocations={allocations}
+                  onRefresh={fetchAllData}
+                  onUpdateJob={handleUpdateJob}
+                  onAssignTechnicians={handleAssignTechnicians}
+                  currentUser={user}
+                  aiModeEnabled={aiModeEnabled}
+                />
+              );
+            }
+            return (
+              <MyWorkspace
+                currentUser={user}
+                onOpenJob={(job) => {
+                  setDashboardSelectedJob(job);
+                  setActiveTab("jobs");
+                }}
+              />
+            );
+          })()}
 
           {activeTab === "oem-integrations" && (
             <ExternalIntegrations />
