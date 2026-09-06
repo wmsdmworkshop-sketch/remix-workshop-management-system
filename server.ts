@@ -10,6 +10,8 @@ if (process.env.NODE_ENV === "test") {
 import { GoogleGenAI, ThinkingLevel, Modality, Type, GenerateVideosOperation } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { syncLoad, syncSave, clearJobCardsInDB } from "./src/db/sync.ts";
+import { runMigrations, validateSchema } from "./src/db/migrate.ts";
+import { allMigrations } from "./src/db/migrations/index.ts";
 import { calculateRevenueAllocation } from "./src/lib/revenue-split-engine.ts";
 import { WebSocketServer } from "ws";
 import bcrypt from "bcryptjs";
@@ -460,6 +462,23 @@ async function startServer() {
 
   // Body parser limit expanded for DMS imports or custom attachments
   app.use(express.json({ limit: "10mb" }));
+
+  // Run pending schema migrations before anything reads from the DB. This
+  // framework existed fully-built (schema_migrations tracking, checksums,
+  // idempotent) but was never invoked from server startup — migrations 8-10
+  // (billing/gate-out/qc-road-test tables) had in fact already been created in
+  // production by some other path and were simply never RECORDED as applied,
+  // so this call records them for the first time as a no-op; migration 11
+  // creates the four floor-execution tables that were genuinely missing.
+  // Startup intentionally fails closed: if migrations can't be verified, the
+  // server must not start serving traffic against an inconsistent schema.
+  try {
+    await runMigrations(allMigrations);
+    await validateSchema();
+  } catch (err: any) {
+    console.error("[startServer] FATAL: schema migration/validation failed:", err.message);
+    throw err;
+  }
 
   // Initialize database state from Cloud SQL (or local fallback)
   cachedDB = await syncLoad();

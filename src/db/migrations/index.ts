@@ -21,6 +21,7 @@ import workforceEligibilityAttributes from "./007_workforce_eligibility_attribut
 import billingTables from "./008_billing_tables.ts";
 import gateOutTables from "./009_gate_out_tables.ts";
 import qcRoadTests from "./010_qc_road_tests.ts";
+import floorExecutionTables from "./011_floor_execution_tables.ts";
 export const allMigrations: Migration[] = [
   baseline,
   modulesMasterSeeding,
@@ -31,5 +32,6 @@ export const allMigrations: Migration[] = [
   workforceEligibilityAttributes,
   billingTables,
   gateOutTables,
-  qcRoadTests
+  qcRoadTests,
+  floorExecutionTables
 ];
