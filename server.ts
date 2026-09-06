@@ -13801,6 +13801,13 @@ Respond with valid JSON only:
   });
 
   // POST /api/job-cards/:id/qc-check
+  // DEPRECATED (Phase 8): only ever wrote the legacy `status` column, never
+  // `workshop_stage`, and its one caller (QCChecklistPanel.tsx) is not
+  // imported/rendered anywhere — dead. QCInspectorWorkspace.tsx now calls the
+  // real POST /api/qc/decision/:jobId (qc-execution-engine.ts) instead, which
+  // writes both columns and enforces the mandatory-checklist pass gate. Left
+  // mounted rather than deleted per this session's removal policy — grep for
+  // callers again before actually deleting it.
   app.post("/api/job-cards/:id/qc-check", authenticateToken, requireRoles(["qc", "qc_inspector", "quality_inspector", "service_manager", "works_manager", "workshop_manager", "gm_service", "admin", "developer"]), jobCardEditGuard, express.json(), async (req, res) => {
     try {
       const { id } = req.params;

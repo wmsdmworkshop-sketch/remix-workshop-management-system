@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { 
   ClipboardCheck, CheckCircle2, AlertOctagon, RefreshCw, BarChart3, 
   Map, Sparkles, Signature, FileText, Camera, Users, Clock 
@@ -24,10 +24,13 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
 
-  // Digital QC checklists state
-  const [qcChecklist, setQcChecklist] = useState<Record<string, boolean>>({
-    mechanical: true, electrical: true, brakes: false, steering: true, suspension: false, roadTest: false
-  });
+  // Digital QC checklist — real, contextual items from the QC engine
+  // (mandatory structural checks + this job's own complaints/job-scope/parts),
+  // not a fixed generic set. serverSidePassGate enforces mandatory items are
+  // PASS before a PASS decision is accepted.
+  const [serverChecklist, setServerChecklist] = useState<any[]>([]);
+  const [checklistLoading, setChecklistLoading] = useState(false);
+  const [submittingDecision, setSubmittingDecision] = useState(false);
 
   // Decision state
   const [decision, setDecision] = useState<string>("PASS");
@@ -101,32 +104,60 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
     };
   }, [selectedJob]);
 
-  // Submit QC Decision
+  // Load this job's real, contextual QC checklist (mandatory structural
+  // checks + its own complaints/job-scope items) instead of a fixed generic
+  // set — replaces the old client-only qcChecklist stub.
+  const loadChecklist = useCallback(async (jobId: number) => {
+    setChecklistLoading(true);
+    try {
+      const res = await fetch(`/api/qc/checklist/${jobId}`, { credentials: "include" });
+      const data = await res.json();
+      setServerChecklist(Array.isArray(data?.data) ? data.data : []);
+    } catch {
+      setServerChecklist([]);
+    }
+    setChecklistLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (selectedJob?.job_id) loadChecklist(selectedJob.job_id);
+  }, [selectedJob?.job_id, loadChecklist]);
+
+  const toggleChecklistItem = (id: string) => {
+    setServerChecklist(prev => prev.map(it => it.id === id ? { ...it, status: it.status === "PASS" ? "PENDING" : "PASS" } : it));
+  };
+
+  // Submit QC Decision — routed through the real qc-execution-engine
+  // (POST /api/qc/decision/:jobId), which enforces the mandatory-checklist
+  // pass gate and writes both status and workshop_stage, replacing what used
+  // to be a bare local field patch that never touched the QC pipeline at all.
   const handleSubmitDecision = async () => {
     if (!selectedJob) return;
+    setSubmittingDecision(true);
     try {
-      const updatedRemarks = `${selectedJob.remarks || ""}\n[QC Decision]: ${decision} | Reason: ${reworkReason} | Feedback: ${techFeedback}`;
-      if (decision === "PASS") {
-        await onUpdateJob(selectedJob.job_id, {
-          status: "Completed",
-          current_workflow_state: "BILLING_PENDING",
-          remarks: updatedRemarks
-        });
-        alert("Quality check PASS. Job routed to Billing department.");
-      } else {
-        // FAIL/REWORK
-        await onUpdateJob(selectedJob.job_id, {
-          status: "Rework",
-          current_workflow_state: "QC_FAILED",
-          rework_count: (selectedJob.rework_count || 0) + 1,
-          remarks: updatedRemarks
-        });
-        alert("Quality check FAIL. Job marked for Rework.");
+      const res = await fetch(`/api/qc/decision/${selectedJob.job_id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          decision,
+          checklist: serverChecklist,
+          roadTestKm: rtDistanceKm ? Number(rtDistanceKm) : 0,
+          notes: decision === "FAIL" ? `Reason: ${reworkReason} | Feedback: ${techFeedback}` : techFeedback,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data?.error || "Failed to submit QC decision.");
+        setSubmittingDecision(false);
+        return;
       }
+      alert(decision === "PASS" ? "Quality check PASS. Job routed to Service Advisor for pre-invoice." : "Quality check FAIL. Job returned to Technician for rework.");
       onRefresh();
-    } catch (e) {
-      alert("Failed to submit decision.");
+    } catch (e: any) {
+      alert(`Failed to submit decision: ${e.message || "network error"}`);
     }
+    setSubmittingDecision(false);
   };
 
   // ─── ROAD TEST API CALLS ────────────────────────────────────────────────────
@@ -334,22 +365,32 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
               <ClipboardCheck className="h-4 w-4 text-blue-400" />
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Digital Validation Checklist</h3>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              {Object.keys(qcChecklist).map(key => (
-                <button
-                  key={key}
-                  onClick={() => setQcChecklist(prev => ({ ...prev, [key]: !prev[key] }))}
-                  className={`p-3 rounded-xl border text-center space-y-1.5 transition-all ${
-                    qcChecklist[key] 
-                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" 
-                      : "bg-slate-950/20 border-slate-850 text-slate-400 hover:border-slate-800"
-                  }`}
-                >
-                  <span className="text-[10px] font-black uppercase tracking-wider block">{key}</span>
-                  <span className="text-xs font-bold">{qcChecklist[key] ? "✓ Approved" : "✗ Pending"}</span>
-                </button>
-              ))}
-            </div>
+            {checklistLoading ? (
+              <p className="text-xs text-slate-400 text-center py-6">Loading checklist…</p>
+            ) : serverChecklist.length === 0 ? (
+              <p className="text-xs text-slate-500 italic text-center py-6">No checklist items available for this job.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {serverChecklist.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => toggleChecklistItem(item.id)}
+                    className={`p-3 rounded-xl border text-left space-y-1 transition-all ${
+                      item.status === "PASS"
+                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                        : "bg-slate-950/20 border-slate-850 text-slate-400 hover:border-slate-800"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">{item.category}</span>
+                      {item.mandatory && <span className="text-[8px] font-bold uppercase text-amber-400">Mandatory</span>}
+                    </div>
+                    <p className="text-xs leading-snug">{item.description}</p>
+                    <span className="text-[10px] font-bold block">{item.status === "PASS" ? "✓ Approved" : "✗ Pending"}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* SECTION 4: Evidence Capture */}
@@ -420,11 +461,12 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
                   className="w-full bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-xs text-slate-200 outline-none"
                 />
               </div>
-              <button 
+              <button
                 onClick={handleSubmitDecision}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
+                disabled={submittingDecision}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
               >
-                Log Final Validation Decision
+                {submittingDecision ? "Submitting…" : "Log Final Validation Decision"}
               </button>
             </div>
             <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-850 space-y-2.5 text-xs">
