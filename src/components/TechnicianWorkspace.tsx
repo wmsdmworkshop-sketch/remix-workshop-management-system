@@ -46,35 +46,50 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
   const [submittingPartRequest, setSubmittingPartRequest] = useState(false);
   const [completingJob, setCompletingJob] = useState(false);
 
-  // Target job card lookup
+  // Jobs actually allocated to THIS technician (job_card_master.assigned_to
+  // == my employee_id, the single-technician allocation flow that's wired
+  // up). This used to include any job with NO technician assigned at all —
+  // "unassigned" was being treated as "assigned to everyone" — which, while
+  // floor allocation was broken, meant the entire open backlog counted as
+  // this technician's own queue. Oldest-first so the "current" job is the
+  // one that's been waiting longest.
+  const myJobs = useMemo(() => {
+    const myId = currentUser?.employee_id;
+    if (myId == null) return [];
+    return jobCards
+      .filter(j => Number(j.assigned_to) === Number(myId) && j.status !== "Completed")
+      .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+  }, [jobCards, currentUser]);
+
+  // Target job card lookup — defaults to this technician's own oldest queued
+  // job, never to jobCards[0] (an arbitrary card unrelated to them). A stale
+  // selectedJobId pointing at a job no longer in myJobs (e.g. reassigned
+  // away) also falls back to myJobs[0] rather than leaking another job.
   const selectedJob = useMemo(() => {
-    return jobCards.find(j => j.job_id === selectedJobId) || jobCards[0] || null;
-  }, [jobCards, selectedJobId]);
+    return myJobs.find(j => j.job_id === selectedJobId) || myJobs[0] || null;
+  }, [myJobs, selectedJobId]);
 
   // Section 1: Dashboard KPIs
   const dashboardStats = useMemo(() => {
-    const techName = currentUser?.full_name;
-    const assigned = jobCards.filter(j => 
-      (!techName || !j.technician_name || j.technician_name.includes(techName)) && j.status !== "Completed"
-    );
-    const completed = jobCards.filter(j => 
-      (!techName || !j.technician_name || j.technician_name.includes(techName)) && j.status === "Completed"
+    const myId = currentUser?.employee_id;
+    const completed = myId == null ? 0 : jobCards.filter(j =>
+      Number(j.assigned_to) === Number(myId) && j.status === "Completed"
     ).length;
     const reworkCount = jobCards.filter(j => j.status === "Rework" || (j.rework_count && j.rework_count > 0)).length;
-    const totalCount = completed + assigned.length;
-    const ftrVal = totalCount > 0 
-      ? `${Math.round(((totalCount - reworkCount) / totalCount) * 100)}%` 
+    const totalCount = completed + myJobs.length;
+    const ftrVal = totalCount > 0
+      ? `${Math.round(((totalCount - reworkCount) / totalCount) * 100)}%`
       : "100%";
 
     return {
-      assignedCount: assigned.length,
-      currentJob: assigned[0]?.vrn || "No active assignment",
+      assignedCount: myJobs.length,
+      currentJob: myJobs[0]?.vrn || "No active assignment",
       completedToday: completed,
       productivity: totalCount > 0 ? "100%" : "0%",
       ftr: ftrVal,
       rework: `${reworkCount}`
     };
-  }, [jobCards, currentUser]);
+  }, [jobCards, myJobs, currentUser]);
 
   // Section 8: Technician AI Copilot suggestions
   const aiCopilotData = useMemo(() => {
@@ -270,27 +285,25 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Active Queue Roster</h3>
               </div>
               <div className="space-y-3">
-                {(() => {
-                  const techName = currentUser?.full_name;
-                  const queueJobs = jobCards.filter(j => (!techName || !j.technician_name || j.technician_name.includes(techName)) && j.status !== "Completed");
-                  if (queueJobs.length === 0) {
-                    return <p className="text-xs text-slate-400 text-center py-6">No jobs currently assigned in active queue roster.</p>;
-                  }
-                  return queueJobs.map(job => (
-                    <button
-                      key={job.job_id}
-                      onClick={() => setSelectedJobId(job.job_id)}
-                      className={`w-full text-left p-3 rounded-xl border transition-all ${
-                        selectedJobId === job.job_id 
-                          ? "bg-blue-600/10 border-blue-600/30 text-white" 
-                          : "bg-slate-950/40 border-slate-850 text-slate-300 hover:border-slate-800"
-                      }`}
-                    >
-                      <div className="font-mono text-xs font-bold">{job.vrn}</div>
-                      <div className="text-[10px] text-slate-400 mt-1">{job.vehicle_make} {job.vehicle_model} • {job.status}</div>
-                    </button>
-                  ));
-                })()}
+                {myJobs.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-6">No jobs currently assigned in active queue roster.</p>
+                ) : myJobs.map(job => (
+                  <button
+                    key={job.job_id}
+                    onClick={() => setSelectedJobId(job.job_id)}
+                    className={`w-full text-left p-3 rounded-xl border transition-all ${
+                      selectedJobId === job.job_id
+                        ? "bg-blue-600/10 border-blue-600/30 text-white"
+                        : "bg-slate-950/40 border-slate-850 text-slate-300 hover:border-slate-800"
+                    }`}
+                  >
+                    <div className="font-mono text-xs font-bold">{job.vrn}</div>
+                    <div className="text-[10px] text-slate-400 mt-1">{job.vehicle_make} {job.vehicle_model} • {job.status}</div>
+                    <div className="text-[10px] text-blue-400 mt-1 font-bold">
+                      {job.bay_no ? `Bay: ${job.bay_no}` : job.bay_id ? `Bay: ${job.bay_id}` : "Bay: Not yet allocated"}
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -334,6 +347,13 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
             <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
               <ClipboardCheck className="h-4 w-4 text-blue-400" />
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Active Repair Tasks Checklist</h3>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs bg-slate-950/40 border border-slate-850 rounded-xl px-3 py-2">
+              <span className="font-mono font-bold text-white">{selectedJob.vrn}</span>
+              <span className="text-slate-400">{selectedJob.vehicle_make} {selectedJob.vehicle_model}</span>
+              <span className="text-blue-400 font-bold">
+                {selectedJob.bay_no ? `Bay: ${selectedJob.bay_no}` : selectedJob.bay_id ? `Bay: ${selectedJob.bay_id}` : "Bay: Not yet allocated"}
+              </span>
             </div>
             <ComplaintsPanel vrn={selectedJob.vrn} />
             <div className="space-y-2.5">

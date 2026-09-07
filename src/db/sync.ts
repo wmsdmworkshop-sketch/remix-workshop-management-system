@@ -1763,6 +1763,11 @@ export async function syncLoad(): Promise<any> {
       return {
         job_id: Number(row.job_card_id),
         job_card_no: row.job_card_no,
+        // Raw technician id alongside the resolved `technician_name` string
+        // below — consumers that need to know "is this job mine" should
+        // compare this against their own employee_id, not fuzzy-match the
+        // name (two technicians can share or substring-match a name).
+        assigned_to: row.assigned_to ? Number(row.assigned_to) : null,
         vrn: row.vehicle_reg || '',
         vin: row.vin || undefined,
         chassis_number: row.chassis_no || (jcMatch ? jcMatch.vin : undefined) || row.vin || undefined,
