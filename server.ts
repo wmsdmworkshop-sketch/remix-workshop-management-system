@@ -1558,7 +1558,45 @@ async function startServer() {
   // Non-breaking: if no/invalid token, passes through (legacy). If an authenticated
   // user is identified and is NOT allowed to edit the target job card (per the
   // relevance rules), returns 403. Managers/Group-1 always pass; dkam never edits.
-  const jobCardEditGuard = (req: any, res: any, next: any) => {
+  /**
+   * Look up a job card straight from the database for the edit guard.
+   *
+   * AUDIT P0 support: the guard reads an in-memory snapshot, which can legitimately
+   * miss a job card (created on another Cloud Run instance, or after the last cache
+   * refresh). Without this fallback, closing the fail-open below would 403 a genuine
+   * owner during that window. Returns a shape carrying only the fields
+   * canEditJobCard/isOwnedBy actually read, mapped from job_card_master:
+   * live_status -> workshop_stage, job_status -> status, and assigned_to surfaced as
+   * a technician assignment so the allocated technician still matches.
+   */
+  const lookupJobCardForGuard = async (jobCardId: number): Promise<any | null> => {
+    try {
+      const [rows]: any = await dbPool.execute(
+        `SELECT job_card_id, job_card_no, created_by, service_advisor, assigned_to,
+                live_status, job_status
+           FROM job_card_master WHERE job_card_id = ? LIMIT 1`,
+        [jobCardId]
+      );
+      const r = (rows || [])[0];
+      if (!r) return null;
+      return {
+        job_id: r.job_card_id,
+        job_card_no: r.job_card_no,
+        created_by: r.created_by,
+        service_advisor: r.service_advisor,
+        workshop_stage: r.live_status,
+        status: r.job_status,
+        technician_assignments: r.assigned_to != null
+          ? [{ technician_id: Number(r.assigned_to) }]
+          : [],
+      };
+    } catch (e: any) {
+      console.error("[jobCardEditGuard] DB fallback lookup failed:", e.message);
+      return null;
+    }
+  };
+
+  const jobCardEditGuard = async (req: any, res: any, next: any) => {
     let user: RelevanceUser | undefined = req.user;
     if (!user) {
       try {
@@ -1575,8 +1613,22 @@ async function startServer() {
       return res.status(401).json({ error: "Authentication required." });
     }
     const id = parseInt(req.params.id);
-    const jc = (getDB().jobCards || []).find((j: any) => Number(j.job_id) === id);
-    if (jc && !canEditJobCard(jc, user)) {
+    let jc = (getDB().jobCards || []).find((j: any) => Number(j.job_id) === id);
+
+    // AUDIT P0: this used to read `if (jc && !canEditJobCard(...))` — when the job
+    // card was absent from the in-memory snapshot the guard called next() with NO
+    // authorization check at all, opening every route that relies on it (PUT
+    // /api/job-cards/:id, /assign, /revenue, /start-repair, /pre-invoice) to any
+    // authenticated user. On multi-instance Cloud Run that window is routinely
+    // reachable. Now: fall back to the database, and if the card still cannot be
+    // resolved, evaluate against an empty object — which returns true for the
+    // full-control roles (they may edit anything regardless), false for observers,
+    // and false for every scoped role. Fail closed, without falsely blocking a
+    // manager or a genuine owner.
+    if (!jc && Number.isFinite(id)) {
+      jc = await lookupJobCardForGuard(id);
+    }
+    if (!canEditJobCard(jc || {}, user)) {
       return res.status(403).json({ error: "You can only act on job cards assigned or related to you." });
     }
     // GM scoped-audit override: GM may act on any JC, but out-of-lane actions are logged.
@@ -7264,10 +7316,51 @@ time from another field.`;
   });
 
   // Assign technicians to a job
-  app.post("/api/job-cards/:id/assign", jobCardEditGuard, (req, res) => {
+  // AUDIT P0: allocating technicians is a Floor Supervisor / manager action, but
+  // this route was guarded by jobCardEditGuard ALONE. Because that guard passes
+  // anyone with an ownership link (isOwnedBy), the **currently assigned
+  // technician satisfied it** — so a technician could silently wipe their own or
+  // a colleague's allocation mid-job. The handler also unconditionally deleted
+  // every existing allocation with no check on whether work had already started.
+  //
+  // Now: only allocation-capable roles may call it; once a technician has
+  // started work the allocation is locked to GM/admin override (audited); and
+  // the request body is validated instead of trusted.
+  const TECHNICIAN_ASSIGN_ROLES = [
+    "floor_supervisor", "floor_incharge", "supervisor",
+    "workshop_manager", "service_manager", "gm_service", "admin", "developer",
+  ];
+  const TECHNICIAN_REASSIGN_OVERRIDE_ROLES = ["gm_service", "admin", "developer"];
+
+  app.post("/api/job-cards/:id/assign", requireRoles(TECHNICIAN_ASSIGN_ROLES), jobCardEditGuard, async (req: any, res) => {
     const db = getDB();
     const id = parseInt(req.params.id);
-    const allocations: { employee_id: number; tech_role: string }[] = req.body.allocations;
+    const allocations: { employee_id: number; tech_role: string }[] = req.body?.allocations;
+
+    if (!Array.isArray(allocations)) {
+      return res.status(400).json({ error: "allocations must be an array." });
+    }
+    if (allocations.some(a => a == null || !Number.isFinite(Number(a.employee_id)))) {
+      return res.status(400).json({ error: "Every allocation needs a numeric employee_id." });
+    }
+
+    // Once work has started, re-allocating is a GM/admin override, not routine.
+    const jc = (db.jobCards || []).find((j: any) => Number(j.job_id) === id);
+    const hasStarted = !!(jc && (jc as any).started_at);
+    const callerRole = normaliseRoleName(req.user?.role);
+    const existing = db.jobTechnicianMaps.filter((m: JobTechnicianMap) => m.job_id === id);
+
+    if (hasStarted && existing.length > 0 && !TECHNICIAN_REASSIGN_OVERRIDE_ROLES.map(normaliseRoleName).includes(callerRole)) {
+      return res.status(403).json({
+        error: "This job has already started. Re-allocating the technician now requires a GM or administrator.",
+      });
+    }
+    if (hasStarted && existing.length > 0) {
+      await AuditService.logAction(
+        req.user?.user_id, req.user?.username || req.user?.full_name, "TECHNICIAN_REALLOCATION_OVERRIDE",
+        `Job ${jc?.job_card_no || id}: re-allocated after work had started (was ${existing.map(m => m.employee_id).join(", ")}).`
+      ).catch((e: any) => console.error("[assign] audit write failed:", e.message));
+    }
 
     // Filter out old maps for this job
     db.jobTechnicianMaps = db.jobTechnicianMaps.filter((m: JobTechnicianMap) => m.job_id !== id);
@@ -7681,7 +7774,14 @@ time from another field.`;
     }
   });
 
-  app.post("/api/roles", async (req, res) => {
+  // AUDIT P0: this route had NO authorization at all — any authenticated user
+  // (technician, cashier, driver) could create a role or raise an existing
+  // role's permission_level, i.e. escalate privilege for themselves or anyone
+  // else. Creating/altering roles is a security-administration action, so it is
+  // restricted to admin/developer. (The list is inline rather than
+  // MASTER_ADMIN_ROLES because that const is declared later in this file and
+  // would be in the temporal dead zone at route-registration time.)
+  app.post("/api/roles", requireRoles(["admin", "developer"]), async (req, res) => {
     try {
       const { role_name, permission_level } = req.body;
       if (!role_name || !permission_level) {
@@ -12530,14 +12630,55 @@ Respond with valid JSON only:
     }
   });
 
-  app.post("/api/v1/command/override-stage", authenticateToken, async (req: any, res: any) => {
+  // AUDIT P0: forcing a vehicle to an arbitrary workflow stage is the single
+  // most powerful action in the system — it can jump a job straight to
+  // Completed/Invoiced, skipping QC, billing and payment. It previously ran on
+  // authenticateToken ALONE, so any authenticated user (a technician, a driver)
+  // could do it. It is now a manager/GM override, matching how every other
+  // override in this codebase is gated.
+  //
+  // The actor was ALSO being forged: req.user carries snake_case user_id /
+  // employee_id (see authenticateToken above), but this handler read camelCase
+  // userId/employeeId/id — all three were always undefined, so every override
+  // was recorded against the literal 'MGR-SYSTEM'. The audit trail therefore
+  // could not identify who overrode what. Both are fixed here; an override with
+  // no identifiable actor is refused rather than attributed to a placeholder.
+  const STAGE_OVERRIDE_ROLES = [
+    "admin", "developer", "gm_service", "workshop_manager", "service_manager",
+  ];
+  app.post("/api/v1/command/override-stage", authenticateToken, requireRoles(STAGE_OVERRIDE_ROLES), async (req: any, res: any) => {
     try {
       const { jobId, targetStage, reason } = req.body;
-      const managerId = req.user?.userId || req.user?.employeeId || req.user?.id || 'MGR-SYSTEM';
-      const branchId = req.user?.branchId || req.user?.branch_id || 'BR-SEDAM';
+
+      if (!jobId || !targetStage) {
+        return res.status(400).json({ success: false, error: "jobId and targetStage are required." });
+      }
+      // A stage override bypasses the normal workflow, so the reason is the only
+      // record of why. It is mandatory here (unlike ordinary edits).
+      if (!reason || String(reason).trim().length < 5) {
+        return res.status(400).json({
+          success: false,
+          error: "A reason of at least 5 characters is required to override a workflow stage.",
+        });
+      }
+
+      const managerId = req.user?.user_id ?? req.user?.employee_id;
+      if (!managerId) {
+        return res.status(403).json({
+          success: false,
+          error: "Your login is not linked to a user or employee record, so this override cannot be attributed. Contact an administrator.",
+        });
+      }
+      const branchId = req.user?.workshop_id || req.user?.branchId || req.user?.branch_id || 'BR-SEDAM';
 
       const { OperationsCommandCenter } = await import('./src/core/workshop/operations-command-center.ts');
-      const result = await OperationsCommandCenter.overrideVehicleStage(jobId, targetStage, reason, managerId, branchId);
+      const result = await OperationsCommandCenter.overrideVehicleStage(jobId, targetStage, String(reason).trim(), managerId, branchId);
+
+      await AuditService.logAction(
+        req.user?.user_id, req.user?.username || req.user?.full_name, "WORKFLOW_STAGE_OVERRIDE",
+        `Job ${jobId} forced to stage '${targetStage}'. Reason: ${String(reason).trim()}`
+      ).catch((e: any) => console.error("[override-stage] audit write failed:", e.message));
+
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ success: false, error: e.message });
@@ -14223,7 +14364,19 @@ Respond with valid JSON only:
   });
 
   // POST /api/job-cards/:id/pre-invoice
-  app.post("/api/job-cards/:id/pre-invoice", jobCardEditGuard, express.json(), async (req, res) => {
+  //
+  // AUDIT P0: this carried jobCardEditGuard only — no Billing permission and no
+  // role list — so any role with an ownership or stage link to the job could
+  // raise a pre-invoice, the assigned technician included. That flanks the
+  // deliberate control which stops Workshop/Service Managers marking a job
+  // billed (role_permissions Billing can_edit=0, re-forced every boot and
+  // enforced on POST /api/job-cards/:id/bill). Building the pre-invoice is a
+  // Service Advisor action in the operating model, handed on to Billing.
+  const PRE_INVOICE_ROLES = [
+    "service_advisor", "service_manager", "workshop_manager", "gm_service",
+    "billing", "admin", "developer",
+  ];
+  app.post("/api/job-cards/:id/pre-invoice", requireRoles(PRE_INVOICE_ROLES), jobCardEditGuard, express.json(), async (req, res) => {
     try {
       const { id } = req.params;
       const { sent_to, sent_via, invoice_no } = req.body;

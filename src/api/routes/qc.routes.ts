@@ -4,11 +4,24 @@
  * branchId || 1 fallback is NOT permitted — missing branchId → 401.
  */
 import { Router, Request, Response } from "express";
-import { authorize } from "../middleware/auth.ts";
+import { authenticateJwt, authorize } from "../middleware/auth.ts";
 import { QcExecutionEngine } from "../../core/workshop/qc-execution-engine.ts";
 
 const router = Router();
 const engine = QcExecutionEngine.getInstance();
+
+// AUDIT: every route here calls authorize() and resolveAuthBranchId(), both of
+// which read the NORMALISED user shape (id / roleId / branchId) produced by
+// authenticateJwt. This router never ran it — it relied on server.ts's global
+// authenticateToken, which populates user_id / workshop_id under different
+// names and no branchId at all. resolveAuthBranchId therefore threw
+// BRANCH_CONTEXT_MISSING and **every QC route answered 401**, which is why QC
+// has never functioned against real vehicles (tbl_qc_handoff is empty in
+// production). authenticateJwt re-verifies the same token with the same secret
+// and maps workshop_id -> branchId, so the permission check and the branch
+// check both receive real values. This is broken-closed being repaired, not a
+// gate being opened: authorize() still governs who may proceed.
+router.use(authenticateJwt);
 
 function resolveAuthBranchId(user: any): number {
   const bid = user.branchId;

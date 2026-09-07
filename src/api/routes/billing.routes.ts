@@ -9,11 +9,24 @@
  *   Cross-branch IDOR: BillingEngine throws BILLING_BRANCH_MISMATCH / MGP_BRANCH_MISMATCH.
  */
 import { Router, Request, Response } from "express";
-import { authorize } from "../middleware/auth.ts";
+import { authenticateJwt, authorize } from "../middleware/auth.ts";
 import { BillingEngine } from "../../core/workshop/billing-engine.ts";
 
 const router = Router();
 const engine = BillingEngine.getInstance();
+
+// AUDIT: same defect as qc.routes.ts. The SECURITY CONTRACT above depends on
+// branchId coming from the JWT, but this router never ran authenticateJwt —
+// it inherited server.ts's global authenticateToken, which produces user_id /
+// workshop_id and no branchId. resolveAuthBranchId() therefore threw
+// BRANCH_CONTEXT_MISSING and httpStatus() mapped it to 401, so every Phase-8
+// billing route was answering 401 rather than enforcing anything. Worse, had
+// any path populated branchId partially, checkBranchAccess() returns true when
+// a branch id is absent — so the cross-branch guarantee in the contract above
+// was inert either way. authenticateJwt supplies id / roleId / branchId
+// (mapping workshop_id) so both the permission check and the branch check
+// operate on real values.
+router.use(authenticateJwt);
 
 function resolveAuthBranchId(user: any): number {
   const bid = user.branchId;

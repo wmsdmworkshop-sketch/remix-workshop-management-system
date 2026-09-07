@@ -6,8 +6,30 @@
 import { Router } from 'express';
 import { authenticateJwt } from '../middleware/auth';
 import { SaTechnicalIntakeEngine } from '../../core/workshop/sa-technical-intake';
+import { canPerformSaIntake } from '../../core/workshop/assignment-roles';
 
 export const saIntakeRouter = Router();
+
+/**
+ * AUDIT P0: every route below already ran authenticateJwt, but NOT ONE carried a
+ * role check — so any authenticated user (a technician, a cashier, a driver)
+ * could record complaints, create a job card, reconcile CRM or send a vehicle to
+ * the floor as though they were the Service Advisor. Compare
+ * floor-execution.routes.ts, which correctly pairs authenticateJwt with
+ * requireFloorRoles on every route.
+ *
+ * Applied at router level so a newly added route cannot silently miss it — the
+ * absence of a default was how all nine routes came to be unguarded.
+ */
+saIntakeRouter.use(authenticateJwt, (req: any, res: any, next: any) => {
+  if (!canPerformSaIntake(req.user?.role)) {
+    return res.status(403).json({
+      success: false,
+      error: 'Access denied. Service Advisor technical intake is restricted to advisors and managers.',
+    });
+  }
+  next();
+});
 
 /**
  * GET /api/sa-intake/queue

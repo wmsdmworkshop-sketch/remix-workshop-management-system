@@ -6,7 +6,11 @@
 import { Router } from 'express';
 import { authenticateJwt } from '../middleware/auth';
 import { RealtimeOwnershipPipeline } from '../../core/workshop/realtime-ownership-pipeline';
-import { canAssignServiceAdvisor } from '../../core/workshop/assignment-roles';
+import {
+  canAssignServiceAdvisor,
+  canPerformGateIn,
+  canAcceptReceptionIntake,
+} from '../../core/workshop/assignment-roles';
 
 export const pipelineRouter = Router();
 
@@ -16,6 +20,13 @@ export const pipelineRouter = Router();
  */
 pipelineRouter.post('/gate-in', authenticateJwt, async (req: any, res: any) => {
   try {
+    // AUDIT P0: this route was authenticated but NOT authorised, letting any
+    // logged-in user open a gate entry — a rule the legacy POST /api/job-cards
+    // route has always enforced. See GATE_IN_ROLES.
+    if (!canPerformGateIn(req.user?.role)) {
+      return res.status(403).json({ success: false, error: 'Access denied. Your role may not open a gate entry.' });
+    }
+
     const { vrn } = req.body;
     if (!vrn) {
       return res.status(400).json({ success: false, error: 'Vehicle Registration Number (vrn) is mandatory.' });
@@ -61,6 +72,13 @@ pipelineRouter.get('/reception/queue', authenticateJwt, async (req: any, res: an
  */
 pipelineRouter.post('/reception/accept', authenticateJwt, async (req: any, res: any) => {
   try {
+    // AUDIT P0: reception verification is the control that makes the gate
+    // capture trustworthy. It was authenticated but not authorised, so any
+    // logged-in user could "verify" a vehicle. See RECEPTION_INTAKE_ROLES.
+    if (!canAcceptReceptionIntake(req.user?.role)) {
+      return res.status(403).json({ success: false, error: 'Access denied. Your role may not accept a reception intake.' });
+    }
+
     const { gateEntryId, visitCategory, confirmedOdometer } = req.body;
     if (!gateEntryId || !visitCategory || confirmedOdometer === undefined) {
       return res.status(400).json({
