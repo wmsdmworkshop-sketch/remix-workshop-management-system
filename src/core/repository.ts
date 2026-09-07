@@ -226,8 +226,15 @@ export class JobCardRepository {
       masterRow.billing_status = jobCard.status === 'Invoiced' ? 'Paid' : 'Pending';
     }
     if (!isUpdate || jobCard.created_by !== undefined) {
-      masterRow.assigned_to = jobCard.created_by || 22;
       masterRow.created_by = jobCard.created_by || 22;
+    }
+    // assigned_to means "which technician this job is allocated to" — it must
+    // never default to created_by (the staff member who made the record).
+    // Only write it when the caller explicitly passed a real assignment; the
+    // real technician assignment happens later via floor-execution-engine.ts
+    // allocateJobAndBay(), which updates this column directly.
+    if (jobCard.assigned_to !== undefined) {
+      masterRow.assigned_to = jobCard.assigned_to;
     }
     if (!isUpdate || jobCard.etd !== undefined) masterRow.etd = safeMysqlDatetime(jobCard.etd, safeMysqlDatetime(new Date())!);
     if (!isUpdate || jobCard.completed_at !== undefined) masterRow.actual_delivery = safeMysqlDatetime(jobCard.completed_at, null);
