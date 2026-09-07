@@ -71,13 +71,33 @@ export class QcExecutionEngine {
   /**
    * Verify job exists. Throws QC_JOB_NOT_FOUND if not.
    * branchId=0 → SUPER_ADMIN passthrough.
+   *
+   * AUDIT P0 (docs/audit/DWIP_ENGINE_ARCHITECTURE_MAP.md): this engine read and
+   * wrote `job_cards` in all 13 of its SQL statements. `job_cards` holds 4 seed
+   * rows (VRN1-4 / "Test User"); the live table is `job_card_master` (129 real
+   * rows). This lookup therefore threw QC_JOB_NOT_FOUND for EVERY real vehicle,
+   * which is why QC has never functioned and tbl_qc_handoff is empty.
+   *
+   * Column mapping used throughout this file:
+   *   job_cards.job_id                        -> job_card_master.job_card_id
+   *   job_cards.status + job_cards.workshop_stage -> job_card_master.live_status
+   *
+   * Both legacy columns were always written together with the same stage value,
+   * and live_status is the free-text stage field the floor and billing engines
+   * already use (FLOOR_ALLOCATED, QC_PENDING, SA_PRE_INVOICE_REVIEW), so they
+   * collapse to it. job_status is NOT used: it is an ENUM that would reject
+   * values like 'QC_PASSED'.
+   *
+   * This is what makes billing reachable: submitQcDecision -> saAcknowledgeQc
+   * writes PRE_INVOICE_READY to job_card_master.live_status, which is exactly
+   * what billing-engine.ts checks before allowing a pre-invoice to compile.
    */
   private async verifyJobOwnership(jobId: number, branchId: number, conn?: any): Promise<void> {
     const exec = conn
       ? (sql: string, p: any[]) => conn.execute(sql, p)
       : (sql: string, p: any[]) => this.execute(sql, p);
 
-    const [jobs]: any = await exec(`SELECT job_id FROM job_cards WHERE job_id = ?`, [jobId]);
+    const [jobs]: any = await exec(`SELECT job_card_id FROM job_card_master WHERE job_card_id = ?`, [jobId]);
     if (!jobs || jobs.length === 0) {
       throw new Error(`QC_JOB_NOT_FOUND: Job ${jobId} does not exist.`);
     }
@@ -297,12 +317,43 @@ export class QcExecutionEngine {
       }
     } catch (_) {}
 
-    // 3. Job description
+    // 3. Job scope, from the complaints the Service Advisor actually recorded.
+    //
+    // This previously read job_cards.remarks / job_description. Neither column
+    // exists on job_card_master, and job_cards holds only seed rows, so for every
+    // real vehicle the query threw and the catch below silently dropped the item —
+    // QC inspectors never saw the declared scope. Section 2 above reads
+    // job_card_complaint_history, which is empty in production; the table that
+    // genuinely holds advisor-recorded complaints is tbl_job_complaints, keyed by
+    // job_card_no (its job_id column is NULL on every row).
     try {
-      const [jobs]: any = await this.execute(`SELECT remarks, job_description FROM job_cards WHERE job_id = ?`, [jobId]);
-      const text = (jobs[0]?.job_description || jobs[0]?.remarks || "").trim();
-      if (text.length > 0) {
-        items.push({ id: `chk-jobdesc-${items.length + 1}`, category: "JOB_SCOPE_VERIFICATION", description: `Verify all stated job-scope work completed: "${text.substring(0, 120)}"`, status: "PENDING", mandatory: true, source: "JOB_CARD" });
+      const [jobs]: any = await this.execute(
+        `SELECT job_card_no FROM job_card_master WHERE job_card_id = ?`,
+        [jobId]
+      );
+      const jobCardNo = jobs?.[0]?.job_card_no;
+      if (jobCardNo) {
+        const [complaints]: any = await this.execute(
+          `SELECT complaint_text FROM tbl_job_complaints
+            WHERE job_card_no = ? AND complaint_text IS NOT NULL
+            ORDER BY created_at ASC LIMIT 5`,
+          [jobCardNo]
+        );
+        const seenScope = new Set<string>();
+        for (const c of complaints || []) {
+          const text = String(c.complaint_text || "").trim();
+          const key = text.toLowerCase().substring(0, 60);
+          if (!text || seenScope.has(key)) continue;
+          seenScope.add(key);
+          items.push({
+            id: `chk-jobdesc-${items.length + 1}`,
+            category: "JOB_SCOPE_VERIFICATION",
+            description: `Verify stated job-scope work completed: "${text.substring(0, 120)}"`,
+            status: "PENDING",
+            mandatory: true,
+            source: "JOB_CARD",
+          });
+        }
       }
     } catch (_) {}
 
@@ -346,10 +397,10 @@ export class QcExecutionEngine {
       await conn.beginTransaction();
       await this.verifyJobOwnership(jobId, branchId, conn);
 
-      const [cur]: any = await conn.execute(`SELECT status FROM job_cards WHERE job_id = ?`, [jobId]);
-      if (cur[0]?.status === "QC_IN_PROGRESS") { await conn.commit(); return; }
-      if (!["QC_PENDING"].includes(cur[0]?.status || "")) {
-        throw new Error(`QC_INVALID_TRANSITION: Job is in state '${cur[0]?.status}', expected QC_PENDING.`);
+      const [cur]: any = await conn.execute(`SELECT live_status FROM job_card_master WHERE job_card_id = ?`, [jobId]);
+      if (cur[0]?.live_status === "QC_IN_PROGRESS") { await conn.commit(); return; }
+      if (!["QC_PENDING"].includes(cur[0]?.live_status || "")) {
+        throw new Error(`QC_INVALID_TRANSITION: Job is in state '${cur[0]?.live_status}', expected QC_PENDING.`);
       }
 
       await conn.execute(
@@ -357,11 +408,12 @@ export class QcExecutionEngine {
           WHERE entity_id = ? AND stage_name = 'SLA_FLOOR_TO_QC' AND status = 'ON_TRACK'`,
         [jobId.toString()]
       );
-      // workshop_stage is set alongside the legacy status column so that
-      // jobcard-relevance.ts's STAGE_RULES (which the RBAC/view-filter every
-      // workspace depends on reads primarily) see this transition too - status
-      // alone was invisible to that system.
-      await conn.execute(`UPDATE job_cards SET status = 'QC_IN_PROGRESS', workshop_stage = 'QC_IN_PROGRESS' WHERE job_id = ?`, [jobId]);
+      // live_status is the single stage field on job_card_master; it replaces the
+      // legacy status + workshop_stage pair, which were always written together
+      // with the same value. jobcard-relevance.ts's STAGE_RULES reads
+      // workshop_stage, which syncLoad() maps back from live_status in memory,
+      // so the RBAC/view-filter still sees this transition.
+      await conn.execute(`UPDATE job_card_master SET live_status = 'QC_IN_PROGRESS' WHERE job_card_id = ?`, [jobId]);
       await conn.commit();
 
       try {
@@ -405,8 +457,8 @@ export class QcExecutionEngine {
     }
 
     // Gate 3: Job state
-    const [job]: any = await this.execute(`SELECT status FROM job_cards WHERE job_id = ?`, [jobId]);
-    const state = job[0]?.status;
+    const [job]: any = await this.execute(`SELECT live_status FROM job_card_master WHERE job_card_id = ?`, [jobId]);
+    const state = job[0]?.live_status;
     if (!["QC_IN_PROGRESS", "QC_PENDING"].includes(state)) {
       throw new Error(`QC_PASS_BLOCKED: Job is in state '${state}'. Must be QC_IN_PROGRESS.`);
     }
@@ -471,9 +523,9 @@ export class QcExecutionEngine {
             VALUES (?, ?, 'QC_REWORK', 1, NOW(), NOW(), 0, 'QC FAIL', ?, false, 0)`,
           [jobId, jobId, notes || "Failed QC inspection"]
         );
-        await conn.execute(`UPDATE job_cards SET status = 'QC_FAILED_REWORK', workshop_stage = 'QC_FAILED_REWORK' WHERE job_id = ?`, [jobId]);
+        await conn.execute(`UPDATE job_card_master SET live_status = 'QC_FAILED_REWORK' WHERE job_card_id = ?`, [jobId]);
       } else {
-        await conn.execute(`UPDATE job_cards SET status = 'QC_PASSED', workshop_stage = 'QC_PASSED' WHERE job_id = ?`, [jobId]);
+        await conn.execute(`UPDATE job_card_master SET live_status = 'QC_PASSED' WHERE job_card_id = ?`, [jobId]);
           await conn.execute(
             `INSERT INTO tbl_handoff_sla (handoff_id, entity_id, stage_name, status, branch_id, owner_id, owner_role, sla_due_at) VALUES (UUID(), ?, 'SLA_QC_TO_SA', 'ON_TRACK', ?, 'SYSTEM', 'SYSTEM', NOW())`,
             [jobId.toString(), branchId.toString()]
@@ -515,7 +567,7 @@ export class QcExecutionEngine {
       }
 
       await conn.execute(`UPDATE rework_tracking SET rework_completed = true WHERE original_job_id = ? AND rework_completed = false`, [jobId]);
-      await conn.execute(`UPDATE job_cards SET status = 'QC_PENDING', workshop_stage = 'QC_PENDING' WHERE job_id = ?`, [jobId]);
+      await conn.execute(`UPDATE job_card_master SET live_status = 'QC_PENDING' WHERE job_card_id = ?`, [jobId]);
       await conn.commit();
 
       try {
@@ -537,8 +589,8 @@ export class QcExecutionEngine {
       await conn.beginTransaction();
       await this.verifyJobOwnership(jobId, branchId, conn);
 
-      const [job]: any = await conn.execute(`SELECT status FROM job_cards WHERE job_id = ?`, [jobId]);
-      const state = job[0]?.status;
+      const [job]: any = await conn.execute(`SELECT live_status FROM job_card_master WHERE job_card_id = ?`, [jobId]);
+      const state = job[0]?.live_status;
       if (!["QC_PASSED", "PRE_INVOICE_READY"].includes(state)) {
         throw new Error(`SA_ACK_BLOCKED: Job is in state '${state}'. SA can only acknowledge after QC_PASSED.`);
       }
@@ -557,7 +609,13 @@ export class QcExecutionEngine {
           WHERE entity_id = ? AND stage_name = 'SLA_QC_TO_SA' AND status = 'ON_TRACK'`,
         [jobId.toString()]
       );
-      await conn.execute(`UPDATE job_cards SET status = 'PRE_INVOICE_READY', workshop_stage = 'PRE_INVOICE_READY' WHERE job_id = ?`, [jobId]);
+      // THE UNLOCK: billing-engine.ts gates every pre-invoice on
+      // job_card_master.live_status = 'PRE_INVOICE_READY' and its queue selects on
+      // the same value. This was previously written to job_cards, a table with 4
+      // seed rows, so live_status never once held PRE_INVOICE_READY in production
+      // (verified: it has only ever been Waiting / GATE_ENTRY_DONE /
+      // FLOOR_ALLOCATED) and the billing queue was permanently empty.
+      await conn.execute(`UPDATE job_card_master SET live_status = 'PRE_INVOICE_READY' WHERE job_card_id = ?`, [jobId]);
       await conn.commit();
 
       try {
@@ -579,7 +637,7 @@ export class QcExecutionEngine {
    *   Terminal (resolved): APPROVED | REJECTED
    *   Blocking (unresolved): PENDING | ACKNOWLEDGED
    *
-   * Link: tbl_warranty_reviews.job_card_id = job_cards.job_card_no
+   * Link: tbl_warranty_reviews.job_card_id = job_card_master.job_card_no
    * Also checks tbl_warranty_claims.job_id for branch consistency.
    *
    * Returns: { blocking: false } if no dependency or all resolved.
@@ -588,7 +646,7 @@ export class QcExecutionEngine {
   public async checkWarrantyDependency(jobId: number, branchId: number): Promise<{ blocking: boolean; reason?: string; count?: number }> {
     // Get job_card_no for the warranty review link
     const [jobs]: any = await this.execute(
-      `SELECT job_card_no FROM job_cards WHERE job_id = ?`,
+      `SELECT job_card_no FROM job_card_master WHERE job_card_id = ?`,
       [jobId]
     );
     if (!jobs || jobs.length === 0) {
@@ -629,12 +687,12 @@ export class QcExecutionEngine {
    * Gate 6: No blocking Phase 6 warranty dependencies (PENDING/ACKNOWLEDGED)
    */
   public async checkPreInvoiceReadiness(jobId: number, branchId: number = 0): Promise<{ ready: boolean; blockReason?: string }> {
-    const [jobs]: any = await this.execute(`SELECT status FROM job_cards WHERE job_id = ?`, [jobId]);
+    const [jobs]: any = await this.execute(`SELECT live_status FROM job_card_master WHERE job_card_id = ?`, [jobId]);
     if (!jobs || jobs.length === 0) {
       return { ready: false, blockReason: "Job card not found." };
     }
 
-    const state = jobs[0].status;
+    const state = jobs[0].live_status;
     if (!["QC_PASSED", "PRE_INVOICE_READY"].includes(state)) {
       return { ready: false, blockReason: `Vehicle is in state: ${state}. Must be QC_PASSED or PRE_INVOICE_READY.` };
     }
