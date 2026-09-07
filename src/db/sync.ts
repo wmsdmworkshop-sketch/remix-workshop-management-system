@@ -162,19 +162,81 @@ async function upsertRows(tableName: string, rows: any[], primaryKey: string) {
   }
 }
 
+/**
+ * Columns on job_card_master that are OWNED BY THE WORKFLOW ENGINES, not by this
+ * sync. Their update clause becomes COALESCE(VALUES(col), col): a real incoming
+ * value still wins, but a NULL leaves whatever the engines wrote in place.
+ *
+ * AUDIT P0 (docs/audit/DWIP_WORKFLOW_STATE_MACHINE_AUDIT.md, F-4.1). This
+ * function runs on EVERY syncSave() — 19 call sites — and previously overwrote
+ * every one of these columns unconditionally, using fabricated defaults when the
+ * in-memory row had nothing to say:
+ *
+ *   live_status    = row.workshop_stage || 'Waiting'
+ *   billing_status = row.status === 'Invoiced' ? 'Paid' : 'Pending'
+ *   assigned_to    = row.created_by || 22
+ *   bay_id         = row.bay_id || 1
+ *   etd            = <now>
+ *
+ * Vehicles that entered through the gate-in pipeline have no legacy job_cards
+ * row, so workshop_stage is null for them and live_status was reset to 'Waiting'
+ * on every save — wiping FLOOR_ALLOCATED, QC_PENDING and SA_PRE_INVOICE_REVIEW
+ * written by floor-execution-engine, qc-execution-engine and billing-engine.
+ * That is the mechanism behind the 105 of 129 job cards (81%) sitting at
+ * live_status='Waiting' while job_status='In Progress' — a state no workflow can
+ * produce. It also silently un-billed invoiced jobs, and re-derived assigned_to
+ * from created_by (the same defect already fixed in core/repository.ts, which
+ * would have re-corrupted the rows cleaned on 2026-09-07).
+ *
+ * The file's existing convention for protecting engine-written columns is to
+ * keep them out of this column list entirely (see the crm_* note further down).
+ * That is not possible here because these columns DO need initial values on
+ * INSERT, so COALESCE gives the same guarantee for the UPDATE half.
+ */
+const MASTER_COLUMNS_PRESERVED_IF_NULL = new Set([
+  "job_status",
+  "live_status",
+  "billing_status",
+  "assigned_to",
+  "bay_id",
+  "etd",
+  "estimated_amount",
+]);
+
+/**
+ * Columns that may be set when the row is first created but must never be
+ * rewritten afterwards. `created_by` is NOT NULL in the live schema, so it
+ * cannot use the COALESCE-on-NULL trick above — and the person who created a
+ * record never legitimately changes, so the update clause is a no-op instead.
+ * Without this it was rewritten to the placeholder id 22 on every sync.
+ */
+const MASTER_COLUMNS_INSERT_ONLY = new Set(["created_by"]);
+
 async function saveJobCardsToMaster(jobCards: any[]) {
   if (!jobCards || jobCards.length === 0) return;
   for (const row of jobCards) {
-    // Map status back to job_status enum
-    let jobStatus: 'Open' | 'In Progress' | 'Waiting Parts' | 'Ready' | 'Delivered' | 'Carry Forward' | 'Assigned' | 'Unassigned' | 'In Queue' = 'Unassigned';
+    // Map status back to job_status enum. NULL means "this row tells us nothing
+    // about the job status" — the existing value is then preserved rather than
+    // being reset to the 'Unassigned' fallback.
+    let jobStatus:
+      | 'Open' | 'In Progress' | 'Waiting Parts' | 'Ready' | 'Delivered'
+      | 'Carry Forward' | 'Assigned' | 'Unassigned' | 'In Queue' | null = null;
     const statusLower = String(row.status || '').toLowerCase();
     if (statusLower === 'waiting') {
-      jobStatus = 'Unassigned';
+      // A row already carrying a Service Advisor must not be downgraded to
+      // 'Unassigned' just because the legacy status still reads 'Waiting'. Same
+      // guard as core/repository.ts upsertMaster.
+      jobStatus = String(row.service_advisor || '').trim() ? 'Assigned' : 'Unassigned';
     } else if (statusLower === 'active') {
       jobStatus = 'In Progress';
     } else if (statusLower === 'completed') {
       jobStatus = 'Ready';
     } else if (statusLower === 'invoiced') {
+      jobStatus = 'Delivered';
+    } else if (statusLower === 'delivered') {
+      // Was missing entirely, so recording a gate-out (which sets status
+      // 'Delivered') fell through to the 'Unassigned' initialiser and reset a
+      // finished job to unassigned. Audit F-4.2.
       jobStatus = 'Delivered';
     } else if (statusLower === 'carry forward') {
       jobStatus = 'Carry Forward';
@@ -200,7 +262,9 @@ async function saveJobCardsToMaster(jobCards: any[]) {
     const masterRow: any = {
       job_card_id: row.job_id,
       job_card_no: row.job_card_no,
-      bay_id: row.bay_id || 1, // Default to a valid bay_id
+      // Defaulting an unallocated job to bay 1 asserts a bay it was never given.
+      // The column is nullable (migration 016), so absent means absent.
+      bay_id: row.bay_id ?? null,
       // vehicle_reg is VARCHAR(50) as of the widening migration; truncating to
       // 10 here is what corrupted every hyphenated registration.
       vehicle_reg: row.vrn || '',
@@ -209,13 +273,31 @@ async function saveJobCardsToMaster(jobCards: any[]) {
       driver_mobile: (row.customer_mobile || '0000000000').substring(0, 15),
       service_type: serviceType,
       job_status: jobStatus,
-      assigned_to: row.created_by || 22, // Default valid user/employee
-      etd: safeMysqlDatetime(row.etd, safeMysqlDatetime(new Date())!),
+      // assigned_to means "which technician is allocated", NOT "who created the
+      // record". Deriving it from created_by is the defect already fixed in
+      // core/repository.ts; leaving it here would have re-corrupted every row on
+      // the next sync. Only the real floor allocation may set it.
+      assigned_to: row.assigned_to ?? null,
+      // Defaulting ETD to "now" on every sync silently rewrote the promised
+      // delivery time each time anything was saved.
+      etd: safeMysqlDatetime(row.etd, null),
       actual_delivery: safeMysqlDatetime(row.completed_at, null),
-      created_by: row.created_by || 22,
-      live_status: row.workshop_stage || 'Waiting',
-      billing_status: row.status === 'Invoiced' ? 'Paid' : 'Pending',
-      estimated_amount: Number(row.labor_price || 0) + Number(row.parts_price || 0),
+      // created_by is NOT NULL in the live schema, so it cannot be nulled the way
+      // the other preserved columns are. Keep the existing placeholder only as an
+      // INSERT fallback; on UPDATE the COALESCE below keeps the stored creator.
+      created_by: row.created_by ?? 22,
+      // NULL here means "no stage information in this row" and preserves what
+      // the workflow engines wrote. It must never fall back to 'Waiting'.
+      live_status: row.workshop_stage || null,
+      // Only ever assert the billed state; never assert "not billed", which is
+      // what reset invoiced jobs to Pending.
+      billing_status: row.status === 'Invoiced' ? 'Paid' : null,
+      // Zero is a real number, so an absent estimate must be NULL rather than 0
+      // — otherwise a genuine SA estimate is overwritten with 0 on the next save.
+      estimated_amount:
+        row.labor_price == null && row.parts_price == null
+          ? null
+          : Number(row.labor_price || 0) + Number(row.parts_price || 0),
       last_service_date: row.last_service_date || row.completed_at || row.created_at || null,
       odometer_reading: row.odometer_reading || row.km_reading || null,
       chassis_no: row.vin || null,
@@ -233,7 +315,14 @@ async function saveJobCardsToMaster(jobCards: any[]) {
     const placeholders = keys.map(() => "?").join(", ");
     const updateClauses = keys
       .filter((k) => k !== "job_card_id")
-      .map((k) => `\`${k}\` = VALUES(\`${k}\`)`)
+      // Engine-owned columns keep their stored value when this sync has nothing
+      // to say (NULL). Everything else is still overwritten as before, because
+      // for those the legacy job_cards row genuinely is authoritative.
+      .map((k) => {
+        if (MASTER_COLUMNS_INSERT_ONLY.has(k)) return `\`${k}\` = \`${k}\``;
+        if (MASTER_COLUMNS_PRESERVED_IF_NULL.has(k)) return `\`${k}\` = COALESCE(VALUES(\`${k}\`), \`${k}\`)`;
+        return `\`${k}\` = VALUES(\`${k}\`)`;
+      })
       .join(", ");
 
     const sql = `
