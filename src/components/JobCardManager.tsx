@@ -995,6 +995,23 @@ export default function JobCardManager({
     });
   }, [jobCards, listSearch, listDate, listStatus, showBilledClosed, assignFilter]);
 
+  // Keep the detail panel pointed at live data. selectedJob used to be set once
+  // (on mount or drill-down) and never re-synced, so typing a search left the
+  // panel showing whatever job happened to load first, and a mutation (e.g.
+  // assigning a technician) never reflected in the panel until the user
+  // re-clicked the same card.
+  React.useEffect(() => {
+    if (!selectedJob) return;
+    const stillVisible = filteredJobCards.some(j => j.job_id === selectedJob.job_id);
+    if (stillVisible) {
+      const fresh = jobCards.find(j => j.job_id === selectedJob.job_id);
+      if (fresh && fresh !== selectedJob) setSelectedJob(fresh);
+    } else if (filteredJobCards.length > 0) {
+      setSelectedJob(filteredJobCards[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobCards, filteredJobCards]);
+
   const handleExportCSV = () => {
     const headers = [
       "Job Card No",

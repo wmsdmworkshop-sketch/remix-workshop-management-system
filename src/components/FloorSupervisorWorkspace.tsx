@@ -269,8 +269,8 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
       {/* Tab Triggers */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-slate-800">
         {[
-          { id: "my-attention", label: "MY ATTENTION", count: supervisorStats.unassigned + supervisorStats.warnings },
-          { id: "my-new-jobs", label: "MY NEW JOBS", count: supervisorStats.unassigned },
+          { id: "my-attention", label: "MY ATTENTION", count: pendingQueue.length + supervisorStats.warnings },
+          { id: "my-new-jobs", label: "MY NEW JOBS", count: pendingQueue.length },
           { id: "my-bays", label: "MY BAYS", count: bays.length || 5 },
           { id: "my-techs", label: "MY TECHNICIANS", count: technicianList.length || 3 },
           { id: "my-delays", label: "MY DELAYS", count: supervisorStats.partsPending }
@@ -300,7 +300,7 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
               { label: "Active Jobs", val: supervisorStats.active, color: "text-white" },
-              { label: "Unallocated", val: supervisorStats.unassigned, color: "text-amber-400 font-bold" },
+              { label: "Unallocated", val: pendingQueue.length, color: "text-amber-400 font-bold" },
               { label: "Bay Utilization", val: supervisorStats.bayUtil, color: "text-emerald-400" },
               { label: "SLA Alerts", val: supervisorStats.warnings, color: "text-red-400 font-black" }
             ].map((stat, idx) => (

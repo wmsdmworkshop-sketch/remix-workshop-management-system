@@ -31,16 +31,24 @@ export const VehicleDeliveryWorkspace: React.FC<VehicleDeliveryWorkspaceProps> =
     return jobCards.find(j => j.job_id === selectedJobId) || jobCards[0] || null;
   }, [jobCards, selectedJobId]);
 
+  // A vehicle must have a real confirmed invoice (billing_status set by Billing &
+  // Exit's /bill route) before it can be marked delivered — this screen used to
+  // flip a job straight to "Completed" with no billing check at all, and its
+  // button/alert falsely claimed to "issue a gate pass" and invoke a "workflow
+  // engine". Neither happens here: gate-pass issuance stays with Cashier's real
+  // Generate Gate Pass flow, which itself already gates on invoice + payment.
+  const isInvoiced = selectedJob?.billing_status === "Invoiced";
+
   // Complete final delivery
   const handleDeliverVehicle = async () => {
-    if (!selectedJob) return;
+    if (!selectedJob || !isInvoiced) return;
     try {
       await onUpdateJob(selectedJob.job_id, {
         status: "Completed",
         current_workflow_state: "COMPLETED",
         remarks: `${selectedJob.remarks || ""}\n[Delivered to Customer]: CSI: ${csiScore}/10 | Feedback: ${customerFeedback}`
       });
-      alert("Vehicle successfully delivered. Workflow engine marked as COMPLETED.");
+      alert("Delivery step recorded. Hand the vehicle off to Security for gate-pass exit.");
       onRefresh();
     } catch (e) {
       alert("Delivery logging failed.");
@@ -149,11 +157,22 @@ export const VehicleDeliveryWorkspace: React.FC<VehicleDeliveryWorkspaceProps> =
               </div>
             </div>
 
-            <button 
+            {!isInvoiced && (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-300 font-semibold">
+                Blocked: this vehicle has no confirmed invoice yet. Complete billing in
+                Billing &amp; Exit first — delivery cannot be recorded until then.
+              </div>
+            )}
+            <button
               onClick={handleDeliverVehicle}
-              className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
+              disabled={!isInvoiced}
+              className={`w-full py-2 font-bold text-xs uppercase tracking-wider rounded-xl transition-colors ${
+                isInvoiced
+                  ? "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+                  : "bg-slate-800 text-slate-500 cursor-not-allowed"
+              }`}
             >
-              Issue Gate Pass & Finalize Handover
+              Mark Delivery Complete — Hand Off to Security
             </button>
           </div>
         )}

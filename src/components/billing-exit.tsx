@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, CheckCircle2, AlertCircle, FileText, Search, ShieldCheck } from 'lucide-react';
 import { JobCard } from '../types';
+import { staffAuthHeaders } from '../lib/authToken';
 
 interface BillingExitProps {
   jobCards?: JobCard[];
@@ -37,7 +38,7 @@ export default function BillingExit({ jobCards: parentJobCards, onUpdateJob, onR
   const fetchJobCards = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/job-cards');
+      const res = await fetch('/api/job-cards', { headers: staffAuthHeaders() });
       const data = await res.json();
       const jobCardsArray = Array.isArray(data) ? data : (data.jobCards || []);
       // Filter: gate_out_time is null AND billing_status !== 'Invoiced' AND invoice_no does not start with 'IDEVAN2627'
@@ -73,7 +74,7 @@ export default function BillingExit({ jobCards: parentJobCards, onUpdateJob, onR
     try {
       const res = await fetch(`/api/job-cards/${billingJobId}/bill`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: staffAuthHeaders(),
         body: JSON.stringify({ invoice_no: invoiceNo })
       });
       const data = await res.json();
