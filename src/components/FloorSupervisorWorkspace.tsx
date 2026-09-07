@@ -81,6 +81,41 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
     return () => { cancelled = true; };
   }, [showAllocateModal]);
 
+  // Real pending-handoff queue (GET /api/floor-execution/new-jobs). "Immediate
+  // Handoffs" and "My New Jobs" used to render raw/sliced `jobCards` — the
+  // first 3, or literally all ~100+ of them hardcoded "UNALLOCATED" — with no
+  // connection to real handoff/allocation state, so no action could ever make
+  // an item disappear from either list. This fetches the actual queue
+  // getFloorPendingQueue() already builds server-side.
+  const [pendingQueue, setPendingQueue] = useState<any[]>([]);
+  const [pendingQueueLoading, setPendingQueueLoading] = useState<boolean>(false);
+  const [pendingQueueError, setPendingQueueError] = useState<string>("");
+
+  const fetchPendingQueue = React.useCallback(async () => {
+    setPendingQueueLoading(true);
+    setPendingQueueError("");
+    try {
+      const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || localStorage.getItem("wms_token");
+      const res = await fetch("/api/floor-execution/new-jobs", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setPendingQueue(Array.isArray(data.data) ? data.data : []);
+      } else {
+        setPendingQueueError(data.error || "Could not load pending handoffs.");
+      }
+    } catch (e: any) {
+      setPendingQueueError(e.message || "Network error loading pending handoffs.");
+    } finally {
+      setPendingQueueLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPendingQueue();
+  }, [fetchPendingQueue]);
+
   // Derive target job card
   const selectedJob = useMemo(() => {
     return jobCards.find(j => j.job_id === selectedJobId) || jobCards[0] || null;
@@ -134,6 +169,7 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
       if (res.ok) {
         alert(`✅ Handoff for ${jobCardId} Acknowledged! SLA timer stopped.`);
         onRefresh();
+        fetchPendingQueue();
       } else {
         const err = await res.json().catch(() => ({}));
         alert(`Acknowledge failed: ${err.error || res.statusText}`);
@@ -173,6 +209,7 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
         alert(`✨ Vehicle allocated to Bay ${selectedBay} and Technician ${selectedTech}!`);
         setShowAllocateModal(false);
         onRefresh();
+        fetchPendingQueue();
       } else {
         const err = await res.json();
         alert(`Allocation failed: ${err.error || "Bay or Technician unavailable"}`);
@@ -276,22 +313,28 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
 
           <div className="space-y-3">
             <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider">Immediate Handoffs & Action Required</h3>
-            {jobCards.slice(0, 3).map(j => (
-              <div key={j.job_id} className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between gap-4">
+            {pendingQueueLoading ? (
+              <p className="text-xs text-slate-500 text-center py-6">Loading pending handoffs…</p>
+            ) : pendingQueueError ? (
+              <p className="text-xs text-red-400 text-center py-6">{pendingQueueError}</p>
+            ) : pendingQueue.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-6">No pending handoffs — you're caught up.</p>
+            ) : pendingQueue.slice(0, 3).map(j => (
+              <div key={j.jobCardId} className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between gap-4">
                 <div>
                   <span className="font-mono text-base font-black text-white">{j.vrn}</span>
-                  <p className="text-xs text-slate-400">{j.vehicle_model} • SA: {j.service_advisor || j.sa_name || "Unassigned"}</p>
+                  <p className="text-xs text-slate-400">{j.vehicleModel} • SA: {j.saName || "Unassigned"}</p>
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => handleAcknowledge(j.vrn)}
+                    onClick={() => handleAcknowledge(j.jobCardId)}
                     className="px-3 py-1.5 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 text-xs font-bold uppercase rounded-xl cursor-pointer"
                   >
                     ACKNOWLEDGE
                   </button>
                   <button
                     onClick={() => {
-                      setSelectedAllocationJob({ jobCardId: j.vrn, vrn: j.vrn });
+                      setSelectedAllocationJob({ jobCardId: j.jobCardId, vrn: j.vrn });
                       setShowAllocateModal(true);
                     }}
                     className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold uppercase rounded-xl cursor-pointer"
@@ -308,35 +351,43 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
       {/* TAB 2: MY NEW JOBS */}
       {activeTab === "my-new-jobs" && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {jobCards.map(j => (
-              <div key={j.job_id} className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-3">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="font-mono text-base font-black text-white">{j.vrn}</span>
-                    <span className="text-xs text-slate-400 block">{j.vehicle_make} {j.vehicle_model}</span>
+          {pendingQueueLoading ? (
+            <p className="text-xs text-slate-500 text-center py-10">Loading pending handoffs…</p>
+          ) : pendingQueueError ? (
+            <p className="text-xs text-red-400 text-center py-10">{pendingQueueError}</p>
+          ) : pendingQueue.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-10">No unallocated jobs — you're caught up.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {pendingQueue.map(j => (
+                <div key={j.jobCardId} className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="font-mono text-base font-black text-white">{j.vrn}</span>
+                      <span className="text-xs text-slate-400 block">{j.vehicleModel}</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400">UNALLOCATED</span>
                   </div>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400">UNALLOCATED</span>
+
+                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 text-xs space-y-1">
+                    <div className="flex justify-between"><span className="text-slate-400">SA:</span><span className="font-bold text-slate-200">{j.saName || "Unassigned"}</span></div>
+                  </div>
+
+                  <ComplaintsPanel vrn={j.vrn} compact />
+
+                  <button
+                    onClick={() => {
+                      setSelectedAllocationJob({ jobCardId: j.jobCardId, vrn: j.vrn });
+                      setShowAllocateModal(true);
+                    }}
+                    className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold uppercase tracking-wider rounded-xl cursor-pointer"
+                  >
+                    ALLOCATE BAY & TECHNICIAN
+                  </button>
                 </div>
-
-                <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 text-xs space-y-1">
-                  <div className="flex justify-between"><span className="text-slate-400">SA:</span><span className="font-bold text-slate-200">{j.service_advisor || j.sa_name || "Unassigned"}</span></div>
-                </div>
-
-                <ComplaintsPanel vrn={j.vrn} compact />
-
-                <button
-                  onClick={() => {
-                    setSelectedAllocationJob({ jobCardId: j.vrn, vrn: j.vrn });
-                    setShowAllocateModal(true);
-                  }}
-                  className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold uppercase tracking-wider rounded-xl cursor-pointer"
-                >
-                  ALLOCATE BAY & TECHNICIAN
-                </button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

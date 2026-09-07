@@ -36,7 +36,7 @@ interface AttendanceRecord {
   check_in: string | null;
   check_out: string | null;
   shift_type: "Morning" | "Afternoon" | "Night";
-  status: "Present" | "Absent" | "Leave" | "Half Day";
+  status: "Present" | "Absent" | "Leave" | "Half Day" | "Weekly Off" | "Holiday";
   notes?: string;
   employee_name?: string;
   employee_role?: string;
@@ -92,12 +92,15 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
   const [editRow, setEditRow] = useState<any | null>(null);
   const [editIn, setEditIn] = useState("");
   const [editOut, setEditOut] = useState("");
+  const [editStatus, setEditStatus] = useState<AttendanceRecord["status"]>("Present");
   const [savingEdit, setSavingEdit] = useState(false);
 
   const userRole = currentUser?.role || "technician";
   const empId = currentUser?.employee_id || 0;
   // Managers/admin/dev may VIEW the workshop-wide table and APPROVE flagged records.
-  const canApprove = ["workshop_manager", "service_manager", "admin", "developer"].includes(userRole);
+  // gm_service added — Floor Incharge/Spares/Warranty/Workshop Manager/BD/CSC
+  // all report up to GM Service, who previously had no approval visibility.
+  const canApprove = ["workshop_manager", "service_manager", "gm_service", "admin", "developer"].includes(userRole);
   // Only the superadmin tier may CREATE attendance for OTHER employees. (No
   // dedicated HR role exists yet; add it here and on the server when it does.)
   const canMarkOthers = ["admin", "developer"].includes(userRole);
@@ -236,7 +239,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
           shift_date: selectedDate,
           check_in: editIn || null,
           check_out: editOut || null,
-          status: editRow.status === "Not Marked" ? "Present" : undefined,
+          status: editStatus,
           is_edit: true,
         }),
       });
@@ -718,7 +721,7 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
                     {/* Quick supervisor actions */}
                     <td className="ds-td px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        {r.is_approved === false && canApprove && (
+                        {r.is_approved !== true && r.check_in && canApprove && (
                           <button
                             onClick={() => handleApprove(r)}
                             className="ds-button-success ds-button-success flex items-center gap-1.5 px-2 py-1   hover:  text-white rounded text-[10px] font-black uppercase tracking-wider transition-all"
@@ -729,7 +732,12 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
                         )}
                         {canEditTime && (
                           <button
-                            onClick={() => { setEditRow(r); setEditIn(r.check_in || ""); setEditOut(r.check_out || ""); }}
+                            onClick={() => {
+                              setEditRow(r);
+                              setEditIn(r.check_in || "");
+                              setEditOut(r.check_out || "");
+                              setEditStatus(r.status === "Not Marked" ? "Present" : r.status);
+                            }}
                             className="flex items-center gap-1 px-2 py-1 bg-slate-700/60 hover:bg-slate-600 text-slate-200 rounded text-[10px] font-black uppercase tracking-wider transition-all"
                             title="Correct check-in / check-out time"
                           >
@@ -769,6 +777,15 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
                 <input type="time" value={editOut} onChange={(e) => setEditOut(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
               </div>
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Status</label>
+              <select value={editStatus} onChange={(e) => setEditStatus(e.target.value as AttendanceRecord["status"])}
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50">
+                {(["Present", "Absent", "Leave", "Half Day", "Weekly Off", "Holiday"] as const).map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
             </div>
             <p className="text-[10px] text-slate-500">Recorded to the edit-audit trail. Leave a field blank to clear it.</p>
             <div className="flex justify-end gap-2">

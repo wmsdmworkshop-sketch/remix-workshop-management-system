@@ -185,15 +185,31 @@ export class BillingEngine {
   public async checkPhase8Readiness(
     jobId: number,
     branchId: number,
-    saId: number
+    saId: number,
+    saName: string = ""
   ): Promise<{ ready: boolean; blockers: BillingBlocker[] }> {
     const blockers: BillingBlocker[] = [];
 
     // 1. Job exists and state = PRE_INVOICE_READY
-    // NOTE: job_cards has no branch_id. Cross-branch check via tbl_pre_invoice.branch_id
-    //       or the passed branchId vs seeded test data convention.
+    // job_card_master is the real, populated job-card table (job_cards is
+    // legacy/seed-only — see PROOF-OF-CONCEPT note below). It has no
+    // branch_id column (single-branch pilot); cross-branch check stays via
+    // tbl_pre_invoice.branch_id / the branchId=9999 IDOR-probe convention.
+    //
+    // PROOF-OF-CONCEPT SCOPE (2026-09-07): only this method, compilePreInvoice(),
+    // and getReadyFromQcQueue() were retargeted from job_cards to
+    // job_card_master, to prove the core billing math against real data.
+    // Every OTHER method in this file (SA review, send-to-customer, customer
+    // confirmation, billing handoff/validate, CRM invoice capture, Manual
+    // Gate Pass) still reads/writes job_cards and has NOT been touched —
+    // they remain non-functional against real vehicles until a follow-up
+    // does the same retargeting for them.
+    // job_card_master has no labor_price/parts_price split — only a single
+    // combined estimated_amount (JobCardRepository.upsertMaster() folds
+    // labour+parts into this one field; there is no real split to read).
     const [jobs]: any = await this.execute(
-      `SELECT job_id, job_card_no, service_advisor, status, workshop_stage FROM job_cards WHERE job_id = ?`,
+      `SELECT job_card_id, job_card_no, service_advisor, live_status, estimated_amount
+       FROM job_card_master WHERE job_card_id = ?`,
       [jobId]
     );
     if (!jobs || jobs.length === 0) {
@@ -217,40 +233,45 @@ export class BillingEngine {
       return { ready: false, blockers };
     }
 
-    if (job.status !== "PRE_INVOICE_READY" && job.workshop_stage !== "PRE_INVOICE_READY") {
-      blockers.push({ code: "P8_NOT_READY", description: `Job state is '${job.status}/${job.workshop_stage}', expected PRE_INVOICE_READY.`, owner: "SA" });
+    if (job.live_status !== "PRE_INVOICE_READY") {
+      blockers.push({ code: "P8_NOT_READY", description: `Job state is '${job.live_status}', expected PRE_INVOICE_READY.`, owner: "SA" });
     }
 
-    // 2. SA ownership — service_advisor is VARCHAR, compare as string
-    if (saId !== 0 && job.service_advisor && String(job.service_advisor) !== String(saId)) {
+    // 2. SA ownership — job_card_master.service_advisor stores the advisor's
+    // NAME (not an id), so ownership is checked by name, case/whitespace
+    // insensitively. Only enforced when both sides have a real value.
+    if (saName && job.service_advisor && job.service_advisor.trim().toLowerCase() !== saName.trim().toLowerCase()) {
       blockers.push({ code: "P8_SA_MISMATCH", description: "Authenticated SA does not own this job.", owner: "SA" });
     }
 
-    // 3. At least 1 service item
-    const [items]: any = await this.execute(
-      `SELECT COUNT(*) AS cnt FROM job_card_service_item WHERE job_card_id = ?`,
-      [jobId]
-    );
-    if (items[0].cnt === 0) {
-      blockers.push({ code: "P8_NO_SERVICE_ITEMS", description: "No labour/service items on job.", owner: "TECHNICIAN" });
+    // 3. Real estimate amount recorded. job_card_service_item/job_card_parts
+    // (the itemized line tables this check used to require) are never
+    // populated by any real code path in this workshop — the SA estimate
+    // flow (ServiceAdvisorWorkspace) only records a combined
+    // estimated_amount on job_card_master (no labour/parts split exists).
+    // Gating on that real captured amount instead of itemized data that
+    // doesn't exist.
+    if ((Number(job.estimated_amount) || 0) === 0) {
+      blockers.push({ code: "P8_NO_SERVICE_ITEMS", description: "No estimate amount recorded on job.", owner: "SA" });
     }
 
-    // 4. No PENDING/ACKNOWLEDGED parts requests
+    // 4. No PENDING/ACKNOWLEDGED parts requests. tbl_parts_requests.job_card_id
+    // is actually the job_card_no STRING (matches how floor-execution-engine.ts
+    // writes it), not the numeric job_card_master.job_card_id.
     const [pendingParts]: any = await this.execute(
       `SELECT COUNT(*) AS cnt FROM tbl_parts_requests WHERE job_card_id = ? AND status IN ('PENDING','ACKNOWLEDGED')`,
-      [jobId]
+      [job.job_card_no]
     );
     if (pendingParts[0].cnt > 0) {
       blockers.push({ code: "P8_PARTS_PENDING", description: `${pendingParts[0].cnt} parts request(s) still PENDING/ACKNOWLEDGED.`, owner: "PARTS_INCHARGE" });
     }
 
-    // 5. No active floor work (job not IN_PROGRESS at floor level)
-    const [floorState]: any = await this.execute(
-      `SELECT workshop_stage FROM job_cards WHERE job_id = ?`,
-      [jobId]
-    );
-    if (floorState.length > 0 && floorState[0].workshop_stage === "IN_PROGRESS") {
-      blockers.push({ code: "P8_FLOOR_ACTIVE", description: "Job still has active floor-stage IN_PROGRESS.", owner: "TECHNICIAN" });
+    // 5. No active floor work — 'FLOOR_ALLOCATED' is the real live_status
+    // value floor-execution-engine.ts sets while a job is still on the floor
+    // (the old check compared against a fictional "IN_PROGRESS" that no real
+    // writer ever sets).
+    if (job.live_status === "FLOOR_ALLOCATED") {
+      blockers.push({ code: "P8_FLOOR_ACTIVE", description: "Job still has active floor-stage work.", owner: "TECHNICIAN" });
     }
 
     // 6. No unclosed ADDITIONAL_FINDING_RAISED in workflow_history
@@ -308,34 +329,30 @@ export class BillingEngine {
     requestedDiscount: number = 0
   ): Promise<{ preInvoiceId: number; version: number; grandTotal: number; discountStatus: string }> {
     // Phase 8 readiness gate
-    const readiness = await this.checkPhase8Readiness(jobId, branchId, saId);
+    const readiness = await this.checkPhase8Readiness(jobId, branchId, saId, saName);
     if (!readiness.ready) {
       throw new Error(
         `BILLING_READINESS_FAILED: ${readiness.blockers.map(b => `[${b.code}] ${b.description}`).join("; ")}`
       );
     }
 
-    // Get job details — job_cards has no branch_id or service_advisor_name
+    // Get job details from job_card_master — see PROOF-OF-CONCEPT note in
+    // checkPhase8Readiness() for why this method targets job_card_master
+    // instead of the legacy, seed-only job_cards table.
     const [jobRows]: any = await this.execute(
-      `SELECT job_id, job_card_no, vrn, customer_name, service_advisor
-       FROM job_cards WHERE job_id = ?`,
+      `SELECT job_card_id, job_card_no, vehicle_reg AS vrn, customer_name, service_advisor, estimated_amount
+       FROM job_card_master WHERE job_card_id = ?`,
       [jobId]
     );
     const job = jobRows[0];
 
-    // Server-compute labour total from job_card_service_item
-    const [labourRows]: any = await this.execute(
-      `SELECT COALESCE(SUM(labour_amount), 0) AS labour_total FROM job_card_service_item WHERE job_card_id = ?`,
-      [jobId]
-    );
-    const labourTotal = parseFloat(labourRows[0].labour_total) || 0;
-
-    // Server-compute parts total from job_card_parts
-    const [partsRows]: any = await this.execute(
-      `SELECT COALESCE(SUM(total_price), 0) AS parts_total FROM job_card_parts WHERE job_card_id = ?`,
-      [jobId]
-    );
-    const partsTotal = parseFloat(partsRows[0].parts_total) || 0;
+    // job_card_master has no labour/parts split — only a single combined
+    // estimated_amount (see checkPhase8Readiness() for why). The whole
+    // amount is treated as the taxable base under "labour" for GST purposes
+    // (the split doesn't affect the tax math, only the line-item snapshot,
+    // which is already honestly empty — see linesSnapshot below).
+    const labourTotal = Number(job.estimated_amount) || 0;
+    const partsTotal = 0;
 
     // Discount authority check
     let authorizedDiscount = 0;
@@ -381,18 +398,15 @@ export class BillingEngine {
     const igst = 0;
     const grandTotal = parseFloat((taxable + cgst + sgst).toFixed(2));
 
-    // Snapshot service/parts lines
-    const [serviceLines]: any = await this.execute(
-      `SELECT service_code, service_desc, labour_amount FROM job_card_service_item WHERE job_card_id = ?`,
-      [jobId]
-    );
-    const [partsLines]: any = await this.execute(
-      `SELECT part_code, part_name, quantity, unit_price, total_price FROM job_card_parts WHERE job_card_id = ?`,
-      [jobId]
-    );
+    // No itemized service/parts line data exists (see note above) — snapshot
+    // the real aggregate amounts honestly instead of fabricating a
+    // service/parts breakdown that was never captured.
     const linesSnapshot = {
-      service: serviceLines,
-      parts: partsLines,
+      service: [],
+      parts: [],
+      labour_total: labourTotal,
+      parts_total: partsTotal,
+      note: "Single combined estimated_amount from job_card_master — no labour/parts split or itemized line-level breakdown is captured by this workshop's current SA estimate flow.",
       captured_at: new Date().toISOString()
     };
 
@@ -433,9 +447,11 @@ export class BillingEngine {
         ]
       );
 
-      // Advance job state via workshop_stage (job_cards has no current_workflow_state)
+      // Advance job state via live_status (matches the free-text convention
+      // floor-execution-engine.ts already uses for workflow stages on
+      // job_card_master — see PROOF-OF-CONCEPT note above).
       await conn.execute(
-        `UPDATE job_cards SET workshop_stage = 'SA_PRE_INVOICE_REVIEW' WHERE job_id = ?`,
+        `UPDATE job_card_master SET live_status = 'SA_PRE_INVOICE_REVIEW' WHERE job_card_id = ?`,
         [jobId]
       );
 
@@ -1714,18 +1730,22 @@ export class BillingEngine {
   // QUEUE METHODS
   // ═══════════════════════════════════════════════════════════════════════════
 
-  public async getReadyFromQcQueue(branchId: number, saId: number): Promise<any[]> {
-    // job_cards has no branch_id — filter via tbl_pre_invoice.branch_id; use workshop_stage for state
+  // PROOF-OF-CONCEPT (2026-09-07): retargeted to job_card_master — see the
+  // note in checkPhase8Readiness() for full context and remaining scope.
+  // Takes saName (not saId): job_card_master.service_advisor stores a name.
+  // The QC-passed join was dropped rather than kept best-effort-wrong:
+  // rpt_qc_checklists is written by qc-execution-engine.ts, which (like the
+  // old job_cards-based billing code) is itself still keyed off job_cards,
+  // so it would never actually match a real job_card_master.job_card_id —
+  // faking a join that can't return real data would be worse than omitting it.
+  public async getReadyFromQcQueue(branchId: number, saName: string): Promise<any[]> {
     const [rows]: any = await this.execute(
-      `SELECT j.job_id, j.job_card_no, j.vrn, j.customer_name, j.workshop_stage,
-              j.service_advisor,
-              q.created_at AS qc_passed_at
-       FROM job_cards j
-       LEFT JOIN rpt_qc_checklists q ON q.job_id = j.job_id AND q.result = 'PASS'
-       WHERE j.status = 'PRE_INVOICE_READY'
-         AND (? = 0 OR j.service_advisor = ?)
-       ORDER BY q.created_at ASC`,
-      [saId, saId]
+      `SELECT job_card_id, job_card_no, vehicle_reg AS vrn, customer_name, live_status, service_advisor
+       FROM job_card_master
+       WHERE live_status = 'PRE_INVOICE_READY'
+         AND (? = '' OR service_advisor = ?)
+       ORDER BY updated_at ASC`,
+      [saName, saName]
     );
     return rows;
   }

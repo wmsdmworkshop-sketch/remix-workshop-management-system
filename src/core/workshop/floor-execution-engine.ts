@@ -350,9 +350,12 @@ export class FloorExecutionEngine {
     // One-active-job enforcement: Junior technicians may hold only one open
     // job at a time; Senior technicians may hold multiple. employee_grade
     // lives on `employees` (default 'Junior'). Checked against job_cards
-    // (not tbl_job_allocations) because that's the table TechnicianWorkspace.tsx
-    // actually reads via technician_name string match — this is a hard block,
-    // unlike the best-effort bridge writes elsewhere in this method.
+    // (not tbl_job_allocations) — this is a hard block, unlike the
+    // best-effort bridge writes elsewhere in this method. Note:
+    // TechnicianWorkspace.tsx now scopes "my jobs" by job_card_master
+    // .assigned_to == employee_id (an exact id match, not this name-based
+    // check) — this guard is independent of that and stays name-based since
+    // job_cards.technician_name is what's actually populated at this point.
     const [gradeRows]: any = await db.execute(
       `SELECT employee_grade FROM employees WHERE employee_id = ? OR full_name = ? LIMIT 1`,
       [technicianId, technicianName]
@@ -433,6 +436,40 @@ export class FloorExecutionEngine {
       );
     } catch (e: any) {
       console.error("[FloorExecutionEngine] Failed to bridge allocation into job_cards:", e.message);
+    }
+
+    // Bridge into job_card_master.assigned_to — the column JobCardRepository,
+    // the SA-assignment pipeline, and TechnicianWorkspace.tsx all treat as the
+    // canonical technician assignment. Without this, an allocation here never
+    // reaches the technician: job_cards has no rows for vehicles that entered
+    // through the newer gate-in pipeline, so the technician_name write above
+    // is a no-op for them, and job_card_master.assigned_to was never touched
+    // by this function at all.
+    try {
+      const techEmployeeId = Number(String(technicianId).replace(/^TECH-/i, ""));
+      if (!Number.isNaN(techEmployeeId)) {
+        await db.execute(
+          `UPDATE job_card_master SET assigned_to = ?
+            WHERE job_card_no = ? OR vehicle_reg = ?
+            ORDER BY job_card_id DESC LIMIT 1`,
+          [techEmployeeId, jobCardId, jobCardId]
+        );
+      }
+    } catch (e: any) {
+      console.error("[FloorExecutionEngine] Failed to bridge assigned_to into job_card_master:", e.message);
+    }
+
+    // Advance tbl_sa_intake past the statuses getFloorPendingQueue() filters
+    // on ('FLOOR_HANDOFF_CREATED', 'INTAKE_STARTED', 'JC_CREATED') so an
+    // allocated job actually leaves the pending queue instead of staying
+    // there forever regardless of how many times it's processed.
+    try {
+      await db.execute(
+        `UPDATE tbl_sa_intake SET status = 'FLOOR_ALLOCATED' WHERE job_card_id = ?`,
+        [jobCardId]
+      );
+    } catch (e: any) {
+      console.error("[FloorExecutionEngine] Failed to advance tbl_sa_intake status:", e.message);
     }
 
     return { success: true, allocationId };

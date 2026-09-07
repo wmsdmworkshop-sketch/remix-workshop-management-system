@@ -4086,6 +4086,25 @@ async function startServer() {
     } catch { return []; }
   };
 
+  // Configurable weekly-off day (0=Sunday..6=Saturday), same key-value
+  // pattern as the geofence setting above. Defaults to Sunday when unset.
+  const readWeeklyOffDay = async (): Promise<number> => {
+    try {
+      const [rows]: any = await dbPool.query("SELECT setting_value FROM system_settings WHERE setting_key = 'weekly_off_day'");
+      const val = rows && rows[0] ? Number(rows[0].setting_value) : 0;
+      return Number.isInteger(val) && val >= 0 && val <= 6 ? val : 0;
+    } catch { return 0; }
+  };
+
+  // Real company holidays (tbl_holidays, HR module). Never fabricated — an
+  // unreadable/empty table just means no holiday matches, not a blocked day.
+  const isHolidayDate = async (dateStr: string): Promise<boolean> => {
+    try {
+      const [rows]: any = await dbPool.query("SELECT 1 FROM tbl_holidays WHERE holiday_date = ? LIMIT 1", [dateStr]);
+      return !!(rows && rows.length);
+    } catch { return false; }
+  };
+
   // Read the configured workshop geofence perimeter. Sits behind the global /api
   // JWT gate (not in PUBLIC_API_PATHS); the punch screen runs inside the
   // authenticated app and sends the staff token.
@@ -4162,7 +4181,11 @@ async function startServer() {
     //  - Managers + superadmin may APPROVE a flagged record (is_approved flip
     //    with no new punch payload).
     const ATTENDANCE_MARK_OTHERS_ROLES = ["admin", "developer"];
-    const ATTENDANCE_APPROVE_ROLES = ["workshop_manager", "service_manager", "admin", "developer"];
+    // gm_service added per confirmed reporting structure: Floor Incharge,
+    // Spare Parts Manager, Warranty Manager, Workshop Manager, BD
+    // Incharge/Assistant and the CSC team all report up to GM Service, who
+    // previously had no way to approve any of their flagged attendance.
+    const ATTENDANCE_APPROVE_ROLES = ["workshop_manager", "service_manager", "gm_service", "admin", "developer"];
     const callerRole = String(req.user?.role || "").toLowerCase().trim();
     const callerEmpId = req.user?.employee_id;
     const markingSelf = callerEmpId != null && Number(callerEmpId) === Number(employee_id);
@@ -4267,6 +4290,37 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
           autoApproved = isWithinGeofence;
           matchReason = "Verification successful via fallback engine.";
         }
+      }
+    }
+
+    // A self-punch that skipped verification (no photo — e.g. camera failure)
+    // is not the same as an admin's legitimate manual entry for someone else.
+    // Flag it for review instead of leaving is_approved in the undefined
+    // limbo the "Manual Entry" comment above intended only for that other case.
+    if (!face_photo && markingSelf && !isApprovalAction && !is_edit) {
+      autoApproved = false;
+      matchReason = "Self-punch recorded without face verification — requires manager review.";
+    }
+
+    // Weekly-off day / company holiday: per policy this is flagged, not
+    // blocked — an emergency callout must still be able to punch in. Applies
+    // to a real punch action (self or admin-created-for-other), not to a
+    // pure approval flip, a manual time edit, or an explicit status mark
+    // (e.g. HR deliberately recording "Leave"/"Absent" via the Mark
+    // Attendance form, which always sends `status` — that's already a
+    // considered record, not a punch that needs flagging for review).
+    if (!isApprovalAction && !is_edit && !status) {
+      try {
+        const [weeklyOffDay, onHoliday] = await Promise.all([readWeeklyOffDay(), isHolidayDate(targetDate)]);
+        const punchDow = new Date(`${targetDate}T00:00:00Z`).getUTCDay();
+        if (onHoliday || punchDow === weeklyOffDay) {
+          autoApproved = false;
+          matchReason = onHoliday
+            ? "Company holiday punch — requires manager review."
+            : "Weekly off-day punch — requires manager review.";
+        }
+      } catch (e: any) {
+        console.error("[attendance POST] weekly-off/holiday check failed:", e?.message);
       }
     }
 

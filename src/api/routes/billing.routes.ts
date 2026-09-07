@@ -43,7 +43,7 @@ function httpStatus(errorMessage: string): number {
 router.get("/ready-from-qc", authorize("billing", "view"), async (req: Request, res: Response) => {
   try {
     const user = req.user!;
-    const data = await engine.getReadyFromQcQueue(resolveAuthBranchId(user), resolveAuthUserId(user));
+    const data = await engine.getReadyFromQcQueue(resolveAuthBranchId(user), user.name ?? user.full_name ?? "");
     res.json({ success: true, data });
   } catch (err: any) {
     res.status(httpStatus(err.message)).json({ success: false, error: err.message });
@@ -78,7 +78,7 @@ router.post("/pre-invoice/check-readiness/:jobId", authorize("billing", "view"),
     const user = req.user!;
     const jobId = parseInt(req.params.jobId);
     if (isNaN(jobId)) return res.status(400).json({ success: false, error: "Invalid jobId" });
-    const result = await engine.checkPhase8Readiness(jobId, resolveAuthBranchId(user), resolveAuthUserId(user));
+    const result = await engine.checkPhase8Readiness(jobId, resolveAuthBranchId(user), resolveAuthUserId(user), user.name ?? user.full_name ?? "");
     res.json({ success: true, data: result });
   } catch (err: any) {
     res.status(httpStatus(err.message)).json({ success: false, error: err.message });
