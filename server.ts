@@ -24,7 +24,7 @@ import { ensureOemTable, getPublicConfig as getOemPublicConfig, updateProviderCo
 import { TMSA_PRODUCTION_BASE_URL, TMSA_MICROSERVICE_ENDPOINTS, TMSA_ENDPOINT_CATALOG } from "./src/integrations/tmsa/endpoints.ts";
 import { tmsaMassSyncWorker } from "./src/engines/tmsa-mass-sync-worker.ts";
 import { ingestAlert as ingestCctvAlert, listAlerts as listCctvAlerts, acknowledgeAlert as ackCctvAlert, listCameras as listCctvCameras, upsertCamera as upsertCctvCamera, deleteCamera as deleteCctvCamera, getCctvConfig, updateCctvConfig, countOpenAlerts as countOpenCctvAlerts } from "./src/integrations/cctv-analytics.ts";
-import { filterViewableJobCards, canEditJobCard, isGmOverride, isOwnedBy, isInMyStage, isFullViewRole, GROUP1_FULL_CONTROL, GROUP2_VIEW_ALL_EDIT_OWN, GROUP3_VIEW_ONLY, GM_OVERRIDE_ROLES, STAGE_RULES, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
+import { filterViewableJobCards, canEditJobCard, canViewJobCard, isGmOverride, isOwnedBy, isInMyStage, isFullViewRole, GROUP1_FULL_CONTROL, GROUP2_VIEW_ALL_EDIT_OWN, GROUP3_VIEW_ONLY, GM_OVERRIDE_ROLES, STAGE_RULES, type RelevanceUser } from "./src/core/jobcard-relevance.ts";
 import { parseInHouseAction, applyInHouseAction, buildCumulativeIdePrompt } from "./src/core/pilot/in-house-actions.ts";
 import { enforceFieldPermissions, describeRefusal, FIELD_PERMISSION_LEVELS, type FieldPermissionRule } from "./src/core/security/field-permissions.ts";
 import { BACKDATE_ROLES } from "./src/core/workshop/backdate-policy.ts";
@@ -7281,6 +7281,116 @@ time from another field.`;
     } catch (err: any) {
       console.error("[UPDATE-REQUEST] list-by-jc failed:", err.message);
       res.status(500).json({ error: "Failed to load update requests." });
+    }
+  });
+
+  // --- EDIT AUDIT TRAIL: READ PATH ---
+  //
+  // AUDIT P0 #12. tbl_edit_audit had exactly one INSERT (logEdit) and ZERO
+  // SELECTs anywhere in the codebase — no endpoint, no component. It holds real,
+  // useful history (111 job-card edits, 47 attendance changes, each with a named
+  // actor and a justification) that nobody could see. An audit trail that cannot
+  // be read is not an audit trail: it cannot answer "who changed this, when, and
+  // why", which is the whole point of the edit-governance rule and the stated
+  // requirement that the system must settle disputes rather than host a blame
+  // game. gm_override_log had the same problem and is included here.
+  //
+  // Read-only by construction. Authorisation mirrors the update-requests inbox
+  // above: Group 1 managers and GM see any job card's history; everyone else
+  // only sees history for job cards they may already view, via canViewJobCard —
+  // so this exposes nothing a caller could not already read.
+  const AUDIT_TRAIL_FULL_VIEW_ROLES = [
+    ...GROUP1_FULL_CONTROL, ...GM_OVERRIDE_ROLES, "service_manager", "dealer_principal",
+  ].map(normaliseRoleName);
+
+  app.get("/api/job-cards/:id/audit-trail", authenticateToken, async (req: any, res: any) => {
+    try {
+      const jobCardId = parseInt(req.params.id);
+      if (!Number.isFinite(jobCardId)) {
+        return res.status(400).json({ error: "Invalid job card id." });
+      }
+
+      const role = normaliseRoleName(req.user?.role);
+      if (!AUDIT_TRAIL_FULL_VIEW_ROLES.includes(role)) {
+        // Scoped roles: only for job cards they can already see.
+        const jc = (getDB().jobCards || []).find((j: any) => Number(j.job_id) === jobCardId);
+        const me: RelevanceUser = {
+          role: req.user?.role, user_id: req.user?.user_id,
+          employee_id: req.user?.employee_id, full_name: req.user?.full_name,
+        };
+        if (!jc || !canViewJobCard(jc, me)) {
+          return res.status(403).json({ error: "You can only view history for job cards related to you." });
+        }
+      }
+
+      // entity_id is VARCHAR and logEdit is called with both the numeric id and
+      // the job_card_no depending on the call site, so match either.
+      const [jobRows]: any = await dbPool.execute(
+        `SELECT job_card_no FROM job_card_master WHERE job_card_id = ? LIMIT 1`, [jobCardId]
+      );
+      const jobCardNo = jobRows?.[0]?.job_card_no || null;
+
+      const [edits]: any = await dbPool.execute(
+        `SELECT audit_id, entity_type, entity_id, action, justification,
+                before_json, after_json, changed_by, changed_by_id, created_at
+           FROM tbl_edit_audit
+          WHERE entity_id = ? OR (? IS NOT NULL AND entity_id = ?)
+          ORDER BY created_at DESC
+          LIMIT 200`,
+        [String(jobCardId), jobCardNo, jobCardNo]
+      );
+
+      const [overrides]: any = await dbPool.execute(
+        `SELECT id, gm_user_id, gm_name, job_id, job_card_no, action, jc_state, created_at
+           FROM gm_override_log
+          WHERE job_id = ? OR (? IS NOT NULL AND job_card_no = ?)
+          ORDER BY created_at DESC
+          LIMIT 200`,
+        [jobCardId, jobCardNo, jobCardNo]
+      );
+
+      res.json({
+        job_card_id: jobCardId,
+        job_card_no: jobCardNo,
+        edits: edits || [],
+        gm_overrides: overrides || [],
+      });
+    } catch (err: any) {
+      console.error("[AUDIT-TRAIL] load failed:", err.message);
+      res.status(500).json({ error: "Failed to load the audit trail." });
+    }
+  });
+
+  // Workshop-wide audit trail, for managers reconstructing an incident.
+  // Optional filters: entity_type, changed_by_id, action, from/to (ISO dates).
+  app.get("/api/audit-trail", authenticateToken, requireRoles(AUDIT_TRAIL_FULL_VIEW_ROLES), async (req: any, res: any) => {
+    try {
+      const where: string[] = [];
+      const params: any[] = [];
+      const add = (clause: string, value: any) => {
+        if (value !== undefined && value !== null && String(value).trim() !== "") {
+          where.push(clause); params.push(value);
+        }
+      };
+      add("entity_type = ?", req.query?.entity_type);
+      add("changed_by_id = ?", req.query?.changed_by_id);
+      add("action = ?", req.query?.action);
+      add("created_at >= ?", req.query?.from);
+      add("created_at <= ?", req.query?.to);
+
+      const limit = Math.min(Number(req.query?.limit) || 200, 1000);
+      const sql =
+        `SELECT audit_id, entity_type, entity_id, action, justification,
+                changed_by, changed_by_id, created_at
+           FROM tbl_edit_audit
+          ${where.length ? "WHERE " + where.join(" AND ") : ""}
+          ORDER BY created_at DESC
+          LIMIT ${limit}`;
+      const [rows]: any = await dbPool.execute(sql, params);
+      res.json({ count: (rows || []).length, entries: rows || [] });
+    } catch (err: any) {
+      console.error("[AUDIT-TRAIL] workshop-wide load failed:", err.message);
+      res.status(500).json({ error: "Failed to load the audit trail." });
     }
   });
 
