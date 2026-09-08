@@ -1,0 +1,6 @@
+tool_code,tool_name,category,make_brand,model_serial,quantity,unit,condition,location,custodian_employee_code,custodian_name,purchase_date,purchase_cost,calibration_required,calibration_due_date,warranty_expiry,status,remarks
+TL-0001,Torque Wrench 1/2in 28-210Nm,Hand Tool,,,1,NOS,GOOD,B-01,DEV-324,KHASIM,,,YES,,,IN_SERVICE,
+TL-0002,Hydraulic Trolley Jack 3T,Lifting Equipment,,,2,NOS,GOOD,B-02,DEV-324,KHASIM,,,YES,,,IN_SERVICE,
+TL-0003,Impact Wrench Pneumatic 1/2in,Power Tool,,,1,NOS,NEEDS_REPAIR,B-03,DEV-324,KHASIM,,,NO,,,UNDER_REPAIR,Trigger sticking
+TL-0004,Digital Multimeter,Diagnostic,,,1,NOS,GOOD,TOOL_ROOM,DEV-324,KHASIM,,,YES,,,IN_SERVICE,
+TL-0005,Spanner Set 6-32mm,Hand Tool,,,3,SET,GOOD,TOOL_ROOM,DEV-324,KHASIM,,,NO,,,IN_SERVICE,

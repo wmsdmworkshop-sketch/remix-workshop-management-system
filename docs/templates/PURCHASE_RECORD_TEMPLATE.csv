@@ -1,0 +1,5 @@
+purchase_id,purchase_date,purchase_type,item_type,item_code,item_name,category,quantity,unit,unit_cost,total_cost,tax_amount,invoice_total,currency,supplier_name,supplier_gstin,invoice_number,invoice_date,po_number,payment_mode,payment_status,paid_date,requested_by_employee_code,approved_by_employee_code,approval_reference,received_by_employee_code,received_date,warranty_months,warranty_expiry,asset_tagged,branch_id,invoice_file_ref,remarks
+PUR-0001,2026-09-01,LOCAL,TOOL,TL-0001,Torque Wrench 1/2in 28-210Nm,Hand Tool,1,NOS,,,,,INR,,,,,,CASH,PAID,,DEV-324,,,DEV-324,2026-09-01,,,YES,BR-SEDAM,,
+PUR-0002,2026-09-02,CORPORATE,ASSET,AST-0001,Desktop Computer,IT Equipment,1,NOS,,,,,INR,,,,,,BANK_TRANSFER,PAID,,,,,,,36,,YES,BR-SEDAM,,Centralised purchase - allocated to branch
+PUR-0003,2026-09-03,LOCAL,ASSET,AST-0006,Visitor Chair,Furniture,12,NOS,,,,,INR,,,,,,UPI,PAID,,,,,,,,,YES,BR-SEDAM,,
+PUR-0004,2026-09-04,LOCAL,CONSUMABLE,,Cleaning Cloth,Consumable,50,NOS,,,,,INR,,,,,,CASH,PAID,,DEV-324,,,DEV-324,2026-09-04,,,NO,BR-SEDAM,,Not asset tagged - consumable

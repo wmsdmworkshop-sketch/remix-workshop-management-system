@@ -1,0 +1,9 @@
+asset_code,asset_name,category,make_brand,model_number,serial_number,quantity,unit,location,department,custodian_employee_code,custodian_name,purchase_date,purchase_cost,invoice_number,supplier,warranty_expiry,amc_provider,amc_expiry,condition,status,last_audit_date,remarks
+AST-0001,Desktop Computer,IT Equipment,,,,1,NOS,Reception,Reception,,,,,,,,,,GOOD,IN_USE,,
+AST-0002,Laptop,IT Equipment,,,,1,NOS,Manager Cabin,Administration,,,,,,,,,,GOOD,IN_USE,,
+AST-0003,Split Air Conditioner 1.5T,HVAC,,,,1,NOS,Customer Lounge,Reception,,,,,,,,,,GOOD,IN_USE,,
+AST-0004,Refrigerator 190L,Appliance,,,,1,NOS,Pantry,Administration,,,,,,,,,,GOOD,IN_USE,,
+AST-0005,Office Table,Furniture,,,,4,NOS,Reception,Reception,,,,,,,,,,GOOD,IN_USE,,
+AST-0006,Visitor Chair,Furniture,,,,12,NOS,Customer Lounge,Reception,,,,,,,,,,GOOD,IN_USE,,
+AST-0007,Printer,IT Equipment,,,,1,NOS,Reception,Reception,,,,,,,,,,GOOD,IN_USE,,
+AST-0008,CCTV Camera,Security,,,,1,NOS,Gate,Security,,,,,,,,,,GOOD,IN_USE,,
