@@ -240,7 +240,20 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
     if (!sa) return false;                 // unassigned = manager's, never an advisor's
     if (isPrivilegedViewer) return true;   // admin/dev oversight sees all assigned cards
     if (!myName) return false;
-    return sa === myName || sa.includes(myName) || myName.includes(sa);
+    // EXACT match only. This used to also accept
+    //   sa.includes(myName) || myName.includes(sa)
+    // which routes one advisor's job cards to another whenever one name is a
+    // substring of the other. That is not hypothetical here: the employee
+    // directory holds "ALTAF HUSSAIN" (employee 3) and "altaf" (employee 12) as
+    // two different people, and the same shape applies to the three "MD ..."
+    // employees. Neither Altaf is a service advisor today, so nothing is
+    // currently mis-routed — but the moment one were made an advisor, each would
+    // silently see the other's vehicles.
+    //
+    // Assignment itself is already safe: realtime-ownership-pipeline.ts resolves
+    // the advisor from the authoritative user id, requires an active
+    // service_advisor role, and fails closed. Only this display filter was loose.
+    return sa === myName;
   }), [jobCards, myName, isPrivilegedViewer]);
 
   // Section 1: Dashboard KPIs (scoped to this advisor's assigned vehicles)
@@ -352,7 +365,23 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
   // Filtered Vehicles Today (this advisor's assigned vehicles only)
   const filteredVehicles = useMemo(() => {
     if (vehicleFilter === "ALL") return myJobCards;
-    if (vehicleFilter === "RECEIVED") return myJobCards.filter(j => j.status === "Received" || j.current_workflow_state === "GATE_IN");
+    // RECEIVED = arrived and assigned to me, but no work started yet.
+    //
+    // "Unassigned"/"GATE_ENTRY_DONE" used to match NO tab at all: a vehicle that
+    // had cleared gate entry, reception and SA assignment but had no technician
+    // yet was counted in "MY VEHICLES TODAY (n)" and then rendered by none of the
+    // sub-filters, so the advisor could not reach it to log complaints.
+    //
+    // It surfaced once the db/sync.ts fix stopped force-resetting live_status to
+    // "Waiting" on every save — honest "Unassigned" values now survive, and this
+    // bucketing had never been asked to handle them. Here the status means
+    // "no technician yet", which is precisely a vehicle awaiting the advisor.
+    if (vehicleFilter === "RECEIVED") return myJobCards.filter(j =>
+      j.status === "Received" ||
+      j.status === "Unassigned" ||
+      j.current_workflow_state === "GATE_IN" ||
+      j.current_workflow_state === "GATE_ENTRY_DONE"
+    );
     if (vehicleFilter === "IN_PROGRESS") return myJobCards.filter(j => ["Active", "In Progress", "Work in Progress"].includes(j.status || j.current_workflow_state));
     if (vehicleFilter === "WAITING") return myJobCards.filter(j => ["Waiting", "Estimate Pending", "Approval Pending"].includes(j.status));
     if (vehicleFilter === "READY") return myJobCards.filter(j => ["Ready", "QC Passed", "QC_PASSED"].includes(j.status || j.current_workflow_state));
@@ -641,7 +670,25 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                     </div>
                   )}
 
+                  {/* Complaints is the Service Advisor's first real action on a
+                      vehicle, but it was only reachable from the MY WORK tab via a
+                      job-card dropdown — so an advisor looking at the vehicle here
+                      had no way to act on it, and SA intake effectively never ran
+                      (tbl_sa_intake held 3 rows against 139 manager assignments).
+                      openComplaints() already works at any stage; it just had no
+                      entry point from the vehicle list. */}
                   <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => openComplaints({
+                        vrn: j.vrn,
+                        jobCardNo: j.job_card_no ?? null,
+                        gateEntryId: (j as any).gate_entry_id ?? null,
+                      })}
+                      className="flex-1 py-1.5 bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs rounded-xl transition-all text-center flex items-center justify-center gap-1.5"
+                      title="Add or edit customer/driver complaints for this vehicle"
+                    >
+                      <AlertOctagon className="h-3.5 w-3.5" /> Log Complaints
+                    </button>
                     <button
                       onClick={() => {
                         setSelectedJobId(j.job_id);
