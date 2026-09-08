@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { 
-  CheckCircle2, AlertTriangle, ShieldCheck, Sparkles, FileText, Gauge, 
+import {
+  CheckCircle2, AlertTriangle, ShieldCheck, Sparkles, FileText, Gauge,
   User, Check, ArrowRight, X, AlertCircle, Wrench, Send, Lock, ExternalLink
 } from "lucide-react";
+import { getStaffToken } from "../lib/authToken";
 
 export interface SaTechnicalIntakeModalProps {
   assignedItem: any;
@@ -42,7 +43,14 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
   const [complaintsAuthenticated, setComplaintsAuthenticated] = useState<boolean>(false);
 
   // Step 4: Job Scope
-  const [proposedInspection, setProposedInspection] = useState<string>("Inspect clutch plate, pressure plate & release bearing");
+  // Starts EMPTY. This was prefilled with "Inspect clutch plate, pressure plate &
+  // release bearing" — a canned string unrelated to the actual vehicle, which the
+  // advisor could submit unchanged. It is written to tbl_sa_intake.job_scope_json
+  // and handed to the floor as the technician's work instruction, so a shock-
+  // absorber job was being sent to the floor as a clutch inspection. Every
+  // existing intake row carries that identical string. The advisor must state the
+  // real scope; the field is required before the job card can be created.
+  const [proposedInspection, setProposedInspection] = useState<string>("");
   const [jobType, setJobType] = useState<string>("Running Repair");
 
   // Step 5: JC Decision
@@ -88,6 +96,55 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
     }
   }, [assignedItem?.vrn]);
 
+  // Seed the complaint field from the complaints the advisor actually recorded
+  // for this vehicle (tbl_job_complaints, via the Complaints screen).
+  //
+  // This modal previously seeded ONLY from assignedItem.preliminaryComplaints —
+  // the reception field, which is usually blank and was being backfilled with the
+  // literal placeholder "Standard Maintenance Intake". The result: a real
+  // complaint such as "shock absorber bush and diagnosis" was logged against the
+  // vehicle, then technical intake authenticated the placeholder instead and
+  // handed THAT to the floor as the job scope. GET /api/complaints already
+  // serves these rows; nothing was reading them here.
+  //
+  // Only prefills when the advisor has not already typed something, so it never
+  // overwrites their own input.
+  React.useEffect(() => {
+    let cancelled = false;
+    const loadRecordedComplaints = async () => {
+      if (!assignedItem?.vrn) return;
+      try {
+        const token = getStaffToken();
+        const res = await fetch(
+          `/api/complaints?vrn=${encodeURIComponent(assignedItem.vrn)}`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        const rows = Array.isArray(data?.complaints) ? data.complaints : [];
+        if (cancelled || rows.length === 0) return;
+
+        // Newest first from the API; present oldest-first so the advisor reads
+        // them in the order they were raised.
+        const texts = rows
+          .map((r: any) => String(r.complaint_text || "").trim())
+          .filter(Boolean)
+          .reverse();
+        if (texts.length === 0) return;
+
+        setComplaintText(prev => (prev.trim() ? prev : texts.join("; ")));
+        const src = rows[rows.length - 1]?.source;
+        if (src) setComplaintSource(String(src));
+        const cat = rows[rows.length - 1]?.category;
+        if (cat) setComplaintCategory(String(cat));
+      } catch {
+        /* leave the field as-is; the advisor can type the complaint manually */
+      }
+    };
+    loadRecordedComplaints();
+    return () => { cancelled = true; };
+  }, [assignedItem?.vrn]);
+
   const handleVerifyOdometer = async () => {
     // The SA must enter a real physical reading — no confirming a blank/invented one.
     if (saOdometer === "" || Number.isNaN(Number(saOdometer)) || Number(saOdometer) <= 0) {
@@ -117,6 +174,13 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
   const handleCreateJobCard = async () => {
     if (jcChoice === "CRM" && !crmJcNumber.trim()) {
       alert("Please enter or paste the CRM Job Card Number (or switch to DWIP TEMP JC to create instantly).");
+      return;
+    }
+    // The proposed inspection scope is what the floor and the technician actually
+    // work from. It is no longer prefilled with a canned string, so require it
+    // rather than letting a blank scope reach the floor.
+    if (!proposedInspection.trim()) {
+      alert("Enter the proposed inspection scope — this is the instruction the technician will work from.");
       return;
     }
 
@@ -468,12 +532,15 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Proposed Inspection Scope</label>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+                  Proposed Inspection Scope <span className="text-red-400">*</span>
+                </label>
                 <input
                   type="text"
                   value={proposedInspection}
                   onChange={(e) => setProposedInspection(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-xs text-slate-200 outline-none"
+                  placeholder="What should the technician inspect or do? e.g. Inspect shock absorber bushes, road test"
+                  className="w-full bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-xs text-slate-200 outline-none placeholder:text-slate-600"
                 />
               </div>
 

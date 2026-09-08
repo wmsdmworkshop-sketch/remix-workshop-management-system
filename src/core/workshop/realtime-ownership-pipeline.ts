@@ -330,7 +330,15 @@ export class RealtimeOwnershipPipeline {
         isCorrected,
         isCorrected ? payload.correctionReason || "Receptionist Manual Verification Correction" : null,
         payload.visitCategory,
-        payload.preliminaryComplaints || "Standard Maintenance Intake",
+        // Store NULL when reception recorded no complaint. This used to write the
+        // literal string "Standard Maintenance Intake", which is fabricated text
+        // presented downstream as if a customer had said it — 22 of 139 reception
+        // intakes carry that placeholder, and the Service Advisor's technical
+        // intake seeds its complaint field from this column, so the placeholder
+        // was being authenticated as a real complaint and handed to the technician
+        // as the job scope. An empty field must stay empty; the SA captures the
+        // genuine complaint at technical intake.
+        (payload.preliminaryComplaints || "").trim() || null,
         branchId,
         "INTAKE_COMPLETED"
       ]
