@@ -134,9 +134,16 @@ export class BillingEngine {
       ? (sql: string, p: any[]) => conn.execute(sql, p)
       : (sql: string, p: any[]) => this.execute(sql, p);
 
+    // AUDIT P0 #11: this read job_cards, which holds 4 seed rows, so it threw
+    // BILLING_JOB_NOT_FOUND for every real vehicle. Aliased to the legacy column
+    // names so every caller's `job.vrn` / `job.status` / `job.workshop_stage`
+    // keeps working: job_card_master exposes the same concepts as vehicle_reg
+    // and live_status (its job_status ENUM cannot hold stage values like
+    // 'BILLING_COMPLETED', so live_status backs both).
     const [jobs]: any = await exec(
-      `SELECT job_id, job_card_no, vrn, customer_name, service_advisor, status, workshop_stage
-       FROM job_cards WHERE job_id = ?`,
+      `SELECT job_card_id AS job_id, job_card_no, vehicle_reg AS vrn, customer_name,
+              service_advisor, live_status AS status, live_status AS workshop_stage
+       FROM job_card_master WHERE job_card_id = ?`,
       [jobId]
     );
     if (!jobs || jobs.length === 0) {
@@ -196,14 +203,19 @@ export class BillingEngine {
     // branch_id column (single-branch pilot); cross-branch check stays via
     // tbl_pre_invoice.branch_id / the branchId=9999 IDOR-probe convention.
     //
-    // PROOF-OF-CONCEPT SCOPE (2026-09-07): only this method, compilePreInvoice(),
-    // and getReadyFromQcQueue() were retargeted from job_cards to
-    // job_card_master, to prove the core billing math against real data.
-    // Every OTHER method in this file (SA review, send-to-customer, customer
-    // confirmation, billing handoff/validate, CRM invoice capture, Manual
-    // Gate Pass) still reads/writes job_cards and has NOT been touched —
-    // they remain non-functional against real vehicles until a follow-up
-    // does the same retargeting for them.
+    // RETARGETING COMPLETE (2026-09-08). The 2026-09-07 proof-of-concept covered
+    // only this method, compilePreInvoice() and getReadyFromQcQueue(); every other
+    // method (SA review, send-to-customer, customer confirmation, billing
+    // handoff/validate, CRM invoice capture, Manual Gate Pass) has now been moved
+    // off job_cards too, so no live SQL in this file touches the seed-only table.
+    // Stage writes use job_card_master.live_status — its job_status ENUM cannot
+    // hold values like 'BILLING_COMPLETED'.
+    //
+    // Three updates were previously keyed on
+    //   WHERE crm_jc_no = (SELECT job_card_no FROM job_cards WHERE job_id = ?)
+    // Nothing in this codebase writes crm_jc_no, and the subquery read the dead
+    // table, so those updates matched zero rows silently — an invoice captured
+    // here never reached the real job card. They now key on job_card_id.
     // job_card_master has no labor_price/parts_price split — only a single
     // combined estimated_amount (JobCardRepository.upsertMaster() folds
     // labour+parts into this one field; there is no real split to read).
@@ -544,7 +556,7 @@ export class BillingEngine {
       [preInvoiceId]
     );
     await this.execute(
-      `UPDATE job_cards SET workshop_stage = 'PRE_INVOICE_SENT' WHERE job_id = ?`,
+      `UPDATE job_card_master SET live_status = 'PRE_INVOICE_SENT' WHERE job_card_id = ?`,
       [pi.job_id]
     );
 
@@ -624,7 +636,7 @@ export class BillingEngine {
         [preInvoiceId]
       );
       await conn.execute(
-        `UPDATE job_cards SET workshop_stage = 'CUSTOMER_CONFIRMED' WHERE job_id = ?`,
+        `UPDATE job_card_master SET live_status = 'CUSTOMER_CONFIRMED' WHERE job_card_id = ?`,
         [pi.job_id]
       );
 
@@ -678,7 +690,7 @@ export class BillingEngine {
         [preInvoiceId]
       );
       await conn.execute(
-        `UPDATE job_cards SET workshop_stage = 'BILLING_PENDING' WHERE job_id = ?`,
+        `UPDATE job_card_master SET live_status = 'BILLING_PENDING' WHERE job_card_id = ?`,
         [pi.job_id]
       );
 
@@ -732,7 +744,7 @@ export class BillingEngine {
         [billingUserId, preInvoiceId]
       );
       await conn.execute(
-        `UPDATE job_cards SET workshop_stage = 'BILLING_IN_PROGRESS' WHERE job_id = ?`,
+        `UPDATE job_card_master SET live_status = 'BILLING_IN_PROGRESS' WHERE job_card_id = ?`,
         [pi.job_id]
       );
 
@@ -958,7 +970,7 @@ export class BillingEngine {
         [reasonCode, remarks, billingUserId, billingUserName, preInvoiceId]
       );
       await conn.execute(
-        `UPDATE job_cards SET workshop_stage = 'SA_PRE_INVOICE_REVIEW' WHERE job_id = ?`,
+        `UPDATE job_card_master SET live_status = 'SA_PRE_INVOICE_REVIEW' WHERE job_card_id = ?`,
         [pi.job_id]
       );
 
@@ -1249,19 +1261,20 @@ export class BillingEngine {
         [crmEvidenceId, preInvoiceId]
       );
 
-      // Update job_cards — workshop_stage is the available state column
-      await conn.execute(
-        `UPDATE job_cards
-         SET workshop_stage = 'BILLING_COMPLETED', invoiced_at = NOW()
-         WHERE job_id = ?`,
-        [pi.job_id]
-      );
-
-      // Update job_card_master invoice_no + billing_status
+      // Record the invoice against the job. This was two statements — a stage
+      // write to the seed-only job_cards table and a job_card_master write keyed
+      // on crm_jc_no, a column nothing in this codebase ever populates, via a
+      // subquery against that same dead table. The second matched zero rows every
+      // time, so an invoice captured here never reached the real job card. Both
+      // collapse into one write on the real primary key. invoice_date (DATE)
+      // replaces invoiced_at, which job_card_master does not have.
       await conn.execute(
         `UPDATE job_card_master
-         SET invoice_no = ?, billing_status = 'Completed'
-         WHERE crm_jc_no = (SELECT job_card_no FROM job_cards WHERE job_id = ?)`,
+            SET live_status = 'BILLING_COMPLETED',
+                invoice_no = ?,
+                invoice_date = CURDATE(),
+                billing_status = 'Completed'
+          WHERE job_card_id = ?`,
         [payload.crm_invoice_number.trim(), pi.job_id]
       );
 
@@ -1330,12 +1343,16 @@ export class BillingEngine {
     const canonicalRole = userRole.toUpperCase().replace(/ /g, "_").includes("SERVICE") ? "SERVICE_MANAGER" : "WORKS_MANAGER";
 
     // Job must be in BILLING_IN_PROGRESS — check via tbl_pre_invoice which has branch_id
+    // Retargeted to job_card_master (job_cards holds seed rows only, so this
+    // threw MGP_JOB_NOT_FOUND for every real vehicle). Aliased to the legacy
+    // column names the checks below already use.
     const [jobRows]: any = await this.execute(
-      `SELECT j.job_id, j.job_card_no, j.vrn, j.customer_name, j.workshop_stage,
+      `SELECT j.job_card_id AS job_id, j.job_card_no, j.vehicle_reg AS vrn,
+              j.customer_name, j.live_status AS workshop_stage,
               pi.branch_id AS pi_branch_id
-       FROM job_cards j
-       LEFT JOIN tbl_pre_invoice pi ON pi.job_id = j.job_id
-       WHERE j.job_id = ?
+       FROM job_card_master j
+       LEFT JOIN tbl_pre_invoice pi ON pi.job_id = j.job_card_id
+       WHERE j.job_card_id = ?
        ORDER BY pi.pre_invoice_id DESC LIMIT 1`,
       [jobId]
     );
@@ -1393,7 +1410,7 @@ export class BillingEngine {
       const mgpId = mgpRes.insertId;
 
       await conn.execute(
-        `UPDATE job_cards SET workshop_stage = 'MANUAL_GATE_PASS_PENDING_GM' WHERE job_id = ?`,
+        `UPDATE job_card_master SET live_status = 'MANUAL_GATE_PASS_PENDING_GM' WHERE job_card_id = ?`,
         [jobId]
       );
 
@@ -1463,14 +1480,14 @@ export class BillingEngine {
           [gmUserId, gmRole, remarks ?? null, mgpNumber, eodDeadline, mgpId]
         );
 
-        // Vehicle release authorized; billing_status = PENDING — NOT Completed
+        // Vehicle release authorized; billing_status = PENDING — NOT Completed.
+        // The billing_status write was keyed on crm_jc_no via a subquery against
+        // the dead job_cards table and so matched nothing; merged into the same
+        // keyed update as the stage change.
         await conn.execute(
-          `UPDATE job_cards SET workshop_stage = 'MANUAL_GATE_PASS_APPROVED' WHERE job_id = ?`,
-          [mgp.job_id]
-        );
-        await conn.execute(
-          `UPDATE job_card_master SET billing_status = 'Pending'
-           WHERE crm_jc_no = (SELECT job_card_no FROM job_cards WHERE job_id = ?)`,
+          `UPDATE job_card_master
+              SET live_status = 'MANUAL_GATE_PASS_APPROVED', billing_status = 'Pending'
+            WHERE job_card_id = ?`,
           [mgp.job_id]
         );
 
@@ -1511,7 +1528,7 @@ export class BillingEngine {
         [gmUserId, gmRole, remarks ?? null, mgpId]
       );
       await this.execute(
-        `UPDATE job_cards SET workshop_stage = 'BILLING_IN_PROGRESS' WHERE job_id = ?`,
+        `UPDATE job_card_master SET live_status = 'BILLING_IN_PROGRESS' WHERE job_card_id = ?`,
         [mgp.job_id]
       );
       return { billingStatus: "BILLING_IN_PROGRESS" };
@@ -1524,7 +1541,7 @@ export class BillingEngine {
         [gmUserId, gmRole, remarks ?? null, mgpId]
       );
       await this.execute(
-        `UPDATE job_cards SET workshop_stage = 'BILLING_IN_PROGRESS' WHERE job_id = ?`,
+        `UPDATE job_card_master SET live_status = 'BILLING_IN_PROGRESS' WHERE job_card_id = ?`,
         [mgp.job_id]
       );
       return { billingStatus: "BILLING_IN_PROGRESS" };
@@ -1654,15 +1671,23 @@ export class BillingEngine {
         );
       }
 
-      // Update job
-      await conn.execute(
-        `UPDATE job_cards SET workshop_stage = 'BILLING_COMPLETED', invoiced_at = NOW() WHERE job_id = ?`,
-        [mgp.job_id]
-      );
+      // Update job. Previously two statements: a stage write to the seed-only
+      // job_cards table, plus a job_card_master write keyed on
+      // `crm_jc_no = (SELECT job_card_no FROM job_cards ...)`. Nothing in this
+      // codebase ever writes crm_jc_no, and the subquery read the dead table, so
+      // that second statement matched zero rows — silently, every time. Both
+      // collapse into one keyed write on the real primary key.
+      //
+      // invoiced_at does not exist on job_card_master; invoice_date (DATE) is its
+      // equivalent and is the column the CRM invoice genuinely carries — the
+      // invoice has no time component (see the crm_* notes in db/sync.ts).
       await conn.execute(
         `UPDATE job_card_master
-         SET invoice_no = ?, billing_status = 'Completed'
-         WHERE crm_jc_no = (SELECT job_card_no FROM job_cards WHERE job_id = ?)`,
+            SET live_status = 'BILLING_COMPLETED',
+                invoice_no = ?,
+                invoice_date = CURDATE(),
+                billing_status = 'Completed'
+          WHERE job_card_id = ?`,
         [payload.crm_invoice_number.trim(), mgp.job_id]
       );
 
