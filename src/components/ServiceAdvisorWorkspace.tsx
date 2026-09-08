@@ -677,24 +677,49 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                       (tbl_sa_intake held 3 rows against 139 manager assignments).
                       openComplaints() already works at any stage; it just had no
                       entry point from the vehicle list. */}
-                  <div className="flex items-center gap-2 pt-1">
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    {/* SA TECHNICAL INTAKE — verified odometer, FSV/warranty
+                        pre-screen, job scope, and the CRM/DWIP job-card number.
+                        This is what writes tbl_sa_intake. Its only trigger was
+                        the "reopen after edit-justification" path, so it could
+                        be re-opened but never opened: tbl_sa_intake holds 3 rows
+                        against 139 manager assignments. openIntakeForItem()
+                        already fetches /api/sa-intake/queue and builds exactly
+                        the assignedItem shape the modal expects. */}
+                    <button
+                      onClick={() => openIntakeForItem({
+                        vrn: j.vrn,
+                        jobCard: j,
+                        gateEntryId: (j as any).gate_entry_id ?? null,
+                        intakeId: (j as any).intake_id ?? null,
+                        tokenNumber: (j as any).token_number ?? null,
+                        reason: (j as any).complaints ?? "",
+                        id: j.job_id,
+                      })}
+                      className="py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl transition-all text-center flex items-center justify-center gap-1.5"
+                      title="Start technical intake: verify odometer, confirm job scope and create the job card"
+                    >
+                      <CheckSquare className="h-3.5 w-3.5" /> Start Intake
+                    </button>
+                    {/* Complaints is a separate record (tbl_job_complaints) and
+                        works at any stage — it does NOT create the intake. */}
                     <button
                       onClick={() => openComplaints({
                         vrn: j.vrn,
                         jobCardNo: j.job_card_no ?? null,
                         gateEntryId: (j as any).gate_entry_id ?? null,
                       })}
-                      className="flex-1 py-1.5 bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs rounded-xl transition-all text-center flex items-center justify-center gap-1.5"
+                      className="py-1.5 bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs rounded-xl transition-all text-center flex items-center justify-center gap-1.5"
                       title="Add or edit customer/driver complaints for this vehicle"
                     >
-                      <AlertOctagon className="h-3.5 w-3.5" /> Log Complaints
+                      <AlertOctagon className="h-3.5 w-3.5" /> Complaints
                     </button>
                     <button
                       onClick={() => {
                         setSelectedJobId(j.job_id);
                         setActiveTab("my-work");
                       }}
-                      className="flex-1 py-1.5 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-200 font-bold text-xs rounded-xl transition-all text-center"
+                      className="col-span-2 py-1.5 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-200 font-bold text-xs rounded-xl transition-all text-center"
                     >
                       Manage Job Card
                     </button>
