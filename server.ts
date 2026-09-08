@@ -1736,6 +1736,40 @@ async function startServer() {
     return authenticateToken(req, res, next);
   });
 
+  // --- GLOBAL OBSERVER WRITE GUARD ---
+  //
+  // AUDIT P0 (docs/audit/DWIP_ROLE_WORKFLOW_AUTHORITY_MATRIX.md, F9). dkam and
+  // dealer_principal are defined as pure observers: GROUP3_VIEW_ONLY in
+  // jobcard-relevance.ts makes canEditJobCard() return false for them, and
+  // role_permissions is re-forced to can_edit=0 for dealer_principal on every
+  // boot. But BOTH of those controls only cover routes that actually consult
+  // them — and 136 of this server's 313 routes carry no authorization check at
+  // all. On those, an observer could POST /api/roles, force a workflow stage,
+  // mutate carry-forward balances or rewrite revenue splits. The "read-only
+  // observer" guarantee was therefore false in exactly the places it mattered.
+  //
+  // One guard closes that class globally rather than route by route: observers
+  // may read anything they can already reach, and may write nothing. Anything
+  // that genuinely needs an exception should gain an explicit allow here rather
+  // than relying on a route having no guard.
+  const OBSERVER_ROLES = GROUP3_VIEW_ONLY.map(normaliseRoleName);
+  const OBSERVER_WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+  // Read-only actions that are implemented as POST because they take a body.
+  // Kept deliberately tiny and explicit; everything else is a write.
+  const OBSERVER_ALLOWED_POST_PATHS = [
+    "/api/auth/logout",
+  ];
+  app.use("/api", (req: any, res: any, next: any) => {
+    if (!OBSERVER_WRITE_METHODS.has(String(req.method).toUpperCase())) return next();
+    const role = normaliseRoleName(req.user?.role);
+    if (!role || !OBSERVER_ROLES.includes(role)) return next();
+    const fullPath = "/api" + req.path;
+    if (OBSERVER_ALLOWED_POST_PATHS.some(p => fullPath === p)) return next();
+    return res.status(403).json({
+      error: "Your role has view-only access. You cannot create, change or delete records.",
+    });
+  });
+
   // Rate limiter: 10 login attempts per IP per 15 minutes
   const loginRateLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -3532,7 +3566,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/models", express.json(), async (req, res) => {
+  app.post("/api/models", requireRoles(["admin","developer","gm_service","workshop_manager","service_manager"]), express.json(), async (req, res) => {
     const { modelName } = req.body;
     if (!modelName || !modelName.trim()) {
       return res.status(400).json({ error: "modelName is required" });
@@ -3738,7 +3772,7 @@ async function startServer() {
     });
   });
 
-  app.post("/api/employees/bulk-productivity", (req, res) => {
+  app.post("/api/employees/bulk-productivity", requireRoles(WORKFORCE_ADMIN_ROLES), (req, res) => {
     const db = getDB();
     const updates = req.body.updates || [];
     const isAdmin = req.body.isAdmin === true;
@@ -3987,7 +4021,7 @@ async function startServer() {
   });
 
   // --- UPDATE EMPLOYEE CERTIFICATION ---
-  app.put("/api/employees/:id/certification", async (req, res) => {
+  app.put("/api/employees/:id/certification", requireRoles(WORKFORCE_ADMIN_ROLES), async (req, res) => {
     const db = getDB();
     const id = parseInt(req.params.id);
     const { certification_level, certification_date, certification_expiry_date, certification_remarks } = req.body;
@@ -4566,7 +4600,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     res.json(db.bays);
   });
 
-  app.post("/api/bays", (req, res) => {
+  app.post("/api/bays", requireRoles(["admin","developer","workshop_manager","gm_service"]), (req, res) => {
     const db = getDB();
     const newBay: Bay = req.body;
     const nextId = db.bays.reduce((max: number, b: Bay) => Math.max(max, b.bay_id), 0) + 1;
@@ -4578,7 +4612,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     res.json(newBay);
   });
 
-  app.put("/api/bays/:id", (req, res) => {
+  app.put("/api/bays/:id", requireRoles(["admin","developer","workshop_manager","gm_service"]), (req, res) => {
     const db = getDB();
     const id = parseInt(req.params.id);
     const index = db.bays.findIndex((b: Bay) => b.bay_id === id);
@@ -4591,7 +4625,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
-  app.delete("/api/bays/:id", (req, res) => {
+  app.delete("/api/bays/:id", requireRoles(["admin","developer","workshop_manager","gm_service"]), (req, res) => {
     const db = getDB();
     const id = parseInt(req.params.id);
     const index = db.bays.findIndex((b: Bay) => b.bay_id === id);
@@ -4610,7 +4644,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     res.json(db.srTypes);
   });
 
-  app.post("/api/sr-types", (req, res) => {
+  app.post("/api/sr-types", requireRoles(["admin","developer","workshop_manager","gm_service"]), (req, res) => {
     const db = getDB();
     const newType: SRType = req.body;
     const nextId = db.srTypes.reduce((max: number, s: SRType) => Math.max(max, s.sr_type_id), 0) + 1;
@@ -4621,7 +4655,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     res.json(newType);
   });
 
-  app.put("/api/sr-types/:id", (req, res) => {
+  app.put("/api/sr-types/:id", requireRoles(["admin","developer","workshop_manager","gm_service"]), (req, res) => {
     const db = getDB();
     const id = parseInt(req.params.id);
     const index = db.srTypes.findIndex((s: SRType) => s.sr_type_id === id);
@@ -4634,7 +4668,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
-  app.delete("/api/sr-types/:id", (req, res) => {
+  app.delete("/api/sr-types/:id", requireRoles(["admin","developer","workshop_manager","gm_service"]), (req, res) => {
     const db = getDB();
     const id = parseInt(req.params.id);
     const index = db.srTypes.findIndex((s: SRType) => s.sr_type_id === id);
@@ -4653,7 +4687,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     res.json(db.revenueSplits);
   });
 
-  app.post("/api/revenue-splits", (req, res) => {
+  app.post("/api/revenue-splits", requireRoles(["admin","developer","gm_service","workshop_manager"]), (req, res) => {
     const db = getDB();
     const newSplit: RevenueSplitMaster = req.body;
     const nextId = db.revenueSplits.reduce((max: number, r: RevenueSplitMaster) => Math.max(max, r.split_id), 0) + 1;
@@ -4664,7 +4698,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     res.json(newSplit);
   });
 
-  app.put("/api/revenue-splits/:id", (req, res) => {
+  app.put("/api/revenue-splits/:id", requireRoles(["admin","developer","gm_service","workshop_manager"]), (req, res) => {
     const db = getDB();
     const id = parseInt(req.params.id);
     const index = db.revenueSplits.findIndex((r: RevenueSplitMaster) => r.split_id === id);
@@ -4677,7 +4711,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
-  app.delete("/api/revenue-splits/:id", (req, res) => {
+  app.delete("/api/revenue-splits/:id", requireRoles(["admin","developer","gm_service","workshop_manager"]), (req, res) => {
     const db = getDB();
     const id = parseInt(req.params.id);
     const index = db.revenueSplits.findIndex((r: RevenueSplitMaster) => r.split_id === id);
@@ -7466,7 +7500,7 @@ time from another field.`;
     res.json(db.carryForwardLogs);
   });
 
-  app.post("/api/carry-forward", (req, res) => {
+  app.post("/api/carry-forward", requireRoles(["admin","developer","gm_service","workshop_manager","service_manager"]), (req, res) => {
     const db = getDB();
     const { job_id, cf_reason } = req.body;
     const nextId = db.carryForwardLogs.reduce((max: number, c: CarryForwardLog) => Math.max(max, c.cf_id), 0) + 1;
@@ -7496,7 +7530,7 @@ time from another field.`;
     res.json(newLog);
   });
 
-  app.put("/api/carry-forward/:id", (req, res) => {
+  app.put("/api/carry-forward/:id", requireRoles(["admin","developer","gm_service","workshop_manager","service_manager"]), (req, res) => {
     const db = getDB();
     const id = parseInt(req.params.id);
     const { cf_status, approved_by } = req.body;
@@ -7532,7 +7566,7 @@ time from another field.`;
     res.json(db.reworkLogs);
   });
 
-  app.post("/api/rework", (req, res) => {
+  app.post("/api/rework", requireRoles(["admin","developer","gm_service","workshop_manager","service_manager"]), (req, res) => {
     const db = getDB();
     const { original_job_id, rework_reason, original_tech_id } = req.body;
     const nextId = db.reworkLogs.reduce((max: number, r: ReworkLog) => Math.max(max, r.rework_id), 0) + 1;
@@ -7563,7 +7597,7 @@ time from another field.`;
     res.json(newLog);
   });
 
-  app.put("/api/rework/:id", (req, res) => {
+  app.put("/api/rework/:id", requireRoles(["admin","developer","gm_service","workshop_manager","service_manager"]), (req, res) => {
     const db = getDB();
     const id = parseInt(req.params.id);
     const { rework_status, approved_by } = req.body;
@@ -7808,7 +7842,7 @@ time from another field.`;
     });
   });
 
-  app.post("/api/dms/import", (req, res) => {
+  app.post("/api/dms/import", requireRoles(["admin","developer"]), (req, res) => {
     const db = getDB();
     const { file_name, rows } = req.body;
 
@@ -7875,7 +7909,7 @@ time from another field.`;
     res.json({ batch: newBatch, rows: parsedRows });
   });
 
-  app.post("/api/dms/resolve", (req, res) => {
+  app.post("/api/dms/resolve", requireRoles(["admin","developer"]), (req, res) => {
     const db = getDB();
     const { row_id, match_status, matched_job_id } = req.body;
 
@@ -8208,7 +8242,7 @@ time from another field.`;
   });
 
   // Send email via Gmail
-  app.post("/api/google/gmail/send", async (req, res) => {
+  app.post("/api/google/gmail/send", requireRoles(["admin","developer","gm_service","workshop_manager","service_manager"]), async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) {
       return res.status(401).json({ error: "Missing authorization token. Please sign in with Google." });
@@ -8300,7 +8334,7 @@ time from another field.`;
   });
 
   // Create a contact
-  app.post("/api/google/contacts/create", async (req, res) => {
+  app.post("/api/google/contacts/create", requireRoles(["admin","developer","gm_service","workshop_manager","service_manager"]), async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) {
       return res.status(401).json({ error: "Missing authorization token. Please sign in with Google." });
@@ -9372,7 +9406,7 @@ time from another field.`;
   });
 
   // --- CSV TEMPLATES DATA IMPORTER ENDPOINTS ---
-  app.post("/api/import/vehicle-master", express.json({ limit: "50mb" }), async (req, res) => {
+  app.post("/api/import/vehicle-master", requireRoles(["admin","developer"]), express.json({ limit: "50mb" }), async (req, res) => {
     const { rows } = req.body;
     if (!rows || !Array.isArray(rows)) {
       return res.status(400).json({ error: "Invalid rows parameter. Expected an array." });
@@ -9423,7 +9457,7 @@ time from another field.`;
     }
   }
 
-  app.post("/api/import/service-history", express.json({ limit: "50mb" }), async (req, res) => {
+  app.post("/api/import/service-history", requireRoles(["admin","developer"]), express.json({ limit: "50mb" }), async (req, res) => {
     const { rows } = req.body;
     if (!rows || !Array.isArray(rows)) {
       return res.status(400).json({ error: "Invalid rows parameter. Expected an array." });
@@ -9459,7 +9493,7 @@ time from another field.`;
     }
   });
 
-  app.post("/api/import/invoices", express.json({ limit: "50mb" }), async (req, res) => {
+  app.post("/api/import/invoices", requireRoles(["admin","developer"]), express.json({ limit: "50mb" }), async (req, res) => {
     const { rows } = req.body;
     if (!rows || !Array.isArray(rows)) {
       return res.status(400).json({ error: "Invalid rows parameter. Expected an array." });
@@ -10276,7 +10310,7 @@ Given the administrator's request in plain English, produce ONLY a valid JSON ob
     }
   });
 
-  app.post("/api/v2/graph/recommendations/:id/approve", express.json(), async (req: any, res: any) => {
+  app.post("/api/v2/graph/recommendations/:id/approve", requireRoles(["admin","developer","gm_service","workshop_manager","service_manager"]), express.json(), async (req: any, res: any) => {
     const { id } = req.params;
     const { userId } = req.body;
     try {
@@ -10300,7 +10334,7 @@ Given the administrator's request in plain English, produce ONLY a valid JSON ob
     }
   });
 
-  app.post("/api/v2/graph/recommendations/:id/reject", express.json(), async (req: any, res: any) => {
+  app.post("/api/v2/graph/recommendations/:id/reject", requireRoles(["admin","developer","gm_service","workshop_manager","service_manager"]), express.json(), async (req: any, res: any) => {
     const { id } = req.params;
     try {
       const [recs]: any = await dbPool.query("SELECT * FROM ai_recommendations WHERE recommendation_id = ?", [id]);
@@ -11010,7 +11044,7 @@ Respond with valid JSON only:
     }
   });
 
-  app.post("/api/fsb", express.json(), async (req, res) => {
+  app.post("/api/fsb", requireRoles(["admin","developer","gm_service","workshop_manager","service_manager"]), express.json(), async (req, res) => {
     const { job_card_id, fsb_status } = req.body;
     if (!job_card_id || !fsb_status) {
       return res.status(400).json({ error: "Missing job_card_id or fsb_status" });
@@ -14576,7 +14610,7 @@ Respond with valid JSON only:
   });
 
   // POST /api/events/replay - Read-only event replay engine simulation
-  app.post("/api/events/replay", express.json(), async (req: any, res: any) => {
+  app.post("/api/events/replay", requireRoles(["admin","developer"]), express.json(), async (req: any, res: any) => {
     try {
       const { job_id } = req.body;
 
