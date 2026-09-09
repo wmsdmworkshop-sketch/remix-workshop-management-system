@@ -177,17 +177,42 @@ export class FloorExecutionEngine {
   public async getFloorPendingQueue(floorId: string, branchId: string = "BR-SEDAM"): Promise<FloorHandoffItem[]> {
     let rows: any[] = [];
     try {
+      // Three defects were stacked in this one query, and the catch below hid
+      // all of them — the supervisor just saw an empty queue:
+      //
+      // 1. `g.registration_number` does not exist on tbl_gate_entry. The column
+      //    list is (gate_entry_id, vin, odometer, source, driver_details,
+      //    initial_remarks, status, arrival_time) and the VRN is held in `vin`
+      //    (see the note in realtime-ownership-pipeline.ts). The query threw
+      //    "Unknown column" on EVERY call, so this queue could never return a
+      //    row — regardless of branch or status.
+      // 2. `g.vehicle_model` does not exist either; the model is not on the gate
+      //    entry at all, so it is dropped rather than invented.
+      // 3. The status filter listed FLOOR_HANDOFF_CREATED / INTAKE_STARTED /
+      //    JC_CREATED — none of which any real row has ever held. SA technical
+      //    intake writes 'SENT_TO_FLOOR' (sa-technical-intake.ts), and all 4
+      //    rows in production carry exactly that. So even with the column bug
+      //    fixed, the filter matched nothing.
+      //
+      // Some historic rows store the plate prefixed ("VIN-KA32AB0307"), so the
+      // prefix is stripped here rather than surfacing it to the supervisor.
       const [dbRows] = await db.execute(
-        `SELECT s.*, r.token_number, g.registration_number as vrn, g.vehicle_model
+        `SELECT s.*, r.token_number,
+                TRIM(LEADING 'VIN-' FROM g.vin) AS vrn
          FROM tbl_sa_intake s
          LEFT JOIN tbl_reception_intake r ON s.gate_entry_id = r.gate_entry_id
          LEFT JOIN tbl_gate_entry g ON s.gate_entry_id = g.gate_entry_id
-         WHERE s.branch_id = ? AND s.status IN ('FLOOR_HANDOFF_CREATED', 'INTAKE_STARTED', 'JC_CREATED')
+         WHERE s.branch_id = ? AND s.status = 'SENT_TO_FLOOR'
          ORDER BY s.created_at ASC`,
         [branchId]
       ) as any[];
       rows = dbRows || [];
-    } catch (e) {}
+    } catch (e: any) {
+      // Do not swallow silently: a broken query here is indistinguishable from
+      // "no work waiting", which is exactly how the three defects above stayed
+      // invisible.
+      console.error("[FloorExecutionEngine] getFloorPendingQueue failed:", e.message);
+    }
 
     // No pending handoffs is an honest empty list. This used to return a
     // fabricated "reference" job (VRN KA32M9988, "Devanand Logistics",
@@ -459,10 +484,10 @@ export class FloorExecutionEngine {
       console.error("[FloorExecutionEngine] Failed to bridge assigned_to into job_card_master:", e.message);
     }
 
-    // Advance tbl_sa_intake past the statuses getFloorPendingQueue() filters
-    // on ('FLOOR_HANDOFF_CREATED', 'INTAKE_STARTED', 'JC_CREATED') so an
-    // allocated job actually leaves the pending queue instead of staying
-    // there forever regardless of how many times it's processed.
+    // Advance tbl_sa_intake past the status getFloorPendingQueue() filters on
+    // ('SENT_TO_FLOOR') so an allocated job actually leaves the pending queue
+    // instead of staying there forever regardless of how many times it's
+    // processed. 'FLOOR_ALLOCATED' is outside that filter, which is the point.
     try {
       await db.execute(
         `UPDATE tbl_sa_intake SET status = 'FLOOR_ALLOCATED' WHERE job_card_id = ?`,

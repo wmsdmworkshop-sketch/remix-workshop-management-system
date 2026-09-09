@@ -23,10 +23,28 @@ const engine = QcExecutionEngine.getInstance();
 // gate being opened: authorize() still governs who may proceed.
 router.use(authenticateJwt);
 
+/**
+ * Single-branch default. This threw BRANCH_CONTEXT_MISSING (mapped to 401) when
+ * the user had no branchId — which is EVERY user, because the `workshops` table
+ * is empty, so employees.workshop_id is NULL, resolveWorkshopId() returns null,
+ * and no JWT can carry a branch. Every QC route therefore answered 401, which is
+ * a large part of why QC has never run against a real vehicle.
+ *
+ * 1 is the real branch, not a placeholder: qc_road_tests.branch_id and
+ * tbl_pre_invoice.branch_id are `int` and contain 1. (The floor router defaults
+ * to the string "BR-SEDAM" instead — these two subsystems genuinely disagree on
+ * how a branch is identified, which is worth reconciling but is not this fix.)
+ *
+ * REVISIT WHEN A SECOND BRANCH EXISTS: branchId must then come from real data
+ * and this default must be removed, or QC actions would silently apply to the
+ * wrong branch.
+ */
+const DEFAULT_BRANCH_ID = 1;
+
 function resolveAuthBranchId(user: any): number {
   const bid = user.branchId;
   if (bid === undefined || bid === null) {
-    throw new Error("BRANCH_CONTEXT_MISSING: Authenticated user has no branchId claim. Re-authenticate.");
+    return DEFAULT_BRANCH_ID;
   }
   return Number(bid);
 }

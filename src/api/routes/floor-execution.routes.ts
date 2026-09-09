@@ -16,10 +16,10 @@ function requireFloorRoles(allowedRoles: string[]) {
   };
 }
 
-// Same cross-branch role set AuthorizationService.checkBranchAccess() already
-// treats as global/administrative (src/core/AuthorizationService.ts) — kept in
-// sync here rather than imported so this route stays a self-contained module.
-const GLOBAL_CONTEXT_ROLES = new Set(["admin", "developer", "dealer_principal", "gm", "operations_lead", "gm_service"]);
+// (A GLOBAL_CONTEXT_ROLES set used to live here. Its only purpose was deciding
+// who was exempt from the branch-context refusal in requireAuthenticatedUser,
+// and that refusal is gone — see the note there. Cross-branch access is reasoned
+// about in AuthorizationService.checkBranchAccess(), not here.)
 
 function requireAuthenticatedUser(req: any): { id: string; name: string; branchId: string; role: string } {
   const user = req.user;
@@ -27,12 +27,33 @@ function requireAuthenticatedUser(req: any): { id: string; name: string; branchI
     throw new Error("AUTHENTICATED_USER_CONTEXT_REQUIRED");
   }
   const role = normaliseRole(user.role);
-  if ((user.branchId === undefined || user.branchId === null) && !GLOBAL_CONTEXT_ROLES.has(role)) {
-    // A branch-scoped role with no resolvable branch is a genuine gap (their
-    // account has no employee link and no workshop_id set) — still refuse,
-    // since silently guessing a branch for them would leak cross-branch data.
-    throw new Error("AUTHENTICATED_USER_CONTEXT_REQUIRED");
-  }
+  // NOTE: this used to throw AUTHENTICATED_USER_CONTEXT_REQUIRED when a
+  // branch-scoped role had no branchId, on the reasoning that guessing a branch
+  // could leak cross-branch data. In practice it blocked the entire floor lane
+  // for every real user, because NO account can currently have a branch:
+  //
+  //   `workshops` table has 0 rows
+  //     -> employees.workshop_id is NULL for all 51 employees
+  //     -> resolveWorkshopId() (server.ts:95) returns null
+  //     -> the JWT is signed with workshop_id: null
+  //     -> auth.ts cannot derive branchId
+  //     -> this guard refused every branch-scoped role
+  //
+  // Only admin/developer/gm_service passed, via GLOBAL_CONTEXT_ROLES — which is
+  // why it stayed invisible until a real floor_supervisor logged in and saw
+  // AUTHENTICATED_USER_CONTEXT_REQUIRED on an otherwise working screen.
+  //
+  // There is no cross-branch leak to protect against here: this deployment is
+  // single-branch, and tbl_bays, tbl_sa_intake and tbl_manager_assignment all
+  // contain "BR-SEDAM" and nothing else. So a missing branch resolves to that
+  // same literal already used below for global-context roles, rather than
+  // refusing the request.
+  //
+  // REVISIT WHEN A SECOND BRANCH EXISTS: at that point branchId must come from
+  // real data (seed `workshops`, populate employees.workshop_id) and this
+  // default must be removed — note also that workshops.workshop_id is numeric
+  // while these tables key on the string "BR-SEDAM", so the two id styles have
+  // to be reconciled before any of that is meaningful.
   return {
     id: String(user.id ?? user.userId ?? user.user_id),
     name: user.full_name || user.fullName || user.username || String(user.id),

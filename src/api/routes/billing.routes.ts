@@ -28,10 +28,27 @@ const engine = BillingEngine.getInstance();
 // operate on real values.
 router.use(authenticateJwt);
 
+/**
+ * Single-branch default — same reasoning as qc.routes.ts.
+ *
+ * This threw BRANCH_CONTEXT_MISSING (mapped to 401 by httpStatus below) for
+ * every user, because the `workshops` table is empty so no JWT can carry a
+ * branchId. Combined with the missing authenticateJwt fixed earlier, it is why
+ * the entire Phase-8 billing lane has never been reachable.
+ *
+ * 1 is the real branch: tbl_pre_invoice.branch_id is `int` and contains 1.
+ *
+ * REVISIT WHEN A SECOND BRANCH EXISTS: this default must be removed, or billing
+ * actions could be attributed to the wrong branch. Note the cross-branch guard
+ * in BillingEngine (BILLING_BRANCH_MISMATCH) compares against this value, so it
+ * still functions — it simply has one branch to compare against today.
+ */
+const DEFAULT_BRANCH_ID = 1;
+
 function resolveAuthBranchId(user: any): number {
   const bid = user.branchId;
   if (bid === undefined || bid === null) {
-    throw new Error("BRANCH_CONTEXT_MISSING: Authenticated user has no branchId claim. Re-authenticate.");
+    return DEFAULT_BRANCH_ID;
   }
   return Number(bid);
 }
