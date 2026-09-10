@@ -386,6 +386,54 @@ export class FloorExecutionEngine {
   /**
    * 6. Atomic Job Allocation
    */
+  /**
+   * Resolve a floor-side job identifier to the real job_card_master row.
+   *
+   * THE PROBLEM THIS SOLVES: the same vehicle carries two unrelated ids. The
+   * SA-intake pipeline mints `DWIP-TEMP-SEDAM-20260908-001`, while
+   * job_card_master holds it as `JC-76413`. Every bridge write in this engine
+   * matched `job_card_no = ? OR vehicle_reg = ?` against the intake id, so for
+   * a DWIP-TEMP vehicle NEITHER side matched: the update touched zero rows and,
+   * being wrapped in a logging try/catch, still reported the allocation as a
+   * success. KA32AB9690 was allocated to a bay and a technician while
+   * job_card_master kept live_status='Unassigned' and assigned_to=NULL, so the
+   * technician never saw the job. KA32AB0307 only worked because its intake
+   * happened to use a `JC-` id.
+   *
+   * job_card_master carries no gate_entry_id or intake_id, so the VRN is the
+   * only genuine link between the two systems. It is a safe key: vehicle_reg is
+   * unique across all job_card_master rows (verified — zero duplicates).
+   *
+   * Returns the numeric job_card_id, or null when nothing resolves — a null is
+   * an honest "no such job card", never a guess.
+   */
+  private async resolveMasterJobCardId(jobCardId: string): Promise<number | null> {
+    // 1. Direct: the caller already gave a real job_card_no or a VRN.
+    const [direct]: any = await db.execute(
+      `SELECT job_card_id FROM job_card_master
+        WHERE job_card_no = ? OR vehicle_reg = ?
+        ORDER BY job_card_id DESC LIMIT 1`,
+      [jobCardId, jobCardId]
+    );
+    if (direct?.length) return Number(direct[0].job_card_id);
+
+    // 2. Indirect: a DWIP-TEMP intake id — go intake -> gate entry -> VRN ->
+    //    job_card_master. The gate entry holds the plate in `vin`, sometimes
+    //    prefixed "VIN-".
+    const [viaIntake]: any = await db.execute(
+      `SELECT m.job_card_id
+         FROM tbl_sa_intake s
+         INNER JOIN tbl_gate_entry g ON s.gate_entry_id = g.gate_entry_id
+         INNER JOIN job_card_master m ON m.vehicle_reg = TRIM(LEADING 'VIN-' FROM g.vin)
+        WHERE s.job_card_id = ?
+        ORDER BY m.job_card_id DESC LIMIT 1`,
+      [jobCardId]
+    );
+    if (viaIntake?.length) return Number(viaIntake[0].job_card_id);
+
+    return null;
+  }
+
   public async allocateJobAndBay(
     jobCardId: string,
     bayId: string,
@@ -444,15 +492,30 @@ export class FloorExecutionEngine {
 
     // A vehicle occupies ONE bay. Re-allocating it elsewhere must move it, not
     // clone it into a second bay (which is how KA32AA5577 came to sit in four).
-    const [elsewhere]: any = await db.execute(
-      `SELECT allocation_id, bay_id FROM tbl_job_allocations
-        WHERE job_card_id = ? AND branch_id = ? AND status = 'ACTIVE' AND bay_id <> ?`,
-      [jobCardId, branchId, bayId]
+    //
+    // Matching on the job_card_id STRING is not enough: the same vehicle can be
+    // allocated once as "KA32AB0307" and once as "JC-DevAus-AA1-2627-002178",
+    // which is exactly how KA32AB0307 ended up in B-01 and B-02 with two
+    // different technicians. So the check resolves every active allocation to
+    // its real job_card_master row and compares THAT.
+    const incomingMasterId = await this.resolveMasterJobCardId(jobCardId);
+    const [activeElsewhere]: any = await db.execute(
+      `SELECT allocation_id, bay_id, job_card_id, technician_name FROM tbl_job_allocations
+        WHERE branch_id = ? AND status = 'ACTIVE' AND bay_id <> ?`,
+      [branchId, bayId]
     );
-    if (elsewhere?.length) {
-      throw new Error(
-        `VEHICLE_ALREADY_ALLOCATED: ${jobCardId} is already active in bay ${elsewhere[0].bay_id}. Release that allocation before moving it to ${bayId}.`
-      );
+    for (const other of activeElsewhere || []) {
+      const sameString = String(other.job_card_id) === String(jobCardId);
+      const sameVehicle =
+        incomingMasterId !== null &&
+        (await this.resolveMasterJobCardId(String(other.job_card_id))) === incomingMasterId;
+      if (sameString || sameVehicle) {
+        throw new Error(
+          `VEHICLE_ALREADY_ALLOCATED: this vehicle is already active in bay ${other.bay_id}` +
+            (other.technician_name ? ` with ${other.technician_name}` : "") +
+            ` (recorded as "${other.job_card_id}"). Release that allocation before moving it to ${bayId}.`
+        );
+      }
     }
 
     // One-active-job enforcement: Junior technicians may hold only one open
@@ -559,13 +622,40 @@ export class FloorExecutionEngine {
     // stage analog is `live_status` (syncLoad() already maps live_status back
     // to workshop_stage in-memory); job_cards is the table that genuinely
     // carries workshop_stage/technician_name directly.
-    try {
-      await db.execute(
-        `UPDATE job_card_master SET live_status = 'FLOOR_ALLOCATED'
-          WHERE job_card_no = ? OR vehicle_reg = ?
-          ORDER BY job_card_id DESC LIMIT 1`,
-        [jobCardId, jobCardId]
+    // Resolved by id, not by string-matching two incompatible id formats.
+    const masterId = await this.resolveMasterJobCardId(jobCardId);
+    if (masterId === null) {
+      console.error(
+        `[FloorExecutionEngine] No job_card_master row resolves for ${jobCardId}. ` +
+          `The allocation is saved but the technician's workspace will NOT show it.`
       );
+    }
+    try {
+      if (masterId !== null) {
+        // live_status AND assigned_to in one write, keyed on the primary key,
+        // so a zero-row result can only mean the row vanished.
+        // NOTE: job_card_master.bay_id is `int unsigned`, but bay ids are
+        // strings ("B-01"). It is deliberately NOT written here — the bay
+        // belongs to tbl_job_allocations and tbl_bays, which hold it correctly
+        // as a string. Writing "B-01" into an int column would coerce to 0 and
+        // record a bay that does not exist.
+        const techEmployeeId = Number(String(technicianId).replace(/^TECH-/i, ""));
+        const [upd]: any = Number.isNaN(techEmployeeId)
+          ? await db.execute(
+              `UPDATE job_card_master SET live_status = 'FLOOR_ALLOCATED' WHERE job_card_id = ?`,
+              [masterId]
+            )
+          : await db.execute(
+              `UPDATE job_card_master SET live_status = 'FLOOR_ALLOCATED', assigned_to = ?
+                WHERE job_card_id = ?`,
+              [techEmployeeId, masterId]
+            );
+        if (!upd?.affectedRows) {
+          console.error(`[FloorExecutionEngine] job_card_master ${masterId} matched 0 rows on allocation bridge.`);
+        }
+      }
+      // job_cards is the legacy table; many vehicles have no row in it at all,
+      // so a zero-row result here is expected and not an error.
       await db.execute(
         `UPDATE job_cards SET workshop_stage = 'FLOOR_ALLOCATED', technician_name = ?
           WHERE job_card_no = ? OR vrn = ?
@@ -573,28 +663,7 @@ export class FloorExecutionEngine {
         [technicianName, jobCardId, jobCardId]
       );
     } catch (e: any) {
-      console.error("[FloorExecutionEngine] Failed to bridge allocation into job_cards:", e.message);
-    }
-
-    // Bridge into job_card_master.assigned_to — the column JobCardRepository,
-    // the SA-assignment pipeline, and TechnicianWorkspace.tsx all treat as the
-    // canonical technician assignment. Without this, an allocation here never
-    // reaches the technician: job_cards has no rows for vehicles that entered
-    // through the newer gate-in pipeline, so the technician_name write above
-    // is a no-op for them, and job_card_master.assigned_to was never touched
-    // by this function at all.
-    try {
-      const techEmployeeId = Number(String(technicianId).replace(/^TECH-/i, ""));
-      if (!Number.isNaN(techEmployeeId)) {
-        await db.execute(
-          `UPDATE job_card_master SET assigned_to = ?
-            WHERE job_card_no = ? OR vehicle_reg = ?
-            ORDER BY job_card_id DESC LIMIT 1`,
-          [techEmployeeId, jobCardId, jobCardId]
-        );
-      }
-    } catch (e: any) {
-      console.error("[FloorExecutionEngine] Failed to bridge assigned_to into job_card_master:", e.message);
+      console.error("[FloorExecutionEngine] Failed to bridge allocation into job cards:", e.message);
     }
 
     // Advance tbl_sa_intake past the status getFloorPendingQueue() filters on
@@ -1226,12 +1295,20 @@ export class FloorExecutionEngine {
     // job_card_master has no workshop_stage column — its analog is
     // `live_status` (see the allocateJobAndBay bridge above for the same fix).
     try {
-      await db.execute(
-        `UPDATE job_card_master SET live_status = 'QC_PENDING'
-          WHERE job_card_no = ? OR vehicle_reg = ?
-          ORDER BY job_card_id DESC LIMIT 1`,
-        [jobCardId, vrn || jobCardId]
-      );
+      // Same two-id-systems defect as the allocation bridge: a DWIP-TEMP intake
+      // id matches neither job_card_no nor vehicle_reg, so this silently
+      // updated zero rows and QC never saw the vehicle.
+      const qcMasterId = await this.resolveMasterJobCardId(jobCardId);
+      if (qcMasterId !== null) {
+        await db.execute(
+          `UPDATE job_card_master SET live_status = 'QC_PENDING' WHERE job_card_id = ?`,
+          [qcMasterId]
+        );
+      } else {
+        console.error(
+          `[FloorExecutionEngine] No job_card_master row resolves for ${jobCardId} on QC handoff; QC will not see it.`
+        );
+      }
       await db.execute(
         `UPDATE job_cards SET workshop_stage = 'QC_PENDING'
           WHERE job_card_no = ? OR vrn = ?
