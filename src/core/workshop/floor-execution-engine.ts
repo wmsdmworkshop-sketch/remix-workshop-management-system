@@ -2,6 +2,14 @@ import { pool as db } from "../../db/index";
 import { randomUUID } from "crypto";
 import { VosCorePlatform } from "../vos";
 
+/**
+ * Physical bay capacity. A bay holds one vehicle on the floor, but a second can
+ * be parked immediately behind it while it waits. Two is therefore the hard
+ * ceiling — confirmed with the workshop operator — and more than two is not
+ * physically possible regardless of what the system would otherwise allow.
+ */
+const BAY_MAX_VEHICLES = 2;
+
 export interface FloorHandoffItem {
   jobCardId: string;
   gateEntryId?: string;
@@ -196,16 +204,39 @@ export class FloorExecutionEngine {
       //
       // Some historic rows store the plate prefixed ("VIN-KA32AB0307"), so the
       // prefix is stripped here rather than surfacing it to the supervisor.
+      // 4. The gate-entry join was LEFT, and the VRN fell back to "—". An intake
+      //    whose gate entry has been deleted (purge_vehicle.cjs removes the gate
+      //    entry but historically left tbl_sa_intake behind) therefore appeared
+      //    on the supervisor floor as a blank row — no plate, no model — and
+      //    ALLOCATE on it succeeded, committing a bay and a technician to a
+      //    vehicle that does not exist. INNER JOIN: no gate entry means no
+      //    vehicle, which is not floor work. Orphans are surfaced by the
+      //    diagnostic below rather than silently served as jobs.
       const [dbRows] = await db.execute(
         `SELECT s.*, r.token_number,
                 TRIM(LEADING 'VIN-' FROM g.vin) AS vrn
          FROM tbl_sa_intake s
+         INNER JOIN tbl_gate_entry g ON s.gate_entry_id = g.gate_entry_id
          LEFT JOIN tbl_reception_intake r ON s.gate_entry_id = r.gate_entry_id
-         LEFT JOIN tbl_gate_entry g ON s.gate_entry_id = g.gate_entry_id
          WHERE s.branch_id = ? AND s.status = 'SENT_TO_FLOOR'
          ORDER BY s.created_at ASC`,
         [branchId]
       ) as any[];
+
+      // An orphan is a data fault, not an empty queue. Log it so it is fixed at
+      // source instead of quietly disappearing from the floor.
+      const [orphanRows]: any = await db.execute(
+        `SELECT s.intake_id, s.gate_entry_id FROM tbl_sa_intake s
+          LEFT JOIN tbl_gate_entry g ON s.gate_entry_id = g.gate_entry_id
+          WHERE s.branch_id = ? AND s.status = 'SENT_TO_FLOOR' AND g.gate_entry_id IS NULL`,
+        [branchId]
+      );
+      if (orphanRows?.length) {
+        console.warn(
+          `[FloorExecutionEngine] ${orphanRows.length} orphaned SA intake(s) withheld from the floor queue (gate entry deleted): ` +
+            orphanRows.map((o: any) => `${o.intake_id}->${o.gate_entry_id}`).join(", ")
+        );
+      }
       rows = dbRows || [];
     } catch (e: any) {
       // Do not swallow silently: a broken query here is indistinguishable from
@@ -372,6 +403,58 @@ export class FloorExecutionEngine {
       throw new Error(`[FloorExecutionEngine] Bay ${bayId} is currently ${targetBay.status} and cannot be allocated.`);
     }
 
+    // The job card must actually exist. Without this, an orphaned intake (gate
+    // entry deleted) could be allocated a bay and a technician — which is
+    // exactly what happened to DWIP-TEMP-SEDAM-20260827-001, committing real
+    // capacity to a vehicle that is not in the workshop.
+    const [jobExists]: any = await db.execute(
+      `SELECT 1 FROM job_card_master WHERE job_card_no = ? OR vehicle_reg = ? LIMIT 1`,
+      [jobCardId, jobCardId]
+    );
+    if (!jobExists?.length) {
+      const [intakeExists]: any = await db.execute(
+        `SELECT 1 FROM tbl_sa_intake s
+          INNER JOIN tbl_gate_entry g ON s.gate_entry_id = g.gate_entry_id
+          WHERE s.job_card_id = ? LIMIT 1`,
+        [jobCardId]
+      );
+      if (!intakeExists?.length) {
+        throw new Error(
+          `ALLOCATION_REFUSED: ${jobCardId} has no job card and no live gate entry — there is no vehicle to allocate. This job card appears to be an orphan.`
+        );
+      }
+    }
+
+    // BAY CAPACITY. Physically a bay holds one vehicle, but a second can be
+    // parked behind it — so two is the hard ceiling, never more. This was
+    // previously unenforced entirely: B-01 accumulated THREE simultaneous
+    // ACTIVE allocations, and KA32AA5577 was recorded in four bays at once,
+    // because nothing counted what was already there.
+    const [bayOccupants]: any = await db.execute(
+      `SELECT DISTINCT job_card_id FROM tbl_job_allocations
+        WHERE bay_id = ? AND branch_id = ? AND status = 'ACTIVE'`,
+      [bayId, branchId]
+    );
+    const occupants: string[] = (bayOccupants || []).map((r: any) => String(r.job_card_id));
+    if (!occupants.includes(String(jobCardId)) && occupants.length >= BAY_MAX_VEHICLES) {
+      throw new Error(
+        `BAY_AT_CAPACITY: Bay ${bayId} already holds ${occupants.length} vehicle(s) (${occupants.join(", ")}). A bay takes at most ${BAY_MAX_VEHICLES} — one in the bay and one parked behind. Free the bay or choose another.`
+      );
+    }
+
+    // A vehicle occupies ONE bay. Re-allocating it elsewhere must move it, not
+    // clone it into a second bay (which is how KA32AA5577 came to sit in four).
+    const [elsewhere]: any = await db.execute(
+      `SELECT allocation_id, bay_id FROM tbl_job_allocations
+        WHERE job_card_id = ? AND branch_id = ? AND status = 'ACTIVE' AND bay_id <> ?`,
+      [jobCardId, branchId, bayId]
+    );
+    if (elsewhere?.length) {
+      throw new Error(
+        `VEHICLE_ALREADY_ALLOCATED: ${jobCardId} is already active in bay ${elsewhere[0].bay_id}. Release that allocation before moving it to ${bayId}.`
+      );
+    }
+
     // One-active-job enforcement: Junior technicians may hold only one open
     // job at a time; Senior technicians may hold multiple. employee_grade
     // lives on `employees` (default 'Junior'). Checked against job_cards
@@ -403,6 +486,9 @@ export class FloorExecutionEngine {
 
     const allocationId = `ALLOC-${randomUUID().substring(0, 8).toUpperCase()}`;
 
+    // This INSERT is the allocation. It was wrapped in `catch (e) {}`, so a
+    // failed write still returned success:true to the supervisor — the exact
+    // silent no-op class that has bitten this system repeatedly. It must throw.
     try {
       await db.execute(
         `INSERT INTO tbl_job_allocations 
@@ -410,11 +496,38 @@ export class FloorExecutionEngine {
          VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)`,
         [allocationId, jobCardId, bayId, technicianId, technicianName, allocatedBy, isOverride ? 1 : 0, overrideReason || null, branchId]
       );
+    } catch (e: any) {
+      console.error("[FloorExecutionEngine] Allocation INSERT failed:", e.message);
+      throw new Error(`ALLOCATION_FAILED: the allocation could not be saved (${e.message}). Nothing was allocated.`);
+    }
+
+    // The bay row is a derived cache of the allocations above, so a failure
+    // here is logged but does not undo a committed allocation.
+    try {
       await db.execute(
         "UPDATE tbl_bays SET status = 'OCCUPIED', current_job_card_id = ?, occupied_since = NOW() WHERE bay_id = ?",
         [jobCardId, bayId]
       );
-    } catch (e) {}
+    } catch (e: any) {
+      console.error("[FloorExecutionEngine] Failed to mark bay occupied:", e.message);
+    }
+
+    // Create the technician's work item. NOTHING in this codebase ever
+    // INSERTed into tbl_repair_executions — startRepairTimer/pause/resume/
+    // complete all UPDATE rows that were never created, so the table is empty
+    // and no technician timer has ever run. The row starts NOT_STARTED: the
+    // technician must accept/start it, and only then does the clock begin.
+    const executionId = `EXEC-${randomUUID().substring(0, 8).toUpperCase()}`;
+    try {
+      await db.execute(
+        `INSERT INTO tbl_repair_executions
+          (execution_id, job_card_id, technician_id, technician_name, bay_id, status, branch_id)
+         VALUES (?, ?, ?, ?, ?, 'NOT_STARTED', ?)`,
+        [executionId, jobCardId, technicianId, technicianName, bayId, branchId]
+      );
+    } catch (e: any) {
+      console.error("[FloorExecutionEngine] Failed to create repair execution:", e.message);
+    }
 
     // Update in-memory state
     if (targetBay) {
@@ -542,12 +655,54 @@ export class FloorExecutionEngine {
   ): Promise<{ success: boolean; startedAt: string }> {
     const now = new Date().toISOString();
 
+    // ACCEPT GATE. A technician may hold several allocated jobs, but the SLA
+    // clock must not run on work he has not picked up — otherwise a job
+    // allocated at 09:00 and physically started at 14:00 is judged as five
+    // hours late through no fault of his. Starting here IS the acceptance, and
+    // started_at is the only point the clock begins.
+    //
+    // This UPDATE was previously wrapped in `catch (e) {}` against a table that
+    // nothing ever INSERTed into, so it matched zero rows every time and still
+    // reported success — no technician timer has ever actually run.
+    const [execRows]: any = await db.execute(
+      `SELECT execution_id, job_card_id, technician_id, status, started_at
+         FROM tbl_repair_executions WHERE execution_id = ? LIMIT 1`,
+      [executionId]
+    );
+    const row = execRows?.[0];
+    if (!row) {
+      throw new Error(`EXECUTION_NOT_FOUND: No work item ${executionId}. It cannot be started.`);
+    }
+    // Only the assigned technician accepts his own work.
+    const rowTech = String(row.technician_id ?? "");
+    const actor = String(technicianId ?? "");
+    const actorTech = actor.replace(/^TECH-/i, "");
+    if (rowTech && actor && rowTech !== actor && rowTech.replace(/^TECH-/i, "") !== actorTech) {
+      throw new Error(
+        `NOT_YOUR_JOB: ${executionId} is allocated to ${row.technician_id}, not to you. Only the assigned technician can start it.`
+      );
+    }
+    if (row.status === "IN_PROGRESS") {
+      throw new Error(`ALREADY_STARTED: ${executionId} is already running (started ${row.started_at}).`);
+    }
+    if (row.status === "COMPLETED") {
+      throw new Error(`ALREADY_COMPLETED: ${executionId} is finished and cannot be restarted.`);
+    }
+
     try {
-      await db.execute(
-        "UPDATE tbl_repair_executions SET status = 'IN_PROGRESS', started_at = NOW() WHERE execution_id = ?",
+      const [upd]: any = await db.execute(
+        `UPDATE tbl_repair_executions
+            SET status = 'IN_PROGRESS', started_at = COALESCE(started_at, NOW())
+          WHERE execution_id = ? AND status IN ('NOT_STARTED','PAUSED')`,
         [executionId]
       );
-    } catch (e) {}
+      if (!upd?.affectedRows) {
+        throw new Error(`START_FAILED: ${executionId} could not be started; its state changed. Nothing was started.`);
+      }
+    } catch (e: any) {
+      console.error("[FloorExecutionEngine] startRepairTimer failed:", e.message);
+      throw e;
+    }
 
     const exec = this.inMemoryExecutions.get(executionId) || { execution_id: executionId, technician_id: technicianId };
     exec.status = "IN_PROGRESS";

@@ -405,8 +405,34 @@ export class SaTechnicalIntakeEngine {
    * 11-13. JOB CARD CREATION (CRM vs DWIP TEMP)
    */
   public static async createJobCard(payload: CreateJobCardPayload, user: any) {
-    const saId = user?.id || user?.user_id || "usr_service_advisor";
-    const saName = user?.full_name || user?.name || user?.username || "Service Advisor";
+    // The advisor recorded on an intake must be a REAL, identified advisor.
+    // This previously took whoever was logged in and fell back to the literals
+    // "usr_service_advisor" / "Service Advisor" — so a gm_service account
+    // (user 21, "sayeed") ended up written into tbl_sa_intake.sa_name and then
+    // displayed on the floor supervisor's queue as the service advisor for a
+    // job. No orphan/alien identity may enter the system at any stage: if the
+    // acting user cannot be resolved to a real account, the intake is refused
+    // rather than recorded against an invented one.
+    const saId = user?.id ?? user?.user_id ?? null;
+    const saName = user?.full_name || user?.name || user?.username || null;
+    if (!saId || !saName) {
+      throw new Error(
+        "SA_IDENTITY_REQUIRED: Technical intake must be recorded against an identified user. No intake may be created under a placeholder identity."
+      );
+    }
+
+    // Only a service advisor may be recorded AS the service advisor. Other
+    // roles (manager, GM) may legitimately operate the screen — they are
+    // allowed through, but the intake is refused rather than silently
+    // attributing their name to advisor work.
+    const SA_INTAKE_ROLES = ["service_advisor", "sr_service_advisor", "senior_service_advisor"];
+    const actingRole = String(user?.role || user?.user_role || "").toLowerCase();
+    if (actingRole && !SA_INTAKE_ROLES.includes(actingRole)) {
+      throw new Error(
+        `SA_ROLE_REQUIRED: '${actingRole}' is not a service advisor role, so this intake cannot be recorded under that name. Log in as the service advisor who performed the intake.`
+      );
+    }
+
     const branchId = user?.branchId || user?.branch_id || payload.branchId || "BR-SEDAM";
     const branchCode = branchId.split("-")[1] || "SED";
 
