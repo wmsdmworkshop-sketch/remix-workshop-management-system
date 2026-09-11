@@ -478,17 +478,6 @@ export class FloorExecutionEngine {
     // previously unenforced entirely: B-01 accumulated THREE simultaneous
     // ACTIVE allocations, and KA32AA5577 was recorded in four bays at once,
     // because nothing counted what was already there.
-    const [bayOccupants]: any = await db.execute(
-      `SELECT DISTINCT job_card_id FROM tbl_job_allocations
-        WHERE bay_id = ? AND branch_id = ? AND status = 'ACTIVE'`,
-      [bayId, branchId]
-    );
-    const occupants: string[] = (bayOccupants || []).map((r: any) => String(r.job_card_id));
-    if (!occupants.includes(String(jobCardId)) && occupants.length >= BAY_MAX_VEHICLES) {
-      throw new Error(
-        `BAY_AT_CAPACITY: Bay ${bayId} already holds ${occupants.length} vehicle(s) (${occupants.join(", ")}). A bay takes at most ${BAY_MAX_VEHICLES} — one in the bay and one parked behind. Free the bay or choose another.`
-      );
-    }
 
     // A vehicle occupies ONE bay. Re-allocating it elsewhere must move it, not
     // clone it into a second bay (which is how KA32AA5577 came to sit in four).
@@ -498,24 +487,58 @@ export class FloorExecutionEngine {
     // which is exactly how KA32AB0307 ended up in B-01 and B-02 with two
     // different technicians. So the check resolves every active allocation to
     // its real job_card_master row and compares THAT.
+    // NOTE: this deliberately scans EVERY bay, including the target one. An
+    // earlier version excluded the target bay (`bay_id <> ?`), which let the
+    // same vehicle be allocated into the same bay twice — KA32AB9690 landed in
+    // B-01 as both "KA32AB9690" and "DWIP-TEMP-SEDAM-20260908-001", consuming
+    // both of that bay's slots with one physical vehicle.
     const incomingMasterId = await this.resolveMasterJobCardId(jobCardId);
-    const [activeElsewhere]: any = await db.execute(
+    const [activeAnywhere]: any = await db.execute(
       `SELECT allocation_id, bay_id, job_card_id, technician_name FROM tbl_job_allocations
-        WHERE branch_id = ? AND status = 'ACTIVE' AND bay_id <> ?`,
-      [branchId, bayId]
+        WHERE branch_id = ? AND status = 'ACTIVE'`,
+      [branchId]
     );
-    for (const other of activeElsewhere || []) {
+
+    // Resolve each active allocation once; reused by the capacity count below.
+    const resolvedByAllocation = new Map<string, number | null>();
+    for (const other of activeAnywhere || []) {
+      resolvedByAllocation.set(
+        String(other.allocation_id),
+        await this.resolveMasterJobCardId(String(other.job_card_id))
+      );
+    }
+
+    for (const other of activeAnywhere || []) {
       const sameString = String(other.job_card_id) === String(jobCardId);
       const sameVehicle =
         incomingMasterId !== null &&
-        (await this.resolveMasterJobCardId(String(other.job_card_id))) === incomingMasterId;
+        resolvedByAllocation.get(String(other.allocation_id)) === incomingMasterId;
       if (sameString || sameVehicle) {
         throw new Error(
           `VEHICLE_ALREADY_ALLOCATED: this vehicle is already active in bay ${other.bay_id}` +
             (other.technician_name ? ` with ${other.technician_name}` : "") +
-            ` (recorded as "${other.job_card_id}"). Release that allocation before moving it to ${bayId}.`
+            ` (recorded as "${other.job_card_id}"). Release that allocation before allocating it to ${bayId}.`
         );
       }
+    }
+
+    // BAY CAPACITY, counted in PHYSICAL VEHICLES. DISTINCT job_card_id is not
+    // the same thing: two allocation rows can name one vehicle under two id
+    // formats, which would consume two of the bay's two slots for a single
+    // truck. Resolving to job_card_master first collapses those to one.
+    const distinctVehicles = new Set<string>();
+    for (const other of activeAnywhere || []) {
+      if (String(other.bay_id) !== String(bayId)) continue;
+      const rid = resolvedByAllocation.get(String(other.allocation_id));
+      distinctVehicles.add(rid !== null && rid !== undefined ? `jcm:${rid}` : `raw:${other.job_card_id}`);
+    }
+    if (distinctVehicles.size >= BAY_MAX_VEHICLES) {
+      const names = (activeAnywhere || [])
+        .filter((o: any) => String(o.bay_id) === String(bayId))
+        .map((o: any) => String(o.job_card_id));
+      throw new Error(
+        `BAY_AT_CAPACITY: Bay ${bayId} already holds ${distinctVehicles.size} vehicle(s) (${names.join(", ")}). A bay takes at most ${BAY_MAX_VEHICLES} — one in the bay and one parked behind. Free the bay or choose another.`
+      );
     }
 
     // One-active-job enforcement: Junior technicians may hold only one open
