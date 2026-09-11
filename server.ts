@@ -843,6 +843,41 @@ async function startServer() {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
       `);
 
+    // JC Activity Audit Log — every action on every Job Card is recorded here.
+    // Visible to admin/developer only. Auto-purged after 90 days via MySQL EVENT.
+    await dbPool.execute(`
+        CREATE TABLE IF NOT EXISTS jc_activity_log (
+          id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          job_card_id   INT            NOT NULL,
+          job_card_no   VARCHAR(64)    NOT NULL,
+          action_type   VARCHAR(80)    NOT NULL,
+          action_detail TEXT           DEFAULT NULL,
+          old_snapshot  JSON           DEFAULT NULL,
+          new_snapshot  JSON           DEFAULT NULL,
+          actor_user_id INT            DEFAULT NULL,
+          actor_name    VARCHAR(255)   DEFAULT NULL,
+          actor_role    VARCHAR(100)   DEFAULT NULL,
+          ip_address    VARCHAR(100)   DEFAULT NULL,
+          user_agent    VARCHAR(500)   DEFAULT NULL,
+          created_at    TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_jcal_jc_no   (job_card_no),
+          INDEX idx_jcal_jc_id   (job_card_id),
+          INDEX idx_jcal_created (created_at),
+          INDEX idx_jcal_actor   (actor_user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
+    // Enable MySQL event scheduler (required for the purge event below).
+    try {
+      await dbPool.execute(`SET GLOBAL event_scheduler = ON`);
+    } catch (_) { /* may lack SUPER privilege on managed DB — event still exists */ }
+    await dbPool.execute(`
+        CREATE EVENT IF NOT EXISTS evt_purge_jc_activity_log
+          ON SCHEDULE EVERY 1 DAY
+          STARTS CURRENT_TIMESTAMP
+          DO DELETE FROM jc_activity_log
+             WHERE created_at < DATE_SUB(NOW(), INTERVAL 90 DAY);
+      `);
+
     // Gate-out (prod-native, lean). Cashier issues a gate pass = the ANPR exit
     // pre-approval for that VRN; ANPR at exit (or security manually) records the
     // gate-out. Column shape is compatible with the fuller VOS tbl_gate_pass/tbl_gate_out
@@ -1697,6 +1732,121 @@ async function startServer() {
       }
     };
   };
+
+  // ─── JC ACTIVITY AUDIT LOG ────────────────────────────────────────────────
+  // Fire-and-forget helper. A write failure MUST NOT break any JC operation.
+  // Call after a successful mutation — pass old/new snapshots of only the
+  // changed fields (not the full object) to keep rows lean.
+  const logJcActivity = async (entry: {
+    job_card_id: number;
+    job_card_no: string;
+    action_type: string;
+    action_detail?: string;
+    old_snapshot?: Record<string, any> | null;
+    new_snapshot?: Record<string, any> | null;
+    req?: any;
+  }) => {
+    try {
+      await dbPool.execute(
+        `INSERT INTO jc_activity_log
+           (job_card_id, job_card_no, action_type, action_detail,
+            old_snapshot, new_snapshot,
+            actor_user_id, actor_name, actor_role,
+            ip_address, user_agent)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          entry.job_card_id,
+          entry.job_card_no,
+          entry.action_type,
+          entry.action_detail ?? null,
+          entry.old_snapshot ? JSON.stringify(entry.old_snapshot) : null,
+          entry.new_snapshot ? JSON.stringify(entry.new_snapshot) : null,
+          entry.req?.user?.employee_id ?? null,
+          entry.req?.user?.full_name ?? null,
+          entry.req?.user?.role ?? null,
+          (entry.req?.headers?.["x-forwarded-for"] || entry.req?.ip || null),
+          entry.req?.headers?.["user-agent"]?.substring(0, 500) ?? null,
+        ]
+      );
+    } catch (err) {
+      console.error("[JcAuditLog] Failed to write activity log entry:", err);
+    }
+  };
+
+  // GET /api/admin/jc-audit-log
+  // Query the JC activity log. Only admin and developer may access this.
+  // Query params: jc_no (partial match), from, to (dates), action_type, limit, offset
+  app.get(
+    "/api/admin/jc-audit-log",
+    authenticateToken,
+    requireRoles(["admin", "developer"]),
+    async (req: any, res) => {
+      try {
+        const jcNo      = (req.query.jc_no     as string) || "";
+        const from      = (req.query.from       as string) || "";
+        const to        = (req.query.to         as string) || "";
+        const actionTyp = (req.query.action_type as string) || "";
+        const limit     = Math.min(parseInt(req.query.limit  as string) || 100, 500);
+        const offset    = parseInt(req.query.offset as string) || 0;
+
+        const conditions: string[] = [];
+        const params: any[] = [];
+
+        if (jcNo) {
+          conditions.push("job_card_no LIKE ?");
+          params.push(`%${jcNo}%`);
+        }
+        if (from) {
+          conditions.push("created_at >= ?");
+          params.push(from);
+        }
+        if (to) {
+          conditions.push("created_at <= ?");
+          params.push(`${to} 23:59:59`);
+        }
+        if (actionTyp) {
+          conditions.push("action_type = ?");
+          params.push(actionTyp);
+        }
+
+        const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+        const [rows] = await dbPool.query(
+          `SELECT id, job_card_id, job_card_no, action_type, action_detail,
+                  old_snapshot, new_snapshot,
+                  actor_user_id, actor_name, actor_role,
+                  ip_address, created_at
+           FROM jc_activity_log
+           ${where}
+           ORDER BY created_at DESC
+           LIMIT ? OFFSET ?`,
+          [...params, limit, offset]
+        ) as any[];
+
+        // Count for pagination
+        const [[{ total }]] = await dbPool.query(
+          `SELECT COUNT(*) AS total FROM jc_activity_log ${where}`,
+          params
+        ) as any[];
+
+        // Distinct action types for the filter dropdown
+        const [actionTypes] = await dbPool.query(
+          `SELECT DISTINCT action_type FROM jc_activity_log ORDER BY action_type`
+        ) as any[];
+
+        res.json({
+          total,
+          limit,
+          offset,
+          action_types: actionTypes.map((r: any) => r.action_type),
+          rows,
+        });
+      } catch (err: any) {
+        console.error("[JcAuditLog] Query error:", err);
+        res.status(500).json({ error: "Failed to fetch JC activity log." });
+      }
+    }
+  );
 
   // --- GLOBAL API AUTHENTICATION GATE ---
   // All /api/* routes require a valid JWT EXCEPT the explicit public whitelist below.
@@ -4935,20 +5085,39 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
         capturedBy: (req as any).user?.user_id || (req as any).user?.id || null
       });
 
-      // Unified 90-Day Evidence & Compliance Storage (non-blocking)
+      // Unified 90-Day Evidence & Compliance Storage.
+      //
+      // This was fire-and-forget, so the evidenceId it creates was discarded —
+      // and because the plate is read BEFORE the gate entry exists, there was
+      // never an id to attach the photo to either. Every ocr_evidence row in
+      // production therefore has gate_entry_id NULL, and reception has no way
+      // to look up "the photo for this arrival".
+      //
+      // It is now awaited so the evidenceId can be returned to the caller,
+      // which sends it back on gate-entry submission; the pipeline then stamps
+      // gate_entry_id onto this row. Storage failure must NOT fail the OCR
+      // response — a vehicle must always be able to get in — so the id is
+      // simply absent when it fails, and the photo is then unlinked rather
+      // than wrongly linked.
       const vrnExtracted = result?.extractedFields?.vrn;
-      evidenceStorageService.storeEvidence({
-        base64Image: image,
-        ocrType: "NUMBERPLATE",
-        vrn: vrnExtracted || null,
-        ocrProvider: result.provider,
-        ocrResultJson: result,
-        ocrConfidence: result.confidence || null,
-        capturedBy: (req as any).user?.user_id || (req as any).user?.id || null,
-        branchId: (req as any).user?.branchId || (req as any).user?.branch_id || "BR-SEDAM"
-      }).catch(err => console.error("[OCR-GateIn] Evidence storage failed:", err.message));
+      let evidenceId: string | null = null;
+      try {
+        const evidenceRecord = await evidenceStorageService.storeEvidence({
+          base64Image: image,
+          ocrType: "NUMBERPLATE",
+          vrn: vrnExtracted || null,
+          ocrProvider: result.provider,
+          ocrResultJson: result,
+          ocrConfidence: result.confidence || null,
+          capturedBy: (req as any).user?.user_id || (req as any).user?.id || null,
+          branchId: (req as any).user?.branchId || (req as any).user?.branch_id || "BR-SEDAM"
+        });
+        evidenceId = evidenceRecord?.evidence_id || null;
+      } catch (err: any) {
+        console.error("[OCR-GateIn] Evidence storage failed:", err.message);
+      }
 
-      res.json(result);
+      res.json({ ...result, evidenceId });
     } catch (error: any) {
       console.error("OCR API error:", error);
       res.status(500).json({ error: error.message });
@@ -5505,7 +5674,10 @@ time from another field.`;
             odometer: newJob.km_reading || 0,
             source: "MANUAL",
             driverMobile: newJob.customer_mobile,
-            branchId
+            branchId,
+            // Links the gate photo to this arrival. Comes from /api/ocr, which
+            // stored the plate photo before this gate entry existed.
+            evidenceId: (newJob as any).evidence_id || undefined
           },
           req.user
         );
@@ -5606,6 +5778,21 @@ time from another field.`;
     // ── End Same-Day Reopen Guard ───────────────────────────────────────
 
     const created = await createJobCardRecord(newJob, req);
+    // Audit log — fire-and-forget
+    logJcActivity({
+      job_card_id: created.job_id,
+      job_card_no: created.job_card_no,
+      action_type: "JC_CREATED",
+      action_detail: `Gate entry created for VRN: ${created.vrn || "—"}, Customer: ${created.customer_name || "—"}`,
+      new_snapshot: {
+        vrn: created.vrn,
+        customer_name: created.customer_name,
+        status: created.status,
+        km_reading: created.km_reading,
+        service_type: created.service_type,
+      },
+      req,
+    });
     res.json(created);
   });
 
@@ -7154,6 +7341,33 @@ time from another field.`;
         await logEdit(req, { entity_type: "job_card", entity_id: id, action: "JOBCARD_EDIT", justification: editJustification, before: oldJob, after: updatedJob });
       }
 
+      // JC Activity Audit Log — capture what actually changed
+      const changedFields = Object.keys(incoming).filter(
+        k => JSON.stringify((oldJob as any)[k]) !== JSON.stringify((updatedJob as any)[k])
+      );
+      if (changedFields.length > 0) {
+        const actionType = changedFields.includes("status") || changedFields.includes("current_workflow_state")
+          ? "JC_STATUS_CHANGED"
+          : "JC_UPDATED";
+        const oldSnap: Record<string, any> = {};
+        const newSnap: Record<string, any> = {};
+        for (const k of changedFields) {
+          oldSnap[k] = (oldJob as any)[k];
+          newSnap[k] = (updatedJob as any)[k];
+        }
+        logJcActivity({
+          job_card_id: updatedJob.job_id,
+          job_card_no: updatedJob.job_card_no || String(id),
+          action_type: actionType,
+          action_detail: actionType === "JC_STATUS_CHANGED"
+            ? `Status: ${oldJob.status} → ${updatedJob.status}`
+            : `Fields updated: ${changedFields.join(", ")}`,
+          old_snapshot: oldSnap,
+          new_snapshot: newSnap,
+          req,
+        });
+      }
+
       res.json(updatedJob);
     } else {
       res.status(404).json({ error: "Job card not found" });
@@ -7520,6 +7734,14 @@ time from another field.`;
 
     db.jobTechnicianMaps.push(...newMaps);
     setDB(db);
+    logJcActivity({
+      job_card_id: id,
+      job_card_no: jc?.job_card_no || String(id),
+      action_type: "TECH_ASSIGNED",
+      action_detail: `Technician(s) assigned: ${allocations.map(a => `EMP-${a.employee_id} (${a.tech_role})`).join(", ")}`,
+      new_snapshot: { allocations },
+      req,
+    });
     res.json({ success: true, allocations: newMaps });
   });
 
@@ -12879,6 +13101,26 @@ Respond with valid JSON only:
       next();
     });
 
+    // Evidence photos (gate plate/odometer captures) written by
+    // EvidenceStorageService's local-disk fallback. There was NO route for
+    // /uploads at all, so every stored photo_url fell through to the SPA
+    // catch-all and returned index.html with Content-Type text/html — a 200
+    // that is not an image, which is why no screen could ever display one.
+    //
+    // NOTE: on Cloud Run this directory is the container filesystem and is
+    // WIPED ON EVERY DEPLOY. Photos survive only until the next release until
+    // a GCS bucket exists (EvidenceStorageService already prefers GCS and only
+    // falls back to disk because the bucket is missing). See
+    // docs/plans/reception-intake-evidence-viewer for the two commands.
+    app.use(
+      "/uploads",
+      express.static(path.resolve(process.cwd(), "public", "uploads"), {
+        maxAge: "7d",
+        fallthrough: true,
+        index: false
+      })
+    );
+
     app.use(express.static(distPath));
     // Customer portal is a separate SPA build (vite.customer.config.ts, base:
     // '/customer-portal/') living under dist/customer-portal/. Its own assets
@@ -13077,6 +13319,14 @@ Respond with valid JSON only:
       saveDB(cachedDB);
       await syncSave(cachedDB);
 
+      logJcActivity({
+        job_card_id: jobId,
+        job_card_no: cachedDB.jobCards[jobCardIndex]?.job_card_no || String(jobId),
+        action_type: "REPAIR_STARTED",
+        action_detail: `Repair started by: ${started_by}`,
+        new_snapshot: { status: "In Progress", started_by, started_at: new Date().toISOString() },
+        req,
+      });
       res.json({
         success: true,
         message: 'Repair started successfully',
@@ -13179,6 +13429,14 @@ Respond with valid JSON only:
         console.error('[ALERT] Gate pass alert insert failed:', alertErr.message);
       }
 
+      logJcActivity({
+        job_card_id: jobId,
+        job_card_no: (index !== -1 ? cachedDB.jobCards[index]?.job_card_no : null) || String(jobId),
+        action_type: "BILLED",
+        action_detail: `Invoice generated: ${invoice_no}`,
+        new_snapshot: { billing_status: "Invoiced", invoice_no },
+        req,
+      });
       res.json({
         success: true,
         message: 'Job card marked as billed successfully.',
@@ -14321,6 +14579,15 @@ Respond with valid JSON only:
       saveDB(cachedDB);
       await syncSave(cachedDB);
 
+      logJcActivity({
+        job_card_id: jobId,
+        job_card_no: jobCard.job_card_no || String(jobId),
+        action_type: "ESTIMATE_APPROVED",
+        action_detail: `Estimate ${status} by ${req.user?.full_name || req.user?.role || "unknown"}. Notes: ${notes || "—"}`,
+        old_snapshot: { status: jobCard.status },
+        new_snapshot: { status: newStatus, customer_approval_status: status, estimate_approved_by: req.user?.full_name },
+        req,
+      });
       res.json({
         success: true,
         message: `Estimate ${status} successfully. Status updated to ${newStatus}`,
@@ -14495,6 +14762,15 @@ Respond with valid JSON only:
         }
       }
 
+      logJcActivity({
+        job_card_id: jobId,
+        job_card_no: jobCard.job_card_no || String(jobId),
+        action_type: "QC_CHECK",
+        action_detail: `QC ${qc_status} by ${req.user?.full_name || req.user?.role || "unknown"}${fail_reason ? ". Reason: " + fail_reason : ""}`,
+        old_snapshot: { status: jobCard.status },
+        new_snapshot: { status: newStatus, qc_status, qc_checked_by: req.user?.full_name },
+        req,
+      });
       res.json({
         success: true,
         message: `QC check registered as ${qc_status}. Status updated to ${newStatus}`,
@@ -14561,6 +14837,14 @@ Respond with valid JSON only:
       saveDB(cachedDB);
       await syncSave(cachedDB);
 
+      logJcActivity({
+        job_card_id: jobId,
+        job_card_no: jobCard.job_card_no || String(jobId),
+        action_type: "PRE_INVOICE",
+        action_detail: `Pre-invoice ${invoice_no} sent to ${sent_to || "—"} via ${sent_via || "—"}`,
+        new_snapshot: { status: newStatus, pre_invoice_no: invoice_no, sent_to, sent_via },
+        req,
+      });
       res.json({
         success: true,
         message: `Pre-invoice sent successfully. Status updated to ${newStatus}`,
@@ -14617,6 +14901,15 @@ Respond with valid JSON only:
         console.error('[ALERT] Manager approval alert insert failed:', alertErr.message);
       }
 
+      logJcActivity({
+        job_card_id: jobId,
+        job_card_no: jobCard.job_card_no || String(jobId),
+        action_type: "MANAGER_APPROVED",
+        action_detail: `Approved by ${req.user?.full_name || req.user?.role || "unknown"}. Notes: ${notes || "—"}`,
+        old_snapshot: { status: jobCard.status },
+        new_snapshot: { status: newStatus, manager_approved_by: req.user?.full_name },
+        req,
+      });
       res.json({
         success: true,
         message: `Manager approved job card. Status updated to ${newStatus}`,

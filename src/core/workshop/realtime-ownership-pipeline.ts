@@ -26,6 +26,12 @@ export interface GateInPayload {
   gateNumber?: string;
   initialRemarks?: string;
   branchId?: string;
+  /**
+   * evidence_id of the ocr_evidence row created when the plate was photographed.
+   * The photo is captured BEFORE this gate entry exists, so the evidence row is
+   * written with gate_entry_id NULL and stamped here once the id is known.
+   */
+  evidenceId?: string;
 }
 
 export interface ReceptionIntakePayload {
@@ -35,6 +41,13 @@ export interface ReceptionIntakePayload {
   preliminaryComplaints?: string;
   confirmedOdometer: number;
   correctionReason?: string;
+  /**
+   * Plate as confirmed by the receptionist against the gate photo. Supplied
+   * only when it differs from what the gate captured; a correction requires a
+   * reason, and the original is preserved on the gate entry's remarks.
+   */
+  confirmedVrn?: string;
+  vrnCorrectionReason?: string;
   branchId?: string;
 }
 
@@ -166,6 +179,34 @@ export class RealtimeOwnershipPipeline {
       ]
     );
 
+    // 2b. Link the gate photo to this gate entry.
+    //
+    // /api/ocr stores the plate photo before the entry exists, so every
+    // ocr_evidence row in production has gate_entry_id NULL and reception has
+    // no way to find "the photo for this arrival". The id travels back with the
+    // submission and is stamped here.
+    //
+    // `AND gate_entry_id IS NULL` so a photo is never silently re-pointed at a
+    // different arrival. Failure is logged, never thrown: a vehicle must always
+    // be able to get in, and an unlinked photo is a missing thumbnail, not a
+    // blocked gate.
+    if (payload.evidenceId) {
+      try {
+        const [linkRes]: any = await RealtimeOwnershipPipeline.execute(
+          `UPDATE ocr_evidence SET gate_entry_id = ?, vrn = COALESCE(vrn, ?)
+            WHERE evidence_id = ? AND gate_entry_id IS NULL`,
+          [gateEntryId, vrnClean, payload.evidenceId]
+        );
+        if (!linkRes?.affectedRows) {
+          console.warn(
+            `[GateIn] Evidence ${payload.evidenceId} was not linked to ${gateEntryId} (already linked, or no such row).`
+          );
+        }
+      } catch (e: any) {
+        console.error(`[GateIn] Failed to link evidence ${payload.evidenceId}:`, e.message);
+      }
+    }
+
     // 3. Create 5-minute Handoff SLA tracker for Reception Queue
     const handoffId = `SLA-G2R-${randomUUID().substring(0, 8).toUpperCase()}`;
     await RealtimeOwnershipPipeline.execute(
@@ -243,10 +284,29 @@ export class RealtimeOwnershipPipeline {
    * STAGE 03: Reception Queue (MY NEW ARRIVALS)
    */
   public static async getReceptionQueue(branchId: string) {
+    // The gate photo travels with the arrival so the receptionist can SEE what
+    // the camera read before confirming or correcting it.
+    //
+    // LEFT JOIN, deliberately: an arrival with no photo must still appear in
+    // the queue. Reception is not blocked on evidence, and most historic rows
+    // have none (no ocr_evidence row was ever linked to a gate entry until the
+    // stamp added in createGateIn).
+    //
+    // The correlated subquery picks the NEWEST non-deleted photo per arrival —
+    // a plate may be re-shot if the first attempt is unreadable.
     const [rows]: any = await RealtimeOwnershipPipeline.execute(
-      `SELECT ge.*, h.sla_due_at, h.status as sla_status 
+      `SELECT ge.*, h.sla_due_at, h.status as sla_status,
+              oe.evidence_id, oe.photo_url, oe.ocr_type, oe.ocr_confidence,
+              oe.ocr_result_json, oe.captured_at AS photo_captured_at
        FROM tbl_gate_entry ge
        LEFT JOIN tbl_handoff_sla h ON ge.gate_entry_id = h.entity_id AND h.stage_name = 'GATE_TO_RECEPTION'
+       LEFT JOIN ocr_evidence oe
+              ON oe.gate_entry_id = ge.gate_entry_id
+             AND oe.is_deleted = 0
+             AND oe.evidence_id = (
+                   SELECT e2.evidence_id FROM ocr_evidence e2
+                    WHERE e2.gate_entry_id = ge.gate_entry_id AND e2.is_deleted = 0
+                    ORDER BY e2.captured_at DESC LIMIT 1)
        WHERE ge.status = 'GATE_IN'
        ORDER BY ge.arrival_time DESC`
     );
@@ -265,12 +325,36 @@ export class RealtimeOwnershipPipeline {
       const slaMins = this.GATE_TO_RECEPTION_SLA_MS / 60000;
       const isBreached = alertsOn && waitingMins >= slaMins;
 
+      // What the OCR itself read, shown beside the editable field so the
+      // receptionist compares against the machine's value instead of
+      // overwriting blind. Absent values stay null — never invented.
+      let ocrRead: { vrn?: string | null; odometer?: number | null } = {};
+      try {
+        const parsed = r.ocr_result_json ? JSON.parse(r.ocr_result_json) : null;
+        const fields = parsed?.extractedFields || parsed?.fields || null;
+        if (fields) {
+          ocrRead = {
+            vrn: fields.vrn ?? null,
+            odometer: fields.odometer ?? null
+          };
+        }
+      } catch {}
+
       return {
         gateEntryId: r.gate_entry_id,
         vin: r.vin,
         vrn: r.vin.replace("VIN-", ""),
         source: r.source,
         odometer: r.odometer,
+        // Null when no photo was linked — the card renders an honest empty
+        // state rather than a broken <img>.
+        evidenceId: r.evidence_id || null,
+        photoUrl: r.photo_url || null,
+        photoType: r.ocr_type || null,
+        photoCapturedAt: r.photo_captured_at || null,
+        ocrConfidence: r.ocr_confidence != null ? Number(r.ocr_confidence) : null,
+        ocrReadVrn: ocrRead.vrn ?? null,
+        ocrReadOdometer: ocrRead.odometer ?? null,
         driver,
         arrivalTime: r.arrival_time,
         waitingMins,
@@ -308,6 +392,29 @@ export class RealtimeOwnershipPipeline {
     const originalOdo = ge?.odometer || 0;
     const isCorrected = payload.confirmedOdometer !== originalOdo;
 
+    // A correction is a change to evidence the workshop later relies on, so it
+    // must carry a stated reason. This previously fell back to the literal
+    // "Receptionist Manual Verification Correction" when none was given, which
+    // records a reason that nobody actually gave — the same fabrication class
+    // as the "Standard Maintenance Intake" placeholder noted below. Refuse
+    // instead, matching the edits-require-justification rule.
+    if (isCorrected && !(payload.correctionReason || "").trim()) {
+      throw new Error(
+        `ODOMETER_CORRECTION_REASON_REQUIRED: the odometer is being changed from ${originalOdo} to ${payload.confirmedOdometer}. State why.`
+      );
+    }
+
+    // Plate correction. The VRN is how every downstream stage finds this
+    // vehicle, so a wrong plate at the gate is worse than a wrong odometer.
+    const originalVrn = String(ge?.vin || "").replace(/^VIN-/, "");
+    const confirmedVrn = (payload.confirmedVrn || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const vrnCorrected = !!confirmedVrn && !!originalVrn && confirmedVrn !== originalVrn;
+    if (vrnCorrected && !(payload.vrnCorrectionReason || "").trim()) {
+      throw new Error(
+        `VRN_CORRECTION_REASON_REQUIRED: the plate is being changed from ${originalVrn} to ${confirmedVrn}. State why.`
+      );
+    }
+
     const now = new Date();
     const slaDueAt = new Date(now.getTime() + this.HANDOFF_SLA_MS);
 
@@ -328,7 +435,7 @@ export class RealtimeOwnershipPipeline {
         originalOdo,
         payload.confirmedOdometer,
         isCorrected,
-        isCorrected ? payload.correctionReason || "Receptionist Manual Verification Correction" : null,
+        isCorrected ? payload.correctionReason!.trim() : null,
         payload.visitCategory,
         // Store NULL when reception recorded no complaint. This used to write the
         // literal string "Standard Maintenance Intake", which is fabricated text
@@ -343,6 +450,41 @@ export class RealtimeOwnershipPipeline {
         "INTAKE_COMPLETED"
       ]
     );
+
+    // Apply a confirmed plate correction, keeping the original visible.
+    //
+    // tbl_gate_entry has no original_vrn column, so the previous value is
+    // appended to initial_remarks rather than silently lost — the plate is the
+    // key every later stage matches on, and "what did the gate actually
+    // capture" must remain answerable. (A dedicated column would be better;
+    // that is a schema change, not this one.)
+    if (vrnCorrected) {
+      await RealtimeOwnershipPipeline.execute(
+        `UPDATE tbl_gate_entry
+            SET vin = ?,
+                initial_remarks = CONCAT(COALESCE(initial_remarks, ''),
+                  ' [VRN corrected at reception: ', ?, ' -> ', ?, ' by ', ?, '. Reason: ', ?, ']')
+          WHERE gate_entry_id = ?`,
+        [
+          `VIN-${confirmedVrn}`,
+          originalVrn,
+          confirmedVrn,
+          user?.full_name || user?.username || "receptionist",
+          payload.vrnCorrectionReason!.trim(),
+          payload.gateEntryId
+        ]
+      );
+      // Keep the evidence row searchable by the corrected plate too. Failure
+      // here must not undo the correction already applied above.
+      try {
+        await RealtimeOwnershipPipeline.execute(
+          `UPDATE ocr_evidence SET vrn = ? WHERE gate_entry_id = ? AND is_deleted = 0`,
+          [confirmedVrn, payload.gateEntryId]
+        );
+      } catch (e: any) {
+        console.error("[ReceptionIntake] Failed to update evidence VRN:", e.message);
+      }
+    }
 
     // Update Gate Entry status to INTAKE_COMPLETED
     await RealtimeOwnershipPipeline.execute(

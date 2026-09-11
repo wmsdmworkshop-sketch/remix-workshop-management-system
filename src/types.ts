@@ -129,6 +129,12 @@ export interface JobCard {
   technician_name?: string | null;
   no_of_laborers?: number | null;
   numberplate_photo?: string | null;
+  /**
+   * evidence_id of the ocr_evidence row for the gate photo, carried from
+   * /api/ocr so the gate-in pipeline can stamp gate_entry_id onto it. Not a
+   * persisted job-card column — transport only.
+   */
+  evidence_id?: string | null;
   odometer_photo?: string | null;
   labor_price?: number;
   parts_price?: number;

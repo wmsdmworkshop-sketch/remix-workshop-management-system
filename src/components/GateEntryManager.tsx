@@ -234,6 +234,11 @@ export default function GateEntryManager({
   const [odoScanFailed, setOdoScanFailed] = useState(false);
   const [odoPlausibilityWarning, setOdoPlausibilityWarning] = useState<string | null>(null);
   const [odoPhotoPreview, setOdoPhotoPreview] = useState<string | null>(null);
+  // evidence_id of the stored gate photo, returned by /api/ocr. Sent with the
+  // submission so the pipeline can link the photo to the gate entry — without
+  // it the photo exists but no screen can find it, which is why reception has
+  // never been able to show the captured image.
+  const [evidenceId, setEvidenceId] = useState<string | null>(null);
 
   const [showFuelModal, setShowFuelModal] = useState(false);
   useEscapeKey(() => setShowFuelModal(false), showFuelModal);
@@ -355,6 +360,8 @@ export default function GateEntryManager({
         if (result.extractedFields.chassisNo) setChassisNumber(result.extractedFields.chassisNo);
         if (result.extractedFields.odometer) setOdometer(String(result.extractedFields.odometer));
       }
+      // Keep the stored-photo id so it can be linked to the gate entry below.
+      if (result?.evidenceId) setEvidenceId(result.evidenceId);
       setAnprScanning(false);
       setOcrStatus("success");
       setSuccess(`AI OCR Scanned: Recognized vehicle plate "${result?.extractedFields?.vrn || "Unknown"}"! Location and Timestamp captured.`);
@@ -665,7 +672,9 @@ export default function GateEntryManager({
       job_type: jobType,
       // Evidence: the captured vehicle photo (never the smaller OCR-only copy),
       // kept only when a real photo was captured — never a fabricated placeholder.
-      numberplate_photo: evidenceImage || undefined
+      numberplate_photo: evidenceImage || undefined,
+      // Transport only — links the already-stored gate photo to the gate entry.
+      evidence_id: evidenceId || undefined
     }, { silent: true });
 
     // Backend rejected it (duplicate, or a same-day reopen still awaiting GM
@@ -686,6 +695,7 @@ export default function GateEntryManager({
     }
     clearDraft();
     setVrn("");
+    setEvidenceId(null);
     setChassisNumber("");
     setAutoFetchNotice(null);
     setLastKnownOdometer(null);
