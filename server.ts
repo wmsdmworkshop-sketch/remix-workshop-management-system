@@ -5789,7 +5789,6 @@ time from another field.`;
         customer_name: created.customer_name,
         status: created.status,
         km_reading: created.km_reading,
-        service_type: created.service_type,
       },
       req,
     });

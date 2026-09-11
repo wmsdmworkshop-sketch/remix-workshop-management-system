@@ -60,6 +60,7 @@ export const WORKSPACE_MAPPING: Record<string, string> = {
   "api-logs": "admin",
   "health-dashboard": "admin",
   "integration-config": "admin",
+  "jc-audit-log": "admin",
 };
 
 export const WORKSPACES = [

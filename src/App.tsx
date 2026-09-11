@@ -43,9 +43,11 @@ import {
   FileSpreadsheet,
   Terminal,
   Activity,
-  Brain
+  Brain,
+  ScrollText
 } from "lucide-react";
 import UserManagement from "./components/UserManagement";
+import JcAuditLog from "./components/admin/JcAuditLog";
 import {
   GateEntryPanel,
   TechnicianJobsPanel,
@@ -448,6 +450,7 @@ export default function App() {
       { id: "assistant", label: "Gemini Copilot", icon: Sparkles },
       { id: "live-support", label: "Live Support", icon: HelpCircle },
       { id: "ai-brains", label: "AI Brains", icon: Brain },
+      { id: "jc-audit-log", label: "JC Activity Log", icon: ScrollText },
     ],
     admin: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -482,6 +485,7 @@ export default function App() {
       { id: "users", label: "User Management", icon: ShieldAlert },
       { id: "assistant", label: "Gemini Copilot", icon: Sparkles },
       { id: "live-support", label: "Live Support", icon: HelpCircle },
+      { id: "jc-audit-log", label: "JC Activity Log", icon: ScrollText },
     ],
     billing: [
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
@@ -1942,6 +1946,10 @@ export default function App() {
 
           {activeTab === "ai-brains" && user?.role === "developer" && (
             <AiBrainsPanel />
+          )}
+
+          {activeTab === "jc-audit-log" && (
+            ["admin", "developer"].includes(user?.role) ? <JcAuditLog /> : null
           )}
 
           {activeTab === "live-support" && (
