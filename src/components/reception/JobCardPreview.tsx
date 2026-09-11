@@ -16,19 +16,29 @@ export interface PreviewData {
   queue: string;
   estimatedDelivery: string;
 
-  // Phase 7.1J Reception AI fields
+  // Phase 7.1J Reception AI fields.
+  //
+  // P1/D-1, D-2: these were REQUIRED strings, and the caller satisfied that
+  // requirement by inventing values — warranty terms, field service bulletin
+  // numbers and recall campaigns chosen by whether the model name contained
+  // "ev", plus fabricated people ("Arnaud Kumar", "Sanjay Patel") and a
+  // confidence figure that was the string literal "96%".
+  //
+  // They are now OPTIONAL. A field with no real source is omitted by the caller
+  // and rendered as an explicit absence below — never as a plausible-looking
+  // value the workshop could act on.
   previousHistory: string;
   repeatComplaint: string;
-  warranty: string;
-  fsb: string;
-  campaign: string;
-  advisorRecommendation: string;
-  technicianRecommendation: string;
-  bayRecommendation: string;
+  warranty?: string | null;
+  fsb?: string | null;
+  campaign?: string | null;
+  advisorRecommendation?: string | null;
+  technicianRecommendation?: string | null;
+  bayRecommendation?: string | null;
   predictedTat: string;
-  confidence: string; // e.g. "95%"
-  explainability: string;
-  overrideStatus: string; // e.g., "Standard (No Override)" or "Overridden by Supervisor"
+  confidence?: string | null;
+  explainability?: string | null;
+  overrideStatus?: string | null;
 }
 
 export interface JobCardPreviewProps {
@@ -36,6 +46,20 @@ export interface JobCardPreviewProps {
   isLoading?: boolean;
   error?: string | null;
   onClose?: () => void;
+}
+
+/**
+ * Renders a field that has no real source as an explicit absence.
+ *
+ * P1/D-1: these fields previously carried invented values because the props
+ * required a string. "Not recorded" is deliberately plain and unstyled — it must
+ * read as missing information, never as a finding.
+ */
+function OptionalFact({ value }: { value?: string | null }) {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return <span className="text-slate-500 italic font-normal">Not recorded</span>;
+  }
+  return <span className="text-slate-200 font-semibold">{value}</span>;
 }
 
 export default function JobCardPreview({
@@ -129,12 +153,16 @@ export default function JobCardPreview({
                 🧠 Gemma-4 Diagnostic & Routing Engine
               </span>
             </div>
-            <div className="flex items-center gap-1">
-              <span className="text-[8px] uppercase font-black text-slate-450">Confidence:</span>
-              <span className="ds-button-success text-[10px] font-black text-emerald-400  /10 px-1.5 py-0.5 rounded">
-                {data.confidence}
-              </span>
-            </div>
+            {/* D-2: rendered only when the AI response actually carried a
+                confidence value. It used to print a hardcoded "96%". */}
+            {data.confidence ? (
+              <div className="flex items-center gap-1">
+                <span className="text-[8px] uppercase font-black text-slate-450">Confidence:</span>
+                <span className="ds-button-success text-[10px] font-black text-emerald-400  /10 px-1.5 py-0.5 rounded">
+                  {data.confidence}
+                </span>
+              </div>
+            ) : null}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
@@ -156,7 +184,7 @@ export default function JobCardPreview({
                 </div>
                 <div>
                   <span className="text-[8px] text-slate-500 uppercase tracking-wider block font-bold">Warranty Details</span>
-                  <span className="text-slate-200 font-semibold">{data.warranty}</span>
+                  <OptionalFact value={data.warranty} />
                 </div>
               </div>
             </div>
@@ -169,18 +197,20 @@ export default function JobCardPreview({
               <div className="space-y-2">
                 <div>
                   <span className="text-[8px] text-slate-500 uppercase tracking-wider block font-bold">Field Service Bulletins (FSB)</span>
-                  <span className="text-slate-200 font-semibold">{data.fsb}</span>
+                  <OptionalFact value={data.fsb} />
                 </div>
                 <div>
                   <span className="text-[8px] text-slate-500 uppercase tracking-wider block font-bold">Recall Campaigns</span>
-                  <span className="text-slate-200 font-semibold">{data.campaign}</span>
+                  <OptionalFact value={data.campaign} />
                 </div>
-                <div>
-                  <span className="text-[8px] text-slate-500 uppercase tracking-wider block font-bold">Override Status</span>
-                  <span className="text-slate-200 font-mono font-bold text-[9px] bg-slate-800 px-1 py-0.5 rounded border border-slate-700">
-                    {data.overrideStatus}
-                  </span>
-                </div>
+                {data.overrideStatus ? (
+                  <div>
+                    <span className="text-[8px] text-slate-500 uppercase tracking-wider block font-bold">Override Status</span>
+                    <span className="text-slate-200 font-mono font-bold text-[9px] bg-slate-800 px-1 py-0.5 rounded border border-slate-700">
+                      {data.overrideStatus}
+                    </span>
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -192,15 +222,15 @@ export default function JobCardPreview({
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div>
                   <span className="text-[8px] text-slate-500 uppercase tracking-wider block font-bold">Advisor Rec</span>
-                  <span className="text-slate-200 font-semibold block mt-0.5">{data.advisorRecommendation}</span>
+                  <span className="block mt-0.5"><OptionalFact value={data.advisorRecommendation} /></span>
                 </div>
                 <div>
                   <span className="text-[8px] text-slate-500 uppercase tracking-wider block font-bold">Technician Rec</span>
-                  <span className="text-slate-200 font-semibold block mt-0.5">{data.technicianRecommendation}</span>
+                  <span className="block mt-0.5"><OptionalFact value={data.technicianRecommendation} /></span>
                 </div>
                 <div>
                   <span className="text-[8px] text-slate-500 uppercase tracking-wider block font-bold">Bay Rec</span>
-                  <span className="text-slate-200 font-semibold block mt-0.5">{data.bayRecommendation}</span>
+                  <span className="block mt-0.5"><OptionalFact value={data.bayRecommendation} /></span>
                 </div>
                 <div>
                   <span className="text-[8px] text-slate-500 uppercase tracking-wider block font-bold">Predicted TAT</span>
@@ -210,15 +240,21 @@ export default function JobCardPreview({
             </div>
           </div>
 
-          {/* Explainability & Justification */}
-          <div className="bg-slate-950 border border-slate-850 p-3 rounded-lg space-y-1">
-            <span className="text-[8px] uppercase font-black text-emerald-400 tracking-wider block">
-              💡 Explainability Justification
-            </span>
-            <p className="text-[10px] text-slate-350 leading-relaxed italic">
-              {data.explainability}
-            </p>
-          </div>
+          {/* Explainability & Justification.
+              D-2: this whole block is suppressed when no analysis ran. It used
+              to fall back to a canned paragraph describing "drivetrain
+              telemetry and past recall configurations" that was displayed even
+              when no AI call had been made. */}
+          {data.explainability ? (
+            <div className="bg-slate-950 border border-slate-850 p-3 rounded-lg space-y-1">
+              <span className="text-[8px] uppercase font-black text-emerald-400 tracking-wider block">
+                💡 Explainability Justification
+              </span>
+              <p className="text-[10px] text-slate-350 leading-relaxed italic">
+                {data.explainability}
+              </p>
+            </div>
+          ) : null}
         </div>
 
         {/* Original Complaint Log */}

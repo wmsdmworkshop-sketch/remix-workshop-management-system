@@ -834,6 +834,9 @@ export default function App() {
   const [bays, setBays] = useState<Bay[]>([]);
   const [srTypes, setSrTypes] = useState<SRType[]>([]);
   const [jobCards, setJobCards] = useState<JobCard[]>([]);
+  // P1/D-6: set when a workshop-data load fails, so screens can distinguish
+  // "the request failed" from "there is nothing here".
+  const [dataLoadError, setDataLoadError] = useState<string | null>(null);
   const [allocations, setAllocations] = useState<JobTechnicianMap[]>([]);
   const [revenues, setRevenues] = useState<JobRevenue[]>([]);
   const [splitDetails, setSplitDetails] = useState<JobRevenueSplitDetail[]>([]);
@@ -906,6 +909,10 @@ export default function App() {
   // Fetch all database state from server
   const fetchAllData = async (authToken?: string) => {
     const activeToken = authToken || token;
+    // P1/D-6: a failed load used to be logged to the console only, so the Job
+    // Cards list rendered its "no job cards" empty state — a failed fetch was
+    // indistinguishable from a genuinely empty workshop.
+    setDataLoadError(null);
     if (!activeToken) {
       console.warn("Skipping fetchAllData: No active token available.");
       return;
@@ -984,8 +991,11 @@ export default function App() {
       const alertJson = await alertRes.json();
       console.log("/api/alerts", alertJson);
       setAlertLogs(Array.isArray(alertJson) ? alertJson : []);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error loading workshop data from server:", error);
+      setDataLoadError(
+        error?.message ? `Could not load workshop data: ${error.message}` : "Could not load workshop data."
+      );
     }
   };
 
@@ -1203,13 +1213,17 @@ export default function App() {
       if (res.ok) {
         fetchAllData();
         showToast("Technicians assigned successfully.", "success");
-      } else {
-        const err = await res.json().catch(() => ({ error: "Unknown error" }));
-        showToast(`Failed to assign technicians: ${err.error || res.statusText}`, "error");
+        return true;
       }
+      const err = await res.json().catch(() => ({ error: "Unknown error" }));
+      showToast(`Failed to assign technicians: ${err.error || res.statusText}`, "error");
+      // P1/D-5: the caller announced success regardless of the outcome. It now
+      // depends on this returned value.
+      return false;
     } catch (e: any) {
       console.error(e);
       showToast("Network error assigning technicians.", "error");
+      return false;
     }
   };
 
@@ -1223,13 +1237,16 @@ export default function App() {
       if (res.ok) {
         fetchAllData();
         showToast("Revenue calculated and saved.", "success");
-      } else {
-        const err = await res.json().catch(() => ({ error: "Unknown error" }));
-        showToast(`Revenue calculation failed: ${err.error || res.statusText}`, "error");
+        return true;
       }
+      const err = await res.json().catch(() => ({ error: "Unknown error" }));
+      showToast(`Revenue calculation failed: ${err.error || res.statusText}`, "error");
+      // P1/D-5: see above — the caller now reports only what happened.
+      return false;
     } catch (e: any) {
       console.error(e);
       showToast("Network error calculating revenue.", "error");
+      return false;
     }
   };
 
@@ -1690,6 +1707,8 @@ export default function App() {
           {activeTab === "jobs" && (
             <JobCardManager 
               jobCards={jobCards || []}
+              dataLoadError={dataLoadError}
+              onRetryLoad={() => fetchAllData()}
               bays={bays || []}
               srTypes={srTypes || []}
               employees={employees || []}

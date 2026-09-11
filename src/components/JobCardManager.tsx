@@ -52,12 +52,20 @@ interface JobCardManagerProps {
   onCreateJob: (jobData: Partial<JobCard>) => void;
   onUpdateJob: (id: number, updatedFields: Partial<JobCard>) => void;
   onUpdateJobStatus: (id: number, status: JobCard["status"]) => void;
-  onAssignTechnicians: (id: number, allocs: { employee_id: number; tech_role: string }[]) => void;
-  onCalculateRevenue: (id: number, labour: number, parts: number) => void;
+  // P1/D-5: these returned void, so the caller could not know whether the write
+  // succeeded and announced success unconditionally. They now resolve to a
+  // boolean (false = failed); `void` stays accepted for callers that predate
+  // this and are treated as "not known to have failed".
+  onAssignTechnicians: (id: number, allocs: { employee_id: number; tech_role: string }[]) => void | boolean | Promise<void | boolean>;
+  onCalculateRevenue: (id: number, labour: number, parts: number) => void | boolean | Promise<void | boolean>;
   onRaiseCarryForward: (id: number, reason: string) => void;
   onRaiseRework: (id: number, reason: string, originalTechId: number) => void;
   /** Permanently deletes a job card. Admin/GM/developer only — gated in the UI below too. */
   onDeleteJob?: (id: number, reason: string) => void;
+  // P1/D-6: set when the workshop-data load failed, so the list can show an
+  // error rather than an empty state.
+  dataLoadError?: string | null;
+  onRetryLoad?: () => void;
   selectedJobExternal: JobCard | null;
   currentUserRole?: string;
   currentUser?: User | null;
@@ -84,6 +92,8 @@ export default function JobCardManager({
   onRaiseCarryForward,
   onRaiseRework,
   onDeleteJob,
+  dataLoadError = null,
+  onRetryLoad,
   selectedJobExternal,
   currentUserRole = "workshop_manager",
   currentUser,
@@ -248,9 +258,12 @@ export default function JobCardManager({
     return null;
   };
 
-  const getWaitingDays = (job: JobCard) => {
+  // P1/D-7: returned 0 both when the start date was missing and when the
+  // calculation threw — indistinguishable from a genuine same-day job. It now
+  // returns null when the value cannot be computed; 0 means a real zero.
+  const getWaitingDays = (job: JobCard): number | null => {
     const startStr = job.date_in || (job.created_at ? job.created_at.split("T")[0] : "");
-    if (!startStr) return 0;
+    if (!startStr) return null;
     const endStr = job.date_completed || (job.completed_at ? job.completed_at.split("T")[0] : new Date().toISOString().split("T")[0]);
     try {
       const start = new Date(startStr);
@@ -259,7 +272,7 @@ export default function JobCardManager({
       const diffDays = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
       return diffDays;
     } catch {
-      return 0;
+      return null;
     }
   };
 
@@ -282,10 +295,13 @@ export default function JobCardManager({
           const m = diffMins % 60;
           return `${h}h ${m}m`;
         } catch {
-          return "Active";
+          // P1/D-7: returned the literal "Active", which rendered in the
+          // "Actual Time Taken" cell and read as live data rather than as a
+          // failure to compute.
+          return "—";
         }
       }
-      return "Active";
+      return "—";
     }
 
     try {
@@ -858,9 +874,18 @@ export default function JobCardManager({
     }
   }, [employees]);
 
-  // Revenue Form states
-  const [labourAmount, setLabourAmount] = useState(3500);
-  const [partsAmount, setPartsAmount] = useState(1200);
+  // Revenue Form states.
+  //
+  // P1/D-3: these were seeded with 3500/1200 here and overwritten with
+  // 3000/1000 for any job without a saved revenue row, so a manager opening a
+  // fresh job saw invented money pre-filled in editable fields with nothing
+  // marking it as a placeholder.
+  //
+  // They are now empty strings, NOT 0 — an unknown amount must stay
+  // distinguishable from a genuine zero, and an untouched field must never
+  // submit 0 or overwrite a stored amount (see handleCalculateRevSplit).
+  const [labourAmount, setLabourAmount] = useState<string>("");
+  const [partsAmount, setPartsAmount] = useState<string>("");
 
   // Carry Forward / Rework inputs
   const [showCfForm, setShowCfForm] = useState(false);
@@ -924,8 +949,10 @@ export default function JobCardManager({
       setTechnicianName(aiSuggestions.technician_name || "");
       
       // Pre-populate estimates if state matches
-      setLabourAmount(aiSuggestions.labor_price || 1500);
-      setPartsAmount(aiSuggestions.parts_price || 500);
+      // P1/D-3: fell back to 1500/500 when the AI returned no price, filling
+      // money fields with invented amounts. Absent stays blank.
+      setLabourAmount(aiSuggestions.labor_price != null ? String(aiSuggestions.labor_price) : "");
+      setPartsAmount(aiSuggestions.parts_price != null ? String(aiSuggestions.parts_price) : "");
       
       // Append diagnostic analysis to special remarks
       setCreateRemarks((prev) => {
@@ -934,8 +961,10 @@ export default function JobCardManager({
       });
     } else {
       // For editing or detail calculations
-      setLabourAmount(aiSuggestions.labor_price || 1500);
-      setPartsAmount(aiSuggestions.parts_price || 500);
+      // P1/D-3: fell back to 1500/500 when the AI returned no price, filling
+      // money fields with invented amounts. Absent stays blank.
+      setLabourAmount(aiSuggestions.labor_price != null ? String(aiSuggestions.labor_price) : "");
+      setPartsAmount(aiSuggestions.parts_price != null ? String(aiSuggestions.parts_price) : "");
       // We can also append suggestions to the active description
       if (selectedJob) {
         onUpdateJob(selectedJob.job_id, {
@@ -1095,11 +1124,12 @@ export default function JobCardManager({
       // Load revenue if already calculated
       const rev = revenues.find(r => r.job_id === selectedJob.job_id);
       if (rev) {
-        setLabourAmount(rev.labour_amount);
-        setPartsAmount(rev.parts_amount);
+        setLabourAmount(rev.labour_amount != null ? String(rev.labour_amount) : "");
+        setPartsAmount(rev.parts_amount != null ? String(rev.parts_amount) : "");
       } else {
-        setLabourAmount(3000);
-        setPartsAmount(1000);
+        // No saved revenue: leave both blank. Previously seeded 3000/1000.
+        setLabourAmount("");
+        setPartsAmount("");
       }
     }
   }, [selectedJob, allocations, revenues]);
@@ -1206,22 +1236,35 @@ export default function JobCardManager({
   const [showComplaintHistoryModal, setShowComplaintHistoryModal] = useState(false);
   useEscapeKey(() => setShowComplaintHistoryModal(false), showComplaintHistoryModal);
   const [complaintHistoryList, setComplaintHistoryList] = useState<any[]>([]);
+  // P1/D-6: distinguishes a failed history fetch from a genuinely empty ledger.
+  const [complaintHistoryError, setComplaintHistoryError] = useState<string | null>(null);
   const [loadingComplaintHistory, setLoadingComplaintHistory] = useState(false);
 
   const openComplaintHistoryModal = async (jobId: number) => {
     setShowComplaintHistoryModal(true);
     setLoadingComplaintHistory(true);
     try {
+      // P1/D-6: a failed fetch used to set [] , which rendered "No version
+      // history recorded yet. The current complaint is Version 1." — asserting
+      // a fact about the record when the truth was simply unknown.
+      setComplaintHistoryError(null);
       const res = await fetch(`/api/job-cards/${jobId}/complaint-history`);
+      if (!res.ok) {
+        setComplaintHistoryList([]);
+        setComplaintHistoryError(`Could not load complaint history (${res.status}).`);
+        return;
+      }
       const data = await res.json();
       if (data.success) {
         setComplaintHistoryList(data.history || []);
       } else {
         setComplaintHistoryList([]);
+        setComplaintHistoryError(data.error || "Could not load complaint history.");
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Fetch complaint history failed:", e);
       setComplaintHistoryList([]);
+      setComplaintHistoryError(e?.message ? `Could not load complaint history: ${e.message}` : "Could not load complaint history.");
     } finally {
       setLoadingComplaintHistory(false);
     }
@@ -1340,15 +1383,42 @@ export default function JobCardManager({
     setAssignedStaff(assignedStaff.filter(s => s.employee_id !== empId));
   };
 
-  const handleSaveAllocations = () => {
+  // P1/D-5: both handlers announced success unconditionally, before the request
+  // had returned. They now await the result and report only what actually
+  // happened; a failure surfaces instead of a success message.
+  const handleSaveAllocations = async () => {
     if (!selectedJob) return;
-    onAssignTechnicians(selectedJob.job_id, assignedStaff);
+    const ok = await onAssignTechnicians(selectedJob.job_id, assignedStaff);
+    if (ok === false) {
+      alert("Could not allocate technicians. Nothing was saved — see the error above.");
+      return;
+    }
     alert("Technicians allocated successfully.");
   };
 
-  const handleCalculateRevSplit = () => {
+  const handleCalculateRevSplit = async () => {
     if (!selectedJob) return;
-    onCalculateRevenue(selectedJob.job_id, labourAmount, partsAmount);
+
+    // P1/D-3: an empty field must never be submitted as 0, and must never
+    // overwrite a stored amount. Refuse rather than silently zeroing.
+    const labourRaw = String(labourAmount).trim();
+    const partsRaw = String(partsAmount).trim();
+    if (labourRaw === "" || partsRaw === "") {
+      alert("Enter both the labour and parts amounts before calculating the split. Blank fields are not treated as zero.");
+      return;
+    }
+    const labourNum = Number(labourRaw);
+    const partsNum = Number(partsRaw);
+    if (!Number.isFinite(labourNum) || !Number.isFinite(partsNum) || labourNum < 0 || partsNum < 0) {
+      alert("Labour and parts amounts must be valid, non-negative numbers.");
+      return;
+    }
+
+    const ok = await onCalculateRevenue(selectedJob.job_id, labourNum, partsNum);
+    if (ok === false) {
+      alert("Could not calculate the revenue split. Nothing was saved — see the error above.");
+      return;
+    }
     alert("Revenue split calculated and locked successfully!");
   };
 
@@ -1487,7 +1557,35 @@ export default function JobCardManager({
         )}
 
         <div className="space-y-3 pt-1">
-          {filteredJobCards.map((job) => {
+          {/* P1/D-6: this was a bare .map(). A failed load and a genuinely empty
+              workshop both rendered an unexplained blank column. The three
+              states are now distinct, and the error case never claims there are
+              no job cards. */}
+          {dataLoadError ? (
+            <div className="p-4 rounded-lg border border-red-200 bg-red-50 text-center space-y-2" role="alert">
+              <p className="text-xs font-bold text-red-700">{dataLoadError}</p>
+              <p className="text-[11px] text-red-600">
+                Job cards could not be loaded. This is not the same as there being none.
+              </p>
+              {onRetryLoad && (
+                <button
+                  type="button"
+                  onClick={() => onRetryLoad()}
+                  className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider rounded-lg border border-red-300 text-red-700 hover:bg-red-100 cursor-pointer"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          ) : filteredJobCards.length === 0 ? (
+            <div className="p-4 rounded-lg border border-dashed border-slate-200 text-center">
+              <p className="text-xs font-semibold text-slate-500">
+                {jobCards.length === 0
+                  ? "No job cards yet."
+                  : "No job cards match these filters."}
+              </p>
+            </div>
+          ) : filteredJobCards.map((job) => {
             const isSelected = selectedJob?.job_id === job.job_id;
             const srType = srTypes.find(s => s.sr_type_id === job.sr_type_id);
             
@@ -1843,7 +1941,11 @@ export default function JobCardManager({
                 <div className="border-b border-slate-200/60 pb-2.5">
                   <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Waiting Days</span>
                   <p className="font-bold text-slate-800 mt-0.5">
-                    {getWaitingDays(selectedJob)} {getWaitingDays(selectedJob) === 1 ? 'day' : 'days'}
+                    {(() => {
+                      const d = getWaitingDays(selectedJob);
+                      // D-7: an uncomputable value renders as an em dash, never 0.
+                      return d === null ? "—" : `${d} ${d === 1 ? "day" : "days"}`;
+                    })()}
                   </p>
                 </div>
 
@@ -2100,10 +2202,18 @@ export default function JobCardManager({
                           );
                         })}
                       </div>
-                      <div className="border-t border-orange-500/10 pt-1.5 flex items-center justify-between text-xs font-bold text-slate-800 uppercase tracking-wider">
-                        <span>Total Split Share</span>
-                        <span>₹{selectedJobRevenue?.labour_amount.toLocaleString()} (Labour)</span>
-                      </div>
+                      {/* P1/D-4: this row was labelled "Total Split Share" but
+                          rendered `labour_amount` — the labour invoice figure,
+                          not a sum of the split rows — and the `?.` guarded the
+                          revenue object rather than the amount, so a NULL
+                          labour_amount threw.
+
+                          Per the approved packet the row is WITHHELD rather than
+                          relabelled: what this total should mean is unresolved
+                          pending the revenue record-classification decision
+                          (DEC-1). Relabelling alone would have concealed that.
+                          Restore it once the definition is settled — summing
+                          `selectedJobSplits` if it means allocated total. */}
                     </div>
                   )}
                 </div>
@@ -3281,16 +3391,40 @@ export default function JobCardManager({
                 const reworkCount = jobCards.filter(j => j.vrn.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") === cleanVrn && (j.rework_count && j.rework_count > 0)).length;
                 return reworkCount > 0 ? `YES (${reworkCount} previous rework cycles detected)` : "NO (Clean service trail)";
               })(),
-              warranty: vehicleModel.toLowerCase().includes("ev") ? "Active EV Drivetrain Warranty (8 Years / 150k km)" : "Standard Tata Motors Warranty (3 Years / 100k km)",
-              fsb: vehicleModel.toLowerCase().includes("ev") ? "FSB-2026-03: Heavy Axle Alignment Inspection Guidelines" : "FSB-2025-01: Engine Oil Pressure Check Guidelines",
-              campaign: vehicleModel.toLowerCase().includes("ev") ? "DEF Quality Sensor Software Flash Recall Campaign" : "No active recall campaigns for this model.",
-              advisorRecommendation: serviceAdvisor || "Arnaud Kumar (EV Specialist)",
-              technicianRecommendation: aiSuggestions?.technician_name || technicianName || "Sanjay Patel (Recommended)",
-              bayRecommendation: (aiSuggestions ? bays.find(b => b.bay_id === aiSuggestions.bay_id)?.bay_name : null) || bays.find(b => b.bay_id === bayId)?.bay_name || bayNo || "Bay 3 (EV specialized)",
+              // P1/D-1: warranty, FSB and recall campaign were chosen by whether
+              // the model name contained "ev" — inventing warranty terms, a
+              // bulletin number and a recall campaign from a substring match.
+              // There is no warranty, FSB or campaign data source in this
+              // component, so nothing is sent and the preview shows
+              // "Not recorded".
+              warranty: null,
+              fsb: null,
+              campaign: null,
+              // P1/D-1: the fallbacks here were fabricated people and a bay
+              // ("Arnaud Kumar (EV Specialist)", "Sanjay Patel (Recommended)",
+              // "Bay 3 (EV specialized)"). Real values only; absent otherwise.
+              advisorRecommendation: serviceAdvisor || null,
+              technicianRecommendation: aiSuggestions?.technician_name || technicianName || null,
+              bayRecommendation:
+                (aiSuggestions ? bays.find(b => b.bay_id === aiSuggestions.bay_id)?.bay_name : null) ||
+                bays.find(b => b.bay_id === bayId)?.bay_name ||
+                bayNo ||
+                null,
               predictedTat: aiSuggestions?.predicted_tat || calculatedTat,
-              confidence: aiSuggestions ? "96%" : "91%",
-              explainability: aiSuggestions?.scenario_analysis || "The Gemma-4 prediction model recommended EV specialised diagnostic bays and technicians based on drivetrain telemetry and past recall configurations for this vehicle class.",
-              overrideStatus: aiSuggestions ? (bayId !== aiSuggestions.bay_id || (technicianName && !aiSuggestions.technician_name?.includes(technicianName)) ? "Overridden by Supervisor (Manual Adjustments)" : "AI Guided Optimization Approved") : "AI Guided Optimization Approved"
+              // P1/D-2: this was the string literal "96%" / "91%" — nothing
+              // computed it. Only a confidence the AI actually returned is
+              // shown; the preview omits the badge entirely when absent.
+              confidence: aiSuggestions?.confidence != null ? String(aiSuggestions.confidence) : null,
+              // P1/D-2: the fallback paragraph about "drivetrain telemetry and
+              // past recall configurations" rendered as AI reasoning even when
+              // no AI call had been made.
+              explainability: aiSuggestions?.scenario_analysis || null,
+              // Only meaningful when an AI suggestion exists to override.
+              overrideStatus: aiSuggestions
+                ? (bayId !== aiSuggestions.bay_id || (technicianName && !aiSuggestions.technician_name?.includes(technicianName))
+                    ? "Overridden by Supervisor (Manual Adjustments)"
+                    : "AI Guided Optimization Approved")
+                : null
             }}
             onClose={() => setShowPreviewSlip(false)}
           />
@@ -3804,6 +3938,13 @@ export default function JobCardManager({
                 <div className="py-12 text-center text-xs font-semibold text-slate-500 flex flex-col items-center gap-2">
                   <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
                   <span>Loading complaint version ledger...</span>
+                </div>
+              ) : complaintHistoryError ? (
+                <div className="py-12 text-center text-xs font-semibold text-red-700 bg-red-50 rounded-lg border border-red-200" role="alert">
+                  {complaintHistoryError}
+                  <span className="block mt-1 font-normal text-red-600">
+                    The version history is unknown — this is not a statement that none exists.
+                  </span>
                 </div>
               ) : complaintHistoryList.length === 0 ? (
                 <div className="py-12 text-center text-xs font-semibold text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-200">

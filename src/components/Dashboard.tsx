@@ -67,7 +67,9 @@ interface DashboardProps {
   // former standalone tab.
   allocations?: any[];
   onUpdateJob?: (id: number, updatedFields: Partial<any>) => Promise<void>;
-  onAssignTechnicians?: (id: number, allocs: any[]) => Promise<void>;
+  // P1/D-5: widened to carry the write outcome through to JobCardManager,
+  // which now reports success only when the request actually succeeded.
+  onAssignTechnicians?: (id: number, allocs: any[]) => Promise<void | boolean>;
   onResolveCarryForward?: (...args: any[]) => any;
   onResolveRework?: (id: number, status: "Approved" | "Rejected") => Promise<void>;
   onRaiseCarryForward?: (id: number, reason: string) => Promise<void>;
