@@ -851,7 +851,11 @@ export default function Dashboard({
           alertLogs={alerts}
           onRefresh={onRefresh || (() => {})}
           onUpdateJob={onUpdateJob || (async () => {})}
-          onAssignTechnicians={onAssignTechnicians || (async () => {})}
+          /* P1/D-5: this fallback returned undefined, which JobCardManager
+             treats as "not known to have failed" — so a no-op would have
+             announced "Technicians allocated successfully." Returning false
+             makes the no-op report failure instead. */
+          onAssignTechnicians={onAssignTechnicians || (async () => false)}
           onResolveCarryForward={onResolveCarryForward || (() => {})}
           onResolveRework={onResolveRework || (async () => {})}
           onRaiseCarryForward={onRaiseCarryForward || (async () => {})}
