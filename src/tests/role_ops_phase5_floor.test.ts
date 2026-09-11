@@ -102,10 +102,27 @@ describe("Phase 5 — Floor Control, Bay/Technician Allocation & Real-Time Repai
     expect(work.currentJob).toBeNull();
   });
 
-  it("13. START REPAIR TIMER: Generates server timestamp and updates status to IN_PROGRESS", async () => {
-    const timer = await floorExecutionEngine.startRepairTimer("EXEC-501", techUser.userId);
-    expect(timer.success).toBe(true);
-    expect(timer.startedAt).toBeDefined();
+  // This test previously asserted that starting a NON-EXISTENT work item
+  // succeeds. It passed only because startRepairTimer wrapped its UPDATE in
+  // `catch (e) {}` and returned success:true unconditionally — the UPDATE
+  // matched zero rows every time, because nothing in the codebase ever
+  // INSERTed into tbl_repair_executions (the table is empty in production and
+  // no technician timer has ever actually run). The test encoded the bug.
+  //
+  // startRepairTimer is now the technician's ACCEPT gate: it verifies the work
+  // item exists, that the caller is the assigned technician, and that it is not
+  // already started or completed — and started_at is the only point the SLA
+  // clock begins, so a technician holding several allocated jobs is not judged
+  // late on work he has not physically picked up.
+  // The assertion is simply that it REFUSES — it must not report success for
+  // work that was never created. Against this empty test schema the refusal
+  // arrives as a missing-table error rather than EXECUTION_NOT_FOUND (the
+  // suite provisions no fixtures); either is a genuine refusal. What must
+  // never happen again is the old `success: true` on a zero-row UPDATE.
+  it("13. START REPAIR TIMER: Refuses to start a work item that does not exist", async () => {
+    await expect(
+      floorExecutionEngine.startRepairTimer("EXEC-DOES-NOT-EXIST", techUser.userId)
+    ).rejects.toThrow();
   });
 
   it("14. PAUSE REPAIR TIMER: Mandates controlled pause reason", async () => {
