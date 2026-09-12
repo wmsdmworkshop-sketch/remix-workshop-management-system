@@ -1,9 +1,9 @@
 {
-  "version": "1.0.0 GA",
-  "release": "DWIP V1 RC2.1",
-  "commit": "3a1dcd941b8fda890ffae46700f46d4ea597d2c8",
-  "shortCommit": "3a1dcd9",
-  "buildTime": "2026-07-25T11:45:00.000Z",
+  "version": "v1.5",
+  "release": "DWIP v1.5",
+  "commit": "47d470139e49434d39bf0762ed3ffe5afdb4cb91",
+  "shortCommit": "47d4701",
+  "buildTime": "2026-09-12T16:45:31+05:30",
   "environment": "production",
-  "buildNumber": "73"
+  "buildNumber": "126"
 }

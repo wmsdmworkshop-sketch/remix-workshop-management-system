@@ -1510,9 +1510,9 @@ async function startServer() {
       status: "ok", 
       time: new Date().toISOString(),
       buildInfo: {
-        version: "v1.1.0-rc.1",
+        version: "v1.5",
         cloudRunRevision: process.env.K_REVISION || null,
-        gitCommit: process.env.GIT_COMMIT || "ff483d3",
+        gitCommit: process.env.GIT_COMMIT || "47d4701",
         environment: process.env.NODE_ENV || "production"
       },
       services: {
