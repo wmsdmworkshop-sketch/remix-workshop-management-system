@@ -37,11 +37,17 @@ export const DEFAULT_TAB = "dashboard";
 const NON_APP_PREFIXES = [
   "/api",
   "/uploads",
-  "/portal",
+  // The customer portal is a separate build served from here by Express.
   "/customer-portal",
   "/service-assist",
   "/assets",
 ];
+// NOTE: "/portal" was listed here and has been removed. Express serves nothing
+// at that path — the portal lives at /customer-portal/ — so /portal fell to the
+// SPA catch-all and returned the WORKSHOP bundle. Treating it as server-owned
+// made the router leave it alone, which meant it rendered as the default tab
+// under a URL that names a different application. It is now an ordinary
+// unrecognised path: the role guard redirects it like any other.
 
 /** True when this path belongs to the server, not to the React application. */
 export function isNonAppPath(pathname: string): boolean {
