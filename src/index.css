@@ -1,16 +1,50 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&display=swap');
+/* The Google Fonts @import that used to sit here has been REMOVED.
+   index.html already loads the identical font set (same four families, same
+   weights) with preconnect hints, so every page fetched it twice. The HTML link
+   is the better of the two: a CSS @import is only discovered once the stylesheet
+   has been parsed, which makes it render-blocking and serialised behind it,
+   while the HTML version starts the connection early. Deleting the duplicate
+   removes a blocking request and changes nothing visually. */
 @import "tailwindcss";
 
-/* ── DWIP Enterprise Font Fallback & Theme System ── */
+/* ── DWIP Enterprise Font Fallback & Theme System ──
+   Note: this block used to also declare `font-family: 'Inter'` and
+   `font-display: swap` on :root. Both were dead. The font-family was overridden
+   unconditionally by the `html, body, #root` rule further down, which sets
+   'Plus Jakarta Sans' with !important — so :root's value was never in effect.
+   `font-display` is a @font-face descriptor, not an inheritable property, so on
+   :root it did nothing at all. The rendering hints below are real and are kept,
+   though the same rule below repeats them. */
 :root {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  font-display: swap;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Theme Engine Variable Classes */
+/* Theme Engine Variable Classes.
+   Applied by applyTheme() in services/themeEngine.ts, which adds
+   `theme-<name>` to <html> (EnterpriseGateway calls it on mount and on change).
+   The class names are built by template literal, so a plain text search for
+   them in the components finds nothing — they ARE reachable.
+
+   TWO KNOWN GAPS, both left alone deliberately because fixing either is a
+   design decision rather than a cleanup:
+
+   1. themeEngine declares SIX themes — the four below plus `compact` and
+      `glass` — but only these four have any CSS. Selecting either of the other
+      two adds a class no rule matches, so nothing changes. What they should
+      look like is described only in prose in THEME_CONFIGS; inventing a look
+      would be worse than the honest no-op.
+
+   2. NONE of these four actually take effect. The `html, body, #root` rule
+      further down sets background-color and color with !important, which beats
+      these rules whatever their specificity or order — verified in the built
+      CSS, where the !important rule is emitted after them. So the theme
+      switcher writes the preference, applies the class, and the page does not
+      change. Making them work means removing !important from that rule, which
+      would let the 180 light-background containers noted in the audit take
+      effect at once — a visual change across the whole app, not a fix to make
+      unasked. */
 html.theme-enterprise-dark {
   color-scheme: dark;
   background-color: #020617;
