@@ -66,6 +66,28 @@ export interface WorkforceAttendance {
   overtime_hours?: number;
 }
 
+/**
+ * A workshop bay as served by GET /api/bays — i.e. a row of the `bays` table.
+ *
+ * bay_id is a NUMBER here and that is correct, despite there being a second bay
+ * table with string ids. The workshop keeps two:
+ *
+ *   bays      bay_id INT (1..16)        — this interface; what /api/bays serves,
+ *                                         and what job_card_master.bay_id
+ *                                         (int unsigned) references
+ *   tbl_bays  bay_id VARCHAR ("B01")    — the floor engine's live occupancy and
+ *                                         allocation record
+ *
+ * They are not duplicates; they are two halves of a split that was never
+ * finished. Repointing this interface (or /api/bays) at tbl_bays would break
+ * every `j.bay_id === bay.bay_id` join — Dashboard bay occupancy,
+ * ActiveBayTatMonitor and WorkshopDashboard all do exactly that, and a number
+ * never equals "B01".
+ *
+ * `status` is the BAY vocabulary ('Idle' | 'Active' | 'Carry Forward'), which is
+ * unrelated to JobCard.status. Left as `string` because migration 020's roster
+ * and the legacy rows do not yet agree on a closed set.
+ */
 export interface Bay {
   bay_id: number;
   bay_code: string;
