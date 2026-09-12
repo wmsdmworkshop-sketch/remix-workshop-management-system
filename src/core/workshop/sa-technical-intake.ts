@@ -621,6 +621,38 @@ export class SaTechnicalIntakeEngine {
       ]
     );
 
+    // CLOSE THE MANAGER ASSIGNMENT.
+    //
+    // getSaAssignedQueue() selects tbl_manager_assignment rows WHERE
+    // status = 'ASSIGNED'. Nothing ever moved a row off that value — there was
+    // no UPDATE of this table anywhere in the codebase — so every vehicle an
+    // advisor had ever been assigned stayed in their queue permanently, even
+    // after the intake completed and the job went to the floor. All 197 rows in
+    // production were 'ASSIGNED'.
+    //
+    // That is why an advisor could finish an intake, see the "sent to floor"
+    // confirmation (which was truthful — tbl_sa_intake really did reach
+    // SENT_TO_FLOOR), and still find the same vehicle waiting in the list.
+    //
+    // Keyed on gate_entry_id, which is the identity both tables share, and
+    // scoped to ASSIGNED so a re-run cannot disturb a row that has since moved
+    // on. A failure here must not fail the intake — the job card exists and the
+    // floor handoff has happened — but it must be visible, not swallowed.
+    try {
+      await this.execute(
+        `UPDATE tbl_manager_assignment
+            SET status = 'INTAKE_COMPLETED'
+          WHERE gate_entry_id = ? AND status = 'ASSIGNED'`,
+        [payload.gateEntryId]
+      );
+    } catch (e: any) {
+      console.error(
+        `[SaIntake] intake completed for ${payload.gateEntryId} but the manager ` +
+          `assignment could not be closed: ${e.message}. The vehicle will remain ` +
+          `in the advisor's queue until this is resolved.`
+      );
+    }
+
     // An INSERT INTO tbl_job_card stood here, writing an "internal tracking
     // record". It never executed once: tbl_job_card is a 1:1 VIEW over
     // `job_cards` and has none of job_card_id, gate_entry_id, service_type,

@@ -33,6 +33,7 @@ import revenueAutoincrementIds from "./019_revenue_autoincrement_ids.ts";
 import realBayRoster from "./020_real_bay_roster.ts";
 import retireLastInventedBays from "./021_retire_last_invented_bays.ts";
 import iceBaysInBaysTable from "./022_ice_bays_in_bays_table.ts";
+import closeCompletedManagerAssignments from "./023_close_completed_manager_assignments.ts";
 export const allMigrations: Migration[] = [
   baseline,
   modulesMasterSeeding,
@@ -55,5 +56,6 @@ export const allMigrations: Migration[] = [
   revenueAutoincrementIds,
   realBayRoster,
   retireLastInventedBays,
-  iceBaysInBaysTable
+  iceBaysInBaysTable,
+  closeCompletedManagerAssignments
 ];
