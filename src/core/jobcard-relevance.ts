@@ -96,6 +96,28 @@ export function isOwnedBy(jc: any, user: RelevanceUser): boolean {
       if (fullName && t?.technician_name && norm(t.technician_name).includes(fullName)) return true;
     }
   }
+
+  // The ALLOCATED technician, by employee id.
+  //
+  // job_card_master.assigned_to is the column the floor supervisor's allocation
+  // actually writes (floor-execution-engine bridges tbl_job_allocations into it
+  // alongside live_status='FLOOR_ALLOCATED'), and sync.ts loads it onto every
+  // job card. Nothing here read it, so a technician was not an "owner" of the
+  // job they had just been allocated: filterViewableJobCards dropped the card
+  // from /api/job-cards, and their workspace — which filters on
+  // `assigned_to === my employee_id` — could never see it because the card
+  // never arrived.
+  //
+  // Observed: JC-29267 (KA32AA5578) allocated to UMAKANTA, assigned_to=32,
+  // live_status FLOOR_ALLOCATED, job_status In Progress — every downstream
+  // filter satisfied, yet the technician's queue read "No jobs currently
+  // assigned". The name-based checks above did not help: technician_name was
+  // never written for this allocation path.
+  if (user.employee_id != null && jc.assigned_to != null &&
+      Number(jc.assigned_to) === Number(user.employee_id)) {
+    return true;
+  }
+
   return false;
 }
 
