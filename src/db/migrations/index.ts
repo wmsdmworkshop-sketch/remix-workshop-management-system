@@ -28,6 +28,7 @@ import trainingDevelopment from "./014_training_development.ts";
 import grievanceManagement from "./015_grievance_management.ts";
 import jobCardMasterEarlyCreation from "./016_job_card_master_early_creation.ts";
 import repointJobFksToMaster from "./017_repoint_job_fks_to_master.ts";
+import uniqueRevenuePerJob from "./018_unique_revenue_per_job.ts";
 export const allMigrations: Migration[] = [
   baseline,
   modulesMasterSeeding,
@@ -45,5 +46,6 @@ export const allMigrations: Migration[] = [
   trainingDevelopment,
   grievanceManagement,
   jobCardMasterEarlyCreation,
-  repointJobFksToMaster
+  repointJobFksToMaster,
+  uniqueRevenuePerJob
 ];

@@ -568,13 +568,64 @@ async function startServer() {
         return [];
       };
 
-      let revenueIdCounter = 1;
-      let splitDetailIdCounter = 1;
+      // W-6 RESTART-DUPLICATION FIX.
+      //
+      // Demonstrated defect (T-W6-1, isolated environment): this task rebuilt
+      // every revenue row with counters restarting at 1, then persisted through
+      // an upsert keyed on the PRIMARY KEY `revenue_id`. A job whose revenue
+      // already existed under a DIFFERENT id (e.g. 9500, created through the
+      // application path at MAX(id)+1) therefore gained a SECOND row on every
+      // restart, and its labour was counted twice. Verified: job 9002's labour
+      // of 7777 persisted at both revenue_id 2 and 9500 after one restart;
+      // SUM(labour) rose 10,777 -> 18,554 with no new work performed.
+      //
+      // OWNER RULE (a): existing revenue and allocations are AUTHORITATIVE for
+      // startup purposes. This task may fill in jobs that have no revenue row;
+      // it must never overwrite, renumber or duplicate one that exists.
+      //
+      // `job_id` is the authoritative revenue identity — every consumer resolves
+      // a job's revenue with a singular first-match lookup
+      // (JobCardManager.tsx:1128, :1475; server.ts:1384), so the application
+      // already assumes one revenue row per job. That assumption is now enforced
+      // by UNIQUE(job_id) (migration 018) and respected here.
+      //
+      // Existing rows are read FIRST and carried through unchanged, so their
+      // identifiers survive and the counters start above everything already
+      // persisted rather than at 1.
+      const existingRevenueByJob = new Map<number, any>();
+      let maxExistingRevenueId = 0;
+      let maxExistingDetailId = 0;
+      try {
+        const [exRev] = await dbPool.query("SELECT * FROM job_revenues") as any[];
+        for (const r of (exRev || [])) {
+          if (r.job_id != null) existingRevenueByJob.set(Number(r.job_id), r);
+          maxExistingRevenueId = Math.max(maxExistingRevenueId, Number(r.revenue_id) || 0);
+        }
+        const [exDet] = await dbPool.query("SELECT MAX(detail_id) AS m FROM job_revenue_split_details") as any[];
+        maxExistingDetailId = Number(exDet?.[0]?.m || 0);
+      } catch (e: any) {
+        // Cannot establish what already exists -> cannot safely decide what is
+        // missing. Skip the recompute rather than risk duplicating records.
+        console.error("[BACKGROUND] Skipping productivity-split recompute: could not read existing revenue:", e.message);
+        return;
+      }
+
+      let revenueIdCounter = maxExistingRevenueId + 1;
+      let splitDetailIdCounter = maxExistingDetailId + 1;
 
       const jobRevenuesRows: any[] = [];
       const splitDetailsRows: any[] = [];
 
+      // Carry every existing row through untouched: they are authoritative and
+      // must remain in the in-memory collection that is persisted below.
+      const [existingDetails] = await dbPool.query("SELECT * FROM job_revenue_split_details") as any[];
+      for (const r of existingRevenueByJob.values()) jobRevenuesRows.push(r);
+      for (const d of (existingDetails || [])) splitDetailsRows.push(d);
+
       for (const job of jobCards) {
+        // Rule (a): a job that already has revenue is left exactly as it is.
+        if (existingRevenueByJob.has(Number(job.job_id))) continue;
+
         const techsList = getJobTechnicians(job);
         if (techsList.length === 0) continue;
 
