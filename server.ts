@@ -924,17 +924,22 @@ async function startServer() {
           INDEX idx_jcal_actor   (actor_user_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
       `);
-    // Enable MySQL event scheduler (required for the purge event below).
-    try {
-      await dbPool.execute(`SET GLOBAL event_scheduler = ON`);
-    } catch (_) { /* may lack SUPER privilege on managed DB — event still exists */ }
-    await dbPool.execute(`
-        CREATE EVENT IF NOT EXISTS evt_purge_jc_activity_log
-          ON SCHEDULE EVERY 1 DAY
-          STARTS CURRENT_TIMESTAMP
-          DO DELETE FROM jc_activity_log
-             WHERE created_at < DATE_SUB(NOW(), INTERVAL 90 DAY);
-      `);
+    // NOTE ON RETENTION. There used to be a CREATE EVENT here
+    // (evt_purge_jc_activity_log) deleting rows older than 90 days by their own
+    // created_at. Two things were wrong with it:
+    //
+    //   1. It never existed on production. The CREATE EVENT sat behind
+    //      `SET GLOBAL event_scheduler = ON`, which Cloud SQL denies without
+    //      SUPER; the swallowed error meant execution never reached it.
+    //      information_schema.events was empty, so nothing was ever purged.
+    //
+    //   2. Its clock was wrong. Deleting by ROW age strips the early history
+    //      off a job card that is still open — the gate entry and intake
+    //      records of exactly the long-running jobs a dispute is raised about.
+    //
+    // Retention now runs from POST /api/v1/devops/cron/retention on a Cloud
+    // Scheduler trigger, anchored on job-card close, and an open job card is
+    // never purged.
 
     // Gate-out (prod-native, lean). Cashier issues a gate pass = the ANPR exit
     // pre-approval for that VRN; ANPR at exit (or security manually) records the
@@ -2054,9 +2059,11 @@ async function startServer() {
   //     get the actor's name, role and timestamp — which is what answers
   //     "who processed it" — without the network identifier.
   //
-  // RETENTION CAVEAT: jc_activity_log is purged after 90 days by
-  // evt_purge_jc_activity_log. A trail older than that is genuinely gone; this
-  // endpoint reports what remains and never fabricates a missing actor.
+  // RETENTION: the trail is kept for 90 days after the job card CLOSES. While a
+  // job card is open it is retained in full, however long that takes, because a
+  // dispute on a live job is exactly when the early history matters. Once
+  // purged a trail is genuinely gone; this endpoint reports what remains and
+  // never fabricates a missing actor.
   app.get("/api/job-cards/:id/custody", authenticateToken, async (req: any, res: any) => {
     const rawId = String(req.params.id || "").trim();
     if (!rawId) return res.status(400).json({ error: "A job card id or VRN is required." });
@@ -2101,6 +2108,19 @@ async function startServer() {
       }
 
       if (!jc) return res.status(404).json({ error: "Job card not found." });
+
+      // Closure anchors retention: 90 days from close, and an OPEN job card is
+      // never purged. Surfaced so the caller can say which of the two applies
+      // instead of implying a trail was lost.
+      let closedAt: any = null;
+      try {
+        const [cRows]: any = await dbPool.execute(
+          `SELECT COALESCE(gate_out_time, actual_delivery) AS closed_at
+             FROM job_card_master WHERE job_card_id = ? LIMIT 1`,
+          [jc.job_id]
+        );
+        closedAt = cRows?.[0]?.closed_at ?? null;
+      } catch { /* closure date unavailable — reported as open, never as purged */ }
 
       // Owner decision 1: an advisor sees only his own job cards. Fails closed
       // for a role-less caller (canViewJobCard returns false with no role).
@@ -2210,9 +2230,12 @@ async function startServer() {
         edits,
         gm_overrides: overrides,
         // The caller must be able to distinguish "no activity recorded" from
-        // "activity purged after 90 days" rather than presenting an empty
-        // trail as though nothing ever happened.
+        // "activity purged" rather than presenting an empty trail as though
+        // nothing ever happened. The clock starts at closure, so a null
+        // job_closed_at means this job card is open and nothing was purged.
         retention_days: 90,
+        retention_anchor: "job_card_close",
+        job_closed_at: closedAt,
         ip_visible: isAdmin,
       });
     } catch (err: any) {
@@ -2244,6 +2267,7 @@ async function startServer() {
     // admin/developer JWT like any other privileged operation.
     "/api/v1/devops/cron/sla-evaluator", // Cloud Scheduler cron — secured by its own Google-OIDC + x-cloudscheduler check below, not the app JWT
     "/api/v1/devops/cron/attendance-reminder", // Cloud Scheduler cron — same OIDC + x-cloudscheduler check, not the app JWT
+    "/api/v1/devops/cron/retention", // Cloud Scheduler cron — same OIDC + x-cloudscheduler check; close-anchored media/activity retention
   ];
 
   app.use("/api", (req: any, res: any, next: any) => {
@@ -5755,9 +5779,13 @@ time from another field.`;
   });
 
   // DevOps / Scheduled Cron: 90-Day Evidence Retention Worker
+  // Legacy path, kept so an existing scheduler job does not silently 404. It
+  // now runs the CLOSE-ANCHORED purge rather than the capture-time one, which
+  // deleted photographs off job cards that were still open. Prefer
+  // /api/v1/devops/cron/retention, which also purges the activity log.
   app.post("/api/v1/devops/cron/evidence-retention", async (req, res) => {
     try {
-      const result = await evidenceStorageService.markExpiredAsDeleted();
+      const result = await evidenceStorageService.purgeMediaForClosedJobs(90);
       res.json({ success: true, message: "Retention worker completed", ...result });
     } catch (e: any) {
       res.status(500).json({ success: false, error: e.message });
@@ -13318,6 +13346,63 @@ Respond with valid JSON only:
         first_error: firstError,
       });
     } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  /**
+   * RETENTION CRON — close-anchored, for media and the activity log.
+   *
+   * Scheduled by Cloud Scheduler, not by a MySQL EVENT. The original
+   * evt_purge_jc_activity_log was never created on production: its CREATE EVENT
+   * sits behind `SET GLOBAL event_scheduler = ON`, which Cloud SQL denies
+   * without SUPER, and the swallowed error meant execution never reached the
+   * CREATE. information_schema.events was empty, so nothing had ever been
+   * purged. Scheduling this from outside the database avoids that class of
+   * silent no-op entirely.
+   *
+   * BOTH clocks start at job-card CLOSE, never at row age:
+   *
+   *   media          — the binary is removed, all ocr_evidence metadata kept.
+   *   activity log   — jc_activity_log rows are deleted outright.
+   *
+   * A job card with no closure date is OPEN and is never purged, so a dispute
+   * raised on a long-running job still has its full trail. Closure is
+   * COALESCE(gate_out_time, actual_delivery).
+   */
+  app.post("/api/v1/devops/cron/retention", async (req: any, res) => {
+    if (!(await verifyCronRequest(req, res))) return;
+    const days = Math.max(1, Number(req.body?.retention_days) || 90);
+    try {
+      const media = await evidenceStorageService.purgeMediaForClosedJobs(days);
+
+      // Activity log for closed job cards only. Matched on job_card_id and on
+      // job_card_no, because logJcActivity is called with either depending on
+      // the call site.
+      const [alog]: any = await dbPool.execute(
+        `DELETE a FROM jc_activity_log a
+           INNER JOIN job_card_master m
+              ON m.job_card_id = a.job_card_id OR m.job_card_no = a.job_card_no
+          WHERE COALESCE(m.gate_out_time, m.actual_delivery) IS NOT NULL
+            AND COALESCE(m.gate_out_time, m.actual_delivery) < DATE_SUB(NOW(), INTERVAL ? DAY)`,
+        [days]
+      );
+
+      const activityDeleted = alog?.affectedRows || 0;
+      console.log(
+        `[Retention] ${days}d close-anchored: media eligible=${media.eligible} ` +
+          `deleted=${media.mediaDeleted} failed=${media.failed}; activity rows deleted=${activityDeleted}.`
+      );
+      res.json({
+        success: true,
+        retention_days: days,
+        anchor: "job card close (gate_out_time, else actual_delivery); open job cards are never purged",
+        media,
+        activity_log_rows_deleted: activityDeleted,
+        metadata_retained: true,
+      });
+    } catch (e: any) {
+      console.error("[Retention] cron failed:", e.message);
       res.status(500).json({ success: false, error: e.message });
     }
   });

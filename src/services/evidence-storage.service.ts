@@ -295,9 +295,157 @@ export class EvidenceStorageService {
     }
   }
 
+
   /**
-   * 90-Day Retention Worker: Marks expired evidence records as deleted in DB
-   * Metadata is kept permanently for compliance and audit trail.
+   * Delete the stored media file for one evidence record, from whichever
+   * backend holds it. Mirrors uploadImage(): GCS when the URL points at the
+   * bucket, local disk when it is an /uploads path.
+   *
+   * Returns true only when the bytes are gone (or were already gone). A false
+   * return means the caller must NOT mark the record deleted, so a later run
+   * retries rather than losing track of a file that is still on disk.
+   */
+  private async deleteStoredMedia(photoUrl: string | null): Promise<boolean> {
+    if (!photoUrl) return true; // nothing was ever stored
+    if (photoUrl.startsWith("data:")) return true; // placeholder, no file exists
+
+    // GCS object.
+    const gcsPrefix = `https://storage.googleapis.com/${this.bucketName}/`;
+    if (this.bucketName && photoUrl.startsWith(gcsPrefix)) {
+      if (!this.gcsStorage) {
+        console.error("[EvidenceStorage] GCS object cannot be purged: storage client unavailable.");
+        return false;
+      }
+      const objectPath = photoUrl.slice(gcsPrefix.length);
+      try {
+        await this.gcsStorage.bucket(this.bucketName).file(objectPath).delete();
+        return true;
+      } catch (err: any) {
+        // Already absent is success — the retention goal is "bytes are gone".
+        if (err?.code === 404) return true;
+        console.error(`[EvidenceStorage] GCS delete failed for ${objectPath}: ${err.message}`);
+        return false;
+      }
+    }
+
+    // Local disk fallback.
+    if (photoUrl.startsWith("/uploads/ocr-evidence/")) {
+      const relative = photoUrl.replace("/uploads/ocr-evidence/", "");
+      const publicDir = path.resolve(process.cwd(), "public", "uploads", "ocr-evidence");
+      const target = path.resolve(publicDir, relative);
+      // Refuse to touch anything outside the evidence directory.
+      if (!target.startsWith(publicDir + path.sep)) {
+        console.error(`[EvidenceStorage] Refusing to delete outside the evidence directory: ${photoUrl}`);
+        return false;
+      }
+      try {
+        if (fs.existsSync(target)) fs.unlinkSync(target);
+        return true;
+      } catch (err: any) {
+        console.error(`[EvidenceStorage] Local delete failed for ${target}: ${err.message}`);
+        return false;
+      }
+    }
+
+    console.error(`[EvidenceStorage] Unrecognised photo_url form, not purged: ${photoUrl}`);
+    return false;
+  }
+
+  /**
+   * CLOSE-ANCHORED RETENTION.
+   *
+   * Deletes the stored MEDIA for job cards closed more than `retentionDays`
+   * ago, and keeps every metadata row permanently. Disputes are raised while a
+   * job card is still open, so the clock starts when the job closes — never at
+   * capture time.
+   *
+   * WHY THIS REPLACED THE CAPTURE-TIME RULE
+   *
+   * `retention_expiry` is written at capture (captured 2026-08-27 -> expiry
+   * 2026-11-24), and markExpiredAsDeleted() purged on that date regardless of
+   * whether the job was finished. A vehicle in the workshop for six months
+   * would lose its gate photographs while still on the floor — exactly the
+   * evidence a dispute about that job would need. The same defect applied to
+   * jc_activity_log, whose purge deleted per ROW age.
+   *
+   * WHAT COUNTS AS CLOSED
+   *
+   * COALESCE(gate_out_time, actual_delivery): the vehicle physically left,
+   * else the recorded delivery. A job card with NEITHER is treated as OPEN and
+   * is never purged. That is deliberate — the failure direction is retention,
+   * not deletion. At the time of writing 158 of 183 job cards sit at
+   * "In Progress" with no closure date, so this purges almost nothing until
+   * closure is actually recorded in practice.
+   *
+   * WHAT IS KEPT
+   *
+   * Every column of ocr_evidence survives: photo_url (the record of what
+   * existed and where), photo_size_bytes, captured_at, captured_by,
+   * ocr_provider, ocr_result_json and ocr_confidence. Only the binary is
+   * removed, and `is_deleted = 1` records that it was. The metadata remains
+   * permanently available to the audit trail.
+   *
+   * ORDERING
+   *
+   * The file is deleted FIRST and the row marked only on success. Marking
+   * first would lose the pointer to a file that is still on disk, leaving
+   * orphaned media nothing would ever clean up.
+   */
+  public async purgeMediaForClosedJobs(
+    retentionDays = 90
+  ): Promise<{ eligible: number; mediaDeleted: number; failed: number }> {
+    const days = Number.isFinite(retentionDays) && retentionDays > 0 ? Math.floor(retentionDays) : 90;
+    try {
+      // Evidence belonging to a job card closed longer ago than the window.
+      // Joined on job_card_no, which is what ocr_evidence carries.
+      const [rows]: any = await db.execute(
+        `SELECT e.evidence_id, e.photo_url
+           FROM ocr_evidence e
+           INNER JOIN job_card_master m ON m.job_card_no = e.job_card_no
+          WHERE e.is_deleted = 0
+            AND e.job_card_no IS NOT NULL
+            AND COALESCE(m.gate_out_time, m.actual_delivery) IS NOT NULL
+            AND COALESCE(m.gate_out_time, m.actual_delivery) < DATE_SUB(NOW(), INTERVAL ? DAY)`,
+        [days]
+      );
+
+      const eligible = (rows || []).length;
+      let mediaDeleted = 0;
+      let failed = 0;
+
+      for (const r of rows || []) {
+        const removed = await this.deleteStoredMedia(r.photo_url);
+        if (!removed) { failed++; continue; }
+        // Metadata is preserved; only the deletion flag changes.
+        await db.execute(
+          "UPDATE `ocr_evidence` SET `is_deleted` = 1 WHERE `evidence_id` = ?",
+          [r.evidence_id]
+        );
+        mediaDeleted++;
+      }
+
+      console.log(
+        `[EvidenceStorage] Close-anchored retention (${days}d): ${eligible} eligible, ` +
+          `${mediaDeleted} media deleted, ${failed} failed. Metadata retained for all.`
+      );
+      return { eligible, mediaDeleted, failed };
+    } catch (err: any) {
+      console.error("[EvidenceStorage] purgeMediaForClosedJobs failed:", err.message);
+      return { eligible: 0, mediaDeleted: 0, failed: 0 };
+    }
+  }
+
+  /**
+   * SUPERSEDED by purgeMediaForClosedJobs().
+   *
+   * This marked evidence deleted on `retention_expiry`, which is computed at
+   * CAPTURE time — so a job card still open after 90 days lost its photographs
+   * while the vehicle was in the workshop. It also only ever flipped the flag:
+   * the stored file itself was never removed, so "deleted" records kept their
+   * bytes on disk indefinitely.
+   *
+   * Retained (uncalled) rather than removed so the behaviour change is visible
+   * in the history. The cron endpoint now calls purgeMediaForClosedJobs().
    */
   public async markExpiredAsDeleted(): Promise<{ expiredCount: number }> {
     try {

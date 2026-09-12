@@ -1227,7 +1227,10 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                     </h4>
                     {(custodyData.events?.length ?? 0) === 0 ? (
                       <p className="text-[11px] text-slate-500">
-                        No activity recorded for this vehicle. Activity older than {custodyData.retention_days ?? 90} days is purged.
+                        No activity recorded for this vehicle.
+                        {custodyData.job_closed_at
+                          ? ` This job card closed on ${new Date(custodyData.job_closed_at).toLocaleDateString("en-IN")}; activity is purged ${custodyData.retention_days ?? 90} days after closure.`
+                          : " This job card is still open, so nothing has been purged — no activity was ever recorded."}
                       </p>
                     ) : (
                       custodyData.events.map((e: any) => (
@@ -1277,7 +1280,9 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                   )}
 
                   <p className="text-[10px] text-slate-600 border-t border-slate-800 pt-2">
-                    Activity is retained for {custodyData.retention_days ?? 90} days.
+                    {custodyData.job_closed_at
+                      ? `Retained until ${custodyData.retention_days ?? 90} days after closure (closed ${new Date(custodyData.job_closed_at).toLocaleDateString("en-IN")}).`
+                      : "This job card is open, so its full history is retained."}
                     {custodyData.ip_visible ? "" : " Network addresses are not shown at your access level."}
                   </p>
                 </>
