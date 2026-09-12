@@ -1019,46 +1019,83 @@ export default function App() {
         return;
       }
 
-      const empJson = await empRes.json();
-      console.log("/api/employees", empJson);
-      setEmployees(Array.isArray(empJson) ? empJson : []);
+      // B-3: a failed request must NOT become an empty screen.
+      //
+      // These calls used to run .json() on every response without checking
+      // res.ok. A 500 returns {"error": "..."} — valid JSON, so nothing threw,
+      // it simply failed Array.isArray() and the state was set to []. The
+      // workshop then showed ZERO bays (or employees, or service types) with no
+      // error anywhere, because dataLoadError only catches a thrown exception
+      // and a clean HTTP error never throws.
+      //
+      // readList keeps the last known value on failure instead of replacing it
+      // with an empty one, and records which endpoints failed so the user is
+      // told rather than shown a fabricated empty workshop.
+      const failed: string[] = [];
 
-      const bayJson = await bayRes.json();
-      console.log("/api/bays", bayJson);
-      setBays(Array.isArray(bayJson) ? bayJson : []);
+      const readJson = async (res: Response, label: string): Promise<any | null> => {
+        if (!res.ok) {
+          console.error(`[fetchAllData] ${label} failed: HTTP ${res.status}`);
+          failed.push(label);
+          return null;
+        }
+        try {
+          return await res.json();
+        } catch (e: any) {
+          console.error(`[fetchAllData] ${label} returned unreadable JSON: ${e?.message}`);
+          failed.push(label);
+          return null;
+        }
+      };
 
-      const srJson = await srRes.json();
-      console.log("/api/sr-types", srJson);
-      setSrTypes(Array.isArray(srJson) ? srJson : []);
+      /** Apply a list only when it genuinely arrived; otherwise keep what we have. */
+      const applyList = <T,>(data: any, setter: (v: T[]) => void) => {
+        if (Array.isArray(data)) setter(data as T[]);
+      };
 
-      const splitJson = await splitRes.json();
-      console.log("/api/revenue-splits", splitJson);
-      setRevenueSplits(Array.isArray(splitJson) ? splitJson : []);
+      const empJson = await readJson(empRes, "employees");
+      applyList<Employee>(empJson, setEmployees);
 
-      const jobsData = await jobRes.json();
-      console.log("/api/job-cards", jobsData);
-      const rawJobs = jobsData ? (jobsData.jobCards || jobsData.data || (Array.isArray(jobsData) ? jobsData : [])) : [];
-      setJobCards(Array.isArray(rawJobs) ? rawJobs : []);
-      setAllocations(jobsData && Array.isArray(jobsData.technicianMaps) ? jobsData.technicianMaps : []);
-      setProjectedRevenue(jobsData ? jobsData.projectedRevenue || 0 : 0);
-      setGeneratedRevenue(jobsData ? jobsData.generatedRevenue || 0 : 0);
+      const bayJson = await readJson(bayRes, "bays");
+      applyList<Bay>(bayJson, setBays);
 
-      const revsData = await revRes.json();
-      console.log("/api/job-revenues", revsData);
-      setRevenues(revsData && Array.isArray(revsData.revenues) ? revsData.revenues : []);
-      setSplitDetails(revsData && Array.isArray(revsData.details) ? revsData.details : []);
+      const srJson = await readJson(srRes, "service types");
+      applyList<SRType>(srJson, setSrTypes);
 
-      const cfJson = await cfRes.json();
-      console.log("/api/carry-forward", cfJson);
-      setCarryForwardLogs(Array.isArray(cfJson) ? cfJson : []);
+      const splitJson = await readJson(splitRes, "revenue splits");
+      applyList<RevenueSplitMaster>(splitJson, setRevenueSplits);
 
-      const reworkJson = await reworkRes.json();
-      console.log("/api/rework", reworkJson);
-      setReworkLogs(Array.isArray(reworkJson) ? reworkJson : []);
+      const jobsData = await readJson(jobRes, "job cards");
+      if (jobsData) {
+        const rawJobs = jobsData.jobCards || jobsData.data || (Array.isArray(jobsData) ? jobsData : []);
+        if (Array.isArray(rawJobs)) setJobCards(rawJobs);
+        if (Array.isArray(jobsData.technicianMaps)) setAllocations(jobsData.technicianMaps);
+        setProjectedRevenue(jobsData.projectedRevenue || 0);
+        setGeneratedRevenue(jobsData.generatedRevenue || 0);
+      }
 
-      const alertJson = await alertRes.json();
-      console.log("/api/alerts", alertJson);
-      setAlertLogs(Array.isArray(alertJson) ? alertJson : []);
+      const revsData = await readJson(revRes, "job revenues");
+      if (revsData) {
+        if (Array.isArray(revsData.revenues)) setRevenues(revsData.revenues);
+        if (Array.isArray(revsData.details)) setSplitDetails(revsData.details);
+      }
+
+      const cfJson = await readJson(cfRes, "carry forward");
+      applyList<CarryForwardLog>(cfJson, setCarryForwardLogs);
+
+      const reworkJson = await readJson(reworkRes, "rework");
+      applyList<ReworkLog>(reworkJson, setReworkLogs);
+
+      const alertJson = await readJson(alertRes, "alerts");
+      applyList<AlertLog>(alertJson, setAlertLogs);
+
+      // Say what could not be loaded. Screens already distinguish this from a
+      // genuinely empty workshop via dataLoadError (P1/D-6).
+      if (failed.length > 0) {
+        setDataLoadError(
+          `Could not load: ${failed.join(", ")}. Those screens are showing the last data received, not current data.`
+        );
+      }
     } catch (error: any) {
       console.error("Error loading workshop data from server:", error);
       setDataLoadError(
@@ -1318,37 +1355,84 @@ export default function App() {
     }
   };
 
-  const handleRaiseCarryForward = async (id: number, reason: string) => {
+  /**
+   * The single write path for the master-data and workflow actions below.
+   *
+   * WHY THIS EXISTS
+   *
+   * Thirteen handlers sent `headers: { "Content-Type": "application/json" }`
+   * with NO Authorization header, while every other handler used authHeaders().
+   * Every one of those routes sits behind the global /api JWT gate, so they did
+   * not fail sometimes — they returned 401 EVERY time. Verified against
+   * production: /api/bays, /api/sr-types, /api/revenue-splits,
+   * /api/carry-forward, /api/rework and /api/alerts/acknowledge all answer 401
+   * without a token.
+   *
+   * They also ended at `if (res.ok) fetchAllData();` with no else, so the
+   * rejection was invisible: the user clicked Add Bay, nothing happened, and
+   * nothing said why. Ten user-facing features were dead in a way that looked
+   * like a dead button — which is most likely why bay, SR-type and split
+   * management appear unused.
+   *
+   * Routing them through one helper fixes both at once and stops the pattern
+   * being re-introduced by the next handler copied from its neighbour. Each
+   * route keeps its own server-side role gate (requireRoles), which is the
+   * actual authority — this only ensures the request is allowed to reach it.
+   */
+  const submitWrite = async (
+    url: string,
+    options: { method?: string; body?: any; action: string }
+  ): Promise<boolean> => {
+    const { method = "POST", body, action } = options;
     try {
-      const res = await fetch("/api/carry-forward", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job_id: id, cf_reason: reason })
+      const res = await fetch(url, {
+        method,
+        headers: authHeaders(),
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {})
       });
-      if (res.ok) fetchAllData();
-    } catch (e) {
-      console.error(e);
+      if (res.ok) {
+        fetchAllData();
+        return true;
+      }
+      const err = await res.json().catch(() => ({}));
+      // A refused write must reach the user. 401/403 are reported in the terms
+      // that actually apply rather than as a generic failure, because "you are
+      // not permitted" and "the server is broken" call for different responses.
+      if (res.status === 401) {
+        showToast(`${action} failed: your session has expired. Sign in again.`, "error");
+      } else if (res.status === 403) {
+        showToast(`${action} failed: your role is not permitted to do this.`, "error");
+      } else {
+        showToast(`${action} failed: ${err.error || res.statusText || `HTTP ${res.status}`}`, "error");
+      }
+      return false;
+    } catch (e: any) {
+      console.error(`[${action}]`, e);
+      showToast(`Network error — ${action.toLowerCase()} did not complete.`, "error");
+      return false;
     }
   };
 
-  const handleRaiseRework = async (id: number, reason: string, originalTechId: number) => {
-    try {
-      const res = await fetch("/api/rework", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ original_job_id: id, rework_reason: reason, original_tech_id: originalTechId })
-      });
-      if (res.ok) fetchAllData();
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const handleRaiseCarryForward = async (id: number, reason: string) =>
+    submitWrite("/api/carry-forward", {
+      body: { job_id: id, cf_reason: reason },
+      action: "Raise carry forward"
+    });
+
+  const handleRaiseRework = async (id: number, reason: string, originalTechId: number) =>
+    submitWrite("/api/rework", {
+      body: { original_job_id: id, rework_reason: reason, original_tech_id: originalTechId },
+      action: "Raise rework"
+    });
 
   const handleResolveCarryForward = async (id: number, status: "Approved" | "Rejected") => {
     try {
+      // authHeaders(), not a bare Content-Type. This route is behind the global
+      // /api JWT gate, so without the token it returned 401 on every approval —
+      // the error WAS reported here, but it could only ever say "access denied".
       const res = await fetch(`/api/carry-forward/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ cf_status: status, approved_by: user?.employee_id || 1 })
       });
       if (res.ok) {
@@ -1366,9 +1450,10 @@ export default function App() {
 
   const handleResolveRework = async (id: number, status: "Approved" | "Rejected") => {
     try {
+      // Same 401-on-every-call defect as the carry-forward resolver above.
       const res = await fetch(`/api/rework/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ rework_status: status, approved_by: user?.employee_id || 1 })
       });
       if (res.ok) {
@@ -1476,155 +1561,48 @@ export default function App() {
     }
   };
 
-  const handleAddBay = async (bayData: any) => {
-    try {
-      const res = await fetch("/api/bays", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(bayData)
-      });
-      if (res.ok) fetchAllData();
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  // All of these routed through the old no-Authorization pattern and therefore
+  // returned 401 on every call, silently. They now go through submitWrite(),
+  // which attaches the token and surfaces a refusal. Each route keeps its own
+  // server-side requireRoles gate — verified present for every one of them.
+  const handleAddBay = (bayData: any) =>
+    submitWrite("/api/bays", { body: bayData, action: "Add bay" });
 
-  const handleUpdateBay = async (id: number, bayData: any) => {
-    try {
-      const res = await fetch(`/api/bays/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(bayData)
-      });
-      if (res.ok) fetchAllData();
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const handleUpdateBay = (id: number, bayData: any) =>
+    submitWrite(`/api/bays/${id}`, { method: "PUT", body: bayData, action: "Update bay" });
 
-  const handleDeleteBay = async (id: number) => {
-    try {
-      const res = await fetch(`/api/bays/${id}`, {
-        method: "DELETE"
-      });
-      if (res.ok) fetchAllData();
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const handleDeleteBay = (id: number) =>
+    submitWrite(`/api/bays/${id}`, { method: "DELETE", action: "Delete bay" });
 
-  const handleAddSRType = async (srTypeData: any) => {
-    try {
-      const res = await fetch("/api/sr-types", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(srTypeData)
-      });
-      if (res.ok) fetchAllData();
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const handleAddSRType = (srTypeData: any) =>
+    submitWrite("/api/sr-types", { body: srTypeData, action: "Add service type" });
 
-  const handleUpdateSRType = async (id: number, srTypeData: any) => {
-    try {
-      const res = await fetch(`/api/sr-types/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(srTypeData)
-      });
-      if (res.ok) fetchAllData();
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const handleUpdateSRType = (id: number, srTypeData: any) =>
+    submitWrite(`/api/sr-types/${id}`, { method: "PUT", body: srTypeData, action: "Update service type" });
 
-  const handleDeleteSRType = async (id: number) => {
-    try {
-      const res = await fetch(`/api/sr-types/${id}`, {
-        method: "DELETE"
-      });
-      if (res.ok) fetchAllData();
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const handleDeleteSRType = (id: number) =>
+    submitWrite(`/api/sr-types/${id}`, { method: "DELETE", action: "Delete service type" });
 
-  const handleAddSplit = async (splitData: any) => {
-    try {
-      const res = await fetch("/api/revenue-splits", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(splitData)
-      });
-      if (res.ok) fetchAllData();
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const handleAddSplit = (splitData: any) =>
+    submitWrite("/api/revenue-splits", { body: splitData, action: "Add revenue split" });
 
-  const handleUpdateSplit = async (id: number, splitData: any) => {
-    try {
-      const res = await fetch(`/api/revenue-splits/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(splitData)
-      });
-      if (res.ok) fetchAllData();
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const handleUpdateSplit = (id: number, splitData: any) =>
+    submitWrite(`/api/revenue-splits/${id}`, { method: "PUT", body: splitData, action: "Update revenue split" });
 
-  const handleDeleteSplit = async (id: number) => {
-    try {
-      const res = await fetch(`/api/revenue-splits/${id}`, {
-        method: "DELETE"
-      });
-      if (res.ok) fetchAllData();
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const handleDeleteSplit = (id: number) =>
+    submitWrite(`/api/revenue-splits/${id}`, { method: "DELETE", action: "Delete revenue split" });
 
-  const handleAcknowledgeAlert = async (id: number) => {
-    try {
-      const res = await fetch("/api/alerts/acknowledge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ alert_id: id })
-      });
-      if (res.ok) fetchAllData();
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const handleAcknowledgeAlert = (id: number) =>
+    submitWrite("/api/alerts/acknowledge", { body: { alert_id: id }, action: "Acknowledge alert" });
 
-  const handleImportRows = async (fileName: string, rows: any[]) => {
-    try {
-      const res = await fetch("/api/dms/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file_name: fileName, rows })
-      });
-      if (res.ok) fetchAllData();
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const handleImportRows = (fileName: string, rows: any[]) =>
+    submitWrite("/api/dms/import", { body: { file_name: fileName, rows }, action: "DMS import" });
 
-  const handleResolveRow = async (rowId: number, status: DMSImportRow["match_status"], matchedJobId: number) => {
-    try {
-      const res = await fetch("/api/dms/resolve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ row_id: rowId, match_status: status, matched_job_id: matchedJobId })
-      });
-      if (res.ok) fetchAllData();
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const handleResolveRow = (rowId: number, status: DMSImportRow["match_status"], matchedJobId: number) =>
+    submitWrite("/api/dms/resolve", {
+      body: { row_id: rowId, match_status: status, matched_job_id: matchedJobId },
+      action: "Resolve DMS row"
+    });
 
   if (!user && !needsAuth) {
     return (

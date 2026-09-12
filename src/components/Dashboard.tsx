@@ -72,8 +72,8 @@ interface DashboardProps {
   onAssignTechnicians?: (id: number, allocs: any[]) => Promise<void | boolean>;
   onResolveCarryForward?: (...args: any[]) => any;
   onResolveRework?: (id: number, status: "Approved" | "Rejected") => Promise<void>;
-  onRaiseCarryForward?: (id: number, reason: string) => Promise<void>;
-  onRaiseRework?: (id: number, reason: string, originalTechId: number) => Promise<void>;
+  onRaiseCarryForward?: (id: number, reason: string) => Promise<boolean | void>;
+  onRaiseRework?: (id: number, reason: string, originalTechId: number) => Promise<boolean | void>;
   revenues?: any[];
   splitDetails?: any[];
 }

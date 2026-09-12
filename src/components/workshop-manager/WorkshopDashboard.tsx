@@ -40,8 +40,8 @@ export interface WorkshopDashboardProps {
   onAssignTechnicians: (id: number, allocs: any[]) => Promise<void>;
   onResolveCarryForward?: (id: number, status: "Approved" | "Rejected") => Promise<void>;
   onResolveRework?: (id: number, status: "Approved" | "Rejected") => Promise<void>;
-  onRaiseCarryForward?: (id: number, reason: string) => Promise<void>;
-  onRaiseRework?: (id: number, reason: string, techId: number) => Promise<void>;
+  onRaiseCarryForward?: (id: number, reason: string) => Promise<boolean | void>;
+  onRaiseRework?: (id: number, reason: string, techId: number) => Promise<boolean | void>;
   currentUser?: any;
   isLoading?: boolean;
   hasError?: boolean;
