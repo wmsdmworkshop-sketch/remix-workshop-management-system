@@ -923,6 +923,55 @@ export default function App() {
   const [alertLogs, setAlertLogs] = useState<AlertLog[]>([]);
   const [revenueSplits, setRevenueSplits] = useState<RevenueSplitMaster[]>([]);
 
+  // ─── SERVICE ASSIST ──────────────────────────────────────────────────────
+  //
+  // The page is static HTML served by Express, not a React screen. It used to
+  // be loaded with <iframe src="/service-assist">, which never worked: that
+  // route is behind authenticateToken, which reads the JWT from the
+  // Authorization header — and an iframe (like a plain browser navigation)
+  // sends none. Both got 401, and the SPA catch-all then served the app shell,
+  // so the frame and the URL rendered the DASHBOARD.
+  //
+  // It now lives at /api/service-assist, which this fetches WITH the token and
+  // hands to the iframe as a blob URL. That is the only way a header-based
+  // scheme can reach a static page in this app, since the token lives in
+  // localStorage and no cookie is ever set.
+  const [serviceAssistUrl, setServiceAssistUrl] = useState<string | null>(null);
+  const [serviceAssistError, setServiceAssistError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeTab !== "service-assist" || !token) return;
+    let revoked: string | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/service-assist", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          setServiceAssistError(
+            res.status === 401
+              ? "Your session has expired. Sign in again."
+              : `The page could not be fetched (HTTP ${res.status}).`
+          );
+          return;
+        }
+        const html = await res.text();
+        if (cancelled) return;
+        revoked = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+        setServiceAssistUrl(revoked);
+        setServiceAssistError(null);
+      } catch (e: any) {
+        if (!cancelled) setServiceAssistError(e?.message || "Could not reach the server.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      // Release the blob so repeated visits do not leak a 190 KB document each.
+      if (revoked) URL.revokeObjectURL(revoked);
+    };
+  }, [activeTab, token]);
+
   // Selected Job (navigated from dashboard)
   const [dashboardSelectedJob, setDashboardSelectedJob] = useState<JobCard | null>(null);
   const [jobsAssignFilter, setJobsAssignFilter] = useState<"sa" | "tech" | null>(null);
@@ -1764,31 +1813,47 @@ export default function App() {
             <BreakdownManagement />
           )}
 
-          {/* Service Assist is a self-contained page served at /service-assist,
-              not a React component, so it is embedded rather than rendered
-              inline. The server route is role-gated independently of this tab —
-              the nav entry and the route restrict to the same nine roles, so
-              hiding the tab is not the only control. */}
+          {/* Service Assist is a self-contained HTML page, not a React
+              component, so it is embedded rather than rendered inline. It is
+              fetched with the staff token and shown as a blob — see the loader
+              above for why an <iframe src> could never authenticate. Access is
+              now ordinary staff access (the global /api JWT gate); the former
+              nine-role list is gone, per the owner's decision. */}
           {activeTab === "service-assist" && (
-            <div className="h-[calc(100vh-180px)] min-h-[520px] rounded-xl overflow-hidden border border-slate-200 bg-white">
-              <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200 bg-slate-50">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
+            <div className="h-[calc(100vh-180px)] min-h-[520px] rounded-xl overflow-hidden border border-slate-800 bg-slate-950 flex flex-col">
+              <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800 bg-slate-900">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
                   Service Assist — CVBU Dealer Support
                 </span>
-                <a
-                  href="/service-assist"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[11px] font-bold uppercase tracking-wider text-blue-600 hover:text-blue-700"
-                >
-                  Open in new tab
-                </a>
+                {serviceAssistUrl && (
+                  <a
+                    href={serviceAssistUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] font-bold uppercase tracking-wider text-blue-400 hover:text-blue-300"
+                  >
+                    Open in new tab
+                  </a>
+                )}
               </div>
-              <iframe
-                src="/service-assist"
-                title="Service Assist — CVBU dealer knowledge base"
-                className="w-full h-full border-0"
-              />
+              {serviceAssistError ? (
+                <div className="flex-1 flex items-center justify-center p-6">
+                  <div className="max-w-md text-center space-y-2">
+                    <p className="text-sm font-bold text-red-400">Service Assist could not be loaded</p>
+                    <p className="text-xs text-slate-400">{serviceAssistError}</p>
+                  </div>
+                </div>
+              ) : !serviceAssistUrl ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <p className="text-xs text-slate-400">Loading Service Assist…</p>
+                </div>
+              ) : (
+                <iframe
+                  src={serviceAssistUrl}
+                  title="Service Assist — CVBU dealer knowledge base"
+                  className="w-full flex-1 border-0"
+                />
+              )}
             </div>
           )}
 
