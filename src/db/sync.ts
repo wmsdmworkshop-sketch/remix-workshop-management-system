@@ -1808,24 +1808,27 @@ export async function syncLoad(): Promise<any> {
 
     // Map job_card_master rows to frontend-expected JobCard interface
     const mappedJobCards = jobCardMasterRows.map((row: any) => {
-      // Map job_status to App status
-      let mappedStatus: 'Waiting' | 'Active' | 'Completed' | 'Invoiced' | 'Carry Forward' | 'Rework' | 'Cancelled' = 'Waiting';
-      const statusLower = String(row.job_status || '').toLowerCase();
-      if (statusLower === 'in progress' || statusLower === 'assigned') {
-        mappedStatus = 'Active';
-      } else if (statusLower === 'ready') {
-        mappedStatus = 'Completed';
-      } else if (statusLower === 'delivered') {
-        mappedStatus = 'Invoiced';
-      } else if (statusLower === 'carry forward') {
-        mappedStatus = 'Carry Forward';
-      } else if (statusLower === 'rework') {
-        mappedStatus = 'Rework';
-      } else if (statusLower === 'cancelled') {
-        mappedStatus = 'Cancelled';
-      } else {
-        mappedStatus = 'Waiting';
-      }
+      // job_status is passed through UNCHANGED.
+      //
+      // This block used to TRANSLATE it into a second vocabulary before the
+      // frontend ever saw it:
+      //   'In Progress' -> 'Active'    'Ready'     -> 'Completed'
+      //   'Delivered'   -> 'Invoiced'  everything else -> 'Waiting'
+      //
+      // Those four targets are not legal values of job_card_master.job_status,
+      // so every consumer was comparing against invented words. It also
+      // collapsed 'Open', 'Waiting Parts', 'Unassigned' and 'In Queue' into a
+      // single 'Waiting', destroying the distinction between a vehicle nobody
+      // has picked up and one held for parts.
+      //
+      // The whole codebase was corrected to the real vocabulary, but this
+      // translation still sat in front of it — so the Supervisor Workspace
+      // counted `status === 'In Progress'` while receiving 'Active', and read 0
+      // against 159 genuinely in progress.
+      //
+      // A row with no job_status keeps its emptiness rather than being given a
+      // plausible-looking 'Waiting'; the UI already renders "Not recorded".
+      const mappedStatus = row.job_status ?? null;
 
       // Find bay name
       const bay = bays.find((b: any) => Number(b.bay_id) === Number(row.bay_id));
