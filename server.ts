@@ -1517,7 +1517,11 @@ async function startServer() {
       buildInfo: {
         version: "v1.5",
         cloudRunRevision: process.env.K_REVISION || null,
-        gitCommit: process.env.GIT_COMMIT || "47d4701",
+        // GIT_COMMIT is not set on Cloud Run, and the hardcoded fallback that
+        // used to sit here reported commit 47d4701 on every build after it —
+        // naming a specific commit the running code was not built from. Report
+        // absence instead; cloudRunRevision already identifies the deployment.
+        gitCommit: process.env.GIT_COMMIT || null,
         environment: process.env.NODE_ENV || "production"
       },
       services: {

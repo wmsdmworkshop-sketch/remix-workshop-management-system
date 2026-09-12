@@ -273,7 +273,17 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
           </div>
           <div>
             <h1 className="text-lg font-black tracking-tight text-white flex items-center gap-2">
-              DWIP ENTERPRISE <span className="text-xs px-2 py-0.5 rounded bg-orange-600/30 text-orange-400 font-bold border border-orange-500/30">v1.1.0-rc.1</span>
+              DWIP ENTERPRISE
+              {/* Read from /api/health, not hardcoded. This badge said
+                  v1.1.0-rc.1 through every release since, contradicting the
+                  revision shown in the footer of the same page. While the
+                  health check is in flight it shows nothing rather than a
+                  stale or invented version. */}
+              {healthData?.buildInfo?.version && (
+                <span className="text-xs px-2 py-0.5 rounded bg-orange-600/30 text-orange-400 font-bold border border-orange-500/30">
+                  {healthData.buildInfo.version}
+                </span>
+              )}
             </h1>
             <p className="text-xs text-slate-400 font-medium">Enterprise Operations & Diagnostics Gateway</p>
           </div>
@@ -491,7 +501,7 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 space-y-1">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Build Version</span>
-                <p className="text-sm font-black text-white font-mono">{healthData?.buildInfo?.version || '1.1.0-dev'}</p>
+                <p className="text-sm font-black text-white font-mono">{healthData?.buildInfo?.version || 'unavailable'}</p>
               </div>
               <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 space-y-1">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cloud Run Revision</span>
@@ -499,11 +509,11 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
               </div>
               <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 space-y-1">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Git Commit / Tag</span>
-                <p className="text-sm font-black text-white font-mono">{healthData?.buildInfo?.gitCommit || 'v1.1.0'}</p>
+                <p className="text-sm font-black text-white font-mono">{healthData?.buildInfo?.gitCommit || 'unavailable'}</p>
               </div>
               <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 space-y-1">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Environment</span>
-                <p className="text-sm font-black text-emerald-400 font-mono uppercase">{healthData?.buildInfo?.environment || 'Production'}</p>
+                <p className="text-sm font-black text-emerald-400 font-mono uppercase">{healthData?.buildInfo?.environment || 'unknown'}</p>
               </div>
             </div>
 
