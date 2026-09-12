@@ -154,6 +154,75 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
   // reception-confirmed km), not on the job-card-derived attention list — so we
   // fetch the SA's assigned queue and match by VRN. If no live record is found
   // we fall back to whatever the job card carries; never to an invented number.
+  // ─── CHAIN OF CUSTODY ────────────────────────────────────────────────────
+  //
+  // Who has handled this vehicle, in which state, and who holds it now.
+  //
+  // The vehicle card previously carried no signal that a complaint had been
+  // raised or that the job had moved on to the floor supervisor — an advisor
+  // could not distinguish a vehicle he had fully processed from one he had not
+  // touched, and could not show that his handoff had actually been made.
+  //
+  // The summary badge reads the batch endpoint (one request for the whole
+  // list); the modal reads the per-job endpoint, which merges jc_activity_log
+  // (actor trail), tbl_job_complaints, tbl_handoff_sla, and — for the
+  // oversight roles only — field edits and GM overrides.
+  //
+  // Every value rendered comes from the response. Nothing falls back to a
+  // plausible-looking default: an actor that was never recorded renders as
+  // absent, and a failed fetch renders as a failure, never as an empty trail.
+  const [custodyFor, setCustodyFor] = useState<any>(null);
+  const [custodyData, setCustodyData] = useState<any>(null);
+  const [custodyState, setCustodyState] = useState<"idle" | "loading" | "error">("idle");
+  const [custodyError, setCustodyError] = useState<string>("");
+  const [custodySummary, setCustodySummary] = useState<Record<string, any>>({});
+
+  const openCustody = async (j: any) => {
+    setCustodyFor(j);
+    setCustodyData(null);
+    setCustodyError("");
+    setCustodyState("loading");
+    try {
+      const token = getStaffToken();
+      const res = await fetch(`/api/job-cards/${encodeURIComponent(String(j.job_id ?? j.vrn))}/custody`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || `Request failed (${res.status})`);
+      }
+      setCustodyData(await res.json());
+      setCustodyState("idle");
+    } catch (e: any) {
+      setCustodyError(e?.message || "Could not load the custody trail.");
+      setCustodyState("error");
+    }
+  };
+
+  // One batch request for the whole visible list. The badge is ambient context
+  // rather than an action the advisor is waiting on, so a failure here leaves
+  // the badge absent instead of showing an error on every card.
+  const summaryKey = useMemo(
+    () => (jobCards || []).map((j: any) => j?.job_id).filter((v: any) => v != null).join(","),
+    [jobCards]
+  );
+  useEffect(() => {
+    if (!summaryKey) { setCustodySummary({}); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = getStaffToken();
+        const res = await fetch(`/api/job-cards/custody-summary?ids=${encodeURIComponent(summaryKey)}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setCustodySummary(data?.summaries || {});
+      } catch { /* badge simply does not render */ }
+    })();
+    return () => { cancelled = true; };
+  }, [summaryKey]);
+
   const openIntakeForItem = async (item: any) => {
     const norm = (v: any) => String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
     const jc = item.jobCard || {};
@@ -649,7 +718,23 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                   <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-850 text-xs space-y-1.5">
                     <div className="flex justify-between text-[11px]">
                       <span className="text-slate-400">Lifecycle Stage:</span>
-                      <span className="font-bold text-blue-400">{j.current_workflow_state || j.status || "In Progress"}</span>
+                      {/* `current_workflow_state` is not loaded on this payload,
+                          so this used to fall through to `status` — the workload
+                          label ("Active"/"Completed") — and present it as the
+                          lifecycle stage. Show the stage only when one is
+                          actually present, and label the workload value for what
+                          it is. */}
+                      {j.current_workflow_state || j.workshop_stage ? (
+                        <span className="font-bold text-blue-400">
+                          {j.current_workflow_state || j.workshop_stage}
+                        </span>
+                      ) : j.status ? (
+                        <span className="font-bold text-slate-300" title="Workload status — no workflow stage recorded">
+                          {j.status} <span className="text-slate-500 font-normal">(status)</span>
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">Not recorded</span>
+                      )}
                     </div>
                     <div className="flex justify-between text-[11px]">
                       <span className="text-slate-400">Assigned Bay:</span>
@@ -662,6 +747,57 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
                       </span>
                     </div>
                   </div>
+
+                  {/* CHAIN OF CUSTODY — what the advisor could not see before:
+                      whether his complaints were recorded, and who holds the
+                      vehicle now. Rendered only when the summary loaded; an
+                      absent summary shows nothing rather than a false zero. */}
+                  {custodySummary[String(j.job_id)] && (
+                    <button
+                      onClick={() => openCustody(j)}
+                      className="w-full text-left bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 hover:border-slate-700 transition-all space-y-1.5"
+                      title="Show everyone who has handled this vehicle"
+                    >
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">Complaints:</span>
+                        {custodySummary[String(j.job_id)].complaints > 0 ? (
+                          <span className="font-bold text-emerald-400 flex items-center gap-1">
+                            <CheckCircle2 className="h-3 w-3" />
+                            {custodySummary[String(j.job_id)].complaints} logged
+                          </span>
+                        ) : (
+                          <span className="font-bold text-amber-400 flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3" />
+                            None logged
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">Now with:</span>
+                        {custodySummary[String(j.job_id)].holder ? (
+                          <span className={`font-bold flex items-center gap-1 ${
+                            custodySummary[String(j.job_id)].breached ? "text-red-400" : "text-blue-400"
+                          }`}>
+                            {String(custodySummary[String(j.job_id)].holder).replace(/_/g, " ")}
+                            {custodySummary[String(j.job_id)].breached && (
+                              <span title="This handoff is past its SLA">⚠ overdue</span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">No open handoff</span>
+                        )}
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">Handled by:</span>
+                        <span className="font-bold text-slate-200 flex items-center gap-1">
+                          <Users className="h-3 w-3 text-slate-400" />
+                          {custodySummary[String(j.job_id)].actors > 0
+                            ? `${custodySummary[String(j.job_id)].actors} · view trail`
+                            : "No activity recorded"}
+                        </span>
+                      </div>
+                    </button>
+                  )}
 
                   {aiModeEnabled && aiCopilotData && (
                     <div className="flex items-center gap-1.5 text-[10px] bg-emerald-500/10 text-emerald-400 p-1.5 rounded-lg border border-emerald-500/20">
@@ -998,6 +1134,157 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
           }}
           onClose={() => setEditJustifyItem(null)}
         />
+      )}
+
+      {/* CHAIN OF CUSTODY — the full trail behind the card's summary strip.
+          Distinct loading / error / empty states: a failed fetch must never
+          read as "nobody handled this vehicle". */}
+      {custodyFor && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setCustodyFor(null)}>
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-slate-800">
+              <div>
+                <h3 className="text-sm font-black text-white uppercase tracking-wider">Chain of Custody</h3>
+                <p className="text-[11px] text-slate-400 font-mono">{custodyFor.vrn} · {custodyFor.job_card_no || `TEMP-${custodyFor.job_id}`}</p>
+              </div>
+              <button onClick={() => setCustodyFor(null)} className="text-slate-400 hover:text-white text-xs font-bold px-2 py-1">CLOSE</button>
+            </div>
+
+            <div className="overflow-y-auto p-4 space-y-4">
+              {custodyState === "loading" && (
+                <p className="text-xs text-slate-400 flex items-center gap-2">
+                  <RefreshCw className="h-3 w-3 animate-spin" /> Loading the custody trail…
+                </p>
+              )}
+
+              {custodyState === "error" && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 space-y-1">
+                  <p className="text-xs font-bold text-red-400 flex items-center gap-1.5">
+                    <AlertOctagon className="h-3.5 w-3.5" /> Could not load the custody trail
+                  </p>
+                  <p className="text-[11px] text-red-300">{custodyError}</p>
+                  <p className="text-[11px] text-slate-400">This is a load failure, not an empty history.</p>
+                </div>
+              )}
+
+              {custodyState === "idle" && custodyData && (
+                <>
+                  {/* Complaints — who raised what, and when. */}
+                  <section className="space-y-2">
+                    <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-300">
+                      Complaints ({custodyData.complaints?.length ?? 0})
+                    </h4>
+                    {(custodyData.complaints?.length ?? 0) === 0 ? (
+                      <p className="text-[11px] text-slate-500">No complaint has been recorded for this vehicle.</p>
+                    ) : (
+                      custodyData.complaints.map((c: any) => (
+                        <div key={c.complaint_id} className="bg-slate-950/60 border border-slate-800 rounded-xl p-2.5 space-y-1">
+                          <div className="flex justify-between items-start gap-2">
+                            <p className="text-[11px] text-slate-200 flex-1">{c.complaint_text}</p>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-900 text-slate-300 border border-slate-800 shrink-0">
+                              {c.status || "OPEN"}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-500">
+                            Raised by {c.authored_by || "an unrecorded user"}
+                            {c.created_at ? ` · ${new Date(c.created_at).toLocaleString("en-IN")}` : ""}
+                            {c.is_safety_critical ? " · SAFETY CRITICAL" : ""}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </section>
+
+                  {/* Handoffs — who holds it, and whether that is overdue. */}
+                  <section className="space-y-2">
+                    <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-300">Handoffs</h4>
+                    {(custodyData.handoffs?.length ?? 0) === 0 ? (
+                      <p className="text-[11px] text-slate-500">No handoff has been opened for this vehicle.</p>
+                    ) : (
+                      custodyData.handoffs.map((h: any) => (
+                        <div key={h.handoff_id} className="flex justify-between items-center bg-slate-950/60 border border-slate-800 rounded-xl p-2.5">
+                          <div>
+                            <p className="text-[11px] font-bold text-slate-200">{String(h.stage_name || "").replace(/_/g, " ")}</p>
+                            <p className="text-[10px] text-slate-500">
+                              Owner: {h.owner_role ? String(h.owner_role).replace(/_/g, " ") : "not recorded"}
+                              {h.opened_at ? ` · opened ${new Date(h.opened_at).toLocaleString("en-IN")}` : ""}
+                            </p>
+                          </div>
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${
+                            h.status === "BREACHED" ? "bg-red-500/10 text-red-400 border-red-500/30"
+                            : h.status === "COMPLETED" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                            : "bg-blue-500/10 text-blue-400 border-blue-500/30"
+                          }`}>{h.status}</span>
+                        </div>
+                      ))
+                    )}
+                  </section>
+
+                  {/* The actor trail: who did what, in which role. */}
+                  <section className="space-y-2">
+                    <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-300">
+                      Processed by ({custodyData.events?.length ?? 0} actions)
+                    </h4>
+                    {(custodyData.events?.length ?? 0) === 0 ? (
+                      <p className="text-[11px] text-slate-500">
+                        No activity recorded for this vehicle. Activity older than {custodyData.retention_days ?? 90} days is purged.
+                      </p>
+                    ) : (
+                      custodyData.events.map((e: any) => (
+                        <div key={e.id} className="flex gap-2.5 bg-slate-950/60 border border-slate-800 rounded-xl p-2.5">
+                          <div className="w-1 rounded bg-slate-700 shrink-0" />
+                          <div className="flex-1 space-y-0.5">
+                            <p className="text-[11px] font-bold text-slate-200">
+                              {String(e.action_type || "").replace(/_/g, " ")}
+                            </p>
+                            {e.action_detail && <p className="text-[10px] text-slate-400">{e.action_detail}</p>}
+                            <p className="text-[10px] text-slate-500">
+                              {e.actor_name || "Unrecorded user"}
+                              {e.actor_role ? ` (${String(e.actor_role).replace(/_/g, " ")})` : ""}
+                              {e.at ? ` · ${new Date(e.at).toLocaleString("en-IN")}` : ""}
+                              {e.ip_address ? ` · ${e.ip_address}` : ""}
+                            </p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </section>
+
+                  {/* Management record — returned only for the oversight roles. */}
+                  {(custodyData.edits?.length > 0 || custodyData.gm_overrides?.length > 0) && (
+                    <section className="space-y-2">
+                      <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-300">Management record</h4>
+                      {(custodyData.edits || []).map((ed: any) => (
+                        <div key={`ed-${ed.audit_id}`} className="bg-slate-950/60 border border-slate-800 rounded-xl p-2.5">
+                          <p className="text-[11px] font-bold text-slate-200">{ed.action}</p>
+                          {ed.justification && <p className="text-[10px] text-slate-400">Reason: {ed.justification}</p>}
+                          <p className="text-[10px] text-slate-500">
+                            {ed.changed_by || "Unrecorded user"}
+                            {ed.created_at ? ` · ${new Date(ed.created_at).toLocaleString("en-IN")}` : ""}
+                          </p>
+                        </div>
+                      ))}
+                      {(custodyData.gm_overrides || []).map((ov: any) => (
+                        <div key={`ov-${ov.id}`} className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5">
+                          <p className="text-[11px] font-bold text-amber-400">GM OVERRIDE · {ov.action}</p>
+                          <p className="text-[10px] text-slate-400">
+                            {ov.gm_name || "Unrecorded GM"}
+                            {ov.created_at ? ` · ${new Date(ov.created_at).toLocaleString("en-IN")}` : ""}
+                          </p>
+                        </div>
+                      ))}
+                    </section>
+                  )}
+
+                  <p className="text-[10px] text-slate-600 border-t border-slate-800 pt-2">
+                    Activity is retained for {custodyData.retention_days ?? 90} days.
+                    {custodyData.ip_visible ? "" : " Network addresses are not shown at your access level."}
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

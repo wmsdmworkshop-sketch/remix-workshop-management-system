@@ -1906,6 +1906,322 @@ async function startServer() {
     }
   );
 
+
+  // Compact custody summary for a LIST of job cards — complaint count, current
+  // holder, and whether that handoff is overdue.
+  //
+  // WHY A BATCH ENDPOINT: the advisor's vehicle list renders up to ~30 cards.
+  // Calling the per-job custody route once per card would issue 30 round trips
+  // carrying full activity trails to render three numbers, and would re-issue
+  // them on every refresh. This answers the same question in one query per
+  // source table.
+  //
+  // Same visibility rules as the per-job route: rows are filtered through
+  // canViewJobCard, so an advisor gets summaries for HIS OWN job cards only.
+  // No ip_address is returned here at any level — a summary never needs it.
+  app.get("/api/job-cards/custody-summary", authenticateToken, async (req: any, res: any) => {
+    try {
+      const raw = String(req.query.ids || "").trim();
+      if (!raw) return res.json({ success: true, summaries: {} });
+
+      const ids = raw.split(",")
+        .map((s: string) => Number(String(s).trim()))
+        .filter((n: number) => Number.isFinite(n) && n > 0)
+        .slice(0, 100);
+      if (!ids.length) return res.json({ success: true, summaries: {} });
+
+      const placeholders = ids.map(() => "?").join(",");
+      const [cards]: any = await dbPool.query(
+        `SELECT job_card_id, job_card_no, vehicle_reg, created_by, service_advisor,
+                assigned_to, live_status, job_status
+           FROM job_card_master WHERE job_card_id IN (${placeholders})`,
+        ids
+      );
+
+      // Apply the SAME ownership rule as everywhere else, per row.
+      const visible = (cards || []).filter((r: any) => canViewJobCard({
+        job_id: r.job_card_id,
+        job_card_no: r.job_card_no,
+        created_by: r.created_by,
+        service_advisor: r.service_advisor,
+        workshop_stage: r.live_status,
+        status: r.job_status,
+        technician_assignments: r.assigned_to != null ? [{ technician_id: Number(r.assigned_to) }] : [],
+      }, req.user as RelevanceUser));
+
+      if (!visible.length) return res.json({ success: true, summaries: {} });
+
+      const visIds = visible.map((r: any) => Number(r.job_card_id));
+      const visPh = visIds.map(() => "?").join(",");
+
+      const [complaintRows]: any = await dbPool.query(
+        `SELECT m.job_card_id AS job_id, COUNT(c.complaint_id) AS n
+           FROM job_card_master m
+           LEFT JOIN tbl_job_complaints c
+             ON (c.job_id = m.job_card_id
+                 OR (c.job_card_no IS NOT NULL AND c.job_card_no = m.job_card_no)
+                 OR (c.vrn IS NOT NULL AND m.vehicle_reg IS NOT NULL
+                     AND UPPER(REPLACE(c.vrn,'-','')) = UPPER(REPLACE(m.vehicle_reg,'-',''))))
+          WHERE m.job_card_id IN (${visPh})
+          GROUP BY m.job_card_id`,
+        visIds
+      );
+
+      const [actorRows]: any = await dbPool.query(
+        `SELECT job_card_id AS job_id, COUNT(DISTINCT actor_name) AS n
+           FROM jc_activity_log
+          WHERE job_card_id IN (${visPh}) AND actor_name IS NOT NULL
+          GROUP BY job_card_id`,
+        visIds
+      );
+
+      // The most recent OPEN handoff is who currently holds the vehicle.
+      const [handoffRows]: any = await dbPool.query(
+        `SELECT job_id, stage_name, owner_role, status, sla_due_at, opened_at
+           FROM tbl_handoff_sla
+          WHERE job_id IN (${visPh}) AND status IN ('ON_TRACK','BREACHED')
+          ORDER BY opened_at ASC`,
+        visIds.map((n: number) => String(n))
+      );
+
+      const summaries: Record<string, any> = {};
+      for (const id of visIds) summaries[String(id)] = { complaints: 0, actors: 0, holder: null, holder_stage: null, breached: false };
+      for (const r of (complaintRows || [])) {
+        const k = String(r.job_id);
+        if (summaries[k]) summaries[k].complaints = Number(r.n) || 0;
+      }
+      for (const r of (actorRows || [])) {
+        const k = String(r.job_id);
+        if (summaries[k]) summaries[k].actors = Number(r.n) || 0;
+      }
+      for (const r of (handoffRows || [])) {
+        const k = String(r.job_id);
+        if (!summaries[k]) continue;
+        // Ordered ascending, so the last write wins = most recent open handoff.
+        summaries[k].holder = r.owner_role ?? null;
+        summaries[k].holder_stage = r.stage_name ?? null;
+        if (r.status === "BREACHED") summaries[k].breached = true;
+      }
+
+      res.json({ success: true, summaries });
+    } catch (err: any) {
+      console.error("[JcCustody] Summary error:", err.message);
+      res.status(500).json({ error: "Failed to load custody summaries." });
+    }
+  });
+
+
+  // The oversight line named in the custody requirement: admin, the manager
+  // tier, and GM Service. These see the management record (field edits with
+  // their justification, and GM overrides) in addition to the stage trail.
+  // Composed from the canonical groups in jobcard-relevance.ts rather than a
+  // fresh literal list, so it cannot drift from the rest of the system.
+  const OVERSIGHT_ROLES = [
+    ...GROUP1_FULL_CONTROL, ...GM_OVERRIDE_ROLES,
+    "service_manager", "floor_supervisor", "floor_incharge", "dealer_principal",
+  ].map(normaliseRoleName);
+
+  // ─── JOB CARD CHAIN OF CUSTODY ────────────────────────────────────────────
+  //
+  // "Who has processed this vehicle, in which state, and who holds it now."
+  //
+  // WHY THIS EXISTS
+  //
+  // jc_activity_log already records every actor (name, role, before/after,
+  // timestamp) at ten mutation sites, and tbl_job_complaints records which
+  // advisor authored each complaint. Neither was reachable from the
+  // application: the only reader was /api/admin/jc-audit-log, restricted to
+  // ["admin","developer"] — which excludes the manager/GM oversight line — and
+  // no component called it. An advisor could not tell whether the complaint he
+  // logged had reached the floor supervisor, and a supervisor could not show
+  // that it had. That is the blame-game gap this closes.
+  //
+  // READ-ONLY. This endpoint adds no write path and mutates nothing.
+  //
+  // VISIBILITY (owner decisions)
+  //
+  //  1. Scope — an advisor sees the custody trail for HIS OWN job cards only,
+  //     through to gate out, and only to VIEW it. canViewJobCard() already
+  //     encodes exactly that via isOwnedBy(): creator, named service advisor,
+  //     or assigned technician. Full-view roles (Group 1, Group 2, GM,
+  //     observers) see every card, as they do everywhere else. Reusing the
+  //     canonical predicate keeps this consistent with the rest of the system
+  //     rather than introducing a second, drifting definition of ownership.
+  //
+  //  2. ip_address is returned ONLY to admin/developer. It is recorded in
+  //     jc_activity_log, but showing one employee the IP addresses of
+  //     colleagues is surveillance rather than accountability. Managers and GM
+  //     get the actor's name, role and timestamp — which is what answers
+  //     "who processed it" — without the network identifier.
+  //
+  // RETENTION CAVEAT: jc_activity_log is purged after 90 days by
+  // evt_purge_jc_activity_log. A trail older than that is genuinely gone; this
+  // endpoint reports what remains and never fabricates a missing actor.
+  app.get("/api/job-cards/:id/custody", authenticateToken, async (req: any, res: any) => {
+    const rawId = String(req.params.id || "").trim();
+    if (!rawId) return res.status(400).json({ error: "A job card id or VRN is required." });
+
+    try {
+      // Resolve the job card. The admin endpoint matched on job_card_no alone,
+      // so a vehicle still at gate-in/intake — which may not have a job card
+      // number yet — could not be looked up at all. Accept the numeric id, the
+      // job card number, or the VRN, which is how the workshop actually
+      // identifies a vehicle.
+      const numericId = Number(rawId);
+      let jc: any = null;
+
+      if (Number.isFinite(numericId) && numericId > 0) {
+        jc = await lookupJobCardForGuard(numericId);
+      }
+      if (!jc) {
+        const [rows]: any = await dbPool.execute(
+          `SELECT job_card_id, job_card_no, vehicle_reg, created_by, service_advisor,
+                  assigned_to, live_status, job_status
+             FROM job_card_master
+            WHERE job_card_no = ?
+               OR UPPER(REPLACE(vehicle_reg,'-','')) = UPPER(REPLACE(?, '-',''))
+            ORDER BY job_card_id DESC LIMIT 1`,
+          [rawId, rawId]
+        );
+        const r = (rows || [])[0];
+        if (r) {
+          jc = {
+            job_id: r.job_card_id,
+            job_card_no: r.job_card_no,
+            vrn: r.vehicle_reg,
+            created_by: r.created_by,
+            service_advisor: r.service_advisor,
+            workshop_stage: r.live_status,
+            status: r.job_status,
+            technician_assignments: r.assigned_to != null
+              ? [{ technician_id: Number(r.assigned_to) }]
+              : [],
+          };
+        }
+      }
+
+      if (!jc) return res.status(404).json({ error: "Job card not found." });
+
+      // Owner decision 1: an advisor sees only his own job cards. Fails closed
+      // for a role-less caller (canViewJobCard returns false with no role).
+      if (!canViewJobCard(jc, req.user as RelevanceUser)) {
+        return res.status(403).json({ error: "You do not have access to this job card." });
+      }
+
+      const role = normaliseRoleName(req.user?.role);
+      const isAdmin = ["admin", "developer"].includes(role);
+
+      // Chain of custody — who acted, in what role, on what, and when.
+      const [activity]: any = await dbPool.query(
+        `SELECT id, action_type, action_detail, old_snapshot, new_snapshot,
+                actor_user_id, actor_name, actor_role, ip_address, created_at
+           FROM jc_activity_log
+          WHERE job_card_id = ? OR job_card_no = ?
+          ORDER BY created_at ASC`,
+        [jc.job_id, jc.job_card_no || String(rawId)]
+      );
+
+      // Owner decision 2: the network identifier is withheld below admin.
+      const events = (activity || []).map((a: any) => {
+        const ev: any = {
+          id: a.id,
+          action_type: a.action_type,
+          action_detail: a.action_detail,
+          old_snapshot: a.old_snapshot,
+          new_snapshot: a.new_snapshot,
+          actor_user_id: a.actor_user_id,
+          actor_name: a.actor_name,
+          actor_role: a.actor_role,
+          at: a.created_at,
+        };
+        if (isAdmin) ev.ip_address = a.ip_address;
+        return ev;
+      });
+
+      // Which advisor raised each complaint, and whether it is still open.
+      const [complaints]: any = await dbPool.query(
+        `SELECT complaint_id, complaint_text, category, status,
+                is_safety_critical, authored_by, authored_by_id, created_at
+           FROM tbl_job_complaints
+          WHERE (job_card_no IS NOT NULL AND job_card_no = ?)
+             OR (job_id IS NOT NULL AND job_id = ?)
+             OR (vrn IS NOT NULL AND ? <> '' AND
+                 UPPER(REPLACE(vrn,'-','')) = UPPER(REPLACE(?, '-','')))
+          ORDER BY created_at ASC`,
+        [jc.job_card_no || "", jc.job_id, jc.vrn || "", jc.vrn || ""]
+      );
+
+      // Where the job sits between owners, and whether that handoff is overdue.
+      const [handoffs]: any = await dbPool.query(
+        `SELECT handoff_id, stage_name, owner_role, status, sla_due_at,
+                opened_at, accepted_at
+           FROM tbl_handoff_sla
+          WHERE job_id = ?
+          ORDER BY opened_at ASC`,
+        [String(jc.job_id)]
+      );
+
+      // Edits and GM overrides complete the custody picture: jc_activity_log
+      // records stage actions, while tbl_edit_audit records WHO changed a field
+      // and WHY (every edit carries a justification), and gm_override_log
+      // records a GM acting outside their own lane. /api/job-cards/:id/audit-trail
+      // already exposes these two, but only to managers and above and without
+      // the actor/complaint/handoff context — so neither view answered the
+      // whole question on its own.
+      //
+      // The oversight line named in the requirement (admin, manager, GM) sees
+      // these; an advisor sees the stage trail for his own cards without the
+      // management override record.
+      let edits: any[] = [];
+      let overrides: any[] = [];
+      if (OVERSIGHT_ROLES.includes(role)) {
+        const [editRows]: any = await dbPool.execute(
+          `SELECT audit_id, entity_type, entity_id, action, justification,
+                  changed_by, changed_by_id, created_at
+             FROM tbl_edit_audit
+            WHERE entity_id = ? OR (? <> '' AND entity_id = ?)
+            ORDER BY created_at ASC LIMIT 200`,
+          [String(jc.job_id), jc.job_card_no || "", jc.job_card_no || ""]
+        );
+        edits = editRows || [];
+
+        const [ovRows]: any = await dbPool.execute(
+          `SELECT id, gm_user_id, gm_name, action, jc_state, created_at
+             FROM gm_override_log
+            WHERE job_id = ? OR (? <> '' AND job_card_no = ?)
+            ORDER BY created_at ASC LIMIT 200`,
+          [jc.job_id, jc.job_card_no || "", jc.job_card_no || ""]
+        );
+        overrides = ovRows || [];
+      }
+
+      res.json({
+        success: true,
+        job: {
+          job_id: jc.job_id,
+          job_card_no: jc.job_card_no,
+          vrn: jc.vrn ?? null,
+          workshop_stage: jc.workshop_stage ?? null,
+          status: jc.status ?? null,
+        },
+        events,
+        complaints: complaints || [],
+        handoffs: handoffs || [],
+        edits,
+        gm_overrides: overrides,
+        // The caller must be able to distinguish "no activity recorded" from
+        // "activity purged after 90 days" rather than presenting an empty
+        // trail as though nothing ever happened.
+        retention_days: 90,
+        ip_visible: isAdmin,
+      });
+    } catch (err: any) {
+      console.error("[JcCustody] Query error:", err.message);
+      res.status(500).json({ error: "Failed to load the custody trail." });
+    }
+  });
+
+
   // --- GLOBAL API AUTHENTICATION GATE ---
   // All /api/* routes require a valid JWT EXCEPT the explicit public whitelist below.
   // This fixes SEC-009: previously all data endpoints were open to unauthenticated access.
