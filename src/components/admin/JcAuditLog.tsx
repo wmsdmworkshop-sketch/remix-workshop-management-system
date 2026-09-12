@@ -3,6 +3,7 @@ import {
   Search, Filter, Download, ChevronDown, ChevronRight,
   Clock, User, Shield, Activity, AlertTriangle, RefreshCw
 } from "lucide-react";
+import { getStaffToken } from "../../lib/authToken";
 
 interface AuditRow {
   id: number;
@@ -139,8 +140,13 @@ export default function JcAuditLog() {
   const fetchLogs = useCallback(async (customOffset = 0) => {
     setLoading(true); setError(null);
     try {
-      const stored = localStorage.getItem("wms_user");
-      const token = stored ? JSON.parse(stored).token : null;
+      // This read `JSON.parse(localStorage.wms_user).token` directly, which is
+      // the exact token-key fragmentation authToken.ts exists to fix: login
+      // writes the JWT to "wms_token", and the wms_user object does not always
+      // carry a .token field. When it did not, this sent `Bearer null` and the
+      // server answered "Invalid token. Access denied." â€” which reads as a
+      // permissions problem even for an admin who has every permission.
+      const token = getStaffToken();
       const params = new URLSearchParams();
       if (jcNo)       params.set("jc_no", jcNo);
       if (from)       params.set("from", from);
@@ -185,7 +191,7 @@ export default function JcAuditLog() {
           <h1 className="text-xl font-bold text-white flex items-center gap-2">
             <Activity className="h-5 w-5 text-violet-400" /> JC Activity Audit Log
           </h1>
-          <p className="text-sm text-white/40 mt-0.5">Complete audit trail · 90-day retention · Admin / Developer only</p>
+          <p className="text-sm text-white/40 mt-0.5">Complete audit trail ï¿½ 90-day retention ï¿½ Admin / Developer only</p>
         </div>
         <div className="flex gap-2">
           <button id="jc-audit-refresh-btn" onClick={() => fetchLogs(offset)}
@@ -236,7 +242,7 @@ export default function JcAuditLog() {
 
       {!loading && !error && (
         <p className="text-xs text-white/40">
-          {total===0 ? "No records found" : `Showing ${offset+1}–${Math.min(offset+rows.length,total)} of ${total} entries`}
+          {total===0 ? "No records found" : `Showing ${offset+1}ï¿½${Math.min(offset+rows.length,total)} of ${total} entries`}
         </p>
       )}
 
