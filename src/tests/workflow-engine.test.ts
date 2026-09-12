@@ -290,7 +290,7 @@ async function runTestSuite() {
   const updatedJob = mockDb.job_cards.find((j) => j.job_id === TEST_JOB_ID);
 
   // Verify that the new columns didn't corrupt the legacy status column
-  assert(updatedJob.status === "Completed", "Job status column mapped ('Completed' for QC_PENDING)");
+  assert(updatedJob.status === "Ready", "Job status column mapped ('Ready' for QC_PENDING)");
   assert(updatedJob.rework_count === 0, "Rework count preserved backward status default");
 
 

@@ -1,4 +1,5 @@
 import React from "react";
+import { isWorkCompleteStatus } from "../types";
 import CustomerSearch, { CustomerProfile } from "../components/reception/CustomerSearch";
 
 // Mock the global window localStorage and fetch API
@@ -12,7 +13,7 @@ const mockJobCards = [
     vehicle_make: "Tata Motors",
     vehicle_model: "Prima 4025.S",
     vehicle_year: 2023,
-    status: "Completed",
+    status: "Ready",
     created_at: "2026-07-01T09:00:00Z",
     warranty_status: "Standard",
     rework_count: 0,
@@ -28,7 +29,7 @@ const mockJobCards = [
     vehicle_make: "Tata Motors",
     vehicle_model: "Prima 4025.S",
     vehicle_year: 2023,
-    status: "Rework",
+    status: "In Progress",
     created_at: "2026-07-05T10:00:00Z",
     warranty_status: "Standard",
     rework_count: 1,
@@ -69,12 +70,12 @@ async function runTests() {
   assert(standardizeMobile("+919876543201") === "9876543201", "Standardizes customer mobile keys to 10 digits");
 
   // Test 3: Outstanding balance calculation from job list
-  const unpaidJobs = mockJobCards.filter(jc => jc.status !== "Completed" && jc.status !== "Invoiced");
+  const unpaidJobs = mockJobCards.filter(jc => !isWorkCompleteStatus(jc.status));
   const outstanding = unpaidJobs.reduce((sum, jc) => sum + jc.parts_price + jc.labor_price, 0);
   assert(outstanding === 2000, "Calculates outstanding balance correctly from active job list");
 
   // Test 4: Rework repeat complaints counts extraction
-  const repeatComplaints = mockJobCards.filter(jc => jc.rework_count > 0 || jc.status === "Rework").length;
+  const repeatComplaints = mockJobCards.filter(jc => jc.rework_count > 0).length;
   assert(repeatComplaints === 1, "Correctly counts historical repeat complaints");
 
   // Test 5: Standard warranty flag resolution

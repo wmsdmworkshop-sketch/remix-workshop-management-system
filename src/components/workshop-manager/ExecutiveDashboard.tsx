@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { isOpenJobStatus } from "../../types";
+import { isOpenJobStatus, isWorkCompleteStatus } from "../../types";
 import { 
   Building2, Sparkles, AlertOctagon, TrendingUp, BarChart3, 
   MapPin, ShieldAlert, Award, FileSpreadsheet, Compass 
@@ -47,12 +47,12 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = React.memo(
     const totalRev = jobCards.reduce((sum, j) => sum + (j.labor_price || j.labour_amount || 0) + (j.parts_price || j.parts_amount || 0) || (j.total_amount || 0), 0);
     const labourRev = jobCards.reduce((sum, j) => sum + (j.labor_price || j.labour_amount || 0), 0);
     const partsRev = jobCards.reduce((sum, j) => sum + (j.parts_price || j.parts_amount || 0), 0);
-    const outstanding = jobCards.filter(j => j.status === "Invoiced" || j.status === "Completed").reduce((sum, j) => sum + (j.total_amount || 0), 0);
+    const outstanding = jobCards.filter(j => isWorkCompleteStatus(j.status)).reduce((sum, j) => sum + (j.total_amount || 0), 0);
     const received = jobCards.length;
-    const delivered = jobCards.filter(j => j.status === "Completed" || j.status === "Invoiced" || j.status === "Delivered").length;
+    const delivered = jobCards.filter(j => isWorkCompleteStatus(j.status)).length;
     const openJcs = jobCards.filter(j => ["Active", "Waiting", "Rework", "Carry Forward", "In Progress", "QC_PENDING"].includes(j.status || j.current_workflow_state)).length;
     const carryForward = jobCards.filter(j => j.status === "Carry Forward").length;
-    const rework = jobCards.filter(j => j.status === "Rework" || (j.rework_count && j.rework_count > 0)).length;
+    const rework = jobCards.filter(j => j.rework_count && j.rework_count > 0).length;
     const breakdowns = jobCards.filter(j => j.priority === "Breakdown").length;
     const warranty = jobCards.filter(j => j.is_warranty === 1 || j.warranty_status).length;
     const waitingCust = jobCards.filter(j => j.current_workflow_state === "ESTIMATE_PENDING").length;
@@ -150,7 +150,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = React.memo(
 
   // SECTION 9: Top Critical Vehicles
   const criticalVehicles = useMemo(() => {
-    const active = jobCards.filter(j => j.status !== "Completed" && j.status !== "Invoiced");
+    const active = jobCards.filter(j => !isWorkCompleteStatus(j.status));
     return active.slice(0, 15).map((j) => {
       const isExpress = j.priority === "Express";
       return {

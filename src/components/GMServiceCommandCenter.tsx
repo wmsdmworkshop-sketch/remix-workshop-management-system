@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { isWorkCompleteStatus, isOpenJobStatus } from "../types";
 import { getStaffToken } from "../lib/authToken";
 import { 
   Building2, Sparkles, BarChart3, AlertOctagon, RefreshCw, 
@@ -41,8 +42,8 @@ export const GMServiceCommandCenter: React.FC<GMServiceCommandCenterProps> = Rea
     }, 0);
 
     const count = jobCards.length;
-    const completed = jobCards.filter(j => j.status === "Completed" || j.status === "Closed" || j.status === "Billed").length;
-    const active = jobCards.filter(j => j.status === "Active" || j.status === "In Progress" || j.status === "Pending").length;
+    const completed = jobCards.filter(j => isWorkCompleteStatus(j.status)).length;
+    const active = jobCards.filter(j => isOpenJobStatus(j.status)).length;
     const reworkCount = jobCards.filter(j => (j.rework_count && j.rework_count > 0) || j.is_rework).length;
     const slaWarningsCount = jobCards.filter(j => j.sla_status === "Breached" || j.sla_status === "Warning" || (j.delay_minutes && j.delay_minutes > 0)).length;
 

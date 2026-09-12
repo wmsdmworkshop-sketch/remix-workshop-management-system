@@ -1,4 +1,5 @@
 import React from "react";
+import { isWorkCompleteStatus } from "../types";
 import VehicleSearch, { VehicleProfile } from "../components/reception/VehicleSearch";
 
 // Mock job cards data
@@ -13,7 +14,7 @@ const mockJobCards = [
     vehicle_make: "Tata Motors",
     vehicle_model: "Prima 4025.S",
     vehicle_year: 2023,
-    status: "Completed",
+    status: "Ready",
     created_at: "2026-07-02T09:00:00Z",
     warranty_status: "Standard",
     rework_count: 0,
@@ -34,7 +35,7 @@ const mockJobCards = [
     vehicle_make: "Tata Motors",
     vehicle_model: "Prima 4025.S",
     vehicle_year: 2023,
-    status: "Rework",
+    status: "In Progress",
     created_at: "2026-07-06T10:00:00Z",
     warranty_status: "Standard",
     rework_count: 1,
@@ -87,7 +88,7 @@ async function runTests() {
   assert(lastAdvisor === "Advisor Rajesh", "Resolves the last service advisor correctly");
 
   // Test 5: Outstanding balance calculations
-  const unpaidJobs = mockJobCards.filter(jc => jc.status !== "Completed" && jc.status !== "Invoiced");
+  const unpaidJobs = mockJobCards.filter(jc => !isWorkCompleteStatus(jc.status));
   const outstanding = unpaidJobs.reduce((sum, jc) => sum + jc.parts_price + jc.labor_price, 0);
   assert(outstanding === 1500, "Calculates outstanding balance correctly for unpaid vehicle jobs");
 

@@ -6,9 +6,9 @@ console.log("===================================================================
 
 // Mock data structures representing enterprise-wide states
 const mockJobCards = [
-  { job_id: 1, vrn: "KA01MM1111", status: "Active", current_workflow_state: "WIP_START", labor_price: 2000, parts_price: 4500 },
-  { job_id: 2, vrn: "KA02NN2222", status: "Waiting", current_workflow_state: "PARTS_PENDING", labor_price: 1500, parts_price: 3000 },
-  { job_id: 3, vrn: "KA03PP3333", status: "Invoiced", current_workflow_state: "FINAL_REVIEW", labor_price: 5000, parts_price: 8000 }
+  { job_id: 1, vrn: "KA01MM1111", status: "In Progress", current_workflow_state: "WIP_START", labor_price: 2000, parts_price: 4500 },
+  { job_id: 2, vrn: "KA02NN2222", status: "Unassigned", current_workflow_state: "PARTS_PENDING", labor_price: 1500, parts_price: 3000 },
+  { job_id: 3, vrn: "KA03PP3333", status: "Delivered", current_workflow_state: "FINAL_REVIEW", labor_price: 5000, parts_price: 8000 }
 ];
 
 const mockBays = [
@@ -35,8 +35,8 @@ const powerBiDataset = {
   timestamp: new Date().toISOString(),
   kpis: {
     totalRevenue,
-    delivered: mockJobCards.filter(j => j.status === "Invoiced").length,
-    active: mockJobCards.filter(j => j.status === "Active").length
+    delivered: mockJobCards.filter(j => j.status === "Delivered").length,
+    active: mockJobCards.filter(j => j.status === "In Progress").length
   },
   alertCount: mockAlertLogs.length
 };

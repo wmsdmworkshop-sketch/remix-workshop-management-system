@@ -693,9 +693,9 @@ export function TechnicianJobsPanel({ jobCards, employeeId, onUpdateJobStatus, o
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs font-bold text-slate-800">{job.job_card_no}</span>
                     <span className={`text-[8px] font-mono font-bold px-2 py-0.5 rounded-full border uppercase tracking-wider ${
-                      job.status === "Active" ? "bg-orange-100 text-orange-800 border-orange-200 animate-pulse" : "bg-slate-100 text-slate-800"
+                      job.status === "In Progress" ? "bg-orange-100 text-orange-800 border-orange-200 animate-pulse" : "bg-slate-100 text-slate-800"
                     }`}>
-                      {job.status === "Waiting" ? "Allocated" : job.status === "Active" ? "WIP" : job.status === "Completed" ? "Service Completed" : job.status}
+                      {isAwaitingAllocationStatus(job.status) ? "Allocated" : job.status === "In Progress" ? "WIP" : isWorkCompleteStatus(job.status) ? "Service Completed" : job.status}
                     </span>
                   </div>
                   <p className="text-xs font-medium text-slate-600">{job.vehicle_make} {job.vehicle_model} ({job.vrn})</p>

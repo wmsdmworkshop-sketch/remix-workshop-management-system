@@ -923,7 +923,7 @@ export default function PartsWarrantyManager({
                     filteredSelectorVehicles.map((jc) => {
                       const isSelected = selectedVehicleId === jc.job_id;
                       const fsbStatus = getFsbStatusForJob(jc.job_id);
-                      const isInWip = jc.status !== "Completed" && jc.status !== "Invoiced";
+                      const isInWip = !isWorkCompleteStatus(jc.status);
                       
                       return (
                         <div

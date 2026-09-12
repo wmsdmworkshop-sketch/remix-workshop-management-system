@@ -37,7 +37,7 @@ function runP0002Tests() {
     // Rule 2: CRM JC Number Locking
     const requestedCrmJc = updatePayload.crm_job_card_no !== undefined ? updatePayload.crm_job_card_no : oldJob.crm_job_card_no;
     const isCrmChanged = requestedCrmJc !== oldJob.crm_job_card_no;
-    const isSubmittedState = oldJob.status && oldJob.status !== "Draft" && oldJob.status !== "Waiting" && oldJob.status !== "GATE_IN";
+    const isSubmittedState = oldJob.status && oldJob.status !== "Draft" && oldJob.status !== "Unassigned" && oldJob.status !== "GATE_IN";
 
     const isGmOrAdmin = ["admin", "developer", "dealer_principal", "gm", "workshop_manager"].includes(userRole.toLowerCase());
     const overrideReason = updatePayload.override_reason || updatePayload.reason;

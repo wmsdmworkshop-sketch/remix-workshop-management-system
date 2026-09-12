@@ -201,7 +201,7 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
     const todayStr = new Date().toISOString().split("T")[0];
     // Real counts — 0 when there are no records (never a demo fallback).
     const received = jobCards.filter(j => j.created_at && j.created_at.startsWith(todayStr)).length;
-    const delivered = jobCards.filter(j => j.status === "Completed" || j.status === "Invoiced").length;
+    const delivered = jobCards.filter(j => isWorkCompleteStatus(j.status)).length;
     const openJcs = jobCards.filter(j => isOpenJobStatus(j.status)).length;
     // Bay utilization is only meaningful when bays exist; otherwise "No data" (null), not a fabricated %.
     const utilization = bays.length > 0
@@ -290,7 +290,7 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
     return {
       warnings: alertLogs.filter(a => a.alert_type === "SLA_WARNING" && a.status === "Active").length,
       breaches: alertLogs.filter(a => a.alert_type === "SLA_BREACH" && a.status === "Active").length,
-      emergencyCount: jobCards.filter(j => j.priority === "Express" && j.status !== "Completed").length,
+      emergencyCount: jobCards.filter(j => j.priority === "Express" && !isWorkCompleteStatus(j.status)).length,
       waitingParts: jobCards.filter(j => j.current_workflow_state === "PARTS_PENDING").length,
       waitingCustomer: jobCards.filter(j => j.current_workflow_state === "ESTIMATE_PENDING").length,
       waitingQc: jobCards.filter(j => j.current_workflow_state === "QC_PENDING").length,
@@ -309,7 +309,7 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
         vehicle: activeJob ? `${activeJob.vehicle_make} ${activeJob.vehicle_model} (${activeJob.vrn})` : null,
         technician: activeJob ? (activeJob.technician_name || "Assigned Tech") : null,
         status: activeJob
-          ? (activeJob.status === "Rework" ? "Breakdown" : activeJob.status === "Carry Forward" ? "Carry Forward" : "Working")
+          ? (activeJob.status === "Carry Forward" ? "Carry Forward" : "Working")
           : "Empty Bay",
         // Real elapsed time from started_at; null when unknown (no fabricated 35 min).
         elapsedMinutes: activeJob && activeJob.started_at
@@ -349,16 +349,16 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
       id: `time-${index}`,
       time: j.time_in || null,
       vehicle: `${j.vehicle_make || ""} ${j.vehicle_model || ""} (${j.vrn})`.trim(),
-      action: j.status === "Completed" ? "Completed QC Verification" : `Workflow phase transition to ${j.current_workflow_state || j.status}`,
+      action: isWorkCompleteStatus(j.status) ? "Completed QC Verification" : `Workflow phase transition to ${j.current_workflow_state || j.status}`,
       advisor: j.service_advisor || null,
       stage: j.current_workflow_state || j.status,
-      iconType: j.status === "Completed" ? "qc" : "repair"
+      iconType: isWorkCompleteStatus(j.status) ? "qc" : "repair"
     } as any));
   }, [jobCards]);
 
   // Carry forward logs list
   const carryForwardList = useMemo(() => {
-    const cfJobs = jobCards.filter(j => j.status === "Carry Forward" || j.status === "Rework");
+    const cfJobs = jobCards.filter(j => j.status === "Carry Forward");
     return cfJobs.map(j => ({
       id: String(j.job_id),
       vehicle: `${j.vehicle_make || ""} ${j.vehicle_model || ""} (${j.vrn})`.trim(),

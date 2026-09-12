@@ -11,12 +11,12 @@ const mockBays = [
 ];
 
 const mockJobs = [
-  { job_id: 101, vrn: "KA01MM2222", status: "Active", technician_name: "Sanjay Patel", bay_id: 1 },
-  { job_id: 102, vrn: "KA01MM3333", status: "Waiting", technician_name: null, bay_id: null }
+  { job_id: 101, vrn: "KA01MM2222", status: "In Progress", technician_name: "Sanjay Patel", bay_id: 1 },
+  { job_id: 102, vrn: "KA01MM3333", status: "Unassigned", technician_name: null, bay_id: null }
 ];
 
 // 1. Verify active vs unassigned counts
-const activeCount = mockJobs.filter(j => j.status === "Active").length;
+const activeCount = mockJobs.filter(j => j.status === "In Progress").length;
 const unassignedCount = mockJobs.filter(j => !j.technician_name).length;
 
 console.log(`[PASS] Active Count: ${activeCount} | Unassigned Count: ${unassignedCount}`);
@@ -37,10 +37,10 @@ if (activeJobInBay?.vrn !== "KA01MM2222") {
 const targetJob = mockJobs[1];
 targetJob.technician_name = "Amit Kumar";
 targetJob.bay_id = 2;
-targetJob.status = "Active";
+targetJob.status = "In Progress";
 
 console.log(`[PASS] Allocated Job 102 to Tech: ${targetJob.technician_name} in Bay: ${targetJob.bay_id}`);
-if (targetJob.status !== "Active") {
+if (targetJob.status !== "In Progress") {
   throw new Error("Allocation state transition failed");
 }
 

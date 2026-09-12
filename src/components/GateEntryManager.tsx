@@ -27,7 +27,7 @@ import {
   Cpu
 } from "lucide-react";
 import FunnyLoader from "./FunnyLoader";
-import { JobCard, Bay, isOpenJobStatus, isWorkCompleteStatus, isDeliveredStatus } from "../types";
+import { JobCard, Bay, isOpenJobStatus, isWorkCompleteStatus, isDeliveredStatus, isAwaitingAllocationStatus } from "../types";
 
 import { compressImageFile } from "../lib/imageUtils";
 import { Capacitor } from "@capacitor/core";
@@ -1331,8 +1331,8 @@ export default function GateEntryManager({
                 // actual current stage instead, so an already-assigned/on-floor
                 // job doesn't look identical to one that just gated in.
                 const realStageLabel = (): string => {
-                  if (job.status === "Invoiced") return "Invoiced";
-                  if (job.status === "Completed") return "Completed";
+                  if (job.status === "Delivered") return "Delivered";
+                  if (job.status === "Ready") return "Ready for delivery";
                   if (job.technician_name) return `On Floor — ${job.technician_name}`;
                   if (job.bay_no) return `On Floor — Bay ${job.bay_no}`;
                   if (job.service_advisor && job.service_advisor.trim()) return `With Advisor — ${job.service_advisor.trim()}`;
@@ -1382,11 +1382,11 @@ export default function GateEntryManager({
                         In: {job.created_at ? new Date(job.created_at).toLocaleString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "N/A"}
                       </div>
                       <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border uppercase tracking-wider w-fit ${
-                        job.status === "Invoiced"
+                        job.status === "Delivered"
                           ? "bg-emerald-100 text-emerald-800 border-emerald-200"
-                          : job.status === "Completed"
+                          : job.status === "Ready"
                           ? "bg-blue-100 text-blue-800 border-blue-200 animate-pulse"
-                          : job.status === "Waiting" && realStageLabel() === "Awaiting SA Assignment"
+                          : isAwaitingAllocationStatus(job.status) && realStageLabel() === "Awaiting SA Assignment"
                           ? "bg-amber-100 text-amber-800 border-amber-200"
                           : "bg-indigo-100 text-indigo-800 border-indigo-200"
                       }`}>
@@ -1395,11 +1395,11 @@ export default function GateEntryManager({
                     </div>
                   </td>
                   <td className="ds-td py-3.5 px-5 text-right">
-                    {job.status === "Invoiced" ? (
+                    {job.status === "Delivered" ? (
                       <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded">
                         Cleared Outward
                       </span>
-                    ) : job.status === "Completed" && !readOnly ? (
+                    ) : job.status === "Ready" && !readOnly ? (
                       <button
                         onClick={() => handleGateOut(job.job_id)}
                         className="ds-button-success px-2.5 py-1.5   hover:bg-emerald-700 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"

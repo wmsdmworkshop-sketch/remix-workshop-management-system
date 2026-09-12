@@ -147,22 +147,18 @@ export class JobCardService {
       const bayIndex = cachedDB.bays.findIndex((b: any) => b.bay_id === updatedJob.bay_id);
       if (bayIndex !== -1) {
         updatedJob.bay_no = cachedDB.bays[bayIndex].bay_name;
-        if (updatedJob.status === "Active" || updatedJob.status === "In Progress") {
+        if (updatedJob.status === "In Progress") {
           bayUpdates.push({ bayId: updatedJob.bay_id, status: "Active" });
           updatedJob.started_at = now;
-        } else if (updatedJob.status === "Completed") {
+        } else if (updatedJob.status === "Ready") {
           bayUpdates.push({ bayId: updatedJob.bay_id, status: "Idle" });
           updatedJob.completed_at = now;
           updatedJob.date_completed = now.split('T')[0];
         } else if (updatedJob.status === "Carry Forward") {
           bayUpdates.push({ bayId: updatedJob.bay_id, status: "Carry Forward" });
-        } else if (updatedJob.status === "Rework") {
-          bayUpdates.push({ bayId: updatedJob.bay_id, status: "Rework" });
-        } else if (updatedJob.status === "Invoiced" || updatedJob.status === "Cancelled") {
+        } else if (updatedJob.status === "Delivered") {
           bayUpdates.push({ bayId: updatedJob.bay_id, status: "Idle" });
-          if (updatedJob.status === "Invoiced") {
-            updatedJob.invoiced_at = now;
-          }
+          updatedJob.invoiced_at = now;
         }
       }
     }

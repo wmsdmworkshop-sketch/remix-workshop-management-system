@@ -8,7 +8,7 @@ console.log("===================================================================
 const mockJob = {
   job_id: 201,
   vrn: "KA01MM4444",
-  status: "Active",
+  status: "In Progress",
   current_workflow_state: "WIP_START",
   vehicle_model: "Nexon EV",
   actual_tat: 15
@@ -16,7 +16,7 @@ const mockJob = {
 
 // 1. Verify Assigned details
 console.log(`[PASS] Target Vehicle: ${mockJob.vrn} | Model: ${mockJob.vehicle_model}`);
-if (mockJob.status !== "Active") {
+if (mockJob.status !== "In Progress") {
   throw new Error("Job active check failed");
 }
 

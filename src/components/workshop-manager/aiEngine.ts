@@ -1,4 +1,5 @@
 import { WORKFLOW_CONFIG } from "../../engines/workflow/config";
+import { isWorkCompleteStatus, isDeliveredStatus } from "../../types";
 
 export interface AIRecommendation {
   id: string;
@@ -90,7 +91,7 @@ export class WorkshopAIEngine {
    * Estimates today's total revenue, labour split, parts split, and target gap.
    */
   public static forecastRevenue(jobCards: any[], targetRevenue = 500000): any {
-    const invoicedJobs = jobCards.filter(j => j.status === "Invoiced");
+    const invoicedJobs = jobCards.filter(j => isDeliveredStatus(j.status));
     const activeJobs = jobCards.filter(j => ["Active", "Rework"].includes(j.status));
 
     // ACTUAL invoiced revenue only — no fabricated fallback. 0 when nothing invoiced.
@@ -118,7 +119,7 @@ export class WorkshopAIEngine {
    * Predicts parts delay bottlenecks.
    */
   public static predictPartsDelays(jobCards: any[]): any[] {
-    const pendingPartsJobs = jobCards.filter(j => j.current_workflow_state === "PARTS_PENDING" || j.status === "Waiting");
+    const pendingPartsJobs = jobCards.filter(j => j.current_workflow_state === "PARTS_PENDING" || j.status === "Waiting Parts");
     // Report ONLY real, on-record fields for parts-pending vehicles. Do NOT fabricate
     // part names, suppliers, ETAs, or alternates — those require authoritative parts data.
     return pendingPartsJobs.map((j, idx) => ({
@@ -181,7 +182,7 @@ export class WorkshopAIEngine {
    */
   public static generateDailyBrief(jobCards: any[], bays: any[], employees: any[]): DailyBrief {
     const totalJcs = jobCards.length;
-    const completed = jobCards.filter(j => j.status === "Completed" || j.status === "Invoiced").length;
+    const completed = jobCards.filter(j => isWorkCompleteStatus(j.status)).length;
     const pendingParts = jobCards.filter(j => j.current_workflow_state === "PARTS_PENDING").length;
     const criticalCust = jobCards.filter(j => j.priority === "Express").map(j => j.customer_name);
 

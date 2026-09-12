@@ -1,4 +1,5 @@
 import { EventBus } from "../core/event-bus.ts";
+import { isWorkCompleteStatus } from "../types";
 
 /**
  * =============================================================================
@@ -140,7 +141,7 @@ export class SLAEngine {
     let escalationsTriggered = 0;
 
     for (const job of jobs) {
-      if (job.status === "Completed" || job.status === "Invoiced") {
+      if (isWorkCompleteStatus(job.status)) {
         continue; // Skip closed job cards
       }
 

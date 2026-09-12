@@ -1712,7 +1712,7 @@ export default function JobCardManager({
 
               {/* Status Controls */}
               <div className="flex flex-wrap items-center gap-2">
-                {selectedJob.status === "Waiting" && currentUserRole !== "service_advisor" && (
+                {isAwaitingAllocationStatus(selectedJob.status) && currentUserRole !== "service_advisor" && (
                   <div className="flex items-center gap-2">
                     <select 
                       onChange={(e) => {

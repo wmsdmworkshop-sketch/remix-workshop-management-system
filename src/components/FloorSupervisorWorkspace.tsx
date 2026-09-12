@@ -124,8 +124,8 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
 
   // Section 1: Dashboard KPIs
   const supervisorStats = useMemo(() => {
-    const active = jobCards.filter(j => j.status === "Active").length;
-    const assigned = jobCards.filter(j => j.technician_name && j.status !== "Completed").length;
+    const active = jobCards.filter(j => j.status === "In Progress").length;
+    const assigned = jobCards.filter(j => j.technician_name && !isWorkCompleteStatus(j.status)).length;
     const unassigned = jobCards.filter(j => !j.technician_name && isOpenJobStatus(j.status)).length;
     const partsPending = jobCards.filter(j => j.current_workflow_state === "PARTS_PENDING").length;
     const waitingQc = jobCards.filter(j => j.current_workflow_state === "QC_PENDING").length;

@@ -39,7 +39,7 @@ function runP1001Tests() {
 
     if (reqComplaint !== undefined && reqComplaint !== null && reqComplaint.trim() !== oldComplaint.trim()) {
       const newText = reqComplaint.trim();
-      const isSubmitted = oldJob.status && oldJob.status !== "Draft" && oldJob.status !== "Waiting" && oldJob.status !== "GATE_IN";
+      const isSubmitted = oldJob.status && oldJob.status !== "Draft" && oldJob.status !== "Unassigned" && oldJob.status !== "GATE_IN";
       const isGmOrAdmin = ["admin", "developer", "dealer_principal", "gm", "workshop_manager"].includes(userRole.toLowerCase());
       const overrideReason = updatePayload.override_reason || updatePayload.reason;
 

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
+import { isWorkCompleteStatus } from "../types";
 import { 
   Wrench, Play, Pause, Square, Sparkles, ClipboardCheck, Package, 
   Camera, BarChart3, Clock, AlertTriangle, FileText, CheckCircle2 
@@ -57,7 +58,7 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
     const myId = currentUser?.employee_id;
     if (myId == null) return [];
     return jobCards
-      .filter(j => Number(j.assigned_to) === Number(myId) && j.status !== "Completed")
+      .filter(j => Number(j.assigned_to) === Number(myId) && !isWorkCompleteStatus(j.status))
       .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
   }, [jobCards, currentUser]);
 
@@ -73,9 +74,9 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
   const dashboardStats = useMemo(() => {
     const myId = currentUser?.employee_id;
     const completed = myId == null ? 0 : jobCards.filter(j =>
-      Number(j.assigned_to) === Number(myId) && j.status === "Completed"
+      Number(j.assigned_to) === Number(myId) && isWorkCompleteStatus(j.status)
     ).length;
-    const reworkCount = jobCards.filter(j => j.status === "Rework" || (j.rework_count && j.rework_count > 0)).length;
+    const reworkCount = jobCards.filter(j => j.rework_count && j.rework_count > 0).length;
     const totalCount = completed + myJobs.length;
     const ftrVal = totalCount > 0
       ? `${Math.round(((totalCount - reworkCount) / totalCount) * 100)}%`

@@ -5,6 +5,7 @@
  * =============================================================================
  */
 
+import { isWorkCompleteStatus } from "../../types";
 import { randomUUID } from "crypto";
 import type { AIPredictionInput, AIPredictionResult, AIModelMetadata, AIPromptTemplate } from "./types";
 import { MetricRegistry } from "../analytics/metric-registry";
@@ -58,7 +59,7 @@ export class EnterpriseAIEngine {
       }
 
       case "job_delay_prediction": {
-        const activeJobs = (cachedDB.jobCards || []).filter((j: any) => j.status !== "Completed" && j.status !== "Closed");
+        const activeJobs = (cachedDB.jobCards || []).filter((j: any) => !isWorkCompleteStatus(j.status));
         const highRiskCount = activeJobs.length > 5 ? 1 : 0;
         prediction = highRiskCount > 0 ? "HIGH_DELAY_RISK" : "ON_SCHEDULE";
         confidenceScore = 88.0;

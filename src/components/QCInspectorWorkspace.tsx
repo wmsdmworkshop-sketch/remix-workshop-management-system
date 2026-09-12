@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
+import { isWorkCompleteStatus } from "../types";
 import { 
   ClipboardCheck, CheckCircle2, AlertOctagon, RefreshCw, BarChart3, 
   Map, Sparkles, Signature, FileText, Camera, Users, Clock 
@@ -78,8 +79,8 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
   // no hardcoded fallback numbers or fixed percentage strings.
   const qcStats = useMemo(() => {
     const waiting = jobCards.filter(j => j.current_workflow_state === "QC_PENDING").length;
-    const underInspection = jobCards.filter(j => j.status === "Active" && j.remarks?.includes("[QC]")).length;
-    const passedCount = jobCards.filter(j => j.status === "Completed" && !j.remarks?.includes("[Rework]")).length;
+    const underInspection = jobCards.filter(j => j.status === "In Progress" && j.remarks?.includes("[QC]")).length;
+    const passedCount = jobCards.filter(j => isWorkCompleteStatus(j.status) && !j.remarks?.includes("[Rework]")).length;
     const failedCount = jobCards.filter(j => j.rework_count > 0).length;
     const totalDecided = passedCount + failedCount;
     const ftr = totalDecided > 0 ? `${Math.round((passedCount / totalDecided) * 100)}%` : "—";

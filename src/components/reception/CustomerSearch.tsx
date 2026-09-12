@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Search, Shield, Award, AlertTriangle, History, DollarSign, User } from "lucide-react";
-import { JobCard } from "../../types";
+import { JobCard, isWorkCompleteStatus } from "../../types";
 
 export interface CustomerProfile {
   customerCode: string;
@@ -122,7 +122,7 @@ export default function CustomerSearch({
       }
 
       // Update outstanding amount (simulate from unpaid job cards)
-      if (jc.status !== "Completed" && jc.status !== "Invoiced") {
+      if (!isWorkCompleteStatus(jc.status)) {
         const labor = jc.labor_price || 0;
         const parts = jc.parts_price || 0;
         profile.outstandingAmount += (labor + parts);
@@ -134,7 +134,7 @@ export default function CustomerSearch({
       }
 
       // Update repeat complaints count
-      if ((jc.rework_count && jc.rework_count > 0) || jc.status === "Rework") {
+      if (jc.rework_count && jc.rework_count > 0) {
         profile.repeatComplaintsCount += 1;
       }
 

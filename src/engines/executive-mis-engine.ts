@@ -1,4 +1,5 @@
 import { pool as db } from "../db/index.ts";
+import { isOpenJobStatus, isWorkCompleteStatus } from "../types";
 
 /**
  * =============================================================================
@@ -46,8 +47,8 @@ export class ExecutiveMISEngine {
     const occupiedBays = bays.filter(b => b.status === "Occupied" || b.status === "In Use").length || 7;
     const bayUtilizationPct = parseFloat(((occupiedBays / totalBays) * 100).toFixed(1));
 
-    const activeJobCardsCount = jobCards.filter(j => j.status === "Active" || j.status === "Waiting").length || 42;
-    const completedTodayCount = jobCards.filter(j => j.status === "Completed" || j.status === "Invoiced").length || 18;
+    const activeJobCardsCount = jobCards.filter(j => isOpenJobStatus(j.status)).length || 42;
+    const completedTodayCount = jobCards.filter(j => isWorkCompleteStatus(j.status)).length || 18;
 
     const totalRevenueToday = invoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0) || 185400;
     const averageTatHours = 2.8;
