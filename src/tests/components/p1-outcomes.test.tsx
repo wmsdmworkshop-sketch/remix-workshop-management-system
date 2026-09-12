@@ -87,70 +87,130 @@ describe("P1/D-3 — blank amounts cannot submit; explicit zero is valid", () =>
   });
 });
 
-describe("P1/D-5 — only a confirmed success may produce a success alert", () => {
-  it("successful assignment produces the success alert", async () => {
+describe("P1/D-5 — assignment outcomes (JobCardManager)", () => {
+  const UNCERTAIN = /Could not confirm technician allocation\. Refresh the job details before retrying\./i;
+
+  it("1. confirmed success -> success alert", async () => {
     const user = userEvent.setup();
     const onAssignTechnicians = vi.fn(async () => true);
     render(<JobCardManager {...(withAllocation({ selectedJobExternal: jobWaiting, onAssignTechnicians }) as any)} />);
     await user.click(await screen.findByRole("button", { name: /save allocations/i }));
     await waitFor(() => expect(said(/Technicians allocated successfully/i)).toBe(true));
+    expect(said(UNCERTAIN)).toBe(false);
   });
 
-  it("returned failure produces a failure alert, never success", async () => {
+  it("2. returned failure -> uncertainty message, never success", async () => {
     const user = userEvent.setup();
     const onAssignTechnicians = vi.fn(async () => false);
     render(<JobCardManager {...(withAllocation({ selectedJobExternal: jobWaiting, onAssignTechnicians }) as any)} />);
     await user.click(await screen.findByRole("button", { name: /save allocations/i }));
-    await waitFor(() => expect(said(/Could not allocate technicians/i)).toBe(true));
+    await waitFor(() => expect(said(UNCERTAIN)).toBe(true));
     expect(said(/allocated successfully/i)).toBe(false);
+    // Must not claim persistence state it cannot know.
+    expect(said(/Nothing was saved/i)).toBe(false);
   });
 
-  it("a rejected operation does not report success", async () => {
+  it("3. rejected callback -> uncertainty message, no unhandled rejection, no raw error text", async () => {
     const user = userEvent.setup();
-    const onAssignTechnicians = vi.fn(async () => { throw new Error("boom"); });
+    const onAssignTechnicians = vi.fn(async () => {
+      throw new Error("ECONNRESET secret-internal-detail");
+    });
     render(<JobCardManager {...(withAllocation({ selectedJobExternal: jobWaiting, onAssignTechnicians }) as any)} />);
     await user.click(await screen.findByRole("button", { name: /save allocations/i }));
-    await waitFor(() => expect(onAssignTechnicians).toHaveBeenCalled());
+    await waitFor(() => expect(said(UNCERTAIN)).toBe(true));
+    expect(said(/allocated successfully/i)).toBe(false);
+    expect(said(/Nothing was saved/i)).toBe(false);
+    // Raw exception text must never reach the user.
+    expect(said(/ECONNRESET|secret-internal-detail/i)).toBe(false);
+  });
+
+  it("4. missing callback (Dashboard fallback) -> uncertainty message, never success", async () => {
+    const user = userEvent.setup();
+    // Dashboard substitutes `async () => false` when the prop is absent.
+    const fallback = async () => false;
+    render(<JobCardManager {...(withAllocation({ selectedJobExternal: jobWaiting, onAssignTechnicians: fallback }) as any)} />);
+    await user.click(await screen.findByRole("button", { name: /save allocations/i }));
+    await waitFor(() => expect(said(UNCERTAIN)).toBe(true));
     expect(said(/allocated successfully/i)).toBe(false);
   });
 
-  it("revenue failure produces a failure alert, never success", async () => {
+  it("an undefined return is NOT treated as success", async () => {
     const user = userEvent.setup();
-    const onCalculateRevenue = vi.fn(async () => false);
-    render(<JobCardManager {...(baseProps({ selectedJobExternal: jobWaiting, onCalculateRevenue }) as any)} />);
+    const legacyVoid = vi.fn(async () => {});
+    render(<JobCardManager {...(withAllocation({ selectedJobExternal: jobWaiting, onAssignTechnicians: legacyVoid }) as any)} />);
+    await user.click(await screen.findByRole("button", { name: /save allocations/i }));
+    await waitFor(() => expect(said(UNCERTAIN)).toBe(true));
+    expect(said(/allocated successfully/i)).toBe(false);
+  });
+
+  it("the Save Allocations control remains usable after a failure (no stuck pending state)", async () => {
+    const user = userEvent.setup();
+    const onAssignTechnicians = vi.fn(async () => false);
+    render(<JobCardManager {...(withAllocation({ selectedJobExternal: jobWaiting, onAssignTechnicians }) as any)} />);
+    const btn = await screen.findByRole("button", { name: /save allocations/i });
+    await user.click(btn);
+    await waitFor(() => expect(onAssignTechnicians).toHaveBeenCalledTimes(1));
+    expect(btn).not.toBeDisabled();
+    await user.click(btn);
+    await waitFor(() => expect(onAssignTechnicians).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("P1/D-5 — revenue outcomes (JobCardManager)", () => {
+  const UNCERTAIN_REV = /Could not confirm the revenue split\. Refresh the job details before retrying\./i;
+
+  const fill = async (user: ReturnType<typeof userEvent.setup>) => {
     const inputs = screen.getAllByRole("spinbutton");
     await user.type(inputs[0], "3000");
     await user.type(inputs[1], "1000");
+  };
+
+  it("1. confirmed success -> success alert", async () => {
+    const user = userEvent.setup();
+    const onCalculateRevenue = vi.fn(async () => true);
+    render(<JobCardManager {...(baseProps({ selectedJobExternal: jobWaiting, onCalculateRevenue }) as any)} />);
+    await fill(user);
     await user.click(screen.getByRole("button", { name: /calculate split share/i }));
-    await waitFor(() => expect(said(/Could not calculate the revenue split/i)).toBe(true));
+    await waitFor(() => expect(said(/locked successfully/i)).toBe(true));
+  });
+
+  it("2. returned failure -> uncertainty message, never success", async () => {
+    const user = userEvent.setup();
+    const onCalculateRevenue = vi.fn(async () => false);
+    render(<JobCardManager {...(baseProps({ selectedJobExternal: jobWaiting, onCalculateRevenue }) as any)} />);
+    await fill(user);
+    await user.click(screen.getByRole("button", { name: /calculate split share/i }));
+    await waitFor(() => expect(said(UNCERTAIN_REV)).toBe(true));
+    expect(said(/locked successfully/i)).toBe(false);
+    expect(said(/Nothing was saved/i)).toBe(false);
+  });
+
+  it("3. rejected callback -> uncertainty message, no raw error text", async () => {
+    const user = userEvent.setup();
+    const onCalculateRevenue = vi.fn(async () => {
+      throw new Error("ETIMEDOUT internal-trace");
+    });
+    render(<JobCardManager {...(baseProps({ selectedJobExternal: jobWaiting, onCalculateRevenue }) as any)} />);
+    await fill(user);
+    await user.click(screen.getByRole("button", { name: /calculate split share/i }));
+    await waitFor(() => expect(said(UNCERTAIN_REV)).toBe(true));
+    expect(said(/locked successfully/i)).toBe(false);
+    expect(said(/ETIMEDOUT|internal-trace/i)).toBe(false);
+  });
+
+  it("4. undefined return is not success", async () => {
+    const user = userEvent.setup();
+    const onCalculateRevenue = vi.fn(async () => {});
+    render(<JobCardManager {...(baseProps({ selectedJobExternal: jobWaiting, onCalculateRevenue }) as any)} />);
+    await fill(user);
+    await user.click(screen.getByRole("button", { name: /calculate split share/i }));
+    await waitFor(() => expect(said(UNCERTAIN_REV)).toBe(true));
     expect(said(/locked successfully/i)).toBe(false);
   });
 });
 
 describe("P1/D-5 — Dashboard's absent-callback fallback", () => {
-  it("Dashboard supplies a fallback that reports failure, not success", async () => {
-    // Dashboard renders WorkshopDashboard with
-    //   onAssignTechnicians || (async () => false)
-    // The corrected fallback must resolve false so a no-op reports failure.
-    const fallback = async () => false;
-    const result = await fallback();
-    expect(result).toBe(false);
-
-    // And JobCardManager must treat exactly that value as a failure.
-    const user = userEvent.setup();
-    render(
-      <JobCardManager
-        {...(withAllocation({ selectedJobExternal: jobWaiting, onAssignTechnicians: fallback }) as any)}
-      />
-    );
-    await user.click(await screen.findByRole("button", { name: /save allocations/i }));
-    await waitFor(() => expect(said(/Could not allocate technicians/i)).toBe(true));
-    expect(said(/allocated successfully/i)).toBe(false);
-  });
-
   it("Dashboard module exposes the corrected fallback (no undefined-returning no-op)", async () => {
-    // Guards against a regression to `async () => {}`, which resolved undefined
-    // and was treated as success.
     const src = await import("fs").then((fs) =>
       fs.readFileSync("src/components/Dashboard.tsx", "utf8")
     );

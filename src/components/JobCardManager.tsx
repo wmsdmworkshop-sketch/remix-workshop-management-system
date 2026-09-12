@@ -53,9 +53,12 @@ interface JobCardManagerProps {
   onUpdateJob: (id: number, updatedFields: Partial<JobCard>) => void;
   onUpdateJobStatus: (id: number, status: JobCard["status"]) => void;
   // P1/D-5: these returned void, so the caller could not know whether the write
-  // succeeded and announced success unconditionally. They now resolve to a
-  // boolean (false = failed); `void` stays accepted for callers that predate
-  // this and are treated as "not known to have failed".
+  // succeeded and announced success unconditionally.
+  //
+  // Contract: success is signalled ONLY by resolving `true`. `void`/undefined
+  // remains permitted in the type (no caller relies on it — verified: every
+  // call site in App.tsx and Dashboard.tsx returns an explicit boolean), but it
+  // is NOT treated as success; an unconfirmed outcome reports uncertainty.
   onAssignTechnicians: (id: number, allocs: { employee_id: number; tech_role: string }[]) => void | boolean | Promise<void | boolean>;
   onCalculateRevenue: (id: number, labour: number, parts: number) => void | boolean | Promise<void | boolean>;
   onRaiseCarryForward: (id: number, reason: string) => void;
@@ -1386,14 +1389,29 @@ export default function JobCardManager({
   // P1/D-5: both handlers announced success unconditionally, before the request
   // had returned. They now await the result and report only what actually
   // happened; a failure surfaces instead of a success message.
+  // P1/D-5: success must follow the callback's DEFINED successful outcome
+  // (an explicit `true`), never an accidental `undefined` return. A rejection
+  // is reported as UNCERTAIN — a thrown callback does not establish whether
+  // the write reached the server, so the message must not claim "nothing was
+  // saved". Raw exception text is never shown to the user.
+  const ALLOCATION_UNCERTAIN =
+    "Could not confirm technician allocation. Refresh the job details before retrying.";
+
   const handleSaveAllocations = async () => {
     if (!selectedJob) return;
-    const ok = await onAssignTechnicians(selectedJob.job_id, assignedStaff);
-    if (ok === false) {
-      alert("Could not allocate technicians. Nothing was saved — see the error above.");
-      return;
+    try {
+      const ok = await onAssignTechnicians(selectedJob.job_id, assignedStaff);
+      if (ok === true) {
+        alert("Technicians allocated successfully.");
+        return;
+      }
+      // `false` (an explicit failure, including the absent-callback fallback)
+      // and any other value both land here: no confirmed success.
+      alert(ALLOCATION_UNCERTAIN);
+    } catch (err) {
+      console.error("[JobCardManager] assignment callback rejected:", err);
+      alert(ALLOCATION_UNCERTAIN);
     }
-    alert("Technicians allocated successfully.");
   };
 
   const handleCalculateRevSplit = async () => {
@@ -1414,12 +1432,18 @@ export default function JobCardManager({
       return;
     }
 
-    const ok = await onCalculateRevenue(selectedJob.job_id, labourNum, partsNum);
-    if (ok === false) {
-      alert("Could not calculate the revenue split. Nothing was saved — see the error above.");
-      return;
+    // Same contract as the allocation handler above: explicit `true` only.
+    try {
+      const ok = await onCalculateRevenue(selectedJob.job_id, labourNum, partsNum);
+      if (ok === true) {
+        alert("Revenue split calculated and locked successfully!");
+        return;
+      }
+      alert("Could not confirm the revenue split. Refresh the job details before retrying.");
+    } catch (err) {
+      console.error("[JobCardManager] revenue callback rejected:", err);
+      alert("Could not confirm the revenue split. Refresh the job details before retrying.");
     }
-    alert("Revenue split calculated and locked successfully!");
   };
 
   const handleCfSubmit = () => {
