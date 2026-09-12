@@ -22,6 +22,7 @@ import {
   ClipboardCheck,
   Shield,
   HelpCircle,
+  BookOpen,
   Settings,
   ArrowLeft,
   ShieldAlert,
@@ -424,6 +425,7 @@ export default function App() {
       { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
       { id: "jobs", label: "Job Cards", icon: Wrench },
+      { id: "service-assist", label: "Service Assist", icon: BookOpen },
       { id: "technician-workspace", label: "Technician Workspace", icon: Wrench },
       { id: "qc-workspace", label: "QC Workspace", icon: ClipboardCheck },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
@@ -460,6 +462,7 @@ export default function App() {
       { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
       { id: "jobs", label: "Job Cards", icon: Wrench },
+      { id: "service-assist", label: "Service Assist", icon: BookOpen },
       { id: "technician-workspace", label: "Technician Workspace", icon: Wrench },
       { id: "qc-workspace", label: "QC Workspace", icon: ClipboardCheck },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
@@ -495,6 +498,7 @@ export default function App() {
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "jobs", label: "Job Cards", icon: Wrench },
+      { id: "service-assist", label: "Service Assist", icon: BookOpen },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
     ],
     floor_supervisor: [
@@ -537,6 +541,7 @@ export default function App() {
       { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
       { id: "jobs", label: "Job Cards", icon: Wrench },
+      { id: "service-assist", label: "Service Assist", icon: BookOpen },
       { id: "technician-workspace", label: "Technician Workspace", icon: Wrench },
       { id: "qc-workspace", label: "QC Workspace", icon: ShieldAlert },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
@@ -561,6 +566,7 @@ export default function App() {
       { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
       { id: "jobs", label: "Job Cards", icon: Wrench },
+      { id: "service-assist", label: "Service Assist", icon: BookOpen },
       { id: "technician-workspace", label: "Technician Workspace", icon: Wrench },
       { id: "qc-workspace", label: "QC Workspace", icon: ShieldAlert },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
@@ -578,6 +584,7 @@ export default function App() {
       { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
       { id: "jobs", label: "Job Cards", icon: Wrench },
+      { id: "service-assist", label: "Service Assist", icon: BookOpen },
       { id: "technician-workspace", label: "Technician Workspace", icon: Wrench },
       { id: "qc-workspace", label: "QC Workspace", icon: ShieldAlert },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
@@ -595,6 +602,7 @@ export default function App() {
       { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
       { id: "jobs", label: "Job Cards", icon: Wrench },
+      { id: "service-assist", label: "Service Assist", icon: BookOpen },
       { id: "technician-workspace", label: "Technician Workspace", icon: Wrench },
       { id: "qc-workspace", label: "QC Workspace", icon: ShieldAlert },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
@@ -611,6 +619,7 @@ export default function App() {
       { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
       { id: "jobs", label: "Job Cards", icon: Wrench },
+      { id: "service-assist", label: "Service Assist", icon: BookOpen },
       { id: "technician-workspace", label: "Technician Workspace", icon: Wrench },
       { id: "qc-workspace", label: "QC Workspace", icon: ShieldAlert },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
@@ -675,6 +684,7 @@ export default function App() {
       { id: "advisor-workspace", label: "Advisor Workspace", icon: ClipboardCopy },
       { id: "supervisor-workspace", label: "Supervisor Workspace", icon: Users },
       { id: "jobs", label: "Job Cards", icon: Wrench },
+      { id: "service-assist", label: "Service Assist", icon: BookOpen },
       { id: "technician-workspace", label: "Technician Workspace", icon: Wrench },
       { id: "qc-workspace", label: "QC Workspace", icon: ShieldAlert },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
@@ -1702,6 +1712,34 @@ export default function App() {
 
           {activeTab === "breakdown" && (
             <BreakdownManagement />
+          )}
+
+          {/* Service Assist is a self-contained page served at /service-assist,
+              not a React component, so it is embedded rather than rendered
+              inline. The server route is role-gated independently of this tab —
+              the nav entry and the route restrict to the same nine roles, so
+              hiding the tab is not the only control. */}
+          {activeTab === "service-assist" && (
+            <div className="h-[calc(100vh-180px)] min-h-[520px] rounded-xl overflow-hidden border border-slate-200 bg-white">
+              <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200 bg-slate-50">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                  Service Assist — CVBU Dealer Support
+                </span>
+                <a
+                  href="/service-assist"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] font-bold uppercase tracking-wider text-blue-600 hover:text-blue-700"
+                >
+                  Open in new tab
+                </a>
+              </div>
+              <iframe
+                src="/service-assist"
+                title="Service Assist — CVBU dealer knowledge base"
+                className="w-full h-full border-0"
+              />
+            </div>
           )}
 
           {activeTab === "jobs" && (

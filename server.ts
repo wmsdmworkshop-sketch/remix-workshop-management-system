@@ -13162,6 +13162,33 @@ Respond with valid JSON only:
     res.sendFile(targetPath);
   });
 
+  // --- SERVICE ASSIST: CVBU dealer knowledge base ---
+  //
+  // A self-contained page (37 embedded Tata CVBU documents — CPSC scorecards,
+  // CRMDMS procedures, warranty and GST/billing guidance). It makes no network
+  // calls of its own; the data is inlined.
+  //
+  // Unlike /privacy above, this is INTERNAL documentation, so it is NOT public.
+  // Access is restricted to the roles whose work these documents cover.
+  // Placed above the SPA catch-all so the route is not swallowed by it. Vite
+  // copies public/ into dist/ on build, so the file resolves in dev and prod.
+  const SERVICE_ASSIST_ROLES = [
+    "service_advisor", "service_manager", "workshop_manager", "works_manager",
+    "gm_service", "general_manager", "dealer_principal", "admin", "developer",
+  ];
+  app.get("/service-assist", authenticateToken, requireRoles(SERVICE_ASSIST_ROLES), (_req: any, res: any) => {
+    const candidatePaths = [
+      path.join(process.cwd(), "dist", "service-assist.html"),
+      path.join(process.cwd(), "public", "service-assist.html"),
+    ];
+    const targetPath = candidatePaths.find(p => fs.existsSync(p));
+    if (!targetPath) {
+      return res.status(404).send("Service Assist page not found.");
+    }
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.sendFile(targetPath);
+  });
+
   // --- VITE MIDDLEWARE SETUP ---
   if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test") {
     const vite = await createViteServer({
