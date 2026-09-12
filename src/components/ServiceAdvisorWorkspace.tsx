@@ -351,9 +351,74 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
     };
   }, [myJobCards, slaAlertsEnabled]);
 
+  // ─── VEHICLES ASSIGNED TO ME, AWAITING INTAKE ────────────────────────────
+  //
+  // MY ATTENTION was built ENTIRELY from myJobCards — i.e. from job cards. But a
+  // vehicle the manager has just assigned has NO job card yet: the job card is
+  // created BY the technical intake, which is the very thing the advisor is
+  // being asked to do. So a freshly assigned vehicle could never appear, and an
+  // advisor had no way to see the work waiting for them.
+  //
+  // /api/sa-intake/queue returns exactly this list and was already implemented
+  // and correct — verified against production, where it returns KA32AA5580 for
+  // ranjeet as its first row. It was only ever called from inside a click
+  // handler (to look up a gate entry id) and its result was never stored or
+  // rendered. This loads it on mount and keeps it current.
+  const [awaitingIntake, setAwaitingIntake] = useState<any[]>([]);
+  const [awaitingIntakeError, setAwaitingIntakeError] = useState<string | null>(null);
+
+  const loadAwaitingIntake = React.useCallback(async () => {
+    try {
+      const token = getStaffToken();
+      const res = await fetch("/api/sa-intake/queue", {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!res.ok) {
+        // A failed load must not read as "no vehicles assigned to you".
+        setAwaitingIntakeError(`Could not load your assigned vehicles (HTTP ${res.status}).`);
+        return;
+      }
+      const data = await res.json();
+      setAwaitingIntake(Array.isArray(data?.data) ? data.data : []);
+      setAwaitingIntakeError(null);
+    } catch (e: any) {
+      setAwaitingIntakeError(e?.message || "Could not load your assigned vehicles.");
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAwaitingIntake();
+    // The manager assigns vehicles while the advisor has this screen open, and
+    // the handoff carries a 5-minute SLA, so a stale list is an SLA breach the
+    // advisor never saw.
+    const id = setInterval(loadAwaitingIntake, 60000);
+    return () => clearInterval(id);
+  }, [loadAwaitingIntake]);
+
   // Priority Queue: MY ATTENTION (this advisor's assigned vehicles only)
   const myAttentionItems = useMemo(() => {
     const items: any[] = [];
+    // Vehicles the manager assigned that have no job card yet. These come first
+    // — the advisor cannot start anything else on them until intake is done.
+    for (const q of awaitingIntake) {
+      items.push({
+        id: `ASSIGN-${q.assignmentId || q.gateEntryId}`,
+        vrn: q.vrn,
+        jobNo: q.tokenNumber ? `TOKEN-${q.tokenNumber}` : "Awaiting intake",
+        customer: "—",
+        stage: "Assigned to you — start technical intake",
+        waitingMins: q.waitingMins ?? 0,
+        slaRemaining: Math.max(0, HANDOFF_SLA_MINS - (q.waitingMins ?? 0)),
+        isBreached: Boolean(q.isBreached),
+        urgency: q.isBreached ? "HIGH" : "MEDIUM",
+        reason: q.preliminaryComplaints || "Reception handed this vehicle to you",
+        actionLabel: "Start Intake",
+        actionType: "START_INTAKE",
+        assignedItem: q,
+        jobCard: null
+      });
+    }
+
     const now = Date.now();
 
     myJobCards.forEach(j => {
@@ -430,7 +495,7 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
     });
 
     return items.sort((a, b) => b.waitingMins - a.waitingMins);
-  }, [myJobCards, slaAlertsEnabled]);
+  }, [awaitingIntake, myJobCards, slaAlertsEnabled]);
 
   // Filtered Vehicles Today (this advisor's assigned vehicles only)
   const filteredVehicles = useMemo(() => {
@@ -479,6 +544,26 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
   // (Create Estimate / Follow-up / Send Pre-Invoice all live in the work tab),
   // instead of the old hardcoded re-INTAKE.
   const handleAttentionAction = (item: any) => {
+    // A vehicle assigned but not yet taken in has NO job card — the job card is
+    // created BY the intake. Sending it to "my work & estimates" would land the
+    // advisor on an estimate builder for a job that does not exist yet, so
+    // route it straight to the intake it is actually waiting for.
+    if (item.actionType === "START_INTAKE" && item.assignedItem) {
+      const q = item.assignedItem;
+      setSelectedIntakeItem({
+        gateEntryId: q.gateEntryId ?? null,
+        intakeId: q.intakeId ?? null,
+        vosId: q.vosId ?? null,
+        jobId: null,
+        vrn: q.vrn,
+        tokenNumber: q.tokenNumber ?? null,
+        gateOdometer: q.gateOdometer ?? null,
+        confirmedOdometer: q.confirmedOdometer ?? null,
+        preliminaryComplaints: q.preliminaryComplaints ?? "",
+      });
+      setShowIntakeModal(true);
+      return;
+    }
     const jobId = item.jobCard?.job_id ?? item.id;
     if (jobId != null) setSelectedJobId(Number(jobId));
     setActiveTab("my-work");
