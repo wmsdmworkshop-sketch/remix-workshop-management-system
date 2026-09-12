@@ -50,19 +50,15 @@ const migration: Migration = {
           INDEX idx_bays_status (status)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
       `);
-      const [bayCount]: any = await conn.execute(`SELECT COUNT(*) AS n FROM tbl_bays`);
-      if (bayCount[0].n === 0) {
-        await conn.execute(
-          `INSERT INTO tbl_bays (bay_id, bay_name, bay_type, lob_suitability, status, branch_id) VALUES
-             ('B-01','Bay 01 - Heavy Commercial','HCV','HCV','AVAILABLE','BR-SEDAM'),
-             ('B-02','Bay 02 - General Repair','GENERAL','ALL','AVAILABLE','BR-SEDAM'),
-             ('B-03','Bay 03 - EV & Electrical','EV','EV','AVAILABLE','BR-SEDAM'),
-             ('B-04','Bay 04 - Express Bay','EXPRESS','MCV_LCV','AVAILABLE','BR-SEDAM'),
-             ('B-05','Bay 05 - Washing & Detail','WASH','ALL','AVAILABLE','BR-SEDAM'),
-             ('B-99','Bay 99 - Maintenance Blocked','GENERAL','ALL','BLOCKED','BR-SEDAM')`
-        );
-        console.log('✓ tbl_bays seeded with 6 default bays');
-      }
+      // NO SEED. This used to insert six invented bays — Heavy Commercial, EV &
+      // Electrical, Washing & Detail, Bay 99 Maintenance Blocked and two others
+      // — whenever it found the table empty. None of them exist at Sedam, and
+      // because tbl_bays is what the advisor's bay dropdown reads, vehicles were
+      // being allocated to bay identities the workshop does not have.
+      //
+      // The real roster (9 working bays + 7 ICE bays) is established by
+      // migration 020. An empty tbl_bays now yields an empty bay list, which is
+      // honest, rather than a plausible-looking fiction.
       console.log('✓ tbl_bays');
 
       // tbl_job_allocations — atomic job/bay/technician allocation record

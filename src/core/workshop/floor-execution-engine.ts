@@ -97,17 +97,17 @@ export class FloorExecutionEngine {
   }
 
   private seedBaselineBays(): void {
-    const defaultBays: BayRosterItem[] = [
-      { bayId: "B-01", bayName: "Bay 01 - Heavy Commercial", bayType: "HCV", lobSuitability: "HCV", status: "AVAILABLE" },
-      { bayId: "B-02", bayName: "Bay 02 - General Repair", bayType: "GENERAL", lobSuitability: "ALL", status: "AVAILABLE" },
-      { bayId: "B-03", bayName: "Bay 03 - EV & Electrical", bayType: "EV", lobSuitability: "EV", status: "AVAILABLE" },
-      { bayId: "B-04", bayName: "Bay 04 - Express Bay", bayType: "EXPRESS", lobSuitability: "MCV_LCV", status: "AVAILABLE" },
-      { bayId: "B-05", bayName: "Bay 05 - Washing & Detail", bayType: "WASH", lobSuitability: "ALL", status: "AVAILABLE" },
-      { bayId: "B-99", bayName: "Bay 99 - Maintenance Blocked", bayType: "GENERAL", lobSuitability: "ALL", status: "BLOCKED" }
-    ];
-    for (const b of defaultBays) {
-      this.inMemoryBays.set(b.bayId, b);
-    }
+    // Intentionally empty — the same reason seedBaselineExecutions() below is.
+    //
+    // This used to seed six invented bays (Heavy Commercial, General Repair,
+    // EV & Electrical, Express, Washing & Detail, Bay 99 Maintenance Blocked)
+    // into the in-memory fallback. None of them exist at Sedam: the real roster
+    // is 9 working bays plus 7 ICE bays, established in the database by
+    // migration 020 and read from tbl_bays by getBaysStatus().
+    //
+    // A fallback that invents bays is worse than an empty one — it lets an
+    // advisor allocate a vehicle to a bay the workshop does not have, and hides
+    // the fact that the real roster failed to load.
   }
 
   private seedBaselineExecutions(): void {
@@ -319,8 +319,18 @@ export class FloorExecutionEngine {
           };
         });
       }
-    } catch (e) {}
+    } catch (e: any) {
+      // This was a silent `catch (e) {}`, which turned a failed bay query into
+      // an apparently-normal bay list built from the in-memory seed. With that
+      // seed removed the caller now gets an empty roster, and the reason it is
+      // empty must at least reach the logs.
+      console.error(`[FloorExecution] getBaysStatus failed for branch ${branchId}: ${e?.message}`);
+    }
 
+    // Empty rather than invented. The real roster lives in tbl_bays (migration
+    // 020); if it could not be read, the correct answer is "no bays available"
+    // — an advisor seeing nothing will ask, whereas one seeing a plausible list
+    // of bays that do not exist will allocate a vehicle into it.
     return Array.from(this.inMemoryBays.values());
   }
 
