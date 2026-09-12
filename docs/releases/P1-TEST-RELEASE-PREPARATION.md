@@ -13,13 +13,28 @@ new CHANGELOG) · **D-R3** (test-data designation, bounded).
 
 ## 1. Final source commit and tree status
 
+**Two distinct commits. They must not be conflated.**
+
+| Item | Commit | Meaning |
+|---|---|---|
+| **Tested source** | **`b21754c`** | The exact tree the P1 acceptance evidence was measured against: 38 component tests, typecheck 9, build, 166/9 node suite. **All recorded results describe THIS commit and no other.** |
+| **Build source for a future build** | **the commit at build time** | Whatever `HEAD` resolves to when a build is actually run. It is **not** `b21754c` — `b91c1dd` (release metadata) already sits on top, and further commits may follow |
+
 | Item | Value |
 |---|---|
-| **Build-source commit** | **`b21754c96df95b048bef400720ef504ef7196c86`** |
 | Branch | `release/v1.1.0` |
-| Tree at that commit | **Clean** — no tracked modifications, 0 untracked |
+| Tree at `b21754c` | **Clean** — no tracked modifications, 0 untracked |
 | P1 code head | `7336ce2` |
 | P1 baseline | `32d270c` |
+
+**Consequence for `version.json`:** its `buildSourceCommit` currently reads
+`b21754c`, which is accurate for the tested source. **If a build is made from a
+later commit, that field must be updated to the actual build commit before
+building** — otherwise the artifact will misreport its own provenance.
+
+**Consequence for re-verification:** if the build commit differs from
+`b21754c`, the acceptance evidence does not automatically carry over. The
+checklist's re-measurement steps exist for exactly that reason.
 
 ### How the self-reference was avoided
 
@@ -122,75 +137,129 @@ authorised by this document.**
 - [ ] Re-measure `npm run test:unit` → 166/9, unchanged (**not** a clean pass)
 - [ ] **Confirm the deployment target is a TEST service, not `dwip-enterprise`**
 
-### Deployment *(requires separately approved access)*
+### Deployment — isolated test service *(requires separate approval)*
 
-- [ ] Target service name confirmed in writing — **`dwip-enterprise` is
-      production and is NOT the target of a test release**
-- [ ] `gcloud builds submit --config deployment/cloudbuild.yaml --substitutions=_TAG=b21754c`
-      — **note:** `cloudbuild.yaml` hard-codes `_SERVICE: dwip-enterprise`
-      (line 30). **A test deploy requires overriding that substitution**, or it
-      will deploy to production
+**Overriding the service name alone is INSUFFICIENT.** A test service that
+inherits production's database or secrets is a production deployment wearing a
+different name. All four must be isolated:
+
+- [ ] **Service name** — not `dwip-enterprise`. `cloudbuild.yaml:30` hard-codes
+      `_SERVICE: dwip-enterprise`, so `_SERVICE` **must** be overridden
+- [ ] **Database** — the test service must point at an isolated schema, **never**
+      `35.200.150.167` / `railway`. Its Cloud SQL connection and `DB_*` values
+      must be set explicitly for the test service, not inherited
+- [ ] **Secrets / environment** — a separate set. Production credentials must not
+      be mounted. External-integration keys should be **absent**, so integrations
+      fail closed rather than calling live endpoints
+- [ ] **Build substitutions** — `_SERVICE`, and `_TAG` set to the **actual build
+      commit** (see §1: not necessarily `b21754c`)
+
+```
+gcloud builds submit --config deployment/cloudbuild.yaml   --substitutions=_SERVICE=<ISOLATED-TEST-SERVICE>,_TAG=$(git rev-parse --short HEAD)
+```
+
 - [ ] Record the new revision name
 
 ### Verify
 
 - [ ] New revision Ready and serving
 - [ ] `/api/health` returns `{"status":"UP"}`
+- [ ] **Confirm the running service is connected to the isolated schema, not
+      `railway`**, before any other check
 - [ ] Job Card screen: absent facts read "Not recorded"; no confidence badge
       without a real value; money fields open empty
-- [ ] **Restart-safety test in §4 executed and passing**
+- [ ] T-W6-1 (§4) executed and passing
 
-### Rollback
+### Rollback — isolated test service
 
-- [ ] **Re-confirm the current serving revision immediately before deploying** —
-      the previously reported `dwip-enterprise-00200-sh4` is evidence from an
-      earlier session and **must not be trusted at deploy time**
-- [ ] `gcloud run services update-traffic <service> --to-revisions <CONFIRMED>=100`
+- [ ] Delete or redirect the test revision, or shift traffic to the previous
+      **test** revision
 
-> **A traffic rollback reverts CODE ONLY.** It does not reverse any database
-> write made while the new revision was live — including anything W-6 wrote at
-> startup. **There is no data-rollback procedure**, and none is proposed here.
+**Production rollback inspection is NOT a prerequisite for an isolated test
+deployment.** The earlier requirement to re-confirm `dwip-enterprise`'s serving
+revision has been **removed**: a deployment that never touches the production
+service cannot require a production rollback target, and inspecting one would be
+unnecessary production access.
+
+> A traffic rollback reverts **code only**. It does not reverse database writes
+> made while the revision was live — including anything W-6 wrote at startup.
+> Within an isolated test environment those writes land on disposable test data
+> (D-R3). **This reasoning does not extend to production.**
 
 ---
 
-## 4. Restart-safety acceptance test — W-6 vs newly created allocations
-
-**Specified only. Not executed.** Requires the isolated `wms_test` environment
-and separate approval.
+## 4. T-W6-1 — restart safety: CAN it run locally?
 
 > **W-6 is not assumed safe because its code is unchanged.** Unchanged code with
-> unchanged behaviour is still undemonstrated behaviour.
+> unobserved behaviour is still undemonstrated.
 
-### T-W6-1 — an approved allocation survives a restart unaltered
+### Isolation verdict: **YES — it can run entirely against the existing local `wms_test`**
 
-**Given** — in `wms_test` only, synthetic fixtures:
-1. A job card with at least one technician in `job_technician_maps`.
-2. A revenue allocation created through the **application path** (`POST
-   /api/job-cards/:id/revenue`), recording `revenue_id`, `detail_id`,
-   `job_id`, `employee_id`, `tech_role`, `split_pct`, `split_amount`.
-3. A second allocation whose `revenue_id` is **deliberately above** the range
-   W-6 would generate (W-6 restarts its counters at 1 — `server.ts:571-572`).
+**The unit-test database guard was NOT relied on.** That caution was correct:
+`server.ts` contains **zero** references to `destructive_test_guard`
+(`grep -c` → 0). The guard runs in vitest setup only and does not protect a
+started application. Isolation was therefore established from `server.ts`'s own
+boot path:
 
-**When** — the application is restarted so the boot task runs once.
+| Risk | Finding | Evidence |
+|---|---|---|
+| **Which database does a started `server.ts` use?** | `NODE_ENV=test` routes it to `.env.test` with `override: true` — `127.0.0.1:3307`, schema `wms_test`. Otherwise it loads `.env`, which is **production** | `server.ts:5-9` |
+| **Startup revenue recomputation (W-6)** | Runs, unconditionally — which is the point of the test. It writes to the **connected** DB, i.e. `wms_test` | `server.ts:513` |
+| **Other boot schedulers** | Two `setInterval` timers (SA-assignment sweep `:11864`; ETD escalation `:15147`). Both write only to the connected DB | `server.ts:11864`, `:15147` |
+| **External integrations** | `.env.test` contains **no** external credentials (`GEMINI_API_KEY`, Azure, WhatsApp, DeepSeek, GCS, TMSA, Siebel — 0 matches). Integrations fail closed rather than calling live endpoints | `.env.test` |
+| **Schema availability** | `wms_test` is currently **empty**, but boot self-provisions: `server.ts:509 → syncLoad() → ensureTablesExist()` creates `job_revenues`, `job_revenue_split_details`, `job_cards`, `job_technician_maps` | `server.ts:509`, `sync.ts:1611`, `:340`, `:576-598` |
+| **Production reachability** | None, provided `NODE_ENV=test` is set. **This is the single point of failure** — see the safeguard below |
 
-**Then** — assert **by business identity, not row count**:
-- For every allocation created in step 2, a row still exists with the **same
-  `(job_id, employee_id, tech_role)`** and the **same `split_amount`**.
-- The high-id allocation from step 3 is **either** still correctly represented
-  **or** demonstrably superseded — and if it has vanished from the application's
-  view while remaining in the table, **the test FAILS**.
-- No row's `job_id` or `employee_id` differs from the value written in step 2.
+**The one real hazard:** if `NODE_ENV=test` is missing or misspelled,
+`server.ts:8` loads `.env` and the application boots **against production**, and
+W-6 would then rewrite production revenue rows at startup.
 
-**Pass criterion:** no approved allocation is altered or orphaned by the restart.
+**Mandatory safeguard — to be run in the same shell immediately before start:**
 
-**On failure — two permitted outcomes, neither assumed:**
-1. Obtain approval for a **minimal protective change** (for example, gating W-6
-   behind a default-off flag, or keying its upsert on business identity rather
-   than a regenerated surrogate id), **or**
-2. Withhold operational go-live until DEC-1 (revenue record classification) is
-   decided.
+```
+node -e "require('dotenv').config({path:'.env.test'});if(process.env.DB_DATABASE!=='wms_test'||process.env.DB_HOST!=='127.0.0.1'){console.error('REFUSED');process.exit(1)};console.log('OK', process.env.DB_HOST, process.env.DB_DATABASE)"
+```
 
-**This test gates operational go-live, not the test release.**
+Abort if it prints anything but `OK 127.0.0.1 wms_test`.
+
+### Exact bounded execution scope — FOR APPROVAL
+
+Nothing below has been run.
+
+| # | Action | Bound |
+|---|---|---|
+| 1 | Run the safeguard above | Read-only |
+| 2 | `NODE_ENV=test node dist/server.cjs` on **localhost only** | No public bind, no cloud |
+| 3 | Boot provisions `wms_test` via `ensureTablesExist()` | Creates tables in `wms_test` **only** |
+| 4 | Seed synthetic fixtures: one job card, one technician map, one employee | `wms_test` only; **no production data copied** |
+| 5 | `POST /api/job-cards/:id/revenue` against **localhost** to create an allocation through the application path | Writes `job_revenues`, `job_revenue_split_details` in `wms_test` |
+| 6 | Insert a second allocation with `revenue_id` **above** W-6's counter range | `wms_test` only |
+| 7 | Record all rows by business identity | Read-only |
+| 8 | Stop and restart the process once, so W-6 runs again | Local process only |
+| 9 | Re-read and compare | Read-only |
+| 10 | Stop the process | — |
+
+**Tables written:** `job_revenues`, `job_revenue_split_details`, plus whatever
+`ensureTablesExist()` creates in `wms_test`. **Nothing else.**
+**Excluded:** production, any production data copy, `revenue_split_log`, any
+cloud command, any deployment.
+**Duration:** two short local runs.
+
+### Pass criteria — compared by business identity, not row count
+
+- Every allocation created in step 5 still has the same
+  **`(job_id, employee_id, tech_role)`** and the same **`split_amount`**.
+- The high-id allocation from step 6 is still correctly represented, **or**
+  demonstrably superseded. If it remains in the table but has vanished from the
+  application's view, **the test FAILS**.
+- No row's `job_id` or `employee_id` differs from what was written.
+
+**On failure — two permitted outcomes, neither assumed:** obtain approval for a
+minimal protective change (gating W-6 behind a default-off flag, or keying its
+upsert on business identity rather than a regenerated surrogate id), **or**
+withhold operational go-live pending DEC-1.
+
+**T-W6-1 gates operational go-live, not this test release.**
 
 ---
 
