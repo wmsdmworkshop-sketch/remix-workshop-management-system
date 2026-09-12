@@ -122,3 +122,79 @@ const check = (name, ok, detail) => {
   console.log(`\n${pass} passed, ${fail} failed\n`);
   process.exit(fail === 0 ? 0 : 1);
 })().catch((e) => { console.error("ERROR:", e.message); process.exit(1); });
+
+/**
+ * R5 — DETERMINISTIC divergent-baseline race.
+ *
+ * The original defect needed two writers to observe DIFFERENT initial records,
+ * which near-simultaneous container starts do not reliably produce. This forces
+ * it: writer A reads a baseline, then writer B creates the row A is about to
+ * create, and only then does A attempt its write. A must not overwrite B.
+ *
+ * Run with: node scripts/revenue_restart_regression.cjs --race
+ */
+async function raceCheck() {
+  const mysql2 = require("mysql2/promise");
+  const cfg = {
+    host: HOST, port: Number(process.env.DB_PORT || 3306),
+    user: process.env.DB_USER, password: process.env.DB_PASSWORD, database: DB
+  };
+  const a = await mysql2.createConnection(cfg);
+  const b = await mysql2.createConnection(cfg);
+
+  await a.execute("DROP TABLE IF EXISTS rr_det2");
+  await a.execute("DROP TABLE IF EXISTS rr_rev2");
+  await a.execute(`CREATE TABLE rr_rev2 (
+      revenue_id INT NOT NULL AUTO_INCREMENT, job_id INT NOT NULL, labour INT NOT NULL,
+      PRIMARY KEY(revenue_id), UNIQUE KEY uq_job(job_id))`);
+  await a.execute(`CREATE TABLE rr_det2 (
+      detail_id INT NOT NULL AUTO_INCREMENT, revenue_id INT NOT NULL,
+      employee_id INT NOT NULL, split INT NOT NULL, PRIMARY KEY(detail_id),
+      CONSTRAINT fk_rr2 FOREIGN KEY (revenue_id) REFERENCES rr_rev2(revenue_id))`);
+
+  // Writer A observes an EMPTY baseline for job 9010.
+  const [aBaseline] = await a.execute("SELECT revenue_id FROM rr_rev2 WHERE job_id=9010");
+  const aSawNothing = aBaseline.length === 0;
+
+  // Writer B now creates it with ITS values and ITS allocation.
+  await b.beginTransaction();
+  const [bRev] = await b.execute("INSERT IGNORE INTO rr_rev2 (job_id,labour) VALUES (9010, 6000)");
+  await b.execute("INSERT INTO rr_det2 (revenue_id,employee_id,split) VALUES (?,77,6000)", [bRev.insertId]);
+  await b.commit();
+
+  // Writer A proceeds on its stale baseline. It must NOT overwrite B.
+  await a.beginTransaction();
+  const [aRev] = await a.execute("INSERT IGNORE INTO rr_rev2 (job_id,labour) VALUES (9010, 1111)");
+  let aAttachedDetails = 0;
+  if (aRev.affectedRows) {
+    await a.execute("INSERT INTO rr_det2 (revenue_id,employee_id,split) VALUES (?,88,1111)", [aRev.insertId]);
+    aAttachedDetails = 1;
+    await a.commit();
+  } else {
+    await a.rollback();
+  }
+
+  const [[winner]] = await a.execute("SELECT revenue_id,labour FROM rr_rev2 WHERE job_id=9010");
+  const [dets] = await a.execute("SELECT employee_id,split FROM rr_det2 WHERE revenue_id=?", [winner.revenue_id]);
+
+  check("R5 divergent baselines: stale writer observed no existing record",
+    aSawNothing, `aBaseline=${aBaseline.length}`);
+  check("R5 winning revenue unchanged (B's 6000 survives)",
+    Number(winner.labour) === 6000, `labour=${winner.labour}`);
+  check("R5 winning allocations unchanged (employee 77 only)",
+    dets.length === 1 && Number(dets[0].employee_id) === 77 && Number(dets[0].split) === 6000,
+    JSON.stringify(dets));
+  check("R5 stale writer attached no details to the winner",
+    aAttachedDetails === 0, `attached=${aAttachedDetails}`);
+
+  await a.execute("DROP TABLE rr_det2");
+  await a.execute("DROP TABLE rr_rev2");
+  await a.end(); await b.end();
+}
+
+if (process.argv.includes("--race")) {
+  raceCheck().then(() => {
+    console.log(`\n${pass} passed, ${fail} failed\n`);
+    process.exit(fail === 0 ? 0 : 1);
+  }).catch((e) => { console.error("ERROR:", e.message); process.exit(1); });
+}
