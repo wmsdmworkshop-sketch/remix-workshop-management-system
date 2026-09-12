@@ -207,6 +207,92 @@ select.bg-white, select.bg-slate-50, select.bg-slate-100 {
   -webkit-text-fill-color: #f4f4f5 !important;
 }
 
+/* ── C-1: light containers rendered invisible text ──
+   The rule above rescued form elements only. Everything else carrying a light
+   background inherited `color:#f4f4f5` from the `html, body, #root` !important
+   rule, giving near-white text on a white background. Measured in the built app
+   with computed styles, not assumed:
+
+     div.bg-white              bg rgb(255,255,255)  text rgb(244,244,245)  1.1:1
+     div.bg-white text-slate-600                                           fine
+     input.bg-white   (rule above)  bg rgb(9,9,11)  text rgb(244,244,245) 18.1:1
+
+   1.1:1 is invisible. WCAG wants 4.5:1, and even large text needs 3:1.
+
+   This extends the same proven treatment to every element, which is what keeps
+   the console consistently dark rather than patching hundreds of call sites.
+
+   SCOPED TO .app-workshop ON PURPOSE. index.css is shared with the CUSTOMER
+   PORTAL (main.tsx imports it for both apps), and that portal is genuinely
+   light — its estimate-approval and payment modals are white cards by design.
+   An unscoped rule would have turned customer-facing screens dark. main.tsx
+   marks <html> with app-workshop or app-portal so the two can be told apart.
+
+   OPACITY VARIANTS ARE EXCLUDED. `bg-white/5`, `bg-white/10` and friends are
+   translucent overlays used ON dark surfaces (25 uses, e.g. JcAuditLog rows).
+   Tailwind emits those as separate escaped class names (bg-white\/10), so the
+   attribute selectors below deliberately match only the exact class token and
+   leave the overlays alone. */
+html.app-workshop .bg-white,
+html.app-workshop .bg-slate-50,
+html.app-workshop .bg-slate-100 {
+  background-color: #09090b !important;
+  color: #f4f4f5 !important;
+}
+
+/* Borders that were drawn for a white card read as near-invisible seams on the
+   dark surface above, so bring them to the same palette the inputs use. */
+html.app-workshop .bg-white.border-slate-200,
+html.app-workshop .bg-slate-50.border-slate-200,
+html.app-workshop .bg-slate-100.border-slate-200 {
+  border-color: #27272a !important;
+}
+
+/* The other half of the same problem, and the reason the rule above is not
+   sufficient on its own.
+
+   Darkening the container INVERTS the contrast for any child that had been
+   given a dark text colour for the white card it used to sit on. Measured
+   inside a now-dark .bg-white container:
+
+     text-slate-900   1.12:1     text-slate-700   1.92:1
+     text-slate-600   2.62:1     text-slate-500   4.18:1
+
+   Those first three are as unreadable as the bug being fixed — dark-on-dark
+   instead of light-on-light — and roughly 240 of the ~545 light-container
+   lines in the workshop components carry such a child.
+
+   So the dark shades are remapped to their light-theme counterparts within a
+   darkened container only. Shade 500 and below already clear 4.5:1 and are left
+   alone, as are all hue-carrying colours (text-red-700 and friends), which stay
+   meaningful against a dark surface. */
+html.app-workshop .bg-white .text-slate-900,
+html.app-workshop .bg-white .text-slate-800,
+html.app-workshop .bg-white .text-slate-700,
+html.app-workshop .bg-white .text-slate-600,
+html.app-workshop .bg-slate-50 .text-slate-900,
+html.app-workshop .bg-slate-50 .text-slate-800,
+html.app-workshop .bg-slate-50 .text-slate-700,
+html.app-workshop .bg-slate-50 .text-slate-600,
+html.app-workshop .bg-slate-100 .text-slate-900,
+html.app-workshop .bg-slate-100 .text-slate-800,
+html.app-workshop .bg-slate-100 .text-slate-700,
+html.app-workshop .bg-slate-100 .text-slate-600,
+html.app-workshop .bg-white.text-slate-900,
+html.app-workshop .bg-white.text-slate-800,
+html.app-workshop .bg-white.text-slate-700,
+html.app-workshop .bg-white.text-slate-600,
+html.app-workshop .bg-slate-50.text-slate-900,
+html.app-workshop .bg-slate-50.text-slate-800,
+html.app-workshop .bg-slate-50.text-slate-700,
+html.app-workshop .bg-slate-50.text-slate-600,
+html.app-workshop .bg-slate-100.text-slate-900,
+html.app-workshop .bg-slate-100.text-slate-800,
+html.app-workshop .bg-slate-100.text-slate-700,
+html.app-workshop .bg-slate-100.text-slate-600 {
+  color: #d4d4d8 !important;
+}
+
 /* Scrollbar Customization for Cyberpunk Theme */
 ::-webkit-scrollbar {
   width: 6px;
