@@ -274,3 +274,112 @@ withhold operational go-live pending DEC-1.
 | T-W6-1 | **Specified, not executed** |
 | P1 acceptance | **Closed, not reopened** |
 | P2–P6 | **Unchanged** |
+
+---
+
+# 5. T-W6-1 execution attempt — **STOPPED, NOT EXECUTED**
+
+**Source commit at attempt: `8866a4d4fceb780293429671c5747f785db23288`**
+
+Execution was approved subject to mandatory isolation controls. **Two of those
+controls cannot be established in this environment**, so the test was not
+started. Per instruction, the specific blockers are reported and nothing was
+worked around.
+
+**The application was never started. No fixture was seeded. No allocation was
+created. `wms_test` contains no data from this attempt.**
+
+## 5.1 Controls that WERE established
+
+| Control | Status | Evidence |
+|---|---|---|
+| Restricted database account | **ESTABLISHED** | `wms_test_runner` created in the disposable local container. `SHOW GRANTS` → `USAGE ON *.*` + `ALL PRIVILEGES ON wms_test.*` only. `SHOW DATABASES` returns `information_schema, performance_schema, wms_test`. `CREATE DATABASE` **denied** (ERROR 1044) — proven by a refused write, not by grant text alone |
+| No production schema reachable | **ESTABLISHED** | The container holds only `wms_test` and MySQL's own system schemas. No `railway`, no production host |
+| Effective DB configuration validated | **ESTABLISHED** (as a check) | `.env.test` → `127.0.0.1`, `3307`, `wms_test` |
+
+## 5.2 BLOCKERS — controls that could NOT be established
+
+### Blocker 1 — the listener cannot be bound to loopback
+
+Requirement: *"Bind the application listener to loopback only."*
+
+`server.ts:13140`:
+
+```js
+const server = app.listen(Number(process.env.PORT || 3001), "0.0.0.0", () => {
+```
+
+The host is the **literal `"0.0.0.0"`**. Only `PORT` is read from the
+environment; the bind address is not configurable. Binding to loopback would
+require editing `server.ts` — **an application code change, which this approval
+explicitly excludes** ("Do not … change application code").
+
+### Blocker 2 — outbound access cannot be prevented
+
+Requirement: *"Prevent outbound access to production and external integrations.
+Missing credentials alone are not sufficient isolation."*
+
+That requirement is correct and I am not treating the absent keys in `.env.test`
+as satisfying it. No enforcement mechanism is available here:
+
+| Mechanism | Why unavailable |
+|---|---|
+| Host firewall rule | Requires elevation — `WindowsPrincipal.IsInRole(Administrator)` → **False** |
+| `hosts` file override | Same elevation requirement |
+| Container network policy | The application is not containerised for a local run |
+| Proxy environment variables | The application honours none (no `HTTP_PROXY`/`NO_PROXY` handling found) |
+
+The application would retain unrestricted network egress, including to the
+production database host and external integration endpoints. Integrations would
+fail on missing credentials — but **failing for lack of a key is not the same as
+being unable to reach the endpoint**, which is precisely the distinction the
+approval draws.
+
+## 5.3 Why this matters beyond the letter of the requirement
+
+`server.ts:5-9` selects its database purely from `NODE_ENV`:
+
+```js
+if (process.env.NODE_ENV === "test") { dotenv.config({ path: ".env.test", override: true }); }
+else { dotenv.config({ override: true }); }   // -> .env, which is PRODUCTION
+```
+
+With unrestricted egress, a single missing or misspelled `NODE_ENV=test` would
+boot the application against production — and W-6 would then rewrite production
+revenue rows at startup. A printed check before launch does not prevent that,
+because it validates a computed value rather than constraining the launched
+process. The approval's own wording anticipates this: *"A printed 'OK' is not
+sufficient unless the validated configuration is the configuration used by the
+launched process."*
+
+Network-level egress control is the missing safeguard. It is not available
+without elevation.
+
+## 5.4 Minimum prerequisites to proceed
+
+Either:
+
+1. **Elevated local access** to add a firewall rule or `hosts` override blocking
+   the production DB host and external integration endpoints for the duration of
+   the test; **or**
+2. **An approved code change** (outside this approval) making the bind address
+   configurable, plus an egress control; **or**
+3. **A network-isolated runner** — a container or VM with no route to production
+   — in which the application and its MySQL both run.
+
+**Recommended: option 3.** It satisfies both blockers at once, needs no
+elevation on this host and no application change, and is the only option that
+constrains the launched process rather than checking it beforehand.
+
+## 5.5 Effects of this attempt
+
+| Item | State |
+|---|---|
+| Application started | **No** |
+| Tables written | **None** |
+| Fixtures seeded | **None** |
+| `revenue_split_log` | **Not accessed** |
+| Production | **Not accessed** |
+| Application code | **Unchanged** |
+| Cloud commands | **None** |
+| Residual artefact | `wms_test_runner` account in the disposable local container — a grant only, no data |
