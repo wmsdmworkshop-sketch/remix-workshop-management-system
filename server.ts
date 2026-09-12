@@ -10,6 +10,7 @@ if (process.env.NODE_ENV === "test") {
 import { GoogleGenAI, ThinkingLevel, Modality, Type, GenerateVideosOperation } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { syncLoad, syncSave, clearJobCardsInDB } from "./src/db/sync.ts";
+import { createRevenueWithDetails, replaceRevenueWithDetails } from "./src/db/revenue-writer.ts";
 import { runMigrations, validateSchema } from "./src/db/migrate.ts";
 import { allMigrations } from "./src/db/migrations/index.ts";
 import { calculateRevenueAllocation } from "./src/lib/revenue-split-engine.ts";
@@ -610,21 +611,18 @@ async function startServer() {
         return;
       }
 
-      let revenueIdCounter = maxExistingRevenueId + 1;
-      let splitDetailIdCounter = maxExistingDetailId + 1;
-
-      const jobRevenuesRows: any[] = [];
-      const splitDetailsRows: any[] = [];
-
-      // Carry every existing row through untouched: they are authoritative and
-      // must remain in the in-memory collection that is persisted below.
-      const [existingDetails] = await dbPool.query("SELECT * FROM job_revenue_split_details") as any[];
-      for (const r of existingRevenueByJob.values()) jobRevenuesRows.push(r);
-      for (const d of (existingDetails || [])) splitDetailsRows.push(d);
+      // Identifiers are NEVER computed here any more. Two instances with
+      // different baselines could otherwise assign the same numeric id to
+      // DIFFERENT jobs, and the upsert (matching the PRIMARY KEY first) would
+      // rewrite job_id — destroying one job's revenue. Verified empirically.
+      // createRevenueWithDetails takes ids from the database and writes revenue
+      // + details in ONE transaction.
+      let createdCount = 0;
+      let skippedExisting = 0;
 
       for (const job of jobCards) {
         // Rule (a): a job that already has revenue is left exactly as it is.
-        if (existingRevenueByJob.has(Number(job.job_id))) continue;
+        if (existingRevenueByJob.has(Number(job.job_id))) { skippedExisting++; continue; }
 
         const techsList = getJobTechnicians(job);
         if (techsList.length === 0) continue;
@@ -635,31 +633,40 @@ async function startServer() {
 
         if (total <= 0) continue;
 
-        const currentRevId = revenueIdCounter++;
-
-        jobRevenuesRows.push({
-          revenue_id: currentRevId,
-          job_id: job.job_id,
-          labour_amount: labour,
-          parts_amount: spares,
-          total_amount: total,
-          split_id: 1,
-          calculated_at: new Date(job.created_at || Date.now()).toISOString()
-        });
-
         const allocations = calculateRevenueAllocation(job.job_id, techsList, labour);
-        for (const alloc of allocations) {
-          const currentDetailId = splitDetailIdCounter++;
-          splitDetailsRows.push({
-            detail_id: currentDetailId,
-            revenue_id: currentRevId,
-            employee_id: alloc.employee_id,
-            tech_role: alloc.allocated_role,
-            split_pct: alloc.split_pct,
-            split_amount: alloc.split_amount
+        try {
+          const outcome = await createRevenueWithDetails({
+            job_id: Number(job.job_id),
+            labour_amount: labour,
+            parts_amount: spares,
+            total_amount: total,
+            split_id: 1,
+            calculated_at: new Date(job.created_at || Date.now()).toISOString(),
+            details: allocations.map((alloc: any) => ({
+              employee_id: alloc.employee_id,
+              tech_role: alloc.allocated_role,
+              split_pct: alloc.split_pct,
+              split_amount: alloc.split_amount
+            }))
           });
+          if (outcome.created) createdCount++;
+          else skippedExisting++;   // another writer won; its record stands
+        } catch (e: any) {
+          // One job failing must not abort the rest, and must not leave a
+          // partial record — the helper rolls back its own transaction.
+          console.error(`[BACKGROUND] Revenue create failed for job ${job.job_id}:`, e.message);
         }
       }
+
+      console.log(`=== BACKGROUND: revenue backfill — created ${createdCount}, left existing ${skippedExisting} ===`);
+
+      // Reload from the database so the in-memory collections reflect exactly
+      // what is persisted, including rows other instances created. These
+      // collections are NOT the source of the revenue write any more.
+      const [freshRev] = await dbPool.query("SELECT * FROM job_revenues") as any[];
+      const [freshDet] = await dbPool.query("SELECT * FROM job_revenue_split_details") as any[];
+      const jobRevenuesRows: any[] = freshRev || [];
+      const splitDetailsRows: any[] = freshDet || [];
 
       cachedDB.jobRevenues = jobRevenuesRows;
       cachedDB.jobRevenueSplitDetails = splitDetailsRows;
@@ -7796,7 +7803,7 @@ time from another field.`;
   });
 
   // Calculate and save dynamic revenue splits!
-  app.post("/api/job-cards/:id/revenue", jobCardEditGuard, (req, res) => {
+  app.post("/api/job-cards/:id/revenue", jobCardEditGuard, async (req, res) => {
     const db = getDB();
     const jobId = parseInt(req.params.id);
     const { labour_amount, parts_amount } = req.body;
@@ -7856,6 +7863,38 @@ time from another field.`;
 
     db.jobRevenueSplitDetails.push(...details);
     setDB(db);
+
+    // Requirement 5: this user-initiated recalculation uses the SAME protected
+    // writer as the startup backfill — one transaction, one connection,
+    // database-assigned identifiers. The in-memory arrays above keep the
+    // response shape unchanged; the durable write happens here, and the real
+    // identifiers replace the computed ones so nothing downstream sees an id
+    // the database did not assign.
+    try {
+      const written = await replaceRevenueWithDetails({
+        job_id: jobId,
+        labour_amount: parseFloat(labour_amount),
+        parts_amount: parseFloat(parts_amount),
+        total_amount,
+        split_id: 1,
+        calculated_at: newRevenue.calculated_at,
+        details: details.map((d: any) => ({
+          employee_id: d.employee_id,
+          tech_role: d.tech_role,
+          split_pct: d.split_pct,
+          split_amount: d.split_amount
+        }))
+      });
+      newRevenue.revenue_id = written.revenue_id;
+      details.forEach((d: any, i: number) => {
+        d.revenue_id = written.revenue_id;
+        if (written.detail_ids[i] != null) d.detail_id = written.detail_ids[i];
+      });
+      setDB(db);
+    } catch (e: any) {
+      console.error("[Revenue] Coordinated write failed:", e.message);
+      return res.status(500).json({ error: "Revenue could not be saved. Nothing was changed." });
+    }
 
     res.json({
       revenue: newRevenue,

@@ -1647,8 +1647,8 @@ export async function syncLoad(): Promise<any> {
         await upsertRows("alert_configs", localData.alertConfigs, "alert_config_id");
         await upsertRows("job_cards", localData.jobCards, "job_id");
         await upsertRows("job_technician_maps", localData.jobTechnicianMaps, "map_id");
-        await upsertRows("job_revenues", localData.jobRevenues, "revenue_id");
-        await upsertRows("job_revenue_split_details", localData.jobRevenueSplitDetails, "detail_id");
+        // See the revenue-write protection note in syncSave: revenue is written
+        // only through createRevenueWithDetails(), never upserted by surrogate id.
         await upsertRows("carry_forward_logs", localData.carryForwardLogs, "cf_id");
         await upsertRows("rework_logs", localData.reworkLogs, "rework_id");
         await upsertRows("alert_logs", localData.alertLogs, "alert_id");
@@ -2146,8 +2146,21 @@ export async function syncSave(data: any): Promise<void> {
     await saveJobCardsToMaster(data.jobCards);
     
     await upsertRows("job_technician_maps", data.jobTechnicianMaps, "map_id");
-    await upsertRows("job_revenues", data.jobRevenues, "revenue_id");
-    await upsertRows("job_revenue_split_details", data.jobRevenueSplitDetails, "detail_id");
+    // REVENUE WRITE PROTECTION (requirement 5: no alternate unprotected path).
+    //
+    // These two tables are deliberately NOT upserted from the in-memory
+    // collections any more. Doing so keyed on the surrogate PRIMARY KEY, which
+    // was proven to destroy another job's revenue when two writers computed the
+    // same numeric id for different jobs:
+    //   existing (2, job 9002, 7777) + incoming (2, job 9003, 5000)
+    //   -> (2, job 9003, 5000)
+    //
+    // Revenue is now created ONLY through createRevenueWithDetails()
+    // (src/db/revenue-writer.ts): database-assigned ids, revenue + details in
+    // one transaction, INSERT IGNORE so a competing writer's record wins intact.
+    // syncSave still persists every other table exactly as before; revenue rows
+    // reach the database through the coordinated writer, and the in-memory
+    // collections are refreshed from the database after it runs.
     await upsertRows("carry_forward_logs", data.carryForwardLogs, "cf_id");
     await upsertRows("rework_logs", data.reworkLogs, "rework_id");
     await upsertRows("alert_logs", data.alertLogs, "alert_id");
