@@ -35,7 +35,7 @@ import {
   HelpCircle,
   X
 } from "lucide-react";
-import { JobCard, Bay, SRType, Employee, JobTechnicianMap, JobRevenue, JobRevenueSplitDetail, User } from "../types";
+import { JobCard, Bay, SRType, Employee, JobTechnicianMap, JobRevenue, JobRevenueSplitDetail, User, isOpenJobStatus, isWorkCompleteStatus, isDeliveredStatus, isAwaitingAllocationStatus } from "../types";
 import JobCardPreview from "./reception/JobCardPreview";
 import GateProgressBar from "./GateProgressBar";
 import { getStaffToken } from "../lib/authToken";
@@ -1000,7 +1000,7 @@ export default function JobCardManager({
   React.useEffect(() => { setAssignFilter(initialAssignFilter); }, [initialAssignFilter]);
 
   const filteredJobCards = useMemo(() => {
-    const isOpenJc = (j: any) => j.status === "Active" || j.status === "Waiting";
+    const isOpenJc = (j: any) => isOpenJobStatus(j.status);
     const hasTech = (j: any) =>
       (Array.isArray(j.technician_assignments) && j.technician_assignments.length > 0) ||
       !!(j.technician_name && String(j.technician_name).trim());
@@ -1614,11 +1614,13 @@ export default function JobCardManager({
             const srType = srTypes.find(s => s.sr_type_id === job.sr_type_id);
             
             let statusBadge = "bg-slate-100 text-slate-800 border-slate-200";
-            if (job.status === "Active") statusBadge = "bg-green-50 text-green-800 border-green-200/50";
-            else if (job.status === "Waiting") statusBadge = "bg-amber-50 text-amber-800 border-amber-200/50";
-            else if (job.status === "Completed") statusBadge = "bg-purple-50 text-purple-800 border-purple-200/50";
-            else if (job.status === "Invoiced") statusBadge = "bg-blue-50 text-blue-800 border-blue-200/50";
-            else if (job.status === "Rework") statusBadge = "bg-red-50 text-red-800 border-red-200/50";
+            // Every one of these compared against a value job_status cannot hold,
+            // so a job card only ever got the default grey badge.
+            if (job.status === "In Progress") statusBadge = "bg-green-50 text-green-800 border-green-200/50";
+            else if (isAwaitingAllocationStatus(job.status)) statusBadge = "bg-amber-50 text-amber-800 border-amber-200/50";
+            else if (job.status === "Ready") statusBadge = "bg-purple-50 text-purple-800 border-purple-200/50";
+            else if (job.status === "Delivered") statusBadge = "bg-blue-50 text-blue-800 border-blue-200/50";
+            else if (job.status === "Waiting Parts") statusBadge = "bg-red-50 text-red-800 border-red-200/50";
             else if (job.status === "Carry Forward") statusBadge = "bg-orange-50 text-orange-800 border-orange-200/50";
 
             return (
@@ -1717,7 +1719,9 @@ export default function JobCardManager({
                         const bId = Number(e.target.value);
                         if (!bId) return;
                         onAssignTechnicians(selectedJob.job_id, allocations.filter(a => a.job_id === selectedJob.job_id));
-                        onUpdateJob(selectedJob.job_id, { status: "Active", bay_id: bId });
+                        // "Active" is not a legal job_status; assigning a bay and technicians puts
+                        // the job into work, which the schema calls "In Progress".
+                        onUpdateJob(selectedJob.job_id, { status: "In Progress", bay_id: bId });
                       }}
                       className="text-[11px] bg-slate-50 border border-slate-200 rounded px-2 py-1.5 font-semibold focus:outline-hidden"
                     >
@@ -1727,7 +1731,7 @@ export default function JobCardManager({
                       ))}
                     </select>
                     <button 
-                      onClick={() => onUpdateJobStatus(selectedJob.job_id, "Active")}
+                      onClick={() => onUpdateJobStatus(selectedJob.job_id, "In Progress")}
                       className="ds-button-primary   hover:bg-orange-600 text-white font-bold text-[10px] px-3 py-1.5 rounded uppercase tracking-wider shadow-sm cursor-pointer"
                     >
                       Start Repair
@@ -1735,10 +1739,10 @@ export default function JobCardManager({
                   </div>
                 )}
  
-                {selectedJob.status === "Active" && currentUserRole !== "service_advisor" && (
+                {selectedJob.status === "In Progress" && currentUserRole !== "service_advisor" && (
                   <div className="flex items-center gap-2">
                     <button 
-                      onClick={() => onUpdateJobStatus(selectedJob.job_id, "Completed")}
+                      onClick={() => onUpdateJobStatus(selectedJob.job_id, "Ready")}
                       className="bg-green-600 hover:bg-green-700 text-white font-bold text-[10px] px-3 py-1.5 rounded uppercase tracking-wider shadow-sm cursor-pointer flex items-center gap-1"
                     >
                       <CheckCircle className="h-3.5 w-3.5" />
@@ -1753,9 +1757,9 @@ export default function JobCardManager({
                   </div>
                 )}
  
-                {selectedJob.status === "Completed" && currentUserRole === "workshop_manager" && (
+                {selectedJob.status === "Ready" && currentUserRole === "workshop_manager" && (
                   <button 
-                    onClick={() => onUpdateJobStatus(selectedJob.job_id, "Invoiced")}
+                    onClick={() => onUpdateJobStatus(selectedJob.job_id, "Delivered")}
                     className="ds-button-primary   hover:bg-orange-600 text-white font-bold text-[10px] px-3 py-1.5 rounded uppercase tracking-wider shadow-sm cursor-pointer flex items-center gap-1"
                   >
                     <DollarSign className="h-3.5 w-3.5" />
@@ -2797,7 +2801,7 @@ export default function JobCardManager({
                           if (cleanVrn.length >= 3) {
                             const latestVisit = [...jobCards]
                               .reverse()
-                              .filter(j => j.status !== "Cancelled")
+                              .filter(j => Boolean(j))
                               .find(j => j.vrn.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") === cleanVrn);
                             if (latestVisit) {
                               setCustomerName(latestVisit.customer_name);
@@ -3406,7 +3410,7 @@ export default function JobCardManager({
                 const cleanVrn = vrn.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
                 const lastVisit = [...jobCards]
                   .reverse()
-                  .filter(j => j.status !== "Cancelled")
+                  .filter(j => Boolean(j))
                   .find(j => j.vrn.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") === cleanVrn);
                 return lastVisit ? `Last visit on ${lastVisit.date_in || (lastVisit.created_at ? lastVisit.created_at.split("T")[0] : "Recent")} for "${lastVisit.job_description || "Service"}"` : "No prior visit history recorded in database.";
               })(),

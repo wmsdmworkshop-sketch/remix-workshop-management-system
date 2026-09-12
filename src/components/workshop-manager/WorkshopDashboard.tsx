@@ -1,4 +1,5 @@
 import React, { useState, Suspense, useMemo, useCallback } from "react";
+import { isOpenJobStatus, isWorkCompleteStatus } from "../../types";
 import { KPIHeader } from "./KPIHeader";
 import { FinancialRibbon } from "./FinancialRibbon";
 import { WorkshopSelector } from "./WorkshopSelector";
@@ -120,7 +121,7 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
     }
 
     // Check bay conflicts (prevent double allocation)
-    const activeInBay = jobCards.find(j => j.bay_id === bayId && ["Active", "Carry Forward", "Rework"].includes(j.status));
+    const activeInBay = jobCards.find(j => j.bay_id === bayId && !isWorkCompleteStatus(j.status));
     if (activeInBay && activeInBay.job_id !== jobId) {
       alert(`Conflict Warning: Bay is already occupied by vehicle ${activeInBay.vrn}.`);
       return;
@@ -142,7 +143,7 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
     }
 
     // Check if technician is already busy (prevent tech conflict)
-    const isTechBusy = jobCards.find(j => j.technician_name?.includes(employees.find(e => e.employee_id === techId)?.full_name) && ["Active", "Rework"].includes(j.status));
+    const isTechBusy = jobCards.find(j => j.technician_name?.includes(employees.find(e => e.employee_id === techId)?.full_name) && j.status === "In Progress");
     if (isTechBusy && isTechBusy.job_id !== jobId) {
       const proceed = window.confirm(`Technician is currently working on ${isTechBusy.vrn}. Assign anyway?`);
       if (!proceed) return;
@@ -166,7 +167,7 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
     }
 
     // Accept suggestion: dynamically re-route vehicle to the suggested bay & technician
-    const targetJob = jobCards.find(j => ["Waiting", "Active"].includes(j.status));
+    const targetJob = jobCards.find(j => isOpenJobStatus(j.status));
     if (!targetJob) {
       alert("No active matching job card found to assign suggestion to.");
       return;
@@ -201,7 +202,7 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
     // Real counts — 0 when there are no records (never a demo fallback).
     const received = jobCards.filter(j => j.created_at && j.created_at.startsWith(todayStr)).length;
     const delivered = jobCards.filter(j => j.status === "Completed" || j.status === "Invoiced").length;
-    const openJcs = jobCards.filter(j => ["Active", "Waiting", "Rework", "Carry Forward"].includes(j.status)).length;
+    const openJcs = jobCards.filter(j => isOpenJobStatus(j.status)).length;
     // Bay utilization is only meaningful when bays exist; otherwise "No data" (null), not a fabricated %.
     const utilization = bays.length > 0
       ? Math.round((bays.filter(b => b.status !== "Idle" && b.status !== "Empty").length / bays.length) * 100)
@@ -300,7 +301,7 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
   // Digital twin bay roster mapping
   const bayList = useMemo(() => {
     return bays.map(b => {
-      const activeJob = jobCards.find(j => j.bay_id === b.bay_id && ["Active", "Carry Forward", "Rework"].includes(j.status));
+      const activeJob = jobCards.find(j => j.bay_id === b.bay_id && !isWorkCompleteStatus(j.status));
       return {
         id: String(b.bay_id),
         name: b.bay_name,
@@ -324,7 +325,7 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
   const technicianList = useMemo(() => {
     const techs = employees.filter(e => ["Technician", "Electrician"].includes(e.role));
     return techs.map(t => {
-      const activeJob = jobCards.find(j => j.technician_name?.includes(t.full_name) && ["Active", "Rework"].includes(j.status));
+      const activeJob = jobCards.find(j => j.technician_name?.includes(t.full_name) && j.status === "In Progress");
       return {
         id: String(t.employee_id),
         name: t.full_name,
@@ -594,7 +595,7 @@ export const WorkshopDashboard: React.FC<WorkshopDashboardProps> = React.memo(({
         <div className="lg:col-span-2">
           <Suspense fallback={<div className="h-96 bg-slate-900 animate-pulse" />}>
             <BayLayoutBoard bays={bayList} isLoading={isLoading} onSelectBay={(id) => {
-              const matchingJob = jobCards.find(j => String(j.bay_id) === id && ["Active", "Rework"].includes(j.status));
+              const matchingJob = jobCards.find(j => String(j.bay_id) === id && j.status === "In Progress");
               if (matchingJob) {
                 setSelectedJobId(matchingJob.job_id);
                 setShowAllocModal(true);

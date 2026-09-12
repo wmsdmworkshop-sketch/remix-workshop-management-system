@@ -147,7 +147,10 @@ import {
   WorkforceAttendance,
   ApprovalMatrix,
   OvertimeRequest,
-  Workshop
+  Workshop,
+  isDeliveredStatus,
+  isWorkCompleteStatus,
+  isOpenJobStatus
 } from "./src/types";
 
 // In-memory file-backed database path
@@ -244,7 +247,7 @@ const INITIAL_DATA = {
       job_description: "General service, engine oil change, front brake pad inspection, air filter change.",
       priority: "Normal",
       bay_id: 1,
-      status: "Active",
+      status: "In Progress",
       etd: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
       started_at: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
       completed_at: null,
@@ -271,7 +274,7 @@ const INITIAL_DATA = {
       job_description: "Periodic Maintenance 40k service. Spark plug cleaning, coolant top-up.",
       priority: "Express",
       bay_id: 5,
-      status: "Completed",
+      status: "Ready",
       etd: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
       started_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
       completed_at: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
@@ -5986,7 +5989,9 @@ time from another field.`;
     const nextId = db.jobCards.reduce((max: number, j: JobCard) => Math.max(max, j.job_id), 0) + 1;
     newJob.job_id = nextId;
     newJob.job_card_no = newJob.job_card_no || `JC${String(nextId).padStart(3, "0")}`;
-    newJob.status = newJob.status || "Waiting";
+    // "Waiting" is not a legal job_status. A freshly created gate-in job has
+    // no allocation yet, which the schema calls "Unassigned".
+    newJob.status = newJob.status || "Unassigned";
     newJob.current_workflow_state = newJob.current_workflow_state || "GATE_IN";
     newJob.current_queue = newJob.current_queue || "INTAKE_QUEUE";
     newJob.started_at = null;
@@ -7410,21 +7415,32 @@ time from another field.`;
         rawConsolidatedAmt = rawLabourAmt + rawSparesAmt;
       }
 
-      // Map status
-      let mappedStatus: 'Waiting' | 'Active' | 'Completed' | 'Invoiced' | 'Carry Forward' | 'Rework' | 'Cancelled' = 'Completed';
+      // Map the spreadsheet's free-text status onto job_card_master.job_status.
+      //
+      // This used to emit 'Invoiced', 'Active', 'Waiting', 'Rework' and
+      // 'Cancelled' — none of which are legal values of that column's ENUM
+      // ('Open','In Progress','Waiting Parts','Ready','Delivered',
+      // 'Carry Forward','Assigned','Unassigned','In Queue'). Every DMS import
+      // therefore wrote a status the schema does not define, and the default
+      // for an unrecognised row was 'Completed', which is not legal either.
+      //
+      // 'Rework' and 'Cancelled' have NO equivalent in the schema. A reworked
+      // job is back in the workshop, so it maps to 'In Progress'; a cancelled
+      // one has no representation at all and is left at the default rather than
+      // invented — the import cannot express it, and silently choosing a state
+      // would misreport the job.
+      let mappedStatus: JobCard['status'] = 'Ready';
       const sl = rawStatus.toLowerCase();
       if (sl.includes("invoice") || sl.includes("deliver") || sl.includes("paid")) {
-        mappedStatus = "Invoiced";
-      } else if (sl.includes("progress") || sl.includes("active") || sl.includes("run")) {
-        mappedStatus = "Active";
+        mappedStatus = "Delivered";
+      } else if (sl.includes("progress") || sl.includes("active") || sl.includes("run") || sl.includes("rework")) {
+        mappedStatus = "In Progress";
+      } else if (sl.includes("part")) {
+        mappedStatus = "Waiting Parts";
       } else if (sl.includes("waiting") || sl.includes("queue")) {
-        mappedStatus = "Waiting";
+        mappedStatus = "In Queue";
       } else if (sl.includes("carry")) {
         mappedStatus = "Carry Forward";
-      } else if (sl.includes("rework")) {
-        mappedStatus = "Rework";
-      } else if (sl.includes("cancel")) {
-        mappedStatus = "Cancelled";
       }
 
       const parsedKm = (row.km_reading !== undefined && row.km_reading !== null)
@@ -7451,8 +7467,8 @@ time from another field.`;
         etd: safeISODate(rawExpectedDateOut, rawExpectedTime),
         started_at: rawDateIn ? safeISODate(rawDateIn, rawTimeIn) : null,
         completed_at: rawDateCompleted ? safeISODate(rawDateCompleted, rawTimeOut) : null,
-        invoiced_at: mappedStatus === "Invoiced" ? safeISODate(rawDateCompleted, rawTimeOut) : null,
-        gate_out_time: (mappedStatus === "Invoiced" || mappedStatus === "Completed") ? safeISODate(rawDateCompleted, rawTimeOut) : null,
+        invoiced_at: mappedStatus === "Delivered" ? safeISODate(rawDateCompleted, rawTimeOut) : null,
+        gate_out_time: isWorkCompleteStatus(mappedStatus) ? safeISODate(rawDateCompleted, rawTimeOut) : null,
         created_by: 1,
         created_at: rawDateIn ? safeISODate(rawDateIn, rawTimeIn) : new Date().toISOString(),
         date_in: rawDateIn,
@@ -8630,7 +8646,7 @@ time from another field.`;
     let nextRowId = db.dmsImportRows.reduce((max: number, r: DMSImportRow) => Math.max(max, r.row_id), 0) + 1;
     const parsedRows: DMSImportRow[] = rows.map((r: any, idx: number) => {
       // Find matching job card by VRN (Registration Number) in active / waiting / completed states
-      const matchedJob = db.jobCards.find((j: JobCard) => j.vrn.toLowerCase().trim() === r.vrn?.toLowerCase().trim() && j.status !== "Invoiced" && j.status !== "Cancelled");
+      const matchedJob = db.jobCards.find((j: JobCard) => j.vrn.toLowerCase().trim() === r.vrn?.toLowerCase().trim() && !isDeliveredStatus(j.status));
 
       let status: 'Matched' | 'Unmatched' | 'Conflict' = "Unmatched";
       let conflict_reason = null;

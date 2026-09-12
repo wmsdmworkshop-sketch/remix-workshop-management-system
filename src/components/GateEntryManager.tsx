@@ -27,7 +27,7 @@ import {
   Cpu
 } from "lucide-react";
 import FunnyLoader from "./FunnyLoader";
-import { JobCard, Bay } from "../types";
+import { JobCard, Bay, isOpenJobStatus, isWorkCompleteStatus, isDeliveredStatus } from "../types";
 
 import { compressImageFile } from "../lib/imageUtils";
 import { Capacitor } from "@capacitor/core";
@@ -262,7 +262,7 @@ export default function GateEntryManager({
     // 1. Search local jobCards memory for most recent visit
     const latestVisit = [...jobCards]
       .reverse()
-      .filter(j => j && j.status !== "Cancelled")
+      .filter(j => Boolean(j))
       .find(j => (j.vrn || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "") === cleanVrn);
 
     if (latestVisit) {
@@ -594,7 +594,7 @@ export default function GateEntryManager({
 
   // Active WIP and gate passes filters
   const activeJobs = useMemo(() => {
-    return jobCards.filter(j => j.status !== "Completed" && j.status !== "Invoiced");
+    return jobCards.filter(j => !isWorkCompleteStatus(j.status));
   }, [jobCards]);
 
   const gatePasses = useMemo(() => {
@@ -724,14 +724,17 @@ export default function GateEntryManager({
 
   const handleGateOut = (jobId: number) => {
     if (readOnly) return; // view-only role — the button is not rendered either
-    onUpdateJob(jobId, { status: "Invoiced", remarks: "Vehicle cleared Gate-Out" });
-    setSuccess(`Vehicle status updated to Invoiced. Gate-Out cleared!`);
+    // "Invoiced" is not a legal job_status. A vehicle that has cleared the gate
+    // is "Delivered" — the schema's end state, and the one production rows with
+    // gate_out_time actually carry.
+    onUpdateJob(jobId, { status: "Delivered", remarks: "Vehicle cleared Gate-Out" });
+    setSuccess(`Vehicle status updated to Delivered. Gate-Out cleared!`);
     setTimeout(() => setSuccess(null), 4000);
   };
 
   // Memoized Truck SVG to avoid lag/slowness on text input changes
   const memoizedTruckSvg = useMemo(() => {
-    const readyOutCount = jobCards.filter(j => j.status === "Completed" || j.status === "Invoiced").length;
+    const readyOutCount = jobCards.filter(j => isWorkCompleteStatus(j.status)).length;
     const freeBaysCount = bays.filter(b => b.status === "Idle" || b.status === "Available").length;
 
     return (

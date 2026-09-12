@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { isOpenJobStatus } from "../../types";
 import { 
   Building2, Sparkles, AlertOctagon, TrendingUp, BarChart3, 
   MapPin, ShieldAlert, Award, FileSpreadsheet, Compass 
@@ -76,7 +77,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = React.memo(
     return WORKSHOPS.map((name) => {
       const data = workshopDataMap[name];
       const rev = data.jobCards.reduce((sum, j) => sum + (j.labor_price || j.labour_amount || 0) + (j.parts_price || j.parts_amount || 0) || (j.total_amount || 0), 0);
-      const openCount = data.jobCards.filter(j => ["Active", "Waiting", "In Progress"].includes(j.status)).length;
+      const openCount = data.jobCards.filter(j => isOpenJobStatus(j.status)).length;
 
       return {
         name,

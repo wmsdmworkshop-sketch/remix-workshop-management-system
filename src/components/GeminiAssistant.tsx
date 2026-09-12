@@ -26,7 +26,7 @@ import {
   Download,
   Maximize2
 } from "lucide-react";
-import { Employee, Bay, JobCard, AlertLog } from "../types";
+import { Employee, Bay, JobCard, AlertLog, isOpenJobStatus } from "../types";
 
 interface Message {
   role: "user" | "assistant";
@@ -549,7 +549,7 @@ export default function GeminiAssistant({
 
   // Count active stats
   const activeBaysCount = bays.filter(b => b.status === "Active").length;
-  const activeJobsCount = jobCards.filter(j => j.status === "Active" || j.status === "Waiting").length;
+  const activeJobsCount = jobCards.filter(j => isOpenJobStatus(j.status)).length;
   const activeAlertsCount = alerts.filter(a => a.status === "Active").length;
 
   return (

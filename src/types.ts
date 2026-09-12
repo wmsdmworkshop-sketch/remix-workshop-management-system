@@ -99,7 +99,53 @@ export interface JobCard {
   job_description: string;
   priority: 'Normal' | 'Express';
   bay_id: number | null;
-  status: 'Waiting' | 'Active' | 'Completed' | 'Invoiced' | 'Carry Forward' | 'Rework' | 'Cancelled';
+  /**
+   * The job's workload status — job_card_master.job_status, mapped straight
+   * onto this field by /api/job-cards (server.ts:1690).
+   *
+   * THIS UNION IS THE COLUMN'S ENUM, taken from the live schema rather than
+   * from the values that happen to be present today. Typing only the observed
+   * four would have made 'Open', 'Waiting Parts', 'Assigned', 'In Queue' and
+   * 'Carry Forward' compile errors the moment a real job reached one of them.
+   *
+   * It previously read
+   *   'Waiting' | 'Active' | 'Completed' | 'Invoiced' | 'Carry Forward'
+   *   | 'Rework' | 'Cancelled'
+   * and had almost no overlap with the schema: of those seven only
+   * 'Carry Forward' is a legal value, and all 183 production rows held
+   * something the type declared impossible. Roughly 80 comparisons against the
+   * phantom values type-checked cleanly while matching nothing — which is why
+   * the Dashboard reported 0 open job cards against 162 genuinely open.
+   *
+   * WHAT THE VALUES MEAN, derived from the data attached to them rather than
+   * assumed:
+   *   In Progress  158 rows — no gate-out, no delivery, no invoice; 108 have a
+   *                technician and 106 a bay. Work in the workshop.
+   *   Ready         20 rows — actual_delivery set on ALL of them, but no
+   *                gate_out_time and no invoice. Work finished, vehicle not yet
+   *                released. NOT the same as invoiced.
+   *   Delivered      1 row  — gate_out_time, actual_delivery and invoice_no all
+   *                set. The complete end state.
+   *   Unassigned     4 rows — nothing attached. Awaiting allocation.
+   *
+   * Values legal in the schema but not currently present: Open, Waiting Parts,
+   * Assigned, In Queue, Carry Forward.
+   *
+   * NOTE: this is the WORKLOAD status, not the workflow position. The lifecycle
+   * stage lives in workshop_stage / live_status, and billing is tracked
+   * separately in billing_status ('Pending' | 'Paid'). Conflating them is what
+   * put "Completed" on the advisor card beside a live Start Intake button.
+   */
+  status:
+    | 'Open'
+    | 'In Progress'
+    | 'Waiting Parts'
+    | 'Ready'
+    | 'Delivered'
+    | 'Carry Forward'
+    | 'Assigned'
+    | 'Unassigned'
+    | 'In Queue';
   etd: string;
   started_at: string | null;
   completed_at: string | null;
@@ -516,4 +562,64 @@ declare global {
   interface ImportMeta {
     readonly env: ImportMetaEnv;
   }
+}
+
+/**
+ * JOB STATUS VOCABULARY — the single definition of what job_status means.
+ *
+ * Every consumer used to compare against 'Active', 'Waiting', 'Completed' and
+ * 'Invoiced'. None of those are legal values of job_card_master.job_status, so
+ * roughly 80 comparisons across 11 files matched nothing while type-checking
+ * cleanly. The Dashboard reported 0 open job cards against 162 genuinely open.
+ *
+ * These predicates exist so the mapping lives in ONE place. A future change to
+ * the workshop's vocabulary is then a change here, not a hunt through eleven
+ * components for string literals that silently stop matching.
+ *
+ * Meanings were derived from the data attached to each status in production,
+ * not assumed — see the note on JobCard.status.
+ */
+
+/** Legal values of job_card_master.job_status, from the column's own ENUM. */
+export const JOB_STATUS_VALUES = [
+  'Open', 'In Progress', 'Waiting Parts', 'Ready', 'Delivered',
+  'Carry Forward', 'Assigned', 'Unassigned', 'In Queue'
+] as const;
+
+export type JobStatus = typeof JOB_STATUS_VALUES[number];
+
+/**
+ * The job is live in the workshop — received, not yet finished.
+ * Replaces `status === "Active" || status === "Waiting"`.
+ */
+export function isOpenJobStatus(status?: string | null): boolean {
+  return ['Open', 'In Progress', 'Waiting Parts', 'Assigned', 'Unassigned', 'In Queue', 'Carry Forward']
+    .includes(String(status ?? ''));
+}
+
+/**
+ * Work is finished. NOT the same as invoiced or released — every 'Ready' row in
+ * production carries actual_delivery but no gate_out_time and no invoice_no.
+ * Replaces `status === "Completed"`.
+ */
+export function isWorkCompleteStatus(status?: string | null): boolean {
+  return status === 'Ready' || status === 'Delivered';
+}
+
+/**
+ * The vehicle has left: gate_out_time, actual_delivery and invoice_no all set.
+ * Replaces `status === "Invoiced"`. Note that billing is tracked separately in
+ * billing_status ('Pending' | 'Paid'); this is the workload end state, not
+ * proof of payment.
+ */
+export function isDeliveredStatus(status?: string | null): boolean {
+  return status === 'Delivered';
+}
+
+/**
+ * Waiting for allocation — no technician and no bay yet.
+ * Replaces the `status === "Waiting" && !bay_id` idiom.
+ */
+export function isAwaitingAllocationStatus(status?: string | null): boolean {
+  return status === 'Unassigned' || status === 'Open' || status === 'In Queue';
 }

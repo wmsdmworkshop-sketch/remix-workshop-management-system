@@ -25,7 +25,7 @@ import {
   UploadCloud,
   Check
 } from "lucide-react";
-import { JobCard } from "../types";
+import { JobCard, isWorkCompleteStatus } from "../types";
 
 interface PartsWarrantyManagerProps {
   jobCards: JobCard[];
@@ -429,7 +429,7 @@ export default function PartsWarrantyManager({
   const [wReason, setWReason] = useState("");
 
   const activeJobCards = useMemo(() => {
-    return jobCards.filter(j => j.status !== "Completed" && j.status !== "Invoiced");
+    return jobCards.filter(j => !isWorkCompleteStatus(j.status));
   }, [jobCards]);
 
   const getFsbStatusForJob = (jobId: number): 'Settled' | 'Rejected' | 'Deviation' | 'Pending' => {
@@ -486,7 +486,7 @@ export default function PartsWarrantyManager({
         customerRaw.includes(rawSearch) ||
         (jc.vehicle_model || "").toLowerCase().includes(rawSearch);
       
-      const isInWorkshop = jc.status !== "Completed" && jc.status !== "Invoiced";
+      const isInWorkshop = !isWorkCompleteStatus(jc.status);
       
       if (onlyInWorkshop && rawSearch.length > 0) {
         // If user typed a search query, search all vehicles matching the query
@@ -520,7 +520,9 @@ export default function PartsWarrantyManager({
     setRequisitions(prev => [newReq, ...prev]);
     
     // Also, trigger "Waiting Parts" status in the main job cards for parts delay simulation
-    onUpdateJob(matchedJob.job_id, { status: "Waiting", remarks: `Waiting parts: ${reqPartName} (${reqPartCode.toUpperCase()})` });
+    // The comment above already named the right state: the schema has a literal
+    // "Waiting Parts" value. This wrote "Waiting", which is not legal at all.
+    onUpdateJob(matchedJob.job_id, { status: "Waiting Parts", remarks: `Waiting parts: ${reqPartName} (${reqPartCode.toUpperCase()})` });
 
     setReqJobId("");
     setReqPartName("");
@@ -536,7 +538,8 @@ export default function PartsWarrantyManager({
     setRequisitions(prev => prev.map(r => r.id === reqId ? { ...r, status: "Issued" } : r));
     
     // Revert Job card back to active WIP status
-    onUpdateJob(jobId, { status: "Active", remarks: `Part Issued: ${partName}. Job resumed.` });
+    // Resuming work after the part arrives — "In Progress", not "Active".
+    onUpdateJob(jobId, { status: "In Progress", remarks: `Part Issued: ${partName}. Job resumed.` });
     
     setSuccess(`Part issued! Job resumed in production.`);
     setTimeout(() => setSuccess(null), 4000);

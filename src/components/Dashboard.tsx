@@ -38,7 +38,7 @@ import {
   Cell,
   Legend
 } from "recharts";
-import { JobCard, Bay, AlertLog, Employee } from "../types";
+import { JobCard, Bay, AlertLog, Employee, isOpenJobStatus, isWorkCompleteStatus, isDeliveredStatus, isAwaitingAllocationStatus } from "../types";
 import GateProgressBar from "./GateProgressBar";
 import WorkshopDashboard from "./workshop-manager/WorkshopDashboard";
 import ExecutiveDashboard from "./workshop-manager/ExecutiveDashboard";
@@ -138,10 +138,10 @@ export default function Dashboard({
 
   // Calculate KPIs from live props — no hardcoded values
   const vehiclesInsideCount = bays.filter(b => b.status === "Active").length;
-  const openJobCardsCount = jobCards.filter(j => j.status === "Active" || j.status === "Waiting").length;
+  const openJobCardsCount = jobCards.filter(j => isOpenJobStatus(j.status)).length;
   const todayStr = new Date().toDateString();
   const todayDeliveryCount = jobCards.filter(j =>
-    (j.status === "Completed" || j.status === "Invoiced") &&
+    isWorkCompleteStatus(j.status) &&
     (j.completed_at ? new Date(j.completed_at).toDateString() === todayStr : false)
   ).length;
   const activeTechs = employees.filter(e => ["Technician", "Electrician", "Add Tech"].includes(e.role) && e.is_active);
@@ -151,7 +151,7 @@ export default function Dashboard({
   const attendanceRate = totalStaff > 0 ? Math.round((activeStaff / totalStaff) * 1000) / 10 : 0;
   const bayUtilization = bays.length > 0 ? Math.round((bays.filter(b => b.status !== "Idle").length / bays.length) * 100) : 0;
   // Warranty pending: job cards with claim_type set and not invoiced
-  const warrantyPending = jobCards.filter(j => (j as any).claim_type && (j as any).claim_type !== "" && j.status !== "Invoiced").length;
+  const warrantyPending = jobCards.filter(j => (j as any).claim_type && (j as any).claim_type !== "" && !isDeliveredStatus(j.status)).length;
   // Revenue delta: if projected > 0, compare generated vs projected
   const revenueDelta = projectedRevenue > 0
     ? ((generatedRevenue - projectedRevenue) / projectedRevenue * 100).toFixed(1)
@@ -159,7 +159,7 @@ export default function Dashboard({
   const revenuePositive = revenueDelta !== null ? parseFloat(revenueDelta) >= 0 : true;
 
   function stateAJobsCount() {
-    return jobCards.filter(j => j.status === "Waiting" && !j.bay_id).length;
+    return jobCards.filter(j => isAwaitingAllocationStatus(j.status) && !j.bay_id).length;
   }
 
   const activeBaysCount = bays.filter(b => b.status !== "Idle").length;
@@ -168,7 +168,7 @@ export default function Dashboard({
   // A job card is OPEN when Active/Waiting. It is pending SA assignment when it has
   // no service advisor; pending technician assignment when it has an SA but no
   // technician yet. The two are mutually exclusive by construction.
-  const isOpenJc = (j: any) => j.status === "Active" || j.status === "Waiting";
+  const isOpenJc = (j: any) => isOpenJobStatus(j.status);
   const hasTechnician = (j: any) =>
     (Array.isArray(j.technician_assignments) && j.technician_assignments.length > 0) ||
     !!(j.technician_name && String(j.technician_name).trim());
@@ -181,7 +181,7 @@ export default function Dashboard({
   // model (top 5 + Other). Computed from live job cards, not hardcoded.
   const fleetMix = useMemo(() => {
     const palette = ["#2563EB", "#06B6D4", "#10B981", "#8B5CF6", "#F59E0B", "#EF4444"];
-    const inShop = jobCards.filter(j => j.status === "Active" || j.status === "Waiting");
+    const inShop = jobCards.filter(j => isOpenJobStatus(j.status));
     const counts: Record<string, number> = {};
     for (const j of inShop) {
       const key = (j.vehicle_model || j.vehicle_make || "Unknown").toString().trim() || "Unknown";
@@ -722,7 +722,7 @@ export default function Dashboard({
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {bays.map((bay) => {
-              const currentJob = jobCards.find(j => j.bay_id === bay.bay_id && ["Active", "Carry Forward", "Rework", "Completed"].includes(j.status));
+              const currentJob = jobCards.find(j => j.bay_id === bay.bay_id && !isWorkCompleteStatus(j.status));
               
               let cardStyle = "border-slate-800/60 bg-slate-900/40";
               let badgeStyle = "bg-slate-800 text-slate-300";
@@ -906,7 +906,7 @@ export default function Dashboard({
           manager can actually take from here. */}
       {selectedBay && (() => {
         const bayJob = jobCards.find(
-          j => j.bay_id === selectedBay.bay_id && ["Active", "Carry Forward", "Rework", "Completed"].includes(j.status)
+          j => j.bay_id === selectedBay.bay_id && !isWorkCompleteStatus(j.status)
         );
         return (
           <div

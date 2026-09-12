@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { isAwaitingAllocationStatus } from "../types";
 import { 
   ClipboardCopy, Search, Sparkles, Send, CheckCircle2, AlertTriangle, 
   Activity, DollarSign, Users, Clock, History, Camera, User, FileText, 
@@ -452,7 +453,7 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
       j.current_workflow_state === "GATE_ENTRY_DONE"
     );
     if (vehicleFilter === "IN_PROGRESS") return myJobCards.filter(j => ["Active", "In Progress", "Work in Progress"].includes(j.status || j.current_workflow_state));
-    if (vehicleFilter === "WAITING") return myJobCards.filter(j => ["Waiting", "Estimate Pending", "Approval Pending"].includes(j.status));
+    if (vehicleFilter === "WAITING") return myJobCards.filter(j => isAwaitingAllocationStatus(j.status));
     if (vehicleFilter === "READY") return myJobCards.filter(j => ["Ready", "QC Passed", "QC_PASSED"].includes(j.status || j.current_workflow_state));
     if (vehicleFilter === "DELIVERED") return myJobCards.filter(j => j.status === "Delivered" || j.current_workflow_state === "DELIVERED");
     return myJobCards;

@@ -26,7 +26,7 @@ import {
   Flame,
   Info
 } from "lucide-react";
-import { JobCard, Bay, Employee } from "../types";
+import { JobCard, Bay, Employee, isOpenJobStatus, isWorkCompleteStatus, isDeliveredStatus } from "../types";
 import { 
   BarChart, 
   Bar, 
@@ -292,7 +292,7 @@ export default function ActiveBayTatMonitor({
   const activeBaysSnapshot = useMemo(() => {
     return bays.map(bay => {
       // Find latest job cards in this bay that are active or parking
-      const assignedJobs = jobCards.filter(j => j.bay_id === bay.bay_id && j.status !== "Completed" && j.status !== "Invoiced" && j.status !== "Cancelled");
+      const assignedJobs = jobCards.filter(j => j.bay_id === bay.bay_id && !isWorkCompleteStatus(j.status));
       return {
         ...bay,
         jobs: assignedJobs,

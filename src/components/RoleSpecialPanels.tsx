@@ -28,7 +28,7 @@ import {
   UserX,
   AlertCircle
 } from "lucide-react";
-import { JobCard, Employee, Bay, JobTechnicianMap, JobRevenueSplitDetail, JobRevenue } from "../types";
+import { JobCard, Employee, Bay, JobTechnicianMap, JobRevenueSplitDetail, JobRevenue, isOpenJobStatus, isWorkCompleteStatus, isAwaitingAllocationStatus } from "../types";
 import { 
   BarChart, 
   Bar, 
@@ -223,7 +223,7 @@ export function GateEntryPanel({ jobCards, bays, onCreateJob, onRefresh }: GateE
   const [model, setModel] = useState("");
   const [success, setSuccess] = useState<string | null>(null);
 
-  const activeJobsCount = jobCards.filter(j => j.status !== "Completed").length;
+  const activeJobsCount = jobCards.filter(j => !isWorkCompleteStatus(j.status)).length;
   const totalBaysOccupied = bays.filter(b => b.status === "Occupied").length;
 
   const handleRegisterEntry = (e: React.FormEvent) => {
@@ -396,7 +396,7 @@ export function GateEntryPanel({ jobCards, bays, onCreateJob, onRefresh }: GateE
 
           <div className="overflow-y-auto flex-1 max-h-56 space-y-3 pr-1 text-xs">
             {jobCards
-              .filter(j => j.status === "Waiting")
+              .filter(j => isAwaitingAllocationStatus(j.status))
               .map((job, i) => (
                 <div key={i} className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 flex justify-between items-start">
                   <div>
@@ -409,7 +409,7 @@ export function GateEntryPanel({ jobCards, bays, onCreateJob, onRefresh }: GateE
                 </div>
               ))}
 
-            {jobCards.filter(j => j.status === "Waiting").length === 0 && (
+            {jobCards.filter(j => isAwaitingAllocationStatus(j.status)).length === 0 && (
               <div className="text-center py-8 text-slate-400 text-[11px]">
                 No vehicles at Waiting status.
               </div>
@@ -499,7 +499,7 @@ function TechnicianToastItem({ toast, onDismiss, onStartWork }: ToastItemProps) 
         <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">
           Assigned just now
         </span>
-        {toast.job.status === "Waiting" && (
+        {isAwaitingAllocationStatus(toast.job.status) && (
           <button
             onClick={() => {
               onStartWork(toast.jobId);
@@ -578,7 +578,7 @@ export function TechnicianJobsPanel({ jobCards, employeeId, onUpdateJobStatus, o
   // Hardcode fallback to general technician mapping for demo
   const myAllocatedJobs = useMemo(() => {
     // Return all assigned job cards that are being actively worked on
-    return jobCards.filter(job => job.status !== "Completed");
+    return jobCards.filter(job => !isWorkCompleteStatus(job.status));
   }, [jobCards]);
 
   // Monitor for newly assigned job cards
@@ -709,9 +709,9 @@ export function TechnicianJobsPanel({ jobCards, employeeId, onUpdateJobStatus, o
 
                 {/* Status Control Actions */}
                 <div className="flex gap-2 w-full md:w-auto">
-                  {job.status === "Waiting" && (
+                  {isAwaitingAllocationStatus(job.status) && (
                     <button
-                      onClick={() => handleAction(job.job_id, "Active")}
+                      onClick={() => handleAction(job.job_id, "In Progress")}
                       className="ds-button-primary w-full md:w-auto flex items-center justify-center gap-1 px-3 py-2   hover:bg-orange-600 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
                     >
                       <Play className="h-3 w-3" />
@@ -719,17 +719,17 @@ export function TechnicianJobsPanel({ jobCards, employeeId, onUpdateJobStatus, o
                     </button>
                   )}
 
-                  {job.status === "Active" && (
+                  {job.status === "In Progress" && (
                     <>
                       <button
-                        onClick={() => handleAction(job.job_id, "Waiting")}
+                        onClick={() => handleAction(job.job_id, "In Queue")}
                         className="flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
                       >
                         <Pause className="h-3 w-3" />
                         <span>Pause Job</span>
                       </button>
                       <button
-                        onClick={() => handleAction(job.job_id, "Completed")}
+                        onClick={() => handleAction(job.job_id, "Ready")}
                         className="ds-button-success flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-2   hover:bg-emerald-700 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
                       >
                         <CheckCircle2 className="h-3 w-3" />
@@ -738,7 +738,7 @@ export function TechnicianJobsPanel({ jobCards, employeeId, onUpdateJobStatus, o
                     </>
                   )}
 
-                  {job.status === "Completed" && (
+                  {isWorkCompleteStatus(job.status) && (
                     <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-100 px-3 py-2 rounded-lg border border-emerald-200">
                       Awaiting Supervisor QC Release
                     </div>
@@ -763,7 +763,7 @@ export function TechnicianJobsPanel({ jobCards, employeeId, onUpdateJobStatus, o
             <TechnicianToastItem 
               toast={toast} 
               onDismiss={(id) => setToasts(prev => prev.filter(t => t.id !== id))} 
-              onStartWork={(jobId) => handleAction(jobId, "Active")}
+              onStartWork={(jobId) => handleAction(jobId, "In Progress")}
             />
           </div>
         ))}

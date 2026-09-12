@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { isOpenJobStatus, isWorkCompleteStatus } from "../types";
 import { 
   Wrench, Users, Clock, AlertTriangle, Sparkles, Building2, BarChart3, 
   History, Calendar, CheckSquare, Layers, RefreshCw, CheckCircle2, 
@@ -125,7 +126,7 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
   const supervisorStats = useMemo(() => {
     const active = jobCards.filter(j => j.status === "Active").length;
     const assigned = jobCards.filter(j => j.technician_name && j.status !== "Completed").length;
-    const unassigned = jobCards.filter(j => !j.technician_name && ["Waiting", "Active"].includes(j.status)).length;
+    const unassigned = jobCards.filter(j => !j.technician_name && isOpenJobStatus(j.status)).length;
     const partsPending = jobCards.filter(j => j.current_workflow_state === "PARTS_PENDING").length;
     const waitingQc = jobCards.filter(j => j.current_workflow_state === "QC_PENDING").length;
     const warnings = alertLogs.filter(a => a.alert_type === "SLA_WARNING" && a.status === "Active").length;
@@ -145,7 +146,7 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
   const technicianList = useMemo(() => {
     const techs = employees.filter(e => ["Technician", "Electrician", "Mechanic"].includes(e.role));
     return techs.map((t, idx) => {
-      const activeJob = jobCards.find(j => j.technician_name?.includes(t.full_name) && ["Active", "Rework"].includes(j.status));
+      const activeJob = jobCards.find(j => j.technician_name?.includes(t.full_name) && j.status === "In Progress");
       return {
         id: `TECH-${t.employee_id}`,
         name: t.full_name,

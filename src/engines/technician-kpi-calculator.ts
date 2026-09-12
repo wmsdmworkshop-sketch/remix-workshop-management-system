@@ -1,4 +1,4 @@
-import { Employee, JobCard, JobTechnicianMap, JobRevenueSplit, SRType, TechnicianKPIDaily } from "../types";
+import { Employee, JobCard, JobTechnicianMap, JobRevenueSplit, SRType, TechnicianKPIDaily, isWorkCompleteStatus } from "../types";
 
 function safeGetDateOnly(val: any): string {
   if (!val) return "";
@@ -78,7 +78,7 @@ export function calculateTechnicianKPIs(
 
   // 2. Total Jobs Completed (Today)
   const completedTodayJobs = techJobs.filter((j: JobCard) => {
-    const isCompleted = j.status === "Completed" || j.status === "Invoiced";
+    const isCompleted = isWorkCompleteStatus(j.status);
     const compDate = safeGetDateOnly(j.completed_at);
     const compDateIn = j.date_completed || "";
     return isCompleted && (compDate === kpiDate || compDateIn === kpiDate);
