@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { tabFromPath, pathFromTab, resolvePostLoginPath, isNonAppPath, DEFAULT_TAB } from "./lib/tabRoutes";
 import {
   Video,
   LayoutDashboard,
@@ -140,18 +142,41 @@ function darkenColor(hex: string, percent: number): string {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<string>(() => {
-    // Restore tab after Android process-death during native camera capture.
-    // localStorage (not sessionStorage) persists across full process kills by
-    // Android lowmemorykiller — sessionStorage is in-memory only and is wiped
-    // when the DWIP process is terminated while the camera app is open.
-    // The stored tab is validated against auth / role guards on render.
-    try {
-      return localStorage.getItem("dwip_active_tab") || "dashboard";
-    } catch {
-      return "dashboard";
-    }
-  });
+  // ─── URL-BACKED NAVIGATION ────────────────────────────────────────────────
+  //
+  // activeTab used to be plain useState, so the URL never changed: every screen
+  // was the bare domain. Refresh lost the screen, Back exited the app, and no
+  // screen could be linked to.
+  //
+  // The URL is now the source of truth and `activeTab` is derived from it. The
+  // setter keeps the exact signature the 83 existing setActiveTab() call sites
+  // use — including the functional form setActiveTab(cur => …) — so no caller
+  // changes; it pushes a history entry instead of setting state. That is what
+  // makes deep links, Back/Forward and refresh work without touching the 19
+  // components that navigate.
+  //
+  // The tab id IS the path segment (see lib/tabRoutes.ts), so a tab added to
+  // ROLE_TABS gets a working URL with no extra wiring.
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const activeTab = React.useMemo(() => {
+    const fromUrl = tabFromPath(location.pathname);
+    // A path Express owns should never have reached the React router; fall back
+    // rather than rendering a screen named after someone else's URL.
+    if (!fromUrl) return DEFAULT_TAB;
+    return fromUrl;
+  }, [location.pathname]);
+
+  const setActiveTab = React.useCallback(
+    (next: string | ((current: string) => string)) => {
+      const current = tabFromPath(window.location.pathname) || DEFAULT_TAB;
+      const target = typeof next === "function" ? next(current) : next;
+      if (!target || target === current) return;
+      navigate(pathFromTab(target));
+    },
+    [navigate]
+  );
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [lookupQuery, setLookupQuery] = useState<string>("");
 
@@ -181,6 +206,19 @@ export default function App() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [userPermissions, setUserPermissions] = useState<any[]>([]);
 
+  // The path the visitor originally asked for, captured at first render before
+  // anything can navigate away from it. Used to return them there after they
+  // sign in — subject to their role permitting that screen. A ref, not state,
+  // because reading it must never trigger a re-render mid-login, and it is
+  // written exactly once per page load.
+  const attemptedPathRef = React.useRef<string | null>(
+    typeof window !== "undefined" &&
+    window.location.pathname !== "/" &&
+    !isNonAppPath(window.location.pathname)
+      ? window.location.pathname + window.location.search
+      : null
+  );
+
   // Production hardening tab access guard
   useEffect(() => {
     const isRc1 = import.meta.env.VITE_WORKFORCE_PROFILE === "rc1";
@@ -196,14 +234,24 @@ export default function App() {
       ];
       if (excludedTabs.includes(activeTab)) {
         console.warn(`[SECURITY] Access to blocked tab '${activeTab}' prevented under RC1 profile.`);
-        setActiveTab("dashboard");
+        // replace, not push: a blocked URL must not become a history entry the
+        // Back button lands on again. This guard already ran on [activeTab],
+        // so it covers a typed or pasted URL as well as a nav click.
+        navigate(pathFromTab(DEFAULT_TAB), { replace: true });
       }
     }
-  }, [activeTab, user]);
+  }, [activeTab, user, navigate]);
 
-  // Persist active tab to localStorage so it survives Android process-death
-  // caused by lowmemorykiller when the native camera app launches.
-  // sessionStorage is wiped with the process — localStorage is not.
+  // Persist the active tab for Android process-death during native camera
+  // capture (lowmemorykiller kills the process while the camera app is open;
+  // sessionStorage is wiped with it, localStorage is not).
+  //
+  // This is no longer what restores the screen — the URL is, and it survives
+  // the same kill because the WebView restores its location. The write is kept
+  // as a diagnostic record of where the user was, and because a host that
+  // relaunches at "/" rather than the last URL would otherwise lose it. It is
+  // deliberately NOT read back on mount any more: doing so would fight the URL
+  // for control of the screen, and a stale value would override a deep link.
   useEffect(() => {
     try {
       localStorage.setItem("dwip_active_tab", activeTab);
@@ -829,15 +877,25 @@ export default function App() {
 
 
 
-  // Keep active tab safe on user load or role change
+  // Keep the active tab safe on user load or role change.
+  //
+  // This is also what makes a DEEP LINK safe: a URL naming a screen this role
+  // does not have resolves here and is replaced with the role's own first
+  // screen. It runs on [user, activeTab] rather than [user] alone, because with
+  // URL navigation the tab can now change without the user changing — someone
+  // can type or paste a path at any time, not only at load.
+  //
+  // `replace: true`, so the rejected URL does not become a history entry the
+  // Back button bounces off. Client-side redirection is a usability control,
+  // not the security boundary: every /api route enforces its own role check
+  // server-side, so reaching a screen never grants its data.
   useEffect(() => {
-    if (user) {
-      const permittedTabs = tabsForRole(user.role);
-      if (permittedTabs.length > 0 && !permittedTabs.some(t => t.id === activeTab)) {
-        setActiveTab(permittedTabs[0].id);
-      }
+    if (!user) return;
+    const permitted = tabsForRole(user.role);
+    if (permitted.length > 0 && !permitted.some(t => t.id === activeTab)) {
+      navigate(pathFromTab(permitted[0].id), { replace: true });
     }
-  }, [user]);
+  }, [user, activeTab, navigate]);
 
   // Workshop Data state
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -1578,17 +1636,35 @@ export default function App() {
 
   if (!user && needsAuth) {
     return (
-      <AuthScreen 
+      <AuthScreen
         onAuthSuccess={(currentUser, currentToken) => {
           localStorage.setItem("wms_user", JSON.stringify(currentUser));
           setStaffToken(currentToken || "");
           setUser(currentUser);
           setToken(currentToken);
           setNeedsAuth(false);
-          
+
+          // AUTHORIZED RETURN AFTER LOGIN.
+          //
+          // Send the user back to the screen they originally asked for — a
+          // bookmarked or shared link now survives the sign-in — but ONLY when
+          // their role actually has that screen. resolvePostLoginPath falls
+          // back to "/" otherwise, so a deep link cannot be used to reach, or
+          // to probe the existence of, a screen the role does not carry.
+          //
+          // Computed from the role's OWN tab list rather than the rendered nav,
+          // because permittedTabs is not in scope here and the nav additionally
+          // filters on server permissions that have not loaded yet at this
+          // moment. The [user, activeTab] guard above re-checks once they have.
+          const permittedIds = tabsForRole(currentUser?.role).map((t: any) => t.id);
+          const target = resolvePostLoginPath(attemptedPathRef.current, permittedIds);
+          attemptedPathRef.current = null;
+          // replace: the login screen should not sit in history behind them.
+          navigate(target, { replace: true });
+
           // Pass token directly — React state is async so `token` is still null here
           fetchAllData(currentToken || undefined);
-        }} 
+        }}
       />
     );
   }
