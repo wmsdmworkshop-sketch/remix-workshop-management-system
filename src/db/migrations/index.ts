@@ -31,6 +31,7 @@ import repointJobFksToMaster from "./017_repoint_job_fks_to_master.ts";
 import uniqueRevenuePerJob from "./018_unique_revenue_per_job.ts";
 import revenueAutoincrementIds from "./019_revenue_autoincrement_ids.ts";
 import realBayRoster from "./020_real_bay_roster.ts";
+import retireLastInventedBays from "./021_retire_last_invented_bays.ts";
 export const allMigrations: Migration[] = [
   baseline,
   modulesMasterSeeding,
@@ -51,5 +52,6 @@ export const allMigrations: Migration[] = [
   repointJobFksToMaster,
   uniqueRevenuePerJob,
   revenueAutoincrementIds,
-  realBayRoster
+  realBayRoster,
+  retireLastInventedBays
 ];
