@@ -60,6 +60,23 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
   /** Whether the server's automatic floor handoff succeeded during creation. */
   const [floorHandoffDone, setFloorHandoffDone] = useState(false);
 
+  // RE-INTAKE → AMENDMENT.
+  //
+  // A gate entry carries ONE intake. Running technical intake a second time on
+  // the same visit used to fail on the primary key and surface the raw database
+  // error ("Duplicate entry 'INT-…' for key 'tbl_sa_intake.PRIMARY'") after the
+  // advisor had already typed the whole intake — with no way forward and the
+  // work lost.
+  //
+  // The server now answers 409 INTAKE_ALREADY_COMPLETED with the existing job
+  // card's details. That is not a dead end: changing the scope of an intake
+  // that has gone to the floor is a legitimate need, and amend-complaints is
+  // the supported path for it — it records who changed it and why. The typed
+  // complaint and scope are kept and submitted as the amendment, so nothing the
+  // advisor entered is thrown away.
+  const [existingIntake, setExistingIntake] = useState<any | null>(null);
+  const [amendmentReason, setAmendmentReason] = useState<string>("");
+
   // The real Siebel CRM-DMS workshop login the dealership uses. The previous
   // value (crm.tatamotors.com) was a generic guess that does not land on the
   // workshop application, so advisors had to navigate manually. Overridable per
@@ -186,7 +203,7 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
 
     setSubmitting(true);
     try {
-      const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || localStorage.getItem("wms_token") || "";
+      const token = getStaffToken();
       const res = await fetch("/api/sa-intake/create-job-card", {
         method: "POST",
         headers: {
@@ -232,6 +249,10 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
             );
           }
           setStep(5);
+        } else if (res.status === 409 && data.code === "INTAKE_ALREADY_COMPLETED") {
+          // Work already exists for this visit. Offer to amend it rather than
+          // reporting a failure the advisor cannot act on.
+          setExistingIntake(data.existing);
         } else {
           alert(`Job Card creation failed:\n${data.error || "Validation gate blocked"}`);
         }
@@ -246,12 +267,73 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
     }
   };
 
+  /**
+   * Submit the typed intake as an AMENDMENT to the intake that already exists
+   * for this gate entry. Carries the advisor's complaint and proposed scope
+   * across, so the work done in this modal is not discarded.
+   */
+  const handleAmendExisting = async () => {
+    if (!existingIntake) return;
+    if (!amendmentReason.trim()) {
+      alert("Enter the reason for amending this intake — it is recorded against the job card.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const token = getStaffToken();
+      const res = await fetch("/api/sa-intake/amend-complaints", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          intakeId: existingIntake.intakeId,
+          jobCardId: existingIntake.jobCardId,
+          newComplaints: [
+            {
+              complaint: complaintText,
+              complaintText,
+              category: complaintCategory,
+              symptom,
+              whenOccurs,
+              isRepeat,
+              isImmobilized,
+              isSafetyCritical,
+              proposedInspection,
+              jobType
+            }
+          ],
+          amendmentReason: amendmentReason.trim()
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        alert(
+          `Intake amended on job card ${existingIntake.jobCardId}.\n` +
+            `The change is recorded against your name with the reason you gave.`
+        );
+        onRefresh();
+        onClose();
+      } else {
+        // Never report an amendment as saved when it was not.
+        alert(`Amendment failed:\n${data.error || `Request failed (${res.status})`}`);
+      }
+    } catch (err: any) {
+      alert(`Amendment error: ${err.message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSendToFloor = async () => {
     if (!createdJobCardId) return;
 
     setSubmitting(true);
     try {
-      const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || localStorage.getItem("wms_token");
+      const token = getStaffToken();
       const res = await fetch("/api/sa-intake/send-to-floor", {
         method: "POST",
         headers: {
@@ -297,8 +379,75 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
           </button>
         </div>
 
+        {/* RE-INTAKE → AMENDMENT.
+            Shown instead of the wizard when the server reports this gate entry
+            already has a completed intake. The advisor's typed complaint and
+            scope are carried into the amendment rather than discarded. */}
+        {existingIntake && (
+          <div className="space-y-4">
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-400" />
+                <h3 className="text-sm font-black uppercase text-amber-400">Intake already completed</h3>
+              </div>
+              <p className="text-xs text-slate-300">
+                This vehicle already has job card{" "}
+                <span className="font-mono font-bold text-white">{existingIntake.jobCardId}</span>
+                {existingIntake.completedBy ? <> from the intake completed by <span className="font-bold text-white">{existingIntake.completedBy}</span></> : null}
+                {existingIntake.completedAt
+                  ? <> on {new Date(existingIntake.completedAt).toLocaleString("en-IN")}</>
+                  : null}
+                {existingIntake.status
+                  ? <> — currently <span className="font-bold text-white">{String(existingIntake.status).replace(/_/g, " ")}</span></>
+                  : null}.
+              </p>
+              <p className="text-xs text-slate-400">
+                A second intake would create another job card for the same visit. To change
+                the complaint or scope, amend the existing intake — the change is recorded
+                against your name with the reason you give.
+              </p>
+            </div>
+
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 space-y-2">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">What will be submitted</p>
+              <p className="text-xs text-slate-300"><span className="text-slate-500">Complaint:</span> {complaintText || <span className="text-slate-500">not entered</span>}</p>
+              <p className="text-xs text-slate-300"><span className="text-slate-500">Proposed scope:</span> {proposedInspection || <span className="text-slate-500">not entered</span>}</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                Reason for amendment <span className="text-red-400">*</span>
+              </label>
+              <textarea
+                value={amendmentReason}
+                onChange={(e) => setAmendmentReason(e.target.value)}
+                rows={3}
+                placeholder="Why is this intake being changed?"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:border-blue-500 outline-none"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setExistingIntake(null)}
+                disabled={submitting}
+                className="py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl transition-all disabled:opacity-50"
+              >
+                Back
+              </button>
+              <button
+                onClick={handleAmendExisting}
+                disabled={submitting || !amendmentReason.trim()}
+                className="py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {submitting ? "Amending…" : "Amend existing intake"}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* STEP 1: ODOMETER AUDIT */}
-        {step === 1 && (
+        {!existingIntake && step === 1 && (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <Gauge className="h-5 w-5 text-blue-400" />
@@ -355,7 +504,7 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
         )}
 
         {/* STEP 2: COMPLAINT CAPTURE & AUTHENTICATION */}
-        {step === 2 && (
+        {!existingIntake && step === 2 && (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-blue-400" />
@@ -426,7 +575,7 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
         )}
 
         {/* STEP 3: INTELLIGENCE CARDS */}
-        {step === 3 && (
+        {!existingIntake && step === 3 && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -523,7 +672,7 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
         )}
 
         {/* STEP 4: PRELIMINARY JOB SCOPE & JC DECISION */}
-        {step === 4 && (
+        {!existingIntake && step === 4 && (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <Wrench className="h-5 w-5 text-blue-400" />
@@ -624,7 +773,7 @@ export const SaTechnicalIntakeModal: React.FC<SaTechnicalIntakeModalProps> = ({
         )}
 
         {/* STEP 5: SEND TO FLOOR */}
-        {step === 5 && (
+        {!existingIntake && step === 5 && (
           <div className="space-y-4 text-center py-4">
             <CheckCircle2 className="h-12 w-12 text-emerald-400 mx-auto" />
             <div>

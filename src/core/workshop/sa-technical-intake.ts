@@ -273,6 +273,21 @@ export class SaTechnicalIntakeEngine {
     }
 
     const now = new Date();
+
+    // The REAL previous complaints. This wrote JSON.stringify([]) — a literal
+    // empty array — as previous_complaints_json, so every amendment audit
+    // claimed the intake had no complaints before it. An audit trail whose
+    // "before" is always empty cannot answer the question it exists for.
+    const [beforeRows]: any = await this.execute(
+      `SELECT authenticated_complaints_json, job_scope_json
+         FROM tbl_sa_intake WHERE intake_id = ? LIMIT 1`,
+      [payload.intakeId]
+    );
+    const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
+    if (!before) {
+      throw new Error(`Intake ${payload.intakeId} was not found; nothing to amend.`);
+    }
+
     await this.execute(
       `INSERT INTO tbl_complaint_amendment_audit (
         audit_id, intake_id, job_card_id, previous_complaints_json, new_complaints_json,
@@ -282,7 +297,7 @@ export class SaTechnicalIntakeEngine {
         auditId,
         payload.intakeId,
         payload.jobCardId || null,
-        JSON.stringify([]),
+        before.authenticated_complaints_json ?? JSON.stringify([]),
         JSON.stringify(payload.newComplaints),
         saName,
         now,
@@ -291,13 +306,66 @@ export class SaTechnicalIntakeEngine {
       ]
     );
 
+    // APPLY the amendment. This only ever wrote the audit row, so an amended
+    // intake still handed the floor its ORIGINAL complaints and scope — the
+    // technician worked from superseded instructions while the system recorded
+    // that the advisor had changed them. The amendment must change the intake
+    // itself, not merely note that it was requested.
+    //
+    // job_scope_json is updated only when the amendment actually carries a
+    // proposed inspection, so an amendment that changes only the complaint text
+    // does not blank the technician's work instruction.
+    const amendedScope = (payload.newComplaints || [])
+      .map((c: any) => ({
+        complaint: c?.complaint ?? c?.complaintText ?? "",
+        proposedInspection: c?.proposedInspection ?? "",
+        jobType: c?.jobType ?? "Running Repair",
+      }))
+      .filter((s: any) => String(s.proposedInspection).trim().length > 0);
+
+    if (amendedScope.length > 0) {
+      await this.execute(
+        `UPDATE tbl_sa_intake
+            SET authenticated_complaints_json = ?, job_scope_json = ?
+          WHERE intake_id = ?`,
+        [JSON.stringify(payload.newComplaints), JSON.stringify(amendedScope), payload.intakeId]
+      );
+    } else {
+      await this.execute(
+        `UPDATE tbl_sa_intake SET authenticated_complaints_json = ? WHERE intake_id = ?`,
+        [JSON.stringify(payload.newComplaints), payload.intakeId]
+      );
+    }
+
+    // Keep the job card's complaint in step with the amended intake, so the
+    // floor and job-card screens do not keep showing the superseded text.
+    if (payload.jobCardId) {
+      const firstComplaint =
+        (payload.newComplaints || [])
+          .map((c: any) => String(c?.complaintText ?? c?.complaint ?? "").trim())
+          .find((t: string) => t.length > 0) || "";
+      if (firstComplaint) {
+        try {
+          await this.execute(
+            `UPDATE job_card_master SET complaints = ? WHERE job_card_no = ?`,
+            [firstComplaint, payload.jobCardId]
+          );
+        } catch (e: any) {
+          // The amendment itself is recorded and applied; a failure to mirror
+          // it onto the job card must be visible, not silent.
+          console.error(`[SaIntake] amendment could not update job_card_master for ${payload.jobCardId}: ${e.message}`);
+        }
+      }
+    }
+
     return {
       success: true,
       auditId,
       intakeId: payload.intakeId,
       amendedBy: saName,
       amendedAt: now.toISOString(),
-      amendmentReason: payload.amendmentReason
+      amendmentReason: payload.amendmentReason,
+      scopeUpdated: amendedScope.length > 0
     };
   }
 
@@ -459,6 +527,53 @@ export class SaTechnicalIntakeEngine {
       const seq = ((countRow[0]?.cnt || 0) + 1).toString().padStart(3, "0");
       jobCardId = `DWIP-TEMP-${branchCode}-${dateStr}-${seq}`;
       jcType = "DWIP_TEMP";
+    }
+
+    // RE-ENTRY GUARD.
+    //
+    // intake_id is one per GATE ENTRY — reception creates it, and startIntake()
+    // reads it back (`ri?.intake_id`), so a second run of technical intake on
+    // the same gate entry arrives carrying the SAME id. The INSERT below is a
+    // plain INSERT, so that second run died on the primary key and surfaced to
+    // the advisor as a raw database error:
+    //
+    //   Duplicate entry 'INT-E49EFE21' for key 'tbl_sa_intake.PRIMARY'
+    //
+    // That happened after the advisor had typed the whole intake — odometer,
+    // complaint, scope — and it told them nothing about what to do. Worse, the
+    // only thing preventing a SECOND job card for one visit was the primary
+    // key; without it this would have silently created one.
+    //
+    // A completed intake is not an error to be retried, it is work that already
+    // exists. Refuse the duplicate creation and hand the caller what it needs
+    // to route the advisor into the amendment flow
+    // (amendAuthenticatedComplaints / POST /api/sa-intake/amend-complaints),
+    // which is the supported way to change the scope of an intake that has
+    // already gone to the floor — and which records WHO changed it and WHY.
+    const [priorIntake]: any = await this.execute(
+      `SELECT intake_id, job_card_id, status, sa_name, authenticated_at
+         FROM tbl_sa_intake WHERE gate_entry_id = ? ORDER BY created_at DESC LIMIT 1`,
+      [payload.gateEntryId]
+    );
+    const prior = Array.isArray(priorIntake) ? priorIntake[0] : null;
+    if (prior) {
+      const err: any = new Error(
+        `This vehicle already has job card ${prior.job_card_id}, from the intake ` +
+          `completed by ${prior.sa_name || "a service advisor"}. To change the ` +
+          `complaints or scope, amend that intake — a new intake would create a ` +
+          `second job card for the same visit.`
+      );
+      // Structured payload so the UI can offer the amendment action rather than
+      // showing the advisor a message they can only acknowledge.
+      err.code = "INTAKE_ALREADY_COMPLETED";
+      err.existing = {
+        intakeId: prior.intake_id,
+        jobCardId: prior.job_card_id,
+        status: prior.status,
+        completedBy: prior.sa_name ?? null,
+        completedAt: prior.authenticated_at ?? null,
+      };
+      throw err;
     }
 
     const intakeId = payload.intakeId || `INT-${randomUUID().substring(0, 8).toUpperCase()}`;

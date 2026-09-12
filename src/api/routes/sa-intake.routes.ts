@@ -156,6 +156,19 @@ saIntakeRouter.post('/create-job-card', authenticateJwt, async (req: any, res: a
     const result = await SaTechnicalIntakeEngine.createJobCard(req.body, req.user);
     return res.status(201).json({ success: true, data: result });
   } catch (err: any) {
+    // A gate entry whose intake is already complete is not a failed request —
+    // the work exists. 409 Conflict, and carry the structured details through
+    // so the client can offer to amend the existing intake instead of showing
+    // the advisor a dead end. Flattening this to err.message alone is what left
+    // the UI with nothing to act on.
+    if (err?.code === 'INTAKE_ALREADY_COMPLETED') {
+      return res.status(409).json({
+        success: false,
+        code: err.code,
+        error: err.message,
+        existing: err.existing,
+      });
+    }
     return res.status(400).json({ success: false, error: err.message });
   }
 });
