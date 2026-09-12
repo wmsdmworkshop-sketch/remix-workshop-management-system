@@ -177,7 +177,6 @@ export default function App() {
     },
     [navigate]
   );
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [lookupQuery, setLookupQuery] = useState<string>("");
 
   // Authentication State (Declared first so useEffect hooks can read user safely)
@@ -203,7 +202,6 @@ export default function App() {
       return true;
     }
   });
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [userPermissions, setUserPermissions] = useState<any[]>([]);
 
   // The path the visitor originally asked for, captured at first render before
@@ -908,6 +906,18 @@ export default function App() {
   const [allocations, setAllocations] = useState<JobTechnicianMap[]>([]);
   const [revenues, setRevenues] = useState<JobRevenue[]>([]);
   const [splitDetails, setSplitDetails] = useState<JobRevenueSplitDetail[]>([]);
+  // KEPT despite having no reader today.
+  //
+  // Unlike the other dead state removed in this change, these are FETCHED from
+  // live endpoints (/api/carry-forward, /api/rework) and kept current. Deleting
+  // them would mean deleting those two requests as well — and carry-forward and
+  // rework are real workflow features with working raise and resolve handlers
+  // in this same file, so the data is loaded for a screen that has not been
+  // built rather than for something abandoned.
+  //
+  // Removing the fetches would quietly take that away; leaving them loaded but
+  // unread costs two requests per refresh. That trade is the owner's call, not
+  // a cleanup decision, so it is recorded here rather than made silently.
   const [carryForwardLogs, setCarryForwardLogs] = useState<CarryForwardLog[]>([]);
   const [reworkLogs, setReworkLogs] = useState<ReworkLog[]>([]);
   const [alertLogs, setAlertLogs] = useState<AlertLog[]>([]);
@@ -945,34 +955,24 @@ export default function App() {
     }
   };
 
-  // Clear all job cards data (start fresh)
-  const [isClearing, setIsClearing] = useState(false);
-  const [clearSuccess, setClearSuccess] = useState(false);
-  const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
-
-  const handleClearJobCards = () => {
-    setShowClearConfirmModal(true);
-  };
-
-  const performClearJobCards = async () => {
-    setShowClearConfirmModal(false);
-    setIsClearing(true);
-    setClearSuccess(false);
-    try {
-      const res = await fetch("/api/db/clear-job-cards", { method: "POST" });
-      if (res.ok) {
-        await fetchAllData();
-        setClearSuccess(true);
-        setTimeout(() => setClearSuccess(false), 3000);
-      } else {
-        console.error("Failed to clear job cards:", await res.text());
-      }
-    } catch (e) {
-      console.error("Error clearing job cards:", e);
-    } finally {
-      setIsClearing(false);
-    }
-  };
+  // REMOVED: the "clear all job cards" feature.
+  //
+  // It deleted every job card, technician map, split revenue, rework and
+  // carry-forward log, and reset bays and employee revenues — behind a modal
+  // whose confirm button read "Yes, Destroy Data".
+  //
+  // It was unreachable: handleClearJobCards() (which was the only thing that
+  // opened the modal) had no callers anywhere in the codebase, so the modal
+  // could never be shown. It was also the one remaining write that sent NO
+  // Authorization header and carried no client-side role check of its own.
+  //
+  // Removed rather than repaired. Wiring a token onto an unreachable
+  // irreversible data-destruction button would make it reachable, which is a
+  // decision for the owner and not a bug fix. The server endpoint
+  // (POST /api/db/clear-job-cards) still exists and is properly guarded with
+  // authenticateToken + requireRoles(["admin","developer"]), so the capability
+  // remains available deliberately — it just no longer sits one stray onClick
+  // away from wiping the workshop.
 
   // Fetch all database state from server
   const fetchAllData = async (authToken?: string) => {
@@ -1191,10 +1191,6 @@ export default function App() {
     const id = setInterval(refreshAiMode, 60000);
     return () => clearInterval(id);
   }, [token, refreshAiMode]);
-
-  const handleLogin = async () => {
-    // Custom database JWT authentication is handled by AuthScreen
-  };
 
   const handleLogout = async () => {
     localStorage.removeItem("wms_user");
@@ -2144,50 +2140,6 @@ export default function App() {
           {activeTab === "employee-performance" && (
             <EmployeePerformanceHub employees={employees} jobCards={jobCards} />
           )}
-
-      {showClearConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-700/80 rounded-xl max-w-md w-full shadow-2xl p-6 relative overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-rose-500 to-amber-500" />
-            
-            <div className="flex gap-4 items-start">
-              <div className="p-3 bg-rose-500/10 text-rose-400 rounded-lg">
-                <Database className="h-6 w-6 animate-pulse" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">
-                  Irreversible Data Destruction
-                </h3>
-                <p className="mt-2 text-xs text-slate-400 leading-relaxed">
-                  Are you absolutely sure you want to clean all job cards data? This operation is permanent and will perform the following actions:
-                </p>
-                <ul className="mt-2 text-[11px] text-slate-400 list-disc pl-4 space-y-1">
-                  <li>Delete all Job Cards &amp; active records</li>
-                  <li>Delete technician maps &amp; split revenues</li>
-                  <li>Clear all Rework &amp; Carry Forward logs</li>
-                  <li>Reset all workshop bays status to <span className="text-emerald-400 font-semibold animate-pulse">Idle</span></li>
-                  <li>Reset employees&apos; allocated revenues to <span className="text-emerald-400 font-semibold">0</span></li>
-                </ul>
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end gap-3 border-t border-slate-800 pt-4">
-              <button
-                onClick={() => setShowClearConfirmModal(false)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md text-xs font-bold transition-all cursor-pointer"
-              >
-                Cancel, Keep Data
-              </button>
-              <button
-                onClick={performClearJobCards}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-md text-xs font-bold shadow-lg shadow-rose-900/25 transition-all cursor-pointer animate-pulse"
-              >
-                Yes, Destroy Data
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Bottom Navigation Bar - Mobile */}
       {showBottomNav && (
