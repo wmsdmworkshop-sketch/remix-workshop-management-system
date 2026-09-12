@@ -1,11 +1,14 @@
 {
-  "version": "v1.1.0-rc.1",
+  "version": "v1.1.0-rc.2",
   "release": "DWIP-v2.0.0-GA",
-  "tag": "v1.1.13-ap05tb4993-synced",
+  "tag": "v1.1.0-rc.2-p1-truthfulness",
   "enterprise": "Devanand Automobiles (Motors) LLP",
-  "buildTime": "2026-08-30T12:34:00.000+05:30",
-  "environment": "production",
-  "buildNumber": "124",
-  "commit": "HEAD",
-  "updatedAt": "2026-08-30T07:04:00.000Z"
+  "buildTime": "2026-09-12T10:53:37+05:30",
+  "environment": "test",
+  "buildNumber": "125",
+  "commit": "b21754c96df95b048bef400720ef504ef7196c86",
+  "updatedAt": "2026-09-12T10:53:37+05:30",
+  "buildSourceCommit": "b21754c96df95b048bef400720ef504ef7196c86",
+  "releaseType": "TEST",
+  "buildTimeNote": "Commit time of buildSourceCommit. No build step stamps this file; update at build if that changes."
 }
