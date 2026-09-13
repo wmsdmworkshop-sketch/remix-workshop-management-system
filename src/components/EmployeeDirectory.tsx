@@ -1,6 +1,6 @@
 import { useEscapeKey } from "../hooks/useEscapeKey";
 import React, { useState, useEffect } from "react";
-import { staffAuthHeaders } from "../lib/authToken";
+import { staffAuthHeaders, endExpiredSession, isSessionExpiredResponse } from "../lib/authToken";
 import { 
   Plus, 
   Users, 
@@ -118,6 +118,11 @@ export default function EmployeeDirectory({
   // Login-account linkage, fetched from the real /api/users list (single
   // source of truth: user_access_master / users). Never guessed per-employee.
   const [accountsByEmployeeId, setAccountsByEmployeeId] = useState<Map<number, string>>(new Map());
+  // NOT-LOADED IS NOT THE SAME AS NO-LOGIN. When the /api/users read failed the
+  // map stayed empty and every employee rendered "+ Create Login", which reads
+  // as "this person's login was deleted". Tracked explicitly so the badge can
+  // say it does not know.
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
   const [creatingLoginFor, setCreatingLoginFor] = useState<number | null>(null);
   const [resettingLoginFor, setResettingLoginFor] = useState<number | null>(null);
   const [bulkCreating, setBulkCreating] = useState(false);
@@ -128,6 +133,13 @@ export default function EmployeeDirectory({
   const fetchAccountLinks = async () => {
     try {
       const res = await fetch("/api/users", { headers: staffAuthHeaders() });
+      if (isSessionExpiredResponse(res)) {
+        // The token is gone or expired. Without this the screen stayed
+        // "logged in", showed every employee as having no login, and answered
+        // "Access denied. No token provided." on any action.
+        endExpiredSession("Your session has expired. Please sign in again.");
+        return;
+      }
       if (res.ok) {
         const users = await res.json();
         const map = new Map<number, string>();
@@ -135,9 +147,12 @@ export default function EmployeeDirectory({
           if (u.employee_id) map.set(Number(u.employee_id), u.username);
         }
         setAccountsByEmployeeId(map);
+        setAccountsLoaded(true);
       }
+      // Any other failure leaves accountsLoaded false, so the badge reports
+      // "unknown" rather than inviting the admin to create a duplicate login.
     } catch (e) {
-      // Quiet fail — badges just show "No Login Account" until this loads.
+      /* leaves accountsLoaded false — badge shows "unknown", not "no login" */
     }
   };
 
@@ -152,6 +167,12 @@ export default function EmployeeDirectory({
         method: "POST",
         headers: staffAuthHeaders(),
       });
+      if (isSessionExpiredResponse(res)) {
+        // Previously surfaced as a bare "Access denied. No token provided."
+        // alert on an action this admin was fully entitled to perform.
+        endExpiredSession("Your session has expired. Please sign in again, then create the login.");
+        return;
+      }
       const data = await res.json();
       if (res.ok && data.success) {
         setCredentialAction("created");
@@ -178,6 +199,10 @@ export default function EmployeeDirectory({
         method: "POST",
         headers: staffAuthHeaders(),
       });
+      if (isSessionExpiredResponse(res)) {
+        endExpiredSession("Your session has expired. Please sign in again, then reset the password.");
+        return;
+      }
       const data = await res.json();
       if (res.ok && data.success) {
         setCredentialAction("reset");
@@ -200,6 +225,10 @@ export default function EmployeeDirectory({
         method: "POST",
         headers: staffAuthHeaders(),
       });
+      if (isSessionExpiredResponse(res)) {
+        endExpiredSession("Your session has expired. Please sign in again before creating logins.");
+        return;
+      }
       const data = await res.json();
       if (res.ok && data.success) {
         setLoginCreationResult(data.created);
@@ -1733,6 +1762,16 @@ export default function EmployeeDirectory({
                               </button>
                             )}
                           </div>
+                        ) : !accountsLoaded ? (
+                          // The login list has not loaded. Offering "+ Create
+                          // Login" here would invite an admin to create a
+                          // duplicate for someone who already has one.
+                          <span
+                            title="The login list could not be loaded, so this is unknown."
+                            className="text-[9px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 uppercase tracking-wider"
+                          >
+                            Not loaded
+                          </span>
                         ) : isAdmin ? (
                           <button
                             onClick={() => handleCreateLogin(emp.employee_id)}

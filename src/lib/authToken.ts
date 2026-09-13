@@ -91,6 +91,48 @@ export function getStaffUserId(): number | null {
   return typeof id === "number" && Number.isFinite(id) ? id : null;
 }
 
+/**
+ * End a session the server has already rejected, and send the user to log in.
+ *
+ * WHY THIS EXISTS. staffAuthHeaders() OMITS the Authorization header when no
+ * token is present, so a browser whose token has expired or been cleared sends
+ * an unauthenticated request and the server answers "Access denied. No token
+ * provided." The screen, meanwhile, still shows the user as signed in because
+ * `wms_user` is a separate key that nothing clears — so an admin saw that
+ * message on an action they were fully entitled to perform, with no way to tell
+ * that the real problem was a dead session.
+ *
+ * Worse, a failed /api/users read left the login-account map EMPTY, which made
+ * every employee render "+ Create Login" as though their login had been
+ * deleted. Nothing had been deleted; the list simply never loaded.
+ *
+ * Clears both keys and reloads, which drops the app back to the login screen.
+ */
+export function endExpiredSession(message?: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    clearStaffToken();
+    localStorage.removeItem(STAFF_USER_KEY);
+  } catch {
+    /* localStorage unavailable */
+  }
+  if (message) {
+    try { window.alert(message); } catch { /* ignore */ }
+  }
+  try { window.location.reload(); } catch { /* ignore */ }
+}
+
+/**
+ * True when a response means "your session is no longer valid".
+ *
+ * 401 only. A 403 is a permission decision about a live session and must NOT
+ * log anyone out — that would turn "you may not do this" into "you have been
+ * signed out", which is both wrong and alarming.
+ */
+export function isSessionExpiredResponse(res: { status: number }): boolean {
+  return res.status === 401;
+}
+
 /** Standard auth headers for a staff API call. Adds Authorization only when present. */
 export function staffAuthHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json", ...extra };
