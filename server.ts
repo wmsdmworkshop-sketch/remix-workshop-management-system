@@ -13593,62 +13593,6 @@ Respond with valid JSON only:
   // Access is restricted to the roles whose work these documents cover.
   // Placed above the SPA catch-all so the route is not swallowed by it. Vite
   // copies public/ into dist/ on build, so the file resolves in dev and prod.
-  const serviceAssistFile = (): string | undefined =>
-    [
-      path.join(process.cwd(), "dist", "service-assist.html"),
-      path.join(process.cwd(), "public", "service-assist.html"),
-    ].find(p => fs.existsSync(p));
-
-  /**
-   * Service Assist — the CVBU dealer knowledge base.
-   *
-   * SERVED THROUGH /api SO IT CAN ACTUALLY AUTHENTICATE.
-   *
-   * This page used to sit at GET /service-assist behind
-   * authenticateToken + requireRoles(...). That never worked, for either entry
-   * point: authenticateToken reads the JWT from the Authorization header, and
-   * this application stores its token in localStorage and sets NO cookie. A
-   * browser navigating to /service-assist sends no header, and neither does an
-   * <iframe src="/service-assist">. Both got 401, and because the SPA catch-all
-   * then served the app shell, the URL rendered the DASHBOARD instead of the
-   * page — which is exactly what was reported.
-   *
-   * Moving it under /api changes nothing about who may read it — the global
-   * /api JWT gate applies, so it is still staff-only — but it puts the page on
-   * a path the SPA can fetch WITH its token, which is the only way a
-   * header-based scheme can work here.
-   *
-   * Per the owner's decision the per-role list is dropped: any signed-in staff
-   * member may read it. The content is Tata's published service documentation
-   * and carries no customer or workshop data.
-   */
-  app.get("/api/service-assist", (_req: any, res: any) => {
-    const targetPath = serviceAssistFile();
-    if (!targetPath) {
-      return res.status(404).send("Service Assist page not found.");
-    }
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.sendFile(targetPath);
-  });
-
-  /**
-   * The bare /service-assist URL. Kept so an existing link or bookmark does not
-   * silently render the dashboard: it now explains where the page lives instead
-   * of pretending to be something else.
-   */
-  app.get("/service-assist", (_req: any, res: any) => {
-    res.status(200).setHeader("Content-Type", "text/html; charset=utf-8");
-    res.send(
-      `<!doctype html><meta charset="utf-8">` +
-      `<title>Service Assist</title>` +
-      `<body style="font-family:system-ui;background:#0b1220;color:#f4f4f5;padding:2rem">` +
-      `<h1 style="font-size:1.1rem">Service Assist</h1>` +
-      `<p style="font-size:.85rem;color:#a1a1aa">This page is served inside the ` +
-      `application. Open DWIP and choose <strong>Service Assist</strong> from the ` +
-      `Workshop Operations menu.</p></body>`
-    );
-  });
-
   // --- VITE MIDDLEWARE SETUP ---
   if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test") {
     const vite = await createViteServer({

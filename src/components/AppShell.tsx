@@ -16,9 +16,6 @@ export const WORKSPACE_MAPPING: Record<string, string> = {
   "my-workspace": "my-workspace",
   dashboard: "dashboard",
   jobs: "workshop",
-  // Service Assist: CVBU dealer knowledge base. Grouped with Workshop
-  // Operations because it is an operational reference tool, not an executive view.
-  "service-assist": "workshop",
   "gate-entry": "workshop",
   "bay-tat": "workshop",
   "delivery-workspace": "workshop",

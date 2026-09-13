@@ -26,9 +26,7 @@
  * Platform, first entry under Service Operations). Both wanted /customer-portal,
  * Express won, and the tab rendered as the dashboard under a URL naming a
  * different application. The tab is therefore published at /customer-experience.
- *
- * /service-assist is a server-rendered page, not a React screen. The tab of the
- * same name fetches it with the staff token and shows it in an iframe.
+
  */
 
 /**
@@ -41,10 +39,6 @@ const TAB_PATH_ALIASES: Record<string, string> = {
   // Express serves the separate customer-portal SPA at /customer-portal, so the
   // workshop's own Customer Experience tab cannot live there.
   "customer-portal": "customer-experience",
-  // Express serves the Service Assist landing page at /service-assist, so the
-  // tab that embeds the knowledge base cannot live there either. Same defect:
-  // the server won the path and the tab rendered as the dashboard.
-  "service-assist": "service-knowledge",
 };
 
 /** Reverse of TAB_PATH_ALIASES: path segment -> tab id. */
@@ -64,7 +58,6 @@ const NON_APP_PREFIXES = [
   "/uploads",
   // The customer portal is a separate build served from here by Express.
   "/customer-portal",
-  "/service-assist",
   "/assets",
 ];
 // NOTE: "/portal" was listed here and has been removed. Express serves nothing
