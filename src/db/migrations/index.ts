@@ -36,6 +36,7 @@ import iceBaysInBaysTable from "./022_ice_bays_in_bays_table.ts";
 import closeCompletedManagerAssignments from "./023_close_completed_manager_assignments.ts";
 import advisorPartsAtEstimation from "./024_advisor_parts_at_estimation.ts";
 import ocrEvidenceUserMediaTypes from "./025_ocr_evidence_user_media_types.ts";
+import qcModuleFloorAndManagers from "./026_qc_module_floor_and_managers.ts";
 export const allMigrations: Migration[] = [
   baseline,
   modulesMasterSeeding,
@@ -61,5 +62,6 @@ export const allMigrations: Migration[] = [
   iceBaysInBaysTable,
   closeCompletedManagerAssignments,
   advisorPartsAtEstimation,
-  ocrEvidenceUserMediaTypes
+  ocrEvidenceUserMediaTypes,
+  qcModuleFloorAndManagers
 ];
