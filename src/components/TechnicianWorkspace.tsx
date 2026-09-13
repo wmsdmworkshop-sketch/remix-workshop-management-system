@@ -28,6 +28,8 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
 }) => {
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
+  // Completed-work drill-down, opened from the "Completed" KPI tile.
+  const [showCompleted, setShowCompleted] = useState<boolean>(false);
 
   // Labour timer tracking states
   const [timerActive, setTimerActive] = useState<boolean>(false);
@@ -70,12 +72,32 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
     return myJobs.find(j => j.job_id === selectedJobId) || myJobs[0] || null;
   }, [myJobs, selectedJobId]);
 
+  /**
+   * This technician's finished work, newest first.
+   *
+   * Drives both the "Completed" KPI and the drill-down list below it, so the
+   * number and the list can never disagree.
+   */
+  const myCompletedJobs = useMemo(() => {
+    const myId = currentUser?.employee_id;
+    if (myId == null) return [];
+    return jobCards
+      .filter(j => Number(j.assigned_to) === Number(myId) && isWorkCompleteStatus(j.status))
+      .sort((a, b) => {
+        const at = new Date(a.completed_at || a.updated_at || 0).getTime();
+        const bt = new Date(b.completed_at || b.updated_at || 0).getTime();
+        return bt - at;
+      });
+  }, [jobCards, currentUser]);
+
   // Section 1: Dashboard KPIs
   const dashboardStats = useMemo(() => {
     const myId = currentUser?.employee_id;
-    const completed = myId == null ? 0 : jobCards.filter(j =>
-      Number(j.assigned_to) === Number(myId) && isWorkCompleteStatus(j.status)
-    ).length;
+    // NOT "today". This counts every job this technician has finished, which is
+    // what the list below shows. The tile used to be labelled "Completed Today"
+    // while counting all of them — a technician with one job finished last week
+    // saw "Completed Today: 1" on a day he had completed nothing.
+    const completed = myCompletedJobs.length;
     const reworkCount = jobCards.filter(j => j.rework_count && j.rework_count > 0).length;
     const totalCount = completed + myJobs.length;
     const ftrVal = totalCount > 0
@@ -85,12 +107,12 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
     return {
       assignedCount: myJobs.length,
       currentJob: myJobs[0]?.vrn || "No active assignment",
-      completedToday: completed,
+      completedCount: completed,
       productivity: totalCount > 0 ? "100%" : "0%",
       ftr: ftrVal,
       rework: `${reworkCount}`
     };
-  }, [jobCards, myJobs, currentUser]);
+  }, [jobCards, myJobs, myCompletedJobs, currentUser]);
 
   // Section 8: Technician AI Copilot suggestions
   const aiCopilotData = useMemo(() => {
@@ -268,15 +290,139 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
             {[
               { label: "Assigned Jobs", val: dashboardStats.assignedCount, color: "text-white" },
               { label: "Current Vehicle", val: dashboardStats.currentJob, color: "text-blue-400 font-mono" },
-              { label: "Completed Today", val: dashboardStats.completedToday, color: "text-emerald-400" },
+              // "Completed" without "Today": the figure is this technician's
+              // whole finished history, and the tile opens that list.
+              { label: "Completed", val: dashboardStats.completedCount, color: "text-emerald-400", drill: true },
               { label: "FTR Performance", val: dashboardStats.ftr, color: "text-amber-400" }
             ].map((stat, idx) => (
-              <div key={idx} className="bg-slate-900 border border-slate-800 p-4 rounded-xl text-center space-y-1">
-                <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">{stat.label}</span>
-                <span className={`text-lg font-black ${stat.color}`}>{stat.val}</span>
-              </div>
+              stat.drill ? (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setShowCompleted(v => !v)}
+                  aria-expanded={showCompleted}
+                  title="Show my completed jobs"
+                  className={`bg-slate-900 border p-4 rounded-xl text-center space-y-1 transition-all cursor-pointer hover:border-emerald-600/40 ${
+                    showCompleted ? "border-emerald-600/40 ring-1 ring-emerald-600/20" : "border-slate-800"
+                  }`}
+                >
+                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">{stat.label}</span>
+                  <span className={`text-lg font-black ${stat.color}`}>{stat.val}</span>
+                  <span className="text-[9px] text-emerald-500/70 font-bold uppercase tracking-wider block">
+                    {showCompleted ? "Hide list" : "View list"}
+                  </span>
+                </button>
+              ) : (
+                <div key={idx} className="bg-slate-900 border border-slate-800 p-4 rounded-xl text-center space-y-1">
+                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">{stat.label}</span>
+                  <span className={`text-lg font-black ${stat.color}`}>{stat.val}</span>
+                </div>
+              )
             ))}
           </div>
+
+          {/* SECTION 1b: Completed work drill-down (opened from the KPI tile) */}
+          {showCompleted && (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-lg overflow-hidden">
+              <div className="flex items-center gap-2 p-5 pb-3 border-b border-slate-800">
+                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">My Completed Jobs</h3>
+                <span className="text-[10px] text-slate-500 font-bold">({myCompletedJobs.length})</span>
+              </div>
+
+              {myCompletedJobs.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-8">
+                  You have no completed jobs yet.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="text-[9px] text-slate-500 font-bold uppercase tracking-wider border-b border-slate-850">
+                        <th className="px-5 py-2.5">Job Card</th>
+                        <th className="px-5 py-2.5">Vehicle</th>
+                        <th className="px-5 py-2.5">Completed</th>
+                        <th className="px-5 py-2.5">Status</th>
+                        <th className="px-5 py-2.5 text-right">Labour Billed</th>
+                        <th className="px-5 py-2.5">Invoice</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {myCompletedJobs.map(job => {
+                        // LABOUR IS SHOWN ONLY WHEN IT WAS ACTUALLY BILLED.
+                        // The per-technician labour split lives in
+                        // job_card_technician.labour_share, which is not yet
+                        // written by the live save path, so for almost every
+                        // job there is no collected figure to show. The
+                        // estimate is NOT substituted here: a technician
+                        // reading his own earnings must not be shown a quoted
+                        // amount formatted as money he has earned.
+                        const billed = job.labour_share ?? job.labour_amount ?? null;
+                        const hasBilled = billed != null && Number(billed) > 0;
+                        const isPaid = String(job.billing_status || "").toLowerCase() === "paid";
+
+                        return (
+                          <tr key={job.job_id} className="border-b border-slate-850/60 text-xs hover:bg-slate-950/40">
+                            <td className="px-5 py-3 font-mono text-slate-300">{job.job_card_no || "—"}</td>
+                            <td className="px-5 py-3 font-mono font-bold text-slate-200">{job.vrn || "—"}</td>
+                            <td className="px-5 py-3 text-slate-400">
+                              {job.completed_at
+                                ? new Date(job.completed_at).toLocaleDateString("en-IN", {
+                                    day: "2-digit", month: "short", year: "numeric"
+                                  })
+                                : <span className="text-slate-600">Not recorded</span>}
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                job.status === "Delivered"
+                                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                  : "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                              }`}>
+                                {job.status}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3 text-right font-mono">
+                              {hasBilled ? (
+                                <span className="text-emerald-400 font-bold">
+                                  ₹{Number(billed).toLocaleString("en-IN")}
+                                </span>
+                              ) : (
+                                // Honest blank, with the reason. Not ₹0 — zero
+                                // would read as "you earned nothing".
+                                <span className="text-slate-600" title="No labour split has been recorded against this job yet">
+                                  Not yet billed
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-5 py-3">
+                              {job.invoice_no ? (
+                                <span className="font-mono text-slate-300">{job.invoice_no}</span>
+                              ) : (
+                                <span className={`text-[10px] font-bold ${isPaid ? "text-amber-500" : "text-slate-600"}`}>
+                                  {isPaid ? "Paid, no invoice no." : "Not invoiced"}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+
+                  {/* Say plainly why the money column is mostly empty, rather
+                      than leaving the technician to assume he was unpaid. */}
+                  {myCompletedJobs.every(j => !(j.labour_share ?? j.labour_amount)) && (
+                    <p className="text-[10px] text-slate-500 px-5 py-3 border-t border-slate-850 leading-relaxed">
+                      Labour amounts appear here once the job is invoiced and the labour split is
+                      recorded against your name. None of these jobs has a recorded split yet — this
+                      is not a statement that the work was unpaid. Ask your supervisor to confirm
+                      billing.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* SECTION 2: My Queue list */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
