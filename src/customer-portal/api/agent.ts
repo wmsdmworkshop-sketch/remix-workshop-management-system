@@ -1,18 +1,17 @@
 // ==========================================
 // Customer Portal — AI Agent (Function Calling)
 // ==========================================
-// Engineered for security and token efficiency (Gemini 2.0 Flash).
+// Engineered for security and token efficiency (NVIDIA Nemotron).
 // Enforces:
 // 1. Data Isolation: Tool results strictly scoped to customer_id.
 // 2. Token Management: Short responses and JSON-only lookups.
 // 3. Data Snippets: Uses specific context snippets for explanations.
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { callNemotron, isNemotronConfigured, parseJsonReply } from "../../config/nemotron";
 import { sanitizeJobCard, verifyJobOwnership } from "./sanitizer";
 import { getQueryCache, setQueryCache } from "./cache";
 import type { CustomerJobView } from "../types";
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // System Prompt ensuring short responses, JSON function triggers, and context compliance
 const SYSTEM_PROMPT = `Act as a Service Assistant for Devanand Motors. 
@@ -27,9 +26,9 @@ const TOOLS = [
     name: "get_vehicle_status",
     description: "Get the current live status of a vehicle by its registration number (VRN)",
     parameters: {
-      type: Type.OBJECT,
+      type: "object",
       properties: {
-        vrn: { type: Type.STRING, description: "Vehicle registration number like MH-12-AB-1234" },
+        vrn: { type: "string", description: "Vehicle registration number like MH-12-AB-1234" },
       },
       required: ["vrn"],
     },
@@ -38,9 +37,9 @@ const TOOLS = [
     name: "get_service_history",
     description: "Get past completed service records for a vehicle or all vehicles",
     parameters: {
-      type: Type.OBJECT,
+      type: "object",
       properties: {
-        vrn: { type: Type.STRING, description: "Optional vehicle registration number. If omitted, returns all vehicles." },
+        vrn: { type: "string", description: "Optional vehicle registration number. If omitted, returns all vehicles." },
       },
     },
   },
@@ -48,9 +47,9 @@ const TOOLS = [
     name: "get_estimated_completion",
     description: "Get the estimated completion date/time for a specific job card",
     parameters: {
-      type: Type.OBJECT,
+      type: "object",
       properties: {
-        job_card_no: { type: Type.STRING, description: "Job card number like JC001" },
+        job_card_no: { type: "string", description: "Job card number like JC001" },
       },
       required: ["job_card_no"],
     },
@@ -59,9 +58,9 @@ const TOOLS = [
     name: "get_invoice_status",
     description: "Get invoice and billing status for a specific job card",
     parameters: {
-      type: Type.OBJECT,
+      type: "object",
       properties: {
-        job_card_no: { type: Type.STRING, description: "Job card number like JC001" },
+        job_card_no: { type: "string", description: "Job card number like JC001" },
       },
       required: ["job_card_no"],
     },
@@ -70,9 +69,9 @@ const TOOLS = [
     name: "explain_technical_fault",
     description: "Explain a technical fault, symptom, or repair description in simple customer-friendly language",
     parameters: {
-      type: Type.OBJECT,
+      type: "object",
       properties: {
-        description: { type: Type.STRING, description: "The technical fault description or symptom to explain" },
+        description: { type: "string", description: "The technical fault description or symptom to explain" },
       },
       required: ["description"],
     },
@@ -216,64 +215,63 @@ export async function processCustomerChat(
     return cached;
   }
 
-  // 2. If no API key, return a helpful message
-  if (!GEMINI_API_KEY) {
+  // 2. No provider configured — the deterministic keyword handler below still
+  // answers from real job-card data, so the portal stays useful without AI.
+  if (!isNemotronConfigured()) {
     return handleFallbackChat(userMessage, customerMobile, dbGetter);
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    // NIM HAS NO GEMINI-STYLE functionDeclarations. The model is asked to pick
+    // a tool as JSON instead, and the SAME executeFunctionCall path runs it —
+    // so every answer still comes from the customer-scoped database lookup,
+    // never from the model's own words about their vehicle.
+    const toolSpec = TOOLS.map((t: any) =>
+      `- ${t.name}: ${t.description} | args: ${JSON.stringify(t.parameters?.properties || {})}` +
+      (t.parameters?.required?.length ? ` | required: ${t.parameters.required.join(", ")}` : "")
+    ).join("\n");
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: [
-        { role: "user", parts: [{ text: userMessage }] },
-      ],
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        tools: [
-          {
-            functionDeclarations: TOOLS,
-          },
-        ],
-      },
+    const instruction = [
+      SYSTEM_PROMPT,
+      "",
+      "Available functions:",
+      toolSpec,
+      "",
+      "If the question needs vehicle, service, invoice or fault data, reply with ONLY:",
+      '{"function":"<name>","args":{...}}',
+      "Otherwise reply with ONLY:",
+      '{"reply":"<your short answer>"}',
+      "Never state a vehicle status, date, or amount yourself — always call a function for it.",
+    ].join("\n");
+
+    const raw = await callNemotron(userMessage, {
+      system: instruction,
+      maxTokens: 700,
     });
 
-    const candidate = response.candidates?.[0];
-    if (!candidate) {
-      return "I'm having trouble processing your request. Please try again.";
+    const decision = parseJsonReply<any>(raw);
+
+    if (decision?.function) {
+      const result = executeFunctionCall(
+        String(decision.function),
+        (decision.args as Record<string, string>) || {},
+        customerMobile,
+        dbGetter
+      );
+      setQueryCache(customerMobile, userMessage, result);
+      return result;
     }
 
-    // Check if the model wants to call a function
-    const parts = candidate.content?.parts || [];
-    for (const part of parts) {
-      if (part.functionCall) {
-        const { name, args } = part.functionCall;
-        const result = executeFunctionCall(
-          name || "",
-          (args as Record<string, string>) || {},
-          customerMobile,
-          dbGetter
-        );
-
-        setQueryCache(customerMobile, userMessage, result);
-        return result;
-      }
-    }
-
-    // If no function call, return the text response
-    const textResponse = parts
-      .filter((p: any) => p.text)
-      .map((p: any) => p.text)
-      .join(" ")
-      .trim();
-
+    const textResponse = String(decision?.reply || "").trim();
     if (textResponse) {
       setQueryCache(customerMobile, userMessage, textResponse);
       return textResponse;
     }
 
-    return "I'm here to help with your vehicle service status. Please ask about your vehicle or service history.";
+    // The model answered in an unexpected shape. Fall back to the deterministic
+    // handler rather than forwarding free text that was never grounded in a
+    // lookup — that is exactly how a customer gets told a wrong status.
+    return handleFallbackChat(userMessage, customerMobile, dbGetter);
   } catch (err: any) {
     console.error("[CustomerPortal] AI agent error:", err.message);
     return handleFallbackChat(userMessage, customerMobile, dbGetter);

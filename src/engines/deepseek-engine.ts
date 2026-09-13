@@ -1,10 +1,19 @@
 /**
  * =============================================================================
- * DWIP Enterprise Platform — DeepSeek AI Engine
+ * DWIP Enterprise Platform — AI Reasoning Engine (NVIDIA Nemotron)
  * Bounded Context: Intelligence, Research & Commercial Vehicle Diagnostics
- * Description: Connects DWIP to DeepSeek (deepseek-chat / deepseek-reasoner)
- *              for high-depth reasoning, diagnostics, and operational intelligence.
  * =============================================================================
+ *
+ * WAS DEEPSEEK. Now NVIDIA NIM.
+ *
+ * DEEPSEEK_API_KEY was a placeholder in this environment and answered 401 on
+ * every request for months. Nothing checked, so every feature that funnels
+ * through here — the RBAC copilot, bug triage, fault diagnosis, sync anomaly
+ * analysis — has been silently dead. The class name and method signatures are
+ * kept so the call sites need no edit; only the provider underneath changed.
+ *
+ * The AI-mode kill switch stays exactly where it was: this is still the single
+ * chokepoint every reasoning feature passes through.
  */
 
 export interface DeepSeekMessage {
@@ -30,16 +39,32 @@ export interface DeepSeekDiagnosticResult {
 }
 
 export class DeepSeekEngine {
+  /**
+   * The configured key, or "" when there is nothing usable.
+   *
+   * A PLACEHOLDER IS NOT A KEY. Accepting any non-empty string is exactly how
+   * the DeepSeek path stayed dead and invisible. NVIDIA keys begin "nvapi-";
+   * anything else is refused here rather than sent upstream to 401.
+   */
   private static getApiKey(): string {
-    // Env-only by design. A committed fallback key would be a live credential
-    // published to the repo, and would also mask a genuine misconfiguration by
-    // silently working. Set DEEPSEEK_API_KEY on the runtime environment
-    // (already configured on the dwip-enterprise Cloud Run service).
-    return process.env.DEEPSEEK_API_KEY || "";
+    const raw = (process.env.NEMOTRON_API_KEY || process.env.NVIDIA_API_KEY || "").trim();
+    if (!raw) return "";
+    if (/^(your[_-]|<|xxx|placeholder|changeme|todo)/i.test(raw)) return "";
+    if (!raw.startsWith("nvapi-")) return "";
+    return raw;
   }
 
   private static getBaseUrl(): string {
-    return process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
+    return process.env.NEMOTRON_BASE_URL || "https://integrate.api.nvidia.com/v1";
+  }
+
+  /** The text model every method here uses. */
+  private static getModel(requested?: string): string {
+    // Legacy call sites pass "deepseek-chat" / "deepseek-reasoner". Those ids
+    // do not exist on NIM; map anything unrecognised to the configured model
+    // rather than forwarding an id that would 404.
+    if (requested && requested.startsWith("nvidia/")) return requested;
+    return process.env.NEMOTRON_TEXT_MODEL || "nvidia/nemotron-3.5-lightning-30b-a3b";
   }
 
   /**
@@ -49,7 +74,7 @@ export class DeepSeekEngine {
     try {
       const apiKey = this.getApiKey();
       if (!apiKey) {
-        return { status: "error", message: "DEEPSEEK_API_KEY is not configured" };
+        return { status: "error", message: "NEMOTRON_API_KEY is not configured (an NVIDIA key starting 'nvapi-')" };
       }
 
       const res = await fetch(`${this.getBaseUrl()}/models`, {
@@ -62,7 +87,7 @@ export class DeepSeekEngine {
         const data = await res.json();
         return { status: "ok", models: data.data || [] };
       } else {
-        return { status: "error", message: `DeepSeek API returned HTTP ${res.status}` };
+        return { status: "error", message: `NVIDIA NIM returned HTTP ${res.status}` };
       }
     } catch (e: any) {
       return { status: "error", message: e.message };
@@ -90,10 +115,10 @@ export class DeepSeekEngine {
 
     const apiKey = this.getApiKey();
     if (!apiKey) {
-      throw new Error("DEEPSEEK_API_KEY is not configured");
+      throw new Error("AI is not configured — set NEMOTRON_API_KEY to a real NVIDIA key (it starts with 'nvapi-').");
     }
 
-    const model = options.model || "deepseek-chat";
+    const model = this.getModel(options.model);
     const res = await fetch(`${this.getBaseUrl()}/chat/completions`, {
       method: "POST",
       headers: {
@@ -104,13 +129,16 @@ export class DeepSeekEngine {
         model,
         messages,
         temperature: options.temperature ?? 0.3,
-        max_tokens: options.maxTokens ?? 2048
+        // REASONING BUDGET. The model thinks BEFORE it answers and that
+        // thinking counts against this limit; measured, a budget of 120 is
+        // truncated mid-thought and yields no answer at all. Floor it.
+        max_tokens: Math.max(options.maxTokens ?? 2048, 512)
       })
     });
 
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(`DeepSeek API Error (${res.status}): ${errText}`);
+      throw new Error(`NVIDIA NIM error (${res.status}): ${errText.slice(0, 300)}`);
     }
 
     const data: any = await res.json();
@@ -159,7 +187,21 @@ Analyze the provided fault code or driver complaint and return ONLY a valid JSON
   "estimatedRepairHours": number
 }`;
 
-    const prompt = `Vehicle: ${vehicleInfo?.model || "Tata Signa 4825"} (Engine: ${vehicleInfo?.engine || "Cummins ISBe 6.7 BS6"}, Odometer: ${vehicleInfo?.odometer || 150000} KM)\nFault / Symptom: ${faultCodeOrComplaint}`;
+    // NO INVENTED VEHICLE. This previously defaulted to a Tata Signa 4825 with
+    // a Cummins ISBe 6.7 and 150,000 km whenever the caller passed nothing, so
+    // a diagnosis for an unknown vehicle came back confidently describing one
+    // that was never in the workshop. Unknown facts are omitted instead, and
+    // the model is told they are unknown.
+    const known: string[] = [];
+    if (vehicleInfo?.model) known.push(`Model: ${vehicleInfo.model}`);
+    if (vehicleInfo?.engine) known.push(`Engine: ${vehicleInfo.engine}`);
+    if (Number.isFinite(Number(vehicleInfo?.odometer))) {
+      known.push(`Odometer: ${Number(vehicleInfo!.odometer)} KM`);
+    }
+    const vehicleLine = known.length
+      ? `Vehicle: ${known.join(", ")}`
+      : "Vehicle details: not supplied. Do not assume a model, engine or mileage; if the answer depends on them, say so.";
+    const prompt = `${vehicleLine}\nFault / Symptom: ${faultCodeOrComplaint}`;
 
     const rawResponse = await this.chat([
       { role: "system", content: systemPrompt },
@@ -169,25 +211,36 @@ Analyze the provided fault code or driver complaint and return ONLY a valid JSON
       temperature: 0.1
     });
 
+    const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      // NO INVENTED DIAGNOSIS. This previously returned a fabricated result —
+      // "Standard CV Diagnostic Kit", 2.5 estimated hours, a root cause of
+      // "Requires physical bay inspection" — none of which came from the model
+      // or from any vehicle. A technician cannot tell that apart from a real
+      // diagnosis, and parts and labour hours are acted on. Failing loudly is
+      // the only honest option.
+      throw new Error("The diagnostic model did not return a usable result. Nothing has been recorded.");
+    }
+
+    let parsed: any;
     try {
-      const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return {
-          ...parsed,
-          modelUsed: "DeepSeek AI Engine"
-        };
-      }
-    } catch {}
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch {
+      throw new Error("The diagnostic model returned malformed output. Nothing has been recorded.");
+    }
 
     return {
-      faultCode: faultCodeOrComplaint.slice(0, 10),
-      diagnosis: rawResponse,
-      rootCause: "Requires physical bay inspection",
-      recommendedAction: rawResponse.slice(0, 200),
-      partsRequired: ["Standard CV Diagnostic Kit"],
-      estimatedRepairHours: 2.5,
-      modelUsed: "DeepSeek AI Engine"
+      faultCode: parsed.faultCode,
+      diagnosis: String(parsed.diagnosis || "").trim(),
+      rootCause: String(parsed.rootCause || "").trim(),
+      recommendedAction: String(parsed.recommendedAction || "").trim(),
+      // Only what the model actually returned. An absent list stays empty
+      // rather than becoming a plausible-looking default kit.
+      partsRequired: Array.isArray(parsed.partsRequired) ? parsed.partsRequired : [],
+      estimatedRepairHours: Number.isFinite(Number(parsed.estimatedRepairHours))
+        ? Number(parsed.estimatedRepairHours)
+        : 0,
+      modelUsed: this.getModel(),
     };
   }
 }

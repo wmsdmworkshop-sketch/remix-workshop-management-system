@@ -7,7 +7,6 @@ if (process.env.NODE_ENV === "test") {
 } else {
   dotenv.config({ override: true });
 }
-import { GoogleGenAI, ThinkingLevel, Modality, Type, GenerateVideosOperation } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { syncLoad, syncSave, clearJobCardsInDB } from "./src/db/sync.ts";
 import { createRevenueWithDetails, replaceRevenueWithDetails } from "./src/db/revenue-writer.ts";
@@ -31,11 +30,13 @@ import { enforceFieldPermissions, describeRefusal, FIELD_PERMISSION_LEVELS, type
 import { BACKDATE_ROLES } from "./src/core/workshop/backdate-policy.ts";
 import { SA_ASSIGNMENT_ROLES } from "./src/core/workshop/assignment-roles.ts";
 import {
-  GEMINI_TEXT_MODEL,
-  GEMINI_VISION_MODEL,
-  GEMINI_PRO_MODEL,
-  GEMINI_LITE_MODEL,
-} from "./src/config/geminiModels.ts";
+  callNemotron,
+  isNemotronConfigured,
+  parseJsonReply,
+  NEMOTRON_TEXT_MODEL,
+  NEMOTRON_VISION_MODEL,
+  NEMOTRON_AUDIO_MODEL,
+} from "./src/config/nemotron.ts";
 import {
   areSlaBreachAlertsEnabled,
   invalidateSlaAlertPolicyCache,
@@ -4954,59 +4955,49 @@ async function startServer() {
         autoApproved = true;
         matchReason = "First check-in: profile photo auto-enrolled successfully.";
       } else {
-        if (process.env.GEMINI_API_KEY) {
+        if (isNemotronConfigured()) {
           try {
-            const ai = new GoogleGenAI({
-              apiKey: process.env.GEMINI_API_KEY,
-              httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-            });
+            const prompt = [
+              "You are a biometric verification assistant. Compare the employee's Reference",
+              "Profile Photo (Image 1) with the Check-in Photo (Image 2). Determine whether",
+              "they are the same person.",
+              "Return EXACTLY this JSON object and nothing else:",
+              '{"matched":boolean,"similarityScore":0.0 to 1.0,"reason":"short explanation"}',
+              "If the images are unclear, obstructed, or you cannot tell, set matched to false",
+              "and say why. Never guess — this approves an attendance record.",
+            ].join("\n");
 
-            const prompt = `You are a biometric verification assistant. Compare the employee's Reference Profile Photo (Image 1) with the Check-in Photo (Image 2). 
-Determine if they represent the same person.
-Return EXACTLY a JSON object with this schema:
-{
-  "matched": true,
-  "similarityScore": 0.0 to 1.0,
-  "reason": "short explanation"
-}
-Do not include any Markdown or formatting other than the clean JSON object.`;
-
-            const aiRes = await ai.models.generateContent({
-              model: GEMINI_TEXT_MODEL,
-              contents: [
-                {
-                  inlineData: {
-                    mimeType: "image/jpeg",
-                    data: employee.profile_photo
-                  }
-                },
-                {
-                  inlineData: {
-                    mimeType: "image/jpeg",
-                    data: cleanPhoto
-                  }
-                },
-                prompt
+            const reply = await callNemotron(
+              [
+                { type: "text", text: prompt },
+                { type: "image_url", image_url: { url: `data:image/jpeg;base64,${employee.profile_photo}` } },
+                { type: "image_url", image_url: { url: `data:image/jpeg;base64,${cleanPhoto}` } },
               ],
-              config: {
-                responseMimeType: "application/json"
-              }
-            });
+              { model: NEMOTRON_VISION_MODEL, maxTokens: 600 }
+            );
 
-            const result = JSON.parse((aiRes.text || "{}").trim());
+            const result = parseJsonReply<any>(reply);
+            if (!result) throw new Error("Face verification returned no usable result.");
+
             faceMatchScore = Number(result.similarityScore) || 0.0;
             autoApproved = result.matched === true && faceMatchScore >= 0.7 && isWithinGeofence;
             matchReason = result.reason || "Verification completed.";
           } catch (err: any) {
-            console.error("Gemini face verification error, falling back:", err);
-            faceMatchScore = 0.95;
-            autoApproved = isWithinGeofence;
-            matchReason = "Verification successful via local matching validation.";
+            // NO AUTO-APPROVAL ON FAILURE. This previously set a score of 0.95
+            // and approved the punch with "Verification successful via local
+            // matching validation" — no comparison had happened. A face check
+            // that cannot run must not read as a face check that passed, so
+            // the punch goes to a manager instead.
+            console.error("Face verification unavailable:", err?.message || err);
+            faceMatchScore = 0.0;
+            autoApproved = false;
+            matchReason = "Face verification could not be completed — requires manager review.";
           }
         } else {
-          faceMatchScore = 0.95;
-          autoApproved = isWithinGeofence;
-          matchReason = "Verification successful via fallback engine.";
+          // Same rule with no provider configured: unverified, not approved.
+          faceMatchScore = 0.0;
+          autoApproved = false;
+          matchReason = "Face verification is not configured — requires manager review.";
         }
       }
     }
@@ -5894,7 +5885,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
   app.post("/api/ocr/jc-invoice-extract", authenticateToken, express.json({ limit: "25mb" }), async (req: any, res) => {
     const { base64Image, kind, mimeType } = req.body || {};
     if (!base64Image) return res.status(400).json({ success: false, error: "base64Image is required." });
-    if (!process.env.GEMINI_API_KEY) {
+    if (!isNemotronConfigured()) {
       return res.json({ success: true, available: false, reason: "OCR is not configured — enter the details manually." });
     }
     if (String(mimeType || "").includes("pdf")) {
@@ -5902,10 +5893,6 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
     try {
       const isInvoice = String(kind || "").toUpperCase() === "INVOICE";
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: { headers: { "User-Agent": "aistudio-build" } },
-      });
       // Dates on these documents are DAY-FIRST ("01-09-26 12:58" = 1 Sep 2026,
       // "01/09/2026" = 1 Sep 2026). Saying so explicitly prevents a month/day flip
       // that would silently corrupt every TAT figure.
@@ -5934,15 +5921,24 @@ Return EXACTLY this JSON, copying only what is printed next to each label:
 Several of these rows are often blank on a freshly printed job card — for any label
 with nothing written beside it, return an empty string. Never guess or infer a
 time from another field.`;
-      const out = await ai.models.generateContent({
-        model: GEMINI_TEXT_MODEL,
-        contents: [
-          { inlineData: { mimeType: mimeType || "image/jpeg", data: String(base64Image).replace(/^data:[^;]+;base64,/, "") } },
-          prompt,
+      const cleanB64 = String(base64Image).replace(/^data:[^;]+;base64,/, "");
+      const reply = await callNemotron(
+        [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: `data:${mimeType || "image/jpeg"};base64,${cleanB64}` } },
         ],
-        config: { responseMimeType: "application/json" },
-      });
-      const parsed = JSON.parse((out.text || "{}").trim());
+        { model: NEMOTRON_VISION_MODEL, maxTokens: 800 }
+      );
+      const parsed = parseJsonReply<any>(reply);
+      if (!parsed) {
+        // A read that produced nothing usable is reported as unavailable, so
+        // the advisor types the numbers rather than confirming empty fields.
+        return res.json({
+          success: true,
+          available: false,
+          reason: "The document could not be read automatically — enter the details manually.",
+        });
+      }
       const pick = (k: string) => String(parsed?.[k] || "").trim();
       res.json({
         success: true,
@@ -9394,25 +9390,20 @@ time from another field.`;
   app.post("/api/gemini/chat", async (req, res) => {
     const { messages, selectedRole, useLite, useThinking, image, useSearch } = req.body;
 
-    if (!process.env.GEMINI_API_KEY) {
-      console.log("No GEMINI_API_KEY. Using mock assistant chat fallback.");
-      return res.json({
-        response: "Hello! I am the WMS Copilot (Mock Fallback Mode). Since the Gemini API key is not configured, I am running in local fallback mode. I can verify that your workshop currently has active telemetry, synchronized attendance logs (96.4% compliance), and all parts & warranty managers are active. Ask me anything, or configure your GEMINI_API_KEY in the environment to unlock full LLM capabilities!"
+    // NO MOCK COPILOT. This used to answer, with no key configured, that the
+    // workshop had "active telemetry, synchronized attendance logs (96.4%
+    // compliance), and all parts & warranty managers are active" — figures
+    // that were never read from anything. It presented as a working assistant
+    // reporting real status.
+    if (!isNemotronConfigured()) {
+      return res.status(503).json({
+        unavailable: true,
+        error: "The copilot is not configured. Set NEMOTRON_API_KEY on the service to enable it.",
       });
     }
 
     try {
       const db = getDB();
-
-      // Lazy load Gemini SDK client
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
-      });
 
       // Construct a highly customized, factual system instruction representing the workshop
       let rolePrompt = "You are the WMS Workshop Assistant, a helpful AI copilot.";
@@ -9503,49 +9494,56 @@ time from another field.`;
         }
       }
 
-      // Determine model based on inputs. Ids come from config/geminiModels.ts
-      // so a retirement is one change, not eighteen.
-      let model = GEMINI_TEXT_MODEL;
-      const config: any = { systemInstruction };
+      // MODEL TIERS ARE GONE. Gemini offered pro/lite/thinking variants and the
+      // UI toggles chose between them. NIM exposes one text model here, so
+      // useLite and useThinking no longer select anything — they are accepted
+      // and ignored rather than silently implying a capability change.
+      const model = image ? NEMOTRON_VISION_MODEL : NEMOTRON_TEXT_MODEL;
+      console.log(`Calling Nemotron model ${model} (hasImage: ${!!image}, useSearch: ${!!useSearch})`);
 
-      if (image) {
-        model = GEMINI_PRO_MODEL;
-      } else if (useThinking) {
-        model = GEMINI_PRO_MODEL;
-        config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
-      } else if (useLite) {
-        model = GEMINI_LITE_MODEL;
-      }
+      // Flatten the Gemini-shaped `contents` into the parts NVIDIA takes.
+      // The previous flattener joined only `p.text`, so an ATTACHED IMAGE WAS
+      // SILENTLY DROPPED — the copilot answered about a photo it never saw.
+      const promptText = (contents || [])
+        .map((c: any) =>
+          typeof c === "string"
+            ? c
+            : (c?.parts || []).map((p: any) => p?.text ?? "").filter(Boolean).join("\n")
+        )
+        .filter(Boolean)
+        .join("\n" + "\n");
 
-      if (useSearch) {
-        config.tools = [{ googleSearch: {} }];
-      }
-
-      console.log(`Calling Gemini with model: ${model}, useThinking: ${!!useThinking}, useLite: ${!!useLite}, useSearch: ${!!useSearch}, hasImage: ${!!image}`);
-
-      const response = await ai.models.generateContent({
-        model,
-        contents,
-        config
-      });
-
-      const reply = response.text || "I was unable to generate a response. Please try again.";
-
-      // Extract Google Search grounding sources if available
-      let sources: { title: string; url: string }[] = [];
-      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-      if (chunks && Array.isArray(chunks)) {
-        chunks.forEach((chunk: any) => {
-          if (chunk.web && chunk.web.uri) {
-            sources.push({
-              title: chunk.web.title || chunk.web.uri,
-              url: chunk.web.uri
-            });
-          }
+      const parts: any[] = [{ type: "text", text: promptText }];
+      if (image && image.data && image.mimeType) {
+        parts.push({
+          type: "image_url",
+          image_url: { url: `data:${image.mimeType};base64,${image.data}` },
         });
       }
 
-      res.json({ reply, modelUsed: model, sources });
+      const reply = await callNemotron(
+        parts,
+        {
+          model,
+          system: systemInstruction,
+          maxTokens: 1200,
+          // A copilot answering questions about live workshop data must not
+          // embellish; the whole value is that the numbers are real.
+          temperature: 0,
+        }
+      );
+
+      // WEB SEARCH IS NOT AVAILABLE ON THIS PROVIDER. Google Search grounding
+      // was a Gemini feature and NVIDIA NIM has no equivalent, so `sources` is
+      // always empty now. It is still returned so the client renders unchanged,
+      // and the flag below lets the UI say so rather than implying the model
+      // searched and found nothing.
+      res.json({
+        reply,
+        modelUsed: NEMOTRON_TEXT_MODEL,
+        sources: [],
+        searchUnavailable: Boolean(useSearch),
+      });
     } catch (error: any) {
       console.error("Gemini Assistant API error:", error);
       res.status(500).json({ error: error.message || "An error occurred while communicating with Gemini." });
@@ -9604,112 +9602,111 @@ time from another field.`;
     }
   });
 
-  // --- GEMINI INTERACTIVE FORM ASSISTANT ---
+  // --- INTERACTIVE FORM ASSISTANT (NVIDIA Nemotron) ---
+  //
+  // Gemini's responseSchema enforced the JSON shape upstream. NIM has no
+  // equivalent, so the shape is specified in the prompt and VALIDATED HERE —
+  // a model that ignores the instruction must not produce a half-filled form.
   app.post("/api/gemini/analyze-form-interactive", express.json(), async (req, res) => {
     const { jobDescription, vehicleModel, kmReading, priority, currentVrn } = req.body;
 
-    if (!process.env.GEMINI_API_KEY) {
+    if (!isNemotronConfigured()) {
       return res.status(400).json({
-        error: "Gemini API key is not configured. Please add GEMINI_API_KEY to your Settings > Secrets in AI Studio."
+        error: "AI is not configured. Set NEMOTRON_API_KEY on the service to enable the form copilot.",
       });
     }
 
     try {
       const db = getDB();
 
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
-      });
-
       const availableSrTypes = db.srTypes.map((s: any) => ({ id: s.sr_type_id, code: s.sr_type_code, name: s.sr_type_name }));
       const availableBays = db.bays.filter((b: any) => b.is_active).map((b: any) => ({ id: b.bay_id, code: b.bay_code, name: b.bay_name, type: b.bay_type, status: b.status }));
       const availableEmployees = db.employees.filter((e: any) => e.is_active).map((e: any) => ({ id: e.employee_id, name: e.full_name, role: e.role, grade: e.employee_grade }));
 
-      const systemInstruction = `
-        You are an advanced real-time WMS Workshop Form Copilot powered by Gemma-4 / Gemini 3.5 Flash.
-        Your job is to analyze the user's vehicle details and complaints, and instantly predict the appropriate form fields to auto-complete.
-        
-        Available options in our workshop:
-        - SERVICE TYPES: ${JSON.stringify(availableSrTypes)}
-        - BAYS: ${JSON.stringify(availableBays)}
-        - ACTIVE EMPLOYEES: ${JSON.stringify(availableEmployees)}
-        
-        CRITICAL RULES:
-        1. Select a service_type_id from the SERVICE TYPES list that best matches the description. Default to 1 (General) if unclear.
-        2. Predict realistic labor_price and parts_price in INR (Indian Rupees) for Tata Motors vehicles based on standard repairs. For example, simple checkups are 300-800 INR, parts can be 0 or more.
-        3. Suggest a suitable technician_name from our ACTIVE EMPLOYEES whose role contains "Technician" or "Co-Technician" or "Electrician" and is relevant to the job (e.g., if electrical issue, recommend an electrician if available).
-        4. Select a bay_id from the BAYS list that matches the service type or is Idle. Express service types should map to Express type bays, if possible.
-        5. Suggest no_of_laborers needed (usually 1 or 2, default to 1).
-        6. Predict the estimated_duration_hours needed (e.g. 1.5, 2.0).
-        7. For "scenario_analysis", provide a high-quality summary explaining what check-ups should be done, key hazards, or specific steps to take for this Tata vehicle and symptoms (handles any new or unexpected scenarios!).
-      `;
+      const systemInstruction = [
+        "You are the WMS Workshop Form Copilot. You read a vehicle complaint and propose form values.",
+        "",
+        "Choose ONLY from the workshop's real options:",
+        "- SERVICE TYPES: " + JSON.stringify(availableSrTypes),
+        "- BAYS: " + JSON.stringify(availableBays),
+        "- ACTIVE EMPLOYEES: " + JSON.stringify(availableEmployees),
+        "",
+        "RULES:",
+        "1. service_type_id MUST be an id from SERVICE TYPES.",
+        "2. technician_name MUST be a full_name from ACTIVE EMPLOYEES whose role relates to the job",
+        "   (Technician, Co-Technician, Electrician). Never invent a person.",
+        "3. bay_id MUST be an id from BAYS, or null if none suits.",
+        "4. labour_price and parts_price are ESTIMATES in INR. If you cannot estimate from the",
+        "   complaint, return 0 rather than a plausible-looking guess — an advisor will price it.",
+        "5. no_of_laborers is typically 1 or 2.",
+        "6. scenario_analysis: the checks to perform, hazards, and steps for this complaint.",
+        "",
+        "Return ONLY a JSON object, no prose and no code fence, with exactly these keys:",
+        '{"service_type_id":int,"labor_price":int,"parts_price":int,"no_of_laborers":int,',
+        ' "bay_id":int|null,"priority":"Normal"|"Express","technician_name":string,',
+        ' "estimated_duration_hours":number,"scenario_analysis":string}',
+      ].join("\n");
 
-      const userPrompt = `
-        Vehicle Model: ${vehicleModel || "Tata Motors vehicle"}
-        Mileage (KM): ${kmReading || 0}
-        Reported Symptoms / Job Description: "${jobDescription || "General service"}"
-        Priority: "${priority || "Normal"}"
-        VRN: "${currentVrn || ""}"
-      `;
+      const userPrompt = [
+        "Vehicle Model: " + (vehicleModel || "not supplied"),
+        "Mileage (KM): " + (kmReading || "not supplied"),
+        'Reported Symptoms / Job Description: "' + (jobDescription || "General service") + '"',
+        'Priority: "' + (priority || "Normal") + '"',
+        'VRN: "' + (currentVrn || "") + '"',
+      ].join("\n");
 
-      const response = await ai.models.generateContent({
-        model: GEMINI_TEXT_MODEL,
-        contents: userPrompt,
-        config: {
-          systemInstruction,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              service_type_id: { type: Type.INTEGER, description: "The recommended sr_type_id from available service types list" },
-              labor_price: { type: Type.INTEGER, description: "Estimated labor cost in INR" },
-              parts_price: { type: Type.INTEGER, description: "Estimated parts cost in INR" },
-              no_of_laborers: { type: Type.INTEGER, description: "Recommended number of laborers (1-3)" },
-              bay_id: { type: Type.INTEGER, description: "Recommended bay_id from available bays list (or null if queue/none)" },
-              priority: { type: Type.STRING, description: "Recommended priority: 'Normal' or 'Express'" },
-              technician_name: { type: Type.STRING, description: "Recommended technician's full_name from available active employees" },
-              estimated_duration_hours: { type: Type.NUMBER, description: "Estimated completion time in hours (e.g. 1.5)" },
-              scenario_analysis: { type: Type.STRING, description: "Professional scenario advice, checklist, or diagnostic guidance for this vehicle complaint." }
-            },
-            required: [
-              "service_type_id",
-              "labor_price",
-              "parts_price",
-              "no_of_laborers",
-              "priority",
-              "technician_name",
-              "estimated_duration_hours",
-              "scenario_analysis"
-            ]
-          }
-        }
+      const reply = await callNemotron(userPrompt, {
+        system: systemInstruction,
+        maxTokens: 1500,
       });
 
-      const responseText = response.text;
-      if (!responseText) {
-        throw new Error("Empty response received from form analysis model.");
+      const parsed = parseJsonReply<any>(reply);
+      if (!parsed) {
+        // The model answered, but not with the JSON the form needs. Returning
+        // a partial object would silently populate a job card with blanks.
+        throw new Error("The copilot did not return usable form data. Please fill the form manually.");
       }
 
-      const parsedJSON = JSON.parse(responseText.trim());
-      res.json(parsedJSON);
+      // Validate the references actually exist. An id the model invented would
+      // otherwise be written straight onto a job card.
+      const srOk = availableSrTypes.some((t: any) => Number(t.id) === Number(parsed.service_type_id));
+      const techOk =
+        typeof parsed.technician_name === "string" &&
+        availableEmployees.some((e: any) => e.name === parsed.technician_name);
+      const bayOk =
+        parsed.bay_id === null ||
+        parsed.bay_id === undefined ||
+        availableBays.some((b: any) => Number(b.id) === Number(parsed.bay_id));
+
+      res.json({
+        ...parsed,
+        // Drop anything that does not refer to a real row, rather than passing
+        // an invented id or name through to the form.
+        service_type_id: srOk ? Number(parsed.service_type_id) : null,
+        technician_name: techOk ? parsed.technician_name : "",
+        bay_id: bayOk && parsed.bay_id != null ? Number(parsed.bay_id) : null,
+        // Tell the UI what was discarded so it can show the field as unfilled
+        // rather than as a confident empty suggestion.
+        unresolved: [
+          ...(srOk ? [] : ["service_type_id"]),
+          ...(techOk ? [] : ["technician_name"]),
+          ...(bayOk ? [] : ["bay_id"]),
+        ],
+      });
     } catch (error: any) {
       console.error("Interactive Form Copilot error:", error);
       res.status(500).json({ error: error.message || "An error occurred while analyzing the form details." });
     }
   });
 
-  // --- GEMINI CUSTOMER VOICE POLISHER ---
+  // --- CUSTOMER VOICE POLISHER (NVIDIA Nemotron omni) ---
   app.post("/api/gemini/process-voice", express.json({ limit: "20mb" }), async (req, res) => {
     const { audioData, mimeType } = req.body;
 
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(400).json({
-        error: "Gemini API key is not configured. Please add GEMINI_API_KEY to your Settings > Secrets in AI Studio."
+    if (!isNemotronConfigured()) {
+      return res.status(503).json({
+        unavailable: true,
+        error: "Voice transcription is not configured. Set NEMOTRON_API_KEY on the service to enable it.",
       });
     }
 
@@ -9718,37 +9715,44 @@ time from another field.`;
     }
 
     try {
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
-      });
-
       console.log(`Processing audio file with mimeType: ${mimeType}`);
 
-      const response = await ai.models.generateContent({
-        model: GEMINI_TEXT_MODEL,
-        contents: [
+      // Transcription runs on nemotron-3-nano-omni, the one model in NVIDIA's
+      // catalogue that accepts audio. Verified with a real WAV: it decodes the
+      // audio and answers about its contents.
+      //
+      // The audio is sent as a data: URI in an audio_url part — the same shape
+      // images use. An earlier attempt failed with "Failed to load audio" only
+      // because the test file was a zero-length silent WAV, not because the
+      // format was wrong.
+      const reply = await callNemotron(
+        [
           {
-            inlineData: {
-              data: audioData,
-              mimeType: mimeType || "audio/webm"
-            }
+            type: "text",
+            text:
+              "This is an audio recording of a customer explaining their vehicle complaints or symptoms. " +
+              "First, transcribe the customer complaints accurately. Then polish it into a professional, " +
+              "concise, structured technical diagnostic summary suitable for a vehicle repair Job Card's Special Notes. " +
+              "Begin the finalized remarks with '🗣️ POLISHED CUSTOMER VOICE COMPLAINT:' " +
+              "and use bullet points if there are multiple concerns. " +
+              "If the recording contains no discernible speech, reply exactly: NO_SPEECH_DETECTED",
           },
           {
-            text: "This is an audio recording of a customer explaining their vehicle complaints or symptoms. " +
-              "First, please transcribe the customer complaints accurately. Then, polish it into a highly professional, " +
-              "concise, and structured technical diagnostic summary suitable for a vehicle repair Job Card's Special Notes. " +
-              "Output the finalized polished remarks clearly, beginning with '🗣️ POLISHED CUSTOMER VOICE COMPLAINT:' " +
-              "and organize with neat bullet points if there are multiple concerns."
-          }
-        ]
-      });
+            type: "audio_url",
+            audio_url: { url: `data:${mimeType || "audio/webm"};base64,${audioData}` },
+          },
+        ],
+        { model: NEMOTRON_AUDIO_MODEL, maxTokens: 800 }
+      );
 
-      const reply = response.text || "Could not transcribe audio. Please verify your microphone and speak clearly.";
+      // An empty or speechless recording is reported as such rather than
+      // written into the complaint field as though the customer said nothing.
+      if (reply.includes("NO_SPEECH_DETECTED")) {
+        return res.json({
+          text: "",
+          error: "No speech was detected in that recording. Please record again and speak clearly.",
+        });
+      }
       res.json({ text: reply });
     } catch (error: any) {
       console.error("Voice processing error:", error);
@@ -9864,96 +9868,16 @@ time from another field.`;
     }
   });
 
-  // --- VEO VIDEO GENERATION ENDPOINTS ---
-  app.post("/api/gemini/generate-video", async (req, res) => {
-    const { prompt, image, aspectRatio } = req.body;
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(400).json({ error: "Gemini API key is not configured." });
-    }
-    try {
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-      });
-
-      const videoConfig: any = {
-        numberOfVideos: 1,
-        resolution: '720p',
-        aspectRatio: aspectRatio || '16:9'
-      };
-
-      const payload: any = {
-        model: 'veo-3.1-fast-generate-preview',
-        prompt: prompt || 'Animate the uploaded image into a high quality professional dynamic video loop showing details of the workshop/vehicle.',
-        config: videoConfig
-      };
-
-      if (image && image.data && image.mimeType) {
-        payload.image = {
-          imageBytes: image.data,
-          mimeType: image.mimeType
-        };
-      }
-
-      console.log(`Starting Veo Video Generation with model 'veo-3.1-fast-generate-preview' and aspect ratio ${videoConfig.aspectRatio}...`);
-      const operation = await ai.models.generateVideos(payload);
-      res.json({ operationName: operation.name });
-    } catch (error: any) {
-      console.error("Video generation error:", error);
-      res.status(500).json({ error: error.message || "An error occurred during video generation." });
-    }
-  });
-
-  app.post("/api/gemini/video-status", async (req, res) => {
-    const { operationName } = req.body;
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(400).json({ error: "Gemini API key is not configured." });
-    }
-    try {
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-      });
-      const op = new GenerateVideosOperation();
-      op.name = operationName;
-      const updated = await ai.operations.getVideosOperation({ operation: op });
-      res.json({ done: updated.done, response: updated.response, error: updated.error });
-    } catch (error: any) {
-      console.error("Video status polling error:", error);
-      res.status(500).json({ error: error.message || "An error occurred while polling status." });
-    }
-  });
-
-  app.post("/api/gemini/video-download", async (req, res) => {
-    const { operationName } = req.body;
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(400).json({ error: "Gemini API key is not configured." });
-    }
-    try {
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-      });
-      const op = new GenerateVideosOperation();
-      op.name = operationName;
-      const updated = await ai.operations.getVideosOperation({ operation: op });
-      const uri = updated.response?.generatedVideos?.[0]?.video?.uri;
-      if (!uri) {
-        return res.status(400).json({ error: "No video URI found in completed operation." });
-      }
-
-      const videoRes = await fetch(uri, {
-        headers: { 'x-goog-api-key': process.env.GEMINI_API_KEY },
-      });
-
-      res.setHeader('Content-Type', 'video/mp4');
-      const buffer = await videoRes.arrayBuffer();
-      res.send(Buffer.from(buffer));
-    } catch (error: any) {
-      console.error("Video download error:", error);
-      res.status(500).json({ error: error.message || "An error occurred during video download." });
-    }
-  });
+  // VEO VIDEO GENERATION — REMOVED.
+  //
+  // /api/gemini/generate-video, /video-status and /video-download called
+  // Google Veo (veo-3.1-fast-generate-preview). The application has moved to
+  // NVIDIA NIM, which has no video-generation equivalent, and video generation
+  // served no workshop process: nothing in intake, estimation, execution,
+  // quality or billing consumed it. Removed rather than left returning
+  // "Gemini API key is not configured" forever.
+  //
+  // The UI controls that called these were removed with them.
 
   // --- VEHICLE WARRANTY DETAILS DIRECT POINT LOOKUP ---
   app.get("/api/warranty/vehicle", async (req, res) => {
@@ -10543,14 +10467,13 @@ time from another field.`;
     if (!headers || !Array.isArray(headers) || !templateType) {
       return res.status(400).json({ error: "Headers array and templateType are required." });
     }
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(400).json({ error: "Gemini API key is not configured. Please add GEMINI_API_KEY." });
-    }
+    // NO HARD GATE HERE. The catch block below is a real deterministic
+    // column-name matcher, not a fabricated result, so an unconfigured AI
+    // should degrade to it rather than reject the upload outright.
     try {
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-      });
+      if (!isNemotronConfigured()) {
+        throw new Error("AI matching not configured; using deterministic header matching.");
+      }
       const prompt = `You are a database data matcher. Compare the uploaded CSV column headers to the target table columns for type "${templateType}".
 Target table columns are:
 ${templateType === 'vehicle_master' ? `chassis_no, registration_no, booking_ref_no, engine_no, product_vc, product_line, owner_account_name, owner_account_site, tm_invoice_date, original_sale_date, status, next_service_date, next_service_type, physical_status, selling_dealer, total_loss_vehicle, warranty_expiry_date, warranty_expiry_hours, warranty_expiry_km, contact_authorization, chassis_color, date_of_registration, date_of_commissioning, rc_attached, hsn_code, gst_invoice_no, commercial_invoice_no` : ''}
@@ -10562,15 +10485,14 @@ ${JSON.stringify(headers)}
 
 Return a JSON object where keys are the uploaded CSV headers, and values are the matching target database columns. If a header does not match any target database column, map it to null. Do not include markdown formatting or quotes.`;
 
-      const response = await ai.models.generateContent({
-        model: GEMINI_TEXT_MODEL,
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
-      });
-      const result = JSON.parse((response.text || "{}").trim());
+      const reply = await callNemotron(prompt, { maxTokens: 1200 });
+      const result = parseJsonReply<Record<string, string | null>>(reply);
+      if (!result) {
+        throw new Error("AI matching returned no usable mapping; using deterministic header matching.");
+      }
       res.json(result);
     } catch (e: any) {
-      console.error("AI matching failed, falling back to keywords:", e);
+      console.warn("AI header matching unavailable, using deterministic keyword matching:", e?.message || e);
       const mapping: Record<string, string | null> = {};
       headers.forEach(h => {
         const lower = h.toLowerCase().trim();
@@ -10654,52 +10576,61 @@ Return a JSON object where keys are the uploaded CSV headers, and values are the
     }
   });
 
-  // Extract circular fields from an uploaded PDF/image via Gemini (multimodal).
-  // Degrades gracefully to a "fill manually" response when GEMINI_API_KEY is unset.
+  // Extract circular fields from an uploaded image via Nemotron Parse 2.0.
+  //
+  // Gemini accepted a PDF directly. Parse 2.0 is an IMAGE model and does not,
+  // so a PDF is refused explicitly rather than sent upstream to fail with a
+  // message the warranty clerk cannot act on. Every failure path here says
+  // "fill the fields manually" — the form stays usable without AI.
   app.post("/api/warranty/circulars/extract", express.json({ limit: "25mb" }), async (req, res) => {
     try {
       const { fileBase64, mimeType } = req.body || {};
       if (!fileBase64) {
         return res.status(400).json({ success: false, error: "No file provided." });
       }
-      if (!process.env.GEMINI_API_KEY) {
+      if (!isNemotronConfigured()) {
         return res.json({
           success: false,
           unavailable: true,
-          message: "AI extraction is not configured (GEMINI_API_KEY missing). Please fill the fields manually."
+          message: "AI extraction is not configured (NEMOTRON_API_KEY missing). Please fill the fields manually."
         });
       }
 
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: { headers: { "User-Agent": "aistudio-build" } }
-      });
+      const mt = String(mimeType || "").toLowerCase();
+      if (mt.includes("pdf")) {
+        return res.json({
+          success: false,
+          unavailable: true,
+          message: "PDF extraction is not supported by the current AI provider. Upload a photo or screenshot of the circular, or fill the fields manually."
+        });
+      }
 
-      const prompt = `You read Tata Motors service/warranty circular documents.
-Extract these fields from the attached document and return EXACTLY a JSON object with this schema:
-{
-  "id": "circular reference number e.g. SC/2026/82 (empty string if not found)",
-  "title": "circular title / subject line",
-  "date": "release/publication date in short form like 'June 2026' (empty string if not found)",
-  "models": "applicable vehicle models e.g. 'All HCV - BS6 Phase-II' (empty string if not found)",
-  "summary": "1-3 sentence summary of what changes or rules this circular introduces",
-  "warrantyRules": "the detailed warranty rules, parts lists, limits and coverage content as plain text"
-}
-Return only the clean JSON object — no Markdown, no code fences.`;
+      const prompt = [
+        "You read Tata Motors service/warranty circular documents.",
+        "Extract these fields from the attached document and return EXACTLY a JSON object with this schema:",
+        "{",
+        '  "id": "circular reference number e.g. SC/2026/82 (empty string if not found)",',
+        '  "title": "circular title / subject line",',
+        '  "date": "release/publication date in short form like June 2026 (empty string if not found)",',
+        '  "models": "applicable vehicle models e.g. All HCV - BS6 Phase-II (empty string if not found)",',
+        '  "summary": "1-3 sentence summary of what changes or rules this circular introduces",',
+        '  "warrantyRules": "the detailed warranty rules, parts lists, limits and coverage content as plain text"',
+        "}",
+        "Use an empty string for any field not present in the document. Never guess a",
+        "reference number or a date — a wrong circular id would be applied to real claims.",
+        "Return only the clean JSON object — no Markdown, no code fences.",
+      ].join("\n");
 
-      const aiRes = await ai.models.generateContent({
-        model: GEMINI_TEXT_MODEL,
-        contents: [
-          { inlineData: { mimeType: mimeType || "application/pdf", data: fileBase64 } },
-          prompt
+      const reply = await callNemotron(
+        [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: `data:${mimeType || "image/jpeg"};base64,${fileBase64}` } },
         ],
-        config: { responseMimeType: "application/json" }
-      });
+        { model: NEMOTRON_VISION_MODEL, maxTokens: 2000 }
+      );
 
-      let parsed: any = {};
-      try {
-        parsed = JSON.parse((aiRes.text || "{}").trim());
-      } catch {
+      const parsed = parseJsonReply<any>(reply);
+      if (!parsed) {
         return res.json({ success: false, message: "Could not read the document. Please fill the fields manually." });
       }
 
@@ -10720,45 +10651,29 @@ Return only the clean JSON object — no Markdown, no code fences.`;
     }
   });
 
+  /**
+   * AI warranty validation.
+   *
+   * THE MOCK FALLBACK IS GONE, and it mattered. With no API key this endpoint
+   * used to return FABRICATED warranty decisions — `valid: true`, against
+   * invented circular numbers ("SC/2023/129", "Section B: Lift Axle Valves")
+   * and invented reasoning ("within the 3-year warranty limit"). The only
+   * marker was a "[Mock Fallback]" prefix buried inside the reason text. Since
+   * the Gemini key is depleted, that is what the warranty desk has actually
+   * been receiving: confident approvals on real claims, citing circulars that
+   * were chosen by a substring match on the query text.
+   *
+   * A warranty decision is a financial decision. Unconfigured now returns an
+   * explicit "not available" that the screen must show as such.
+   */
   app.post("/api/warranty/validate", express.json(), async (req, res) => {
     const { jobCardId, dateOfSale, modelNoPpl, fsbStatus, query } = req.body;
 
-    if (!process.env.GEMINI_API_KEY) {
-      console.log("No GEMINI_API_KEY. Using mock warranty validator fallback.");
-      const q = (query || "").toLowerCase();
-      let mockRes = {
-        valid: true,
-        circularNo: "SC/2023/129",
-        sectionLine: "Section A: General Component coverage",
-        reason: "[Mock Fallback] General warranty coverage is active under standard OEM rules for model " + (modelNoPpl || "Prima") + ".",
-        alternativeOption: "Verify with physical inspection log."
-      };
-      if (q.includes("valve")) {
-        mockRes = {
-          valid: true,
-          circularNo: "SC/2023/129",
-          sectionLine: "Section B: Lift Axle Valves",
-          reason: "[Mock Fallback] Lift Axle Control Valve is covered under standard warranty (3 Years/3 Lac Km) for HCV BSVI vehicles. Since the date of sale is " + (dateOfSale || "2024") + ", the vehicle is within the 3-year warranty limit.",
-          alternativeOption: "If standard warranty gets rejected, it is also covered under AMC Pro-Active."
-        };
-      } else if (q.includes("bellow")) {
-        mockRes = {
-          valid: false,
-          circularNo: "SC/2023/129",
-          sectionLine: "Section D: Suspension Bellows",
-          reason: "[Mock Fallback] Air Bellow on lift axle has a limited warranty of 1 Year or 1,00,000 km, whichever is earlier. Since the vehicle commissioning date is " + (dateOfSale || "2024") + " and the current date is June 2026, the 1-year limited warranty has expired.",
-          alternativeOption: "Recommend checking if the customer has purchased the AMC Pro-Active package, which covers air bellows for up to 3 years."
-        };
-      } else if (q.includes("filter")) {
-        mockRes = {
-          valid: true,
-          circularNo: "SC/2026/58",
-          sectionLine: "Section G: Emission Filter maintenance",
-          reason: "[Mock Fallback] DEF tank filter replacement is covered under standard preventive maintenance rules at 1,40,000 km.",
-          alternativeOption: "Standard warranty covers the filter replacement if performed during scheduled AMC/standard service interval."
-        };
-      }
-      return res.json(mockRes);
+    if (!isNemotronConfigured()) {
+      return res.status(503).json({
+        unavailable: true,
+        error: "AI warranty validation is not configured. Validate this claim against the circulars manually — no automated decision is available.",
+      });
     }
 
     try {
@@ -10781,120 +10696,80 @@ Return only the clean JSON object — no Markdown, no code fences.`;
         }
       }
 
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
+      // The date was hardcoded as "June 2026" in the prompt, so every age
+      // calculation drifted further from reality as time passed.
+      const today = new Date().toISOString().slice(0, 10);
+
+      const systemPrompt = [
+        "You are an expert TATA Motors Warranty Claims and Service Circular Audit officer.",
+        "Validate whether the warranty query below is covered, using ONLY the circulars provided.",
+        "",
+        "Vehicle details:",
+        "- Date of Sale (Commissioning): " + (dateOfSale || "Not provided"),
+        "- Model / PPL: " + (modelNoPpl || (jobCardDetails ? jobCardDetails.model : "Not provided")),
+        "- FSB (Field Service Bulletin) Status: " + (fsbStatus || "Not provided"),
+        jobCardDetails ? "- Odometer/KM Reading: " + jobCardDetails.kmReading + " KM" : "",
+        jobCardDetails ? "- Active Job Card No: " + jobCardDetails.jobCardNo : "",
+        jobCardDetails ? "- Vehicle Reg No (VRN): " + jobCardDetails.vrn : "",
+        "",
+        "Available Service Circulars:",
+        JSON.stringify(circulars, null, 2),
+        "",
+        'User Query/Claim: "' + (query || "") + '"',
+        "",
+        "Rules:",
+        "1. Check whether the vehicle is within the warranty period per the matched circular.",
+        "2. Today's date is " + today + ". Calculate vehicle age from the Date of Sale.",
+        "3. Match the specific part named in the query against the partwise warranty tables.",
+        "4. If standard warranty has expired, check whether FMS or AMC packages cover it.",
+        "5. CITE ONLY circulars present in the list above. If no circular in the list",
+        "   covers this claim, set circularNo to \"\" and say so in the reason. NEVER invent",
+        "   a circular number or a section line — the claim is paid on what you cite.",
+        "6. If the date of sale or odometer is missing and the answer depends on it, set",
+        '   valid to false and explain what is needed. Do not assume a value.',
+        "",
+        "Output EXACTLY this JSON object and nothing else:",
+        '{"valid":boolean,"circularNo":string,"sectionLine":string,"reason":string,"alternativeOption":string}',
+      ].filter(Boolean).join("\n");
+
+      const reply = await callNemotron(systemPrompt, { maxTokens: 1800 });
+      const result = parseJsonReply<any>(reply);
+      if (!result) {
+        // No guessed verdict. The clerk is told the check did not complete.
+        return res.status(502).json({
+          error: "The warranty model did not return a usable decision. Please validate this claim manually.",
+        });
+      }
+
+      // A cited circular must exist in the list we supplied. Anything else is
+      // the model inventing a reference, which is the one failure that would
+      // be acted on financially without being noticed.
+      const cited = String(result.circularNo || "").trim();
+      const known = Array.isArray(circulars)
+        ? circulars.some((c: any) => String(c?.id || c?.circular_no || "").trim() === cited)
+        : false;
+
+      res.json({
+        ...result,
+        circularNo: cited && known ? cited : "",
+        // Surfaced so the screen can flag an uncorroborated answer rather than
+        // presenting it with the same confidence as a cited one.
+        unverifiedCitation: Boolean(cited) && !known,
       });
-
-      const systemPrompt = `You are an expert TATA Motors Warranty Claims and Service Circular Audit officer.
-Your task is to validate whether a specific warranty query or part replacement claim is valid based on the provided list of service circulars and the vehicle details.
-
-Vehicle details:
-- Date of Sale (Commisioning): ${dateOfSale || "Not provided"}
-- Model / PPL: ${modelNoPpl || (jobCardDetails ? jobCardDetails.model : "Not provided")}
-- FSB (Field Service Bulletin) Status: ${fsbStatus || "Not provided"}
-${jobCardDetails ? `- Odometer/KM Reading: ${jobCardDetails.kmReading} KM` : ""}
-${jobCardDetails ? `- Active Job Card No: ${jobCardDetails.jobCardNo}` : ""}
-${jobCardDetails ? `- Vehicle Reg No (VRN): ${jobCardDetails.vrn}` : ""}
-
-Available Service Circulars list:
-${JSON.stringify(circulars, null, 2)}
-
-User's Query/Claim: "${query}"
-
-You MUST search the provided circular rules and output a JSON response. Ensure you check:
-1. Whether the vehicle is within the warranty period (e.g. 3 Years/3 Lac Km or other limits based on the matched circular).
-2. Note that the current local time of the system is June 2026. Calculate the vehicle's age in years since the Date of Sale.
-3. Check the specific part mentioned in the query (e.g. "lift axle control valve", "air bellow", "turbocharger", "clutch disc") against the partwise limited warranty tables in SC/2023/129 or SC/2026/58 or FMS/AMC tables.
-4. Note if standard warranty is expired, check if FMS or AMC packages would cover it (as defined in FMS-2023 and AMC-2024 circulars).
-5. Output EXACTLY a JSON object with this schema:
-{
-  "valid": true/false (boolean),
-  "circularNo": "matched circular ID (e.g., SC/2023/129)",
-  "sectionLine": "exact section or annexure line referencing the rule",
-  "reason": "Clear explanation of why it is valid or invalid, explaining the age/km calculations and rules clearly",
-  "alternativeOption": "If invalid under standard warranty, mention if AMC/FMS covers it, or other diagnostic recommendations."
-}
-
-Do not include any Markdown or formatting other than the clean JSON object.`;
-
-      const response = await ai.models.generateContent({
-        model: GEMINI_TEXT_MODEL,
-        contents: systemPrompt,
-        config: {
-          responseMimeType: "application/json"
-        }
-      });
-
-      const responseText = response.text || "{}";
-      const result = JSON.parse(responseText.trim());
-      res.json(result);
     } catch (error: any) {
       console.error("AI Warranty validation error:", error);
       res.status(500).json({ error: error.message || "An error occurred during AI warranty validation." });
     }
   });
 
-  // --- GEMINI VISION OCR PART SEARCH ---
-  app.post("/api/gemini/extract-part-numbers", express.json({ limit: "20mb" }), async (req, res) => {
-    const { imageData, mimeType } = req.body;
-
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(400).json({
-        error: "Gemini API key is not configured. Please add GEMINI_API_KEY to your Settings > Secrets."
-      });
-    }
-
-    if (!imageData) {
-      return res.status(400).json({ error: "No image data provided for OCR." });
-    }
-
-    try {
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
-      });
-
-      console.log(`Performing OCR on image, extracting parts, mime: ${mimeType}`);
-
-      const response = await ai.models.generateContent({
-        model: GEMINI_TEXT_MODEL,
-        contents: [
-          {
-            inlineData: {
-              data: imageData,
-              mimeType: mimeType || "image/jpeg"
-            }
-          },
-          {
-            text: "Extract all part numbers from this image. Return as JSON array of strings."
-          }
-        ],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING }
-          }
-        }
-      });
-
-      const responseText = response.text || "[]";
-      const partNumbers = JSON.parse(responseText.trim());
-      res.json({ partNumbers });
-    } catch (error: any) {
-      console.error("OCR Part Extraction error:", error);
-      res.status(500).json({ error: error.message || "Failed to extract part numbers." });
-    }
-  });
+  // GEMINI VISION OCR PART SEARCH — REMOVED (was unreachable).
+  //
+  // A SECOND app.post("/api/gemini/extract-part-numbers") was registered here.
+  // Express matches the FIRST registered handler, so this one never ran: the
+  // live route is the Azure-primary one defined earlier, which also writes
+  // evidence storage. This copy called Gemini directly, skipped evidence
+  // capture, and returned a different shape ({partNumbers} vs the extracted
+  // fields), so anything written against it would have been broken anyway.
 
   /**
    * `field_permissions.permission_level` is an ENUM of exactly six values. The
@@ -13926,69 +13801,28 @@ Respond with valid JSON only:
     }
   });
 
-  // Handle Workshop Staff Voice Assistant WebSocket Connection
+  // LIVE VOICE ROOM — NOT AVAILABLE ON THE CURRENT PROVIDER.
+  //
+  // This was a Gemini Live bidirectional audio session (gemini-2.0-flash-live-001,
+  // Modality.AUDIO, prebuilt "Zephyr" voice): the staff member spoke and the model
+  // spoke back in real time. NVIDIA NIM has no equivalent — it offers no realtime
+  // duplex audio session and no speech synthesis — so unlike the rest of the AI
+  // features this one cannot be ported, only withdrawn.
+  //
+  // The socket is closed with an explicit reason rather than the bare close() the
+  // unconfigured path used, which left the client reconnecting against a server
+  // that would never answer. One-way voice still works: /api/gemini/process-voice
+  // transcribes a recorded complaint through the omni model.
   wss.on("connection", async (clientWs) => {
-    console.log("WebSocket connection established for Live Voice...");
-    if (!process.env.GEMINI_API_KEY) {
-      console.error("GEMINI_API_KEY is not defined");
-      clientWs.close();
-      return;
-    }
-
-    try {
-      const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
-      });
-
-      const session = await ai.live.connect({
-        model: "gemini-2.0-flash-live-001",
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
-          },
-          systemInstruction: "You are the WMS Workshop Live Assistant. Help the workshop staff manage bays and job cards using real-time voice conversations. Keep responses brief, clear, and direct. Refer to bays like BAY01 or job cards like JC001 when helpful.",
-        },
-        callbacks: {
-          onmessage: (message: any) => {
-            const audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (audio) {
-              clientWs.send(JSON.stringify({ audio }));
-            }
-            if (message.serverContent?.interrupted) {
-              clientWs.send(JSON.stringify({ interrupted: true }));
-            }
-          },
-        },
-      });
-
-      clientWs.on("message", (data) => {
-        try {
-          const { audio } = JSON.parse(data.toString());
-          if (audio) {
-            session.sendRealtimeInput({
-              audio: { data: audio, mimeType: "audio/pcm;rate=16000" },
-            });
-          }
-        } catch (err) {
-          console.error("Error processing websocket message:", err);
-        }
-      });
-
-      clientWs.on("close", () => {
-        console.log("Live Voice websocket connection closed");
-        session.close();
-      });
-
-    } catch (error) {
-      console.error("Failed to connect to Gemini Live session:", error);
-      clientWs.close();
-    }
+    console.log("Live Voice socket refused: no realtime audio provider is configured.");
+    clientWs.send(
+      JSON.stringify({
+        error:
+          "The live voice room is unavailable. Use the voice note button to record a complaint instead.",
+        unavailable: true,
+      })
+    );
+    clientWs.close(4004, "Live voice is not available on the current AI provider");
   });
 
   // --- START REPAIR AND REWORK ROUTES ---

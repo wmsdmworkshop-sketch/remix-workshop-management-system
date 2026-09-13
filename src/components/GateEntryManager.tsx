@@ -379,7 +379,7 @@ export default function GateEntryManager({
       const msg = err?.message || "Unknown error";
       const userMsg = err?.message === "IMAGE_TOO_LARGE_FOR_MEMORY"
         ? "Image too large for OCR. Take a closer, lower-resolution photo and try again."
-        : msg.includes("GEMINI_API_KEY")
+        : (msg.includes("NEMOTRON_API_KEY") || msg.includes("not configured"))
           ? "Plate recognition unavailable — server API key not configured. Enter the vehicle number manually."
           : msg.includes("no text")
             ? "No plate text detected in image. Ensure the plate is visible and well-lit, then try again."

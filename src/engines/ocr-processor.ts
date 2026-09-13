@@ -1,6 +1,5 @@
 import { DeepSeekEngine } from "./deepseek-engine";
 import { isNemotronOcrConfigured, readWithNemotronOcr } from "./nemotron-ocr-provider.ts";
-import { GEMINI_VISION_MODEL } from "../config/geminiModels.ts";
 
 export type OCRProvider = 'GoogleVision' | 'Gemini' | 'Azure' | 'Nemotron' | 'DeepSeek' | 'AWS' | 'EasyOCR' | 'Custom';
 
@@ -295,42 +294,6 @@ export class DeepSeekOCRProcessor implements OCRProcessorProvider {
   }
 }
 
-class GeminiOCRProcessor implements OCRProcessorProvider {
-  async process(ocrImageBase64: string): Promise<{ text: string; confidence: number }> {
-    const { GoogleGenAI } = await import("@google/genai");
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
-
-    const ai = new GoogleGenAI({ apiKey });
-    const base64Data = ocrImageBase64.replace(/^data:image\/\w+;base64,/, "");
-
-    const prompt = [
-      "You are an OCR engine for Indian commercial vehicles (trucks, tippers, buses, tempos).",
-      "Extract the Vehicle Registration Number (VRN) exactly as painted or embossed.",
-      "Commercial plates in India are often painted in two lines with dots, e.g. Line 1: 'KA.32', Line 2: 'AB.0507' which means 'KA-32-AB-0507'.",
-      "Also extract Odometer and Chassis Number if visible.",
-      "Return ALL extracted lines and the full standard VRN."
-    ].join("\n");
-
-    const response = await ai.models.generateContent({
-      model: GEMINI_VISION_MODEL,
-      contents: [
-        { text: prompt },
-        {
-          inlineData: {
-            data: base64Data,
-            mimeType: "image/jpeg",
-          },
-        },
-      ],
-    });
-
-    const text = (response.text || "").trim();
-    if (!text) throw new Error("No text detected in image.");
-    return { text, confidence: 0.98 };
-  }
-}
-
 const providers: Record<OCRProvider, OCRProcessorProvider> = {
   Azure: new AzureOCRProcessor(),
   // Runs against a separate inference service; unconfigured until
@@ -344,8 +307,12 @@ const providers: Record<OCRProvider, OCRProcessorProvider> = {
     },
   },
   DeepSeek: new DeepSeekOCRProcessor(),
-  Gemini: new GeminiOCRProcessor(),
-  GoogleVision: new GeminiOCRProcessor(),
+  // Gemini has been withdrawn from this application. These keys remain because
+  // the OCRProvider type enumerates them and stored rows may still name one;
+  // selecting either now reports that it is unavailable instead of calling a
+  // provider whose key is not configured.
+  Gemini: { process: async () => { throw new Error("Gemini OCR has been withdrawn — use Azure or Nemotron."); } },
+  GoogleVision: { process: async () => { throw new Error("Google Vision OCR has been withdrawn — use Azure or Nemotron."); } },
   AWS: { process: async () => { throw new Error("AWS OCR not configured"); } },
   EasyOCR: { process: async () => { throw new Error("EasyOCR not configured"); } },
   Custom: { process: async () => { throw new Error("Custom OCR not configured"); } },
@@ -353,7 +320,7 @@ const providers: Record<OCRProvider, OCRProcessorProvider> = {
 
 /**
  * Robust OCR Pipeline:
- * 1. Executes Primary Engine (Azure Document Intelligence or Gemini).
+ * 1. Executes Primary Engine (Azure Document Intelligence).
  * 2. Applies intelligent multi-line & dot normalization for 2-line Indian commercial plates.
  * 3. ALWAYS invokes DeepSeek AI Semantic Parser for validation & correction —
  *    not just when VRN is missing, but also when regex found a VRN that might

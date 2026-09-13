@@ -337,9 +337,9 @@ function respondAiError(res: any, err: any) {
     });
   }
 
-  if (message.includes("DEEPSEEK_API_KEY is not configured")) {
+  if (message.includes("NEMOTRON_API_KEY") || message.includes("AI is not configured")) {
     // Configuration fault, not a user fault, and the key itself is never echoed.
-    console.error("[AI] DeepSeek API key missing on this environment.");
+    console.error("[AI] NVIDIA NIM key missing on this environment.");
     return res.status(503).json({
       success: false,
       code: "AI_NOT_CONFIGURED",

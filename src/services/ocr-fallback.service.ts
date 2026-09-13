@@ -9,8 +9,6 @@
  * =============================================================================
  */
 
-import { GEMINI_VISION_MODEL } from "../config/geminiModels.ts";
-import { GoogleGenAI, Type } from "@google/genai";
 import { AzureOCRProcessor, extractJobCardFields } from "../engines/ocr-processor.ts";
 import { DeepSeekEngine } from "../engines/deepseek-engine.ts";
 import { StructuredLogger } from "../core/vos/utils/StructuredLogger.ts";
@@ -92,68 +90,24 @@ export class OcrFallbackService {
       threshold,
     });
 
-    let geminiError: any = null;
-    let geminiResult: { extractedFields: any; confidence: number; raw: any; text?: string } | null = null;
+    // GEMINI PRIMARY STAGE REMOVED.
+    //
+    // This ran Gemini FIRST and fell back to Azure. That contradicted the
+    // agreed order (Azure primary, Nemotron second) and, since GEMINI_API_KEY
+    // is unset on this service, the branch never executed anyway — every read
+    // already went straight to Azure. Removing it changes no behaviour; it
+    // only stops the code claiming a primary provider that does not run.
+    //
+    // The Nemotron second opinion lives in ocr-processor.ts, which re-reads the
+    // IMAGE rather than Azure's text, so a misread is caught instead of
+    // inherited.
+    const azureErrorContext = "Azure is the primary OCR provider for this service.";
 
     // =========================================================================
-    // STEP 1: Attempt Primary Provider (Gemini 3.1 / Gemini Flash)
-    // =========================================================================
-    if (process.env.GEMINI_API_KEY) {
-      try {
-        console.log(`[OCR-Fallback] Attempting Primary Engine (Gemini) for context '${context}'...`);
-        switch (context) {
-          case "numberplate":
-            geminiResult = await this.extractNumberplateWithGemini(base64Data, mimeType);
-            break;
-          case "manual-jobcard":
-            geminiResult = await this.extractManualJobcardWithGemini(base64Data, mimeType);
-            break;
-          case "invoice":
-            geminiResult = await this.extractInvoiceWithGemini(base64Data, mimeType, options.textInput);
-            break;
-          case "parts-photo":
-            geminiResult = await this.extractPartNumbersWithGemini(base64Data, mimeType);
-            break;
-        }
-
-        if (geminiResult && geminiResult.confidence >= threshold) {
-          console.log(
-            `[OCR-Fallback] ✅ Gemini succeeded for '${context}' with confidence ${geminiResult.confidence.toFixed(2)} (>= ${threshold})`
-          );
-          StructuredLogger.info(`[OCR-Fallback] Gemini succeeded for '${context}'`, {
-            component: "OcrFallbackService",
-            operation: "processWithFallback",
-            result: "SUCCESS",
-            provider: "Gemini",
-            confidence: geminiResult.confidence,
-          });
-
-          return {
-            provider: "Gemini",
-            extractedFields: geminiResult.extractedFields,
-            confidence: geminiResult.confidence,
-            raw: geminiResult.raw,
-            text: geminiResult.text,
-            verificationTime: now,
-          };
-        } else if (geminiResult) {
-          console.warn(
-            `[OCR-Fallback] ⚠️ Gemini confidence (${geminiResult.confidence.toFixed(2)}) below threshold (${threshold}). Triggering Azure fallback...`
-          );
-        }
-      } catch (err: any) {
-        geminiError = err;
-        console.warn(`[OCR-Fallback] ⚠️ Gemini primary extraction failed for '${context}': ${err.message}. Triggering Azure fallback...`);
-      }
-    } else {
-      console.log(`[OCR-Fallback] GEMINI_API_KEY not configured. Routing directly to Azure for '${context}'...`);
-    }
-
-    // =========================================================================
-    // STEP 2: Fallback Provider (Azure Document Intelligence)
+    // Azure Document Intelligence — the OCR provider for this service.
     // =========================================================================
     try {
-      console.log(`[OCR-Fallback] Attempting Fallback Engine (Azure) for context '${context}'...`);
+      console.log(`[OCR-Fallback] Reading with Azure for context '${context}'...`);
       let azureResult: { extractedFields: any; confidence: number; raw: any; text?: string };
 
       switch (context) {
@@ -189,266 +143,34 @@ export class OcrFallbackService {
         verificationTime: now,
       };
     } catch (azureErr: any) {
-      console.error(`[OCR-Fallback] ❌ Both Gemini and Azure failed for context '${context}'!`, {
-        geminiError: geminiError?.message,
+      console.error(`[OCR-Fallback] ❌ Azure OCR failed for context '${context}'!`, {
         azureError: azureErr?.message,
       });
 
-      StructuredLogger.error(`[OCR-Fallback] All OCR providers failed for '${context}'`, {
+      StructuredLogger.error(`[OCR-Fallback] OCR failed for '${context}'`, {
         component: "OcrFallbackService",
         operation: "processWithFallback",
         result: "FAILURE",
-        geminiError: geminiError?.message,
         azureError: azureErr?.message,
       }, azureErr);
 
-      // If Gemini produced a low-confidence result rather than a hard crash, return it as last resort
-      if (geminiResult && geminiResult.extractedFields) {
-        console.warn(`[OCR-Fallback] Returning low-confidence Gemini result as last resort after Azure error.`);
-        return {
-          provider: "Gemini",
-          extractedFields: geminiResult.extractedFields,
-          confidence: geminiResult.confidence,
-          raw: geminiResult.raw,
-          text: geminiResult.text,
-          verificationTime: now,
-        };
-      }
-
-      throw new Error(`OCR Processing failed on both primary and fallback providers. Gemini: ${geminiError?.message || 'N/A'}, Azure: ${azureErr?.message || 'N/A'}`);
+      // NOTHING IS RETURNED ON FAILURE. There is no low-confidence result to
+      // fall back on now, and inventing one would put an unread plate or
+      // invoice number onto a real record. The caller shows manual entry.
+      throw new Error(`OCR processing failed. ${azureErrorContext} Azure: ${azureErr?.message || "unknown error"}`);
     }
   }
 
   // ===========================================================================
-  // GEMINI EXTRACTORS
+  // GEMINI EXTRACTORS — REMOVED.
+  //
+  // Four methods (numberplate, manual job card, invoice, part numbers) called
+  // Gemini directly. Nothing reached them: processWithFallback stopped calling
+  // them when Azure became primary, and GEMINI_API_KEY is unset on this
+  // service, so they threw on entry. Removing them drops the @google/genai SDK
+  // from the server bundle.
   // ===========================================================================
 
-  public async extractNumberplateWithGemini(base64Data: string, mimeType = "image/jpeg"): Promise<{ extractedFields: any; confidence: number; raw: any; text: string }> {
-    const ai = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY!,
-      httpOptions: { headers: { "User-Agent": "aistudio-build" } },
-    });
-
-    const prompt = `You are an expert OCR engine for Indian commercial vehicles (trucks, tippers, buses, tempos).
-Examine the provided image of a vehicle number plate or dashboard.
-Extract:
-1. Vehicle Registration Number (VRN) formatted canonically as AB-12-CD-1234 or AB-12-1234 or 24-BH-1234-AB. Commercial plates are often painted in two lines (Line 1: "KA.32", Line 2: "AB.0507" -> "KA-32-AB-0507").
-2. Odometer reading in KM as an integer (if visible).
-3. Chassis number (if visible).
-4. Confidence score from 0.0 to 1.0 based on legibility, blur, and standard format matching.
-
-Output ONLY a JSON object matching this schema:
-{
-  "vrn": "KA-32-AB-0507",
-  "odometer": 45200,
-  "chassisNo": "MAT451092M81",
-  "confidence": 0.95
-}`;
-
-    const response = await ai.models.generateContent({
-      model: GEMINI_VISION_MODEL,
-      contents: [
-        { inlineData: { data: base64Data, mimeType } },
-        { text: prompt },
-      ],
-      config: {
-        responseMimeType: "application/json",
-      },
-    });
-
-    const text = (response.text || "").trim();
-    if (!text) throw new Error("Gemini returned empty response for numberplate.");
-
-    const parsed = JSON.parse(text);
-    const confidence = typeof parsed.confidence === "number" ? parsed.confidence : (parsed.vrn ? 0.9 : 0.4);
-
-    return {
-      extractedFields: {
-        vrn: parsed.vrn || undefined,
-        odometer: parsed.odometer ? Number(parsed.odometer) : undefined,
-        chassisNo: parsed.chassisNo || undefined,
-      },
-      confidence,
-      raw: parsed,
-      text,
-    };
-  }
-
-  public async extractManualJobcardWithGemini(base64Data: string, mimeType = "image/jpeg"): Promise<{ extractedFields: any; confidence: number; raw: any; text: string }> {
-    const ai = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY!,
-      httpOptions: { headers: { "User-Agent": "aistudio-build" } },
-    });
-
-    const prompt = "You are an expert OCR and document-parsing assistant for Tata Motors workshops. " +
-      "Please read the handwritten or printed Manual Job Card image provided and extract all legible parameters. " +
-      "Ensure you look for vehicle registration number/VRN (e.g. KA-01-MJ-1234), customer name, customer phone, " +
-      "vehicle model (e.g. Tata Nexon, Tiago, Safari, Harrier), km reading (Odometer), " +
-      "reported complaints or job description, advisor name, and any special remarks. " +
-      "Additionally, assess if any extracted value might be inaccurate, incomplete, handwriting is hard to read/blurry. " +
-      "Include a confidence score from 0.0 to 1.0.";
-
-    const response = await ai.models.generateContent({
-      model: GEMINI_VISION_MODEL,
-      contents: [
-        { inlineData: { data: base64Data, mimeType } },
-        { text: prompt },
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            vrn: { type: Type.STRING, description: "Vehicle Registration Number" },
-            customer_name: { type: Type.STRING, description: "Customer Full Name" },
-            customer_mobile: { type: Type.STRING, description: "Customer 10-digit mobile number" },
-            vehicle_model: { type: Type.STRING, description: "Vehicle Model" },
-            km_reading: { type: Type.INTEGER, description: "Odometer KM reading" },
-            job_description: { type: Type.STRING, description: "Customer voice, complaints text" },
-            remarks: { type: Type.STRING, description: "Additional remarks" },
-            service_advisor: { type: Type.STRING, description: "Service advisor name" },
-            confidence: { type: Type.NUMBER, description: "Confidence score between 0.0 and 1.0" },
-            verification_flags: {
-              type: Type.OBJECT,
-              properties: {
-                vrn_needs_verification: { type: Type.BOOLEAN },
-                customer_name_needs_verification: { type: Type.BOOLEAN },
-                customer_mobile_needs_verification: { type: Type.BOOLEAN },
-                vehicle_model_needs_verification: { type: Type.BOOLEAN },
-                km_reading_needs_verification: { type: Type.BOOLEAN },
-                job_description_needs_verification: { type: Type.BOOLEAN },
-                service_advisor_needs_verification: { type: Type.BOOLEAN },
-              },
-            },
-            verification_reasons: {
-              type: Type.OBJECT,
-              properties: {
-                vrn_reason: { type: Type.STRING },
-                customer_name_reason: { type: Type.STRING },
-                customer_mobile_reason: { type: Type.STRING },
-                vehicle_model_reason: { type: Type.STRING },
-                km_reading_reason: { type: Type.STRING },
-                job_description_reason: { type: Type.STRING },
-                service_advisor_reason: { type: Type.STRING },
-              },
-            },
-          },
-          required: ["vrn", "customer_name", "customer_mobile", "vehicle_model", "km_reading", "job_description", "remarks", "service_advisor"],
-        },
-      },
-    });
-
-    const text = (response.text || "").trim();
-    if (!text) throw new Error("Gemini returned empty response for manual job card.");
-
-    const parsed = JSON.parse(text);
-    const confidence = typeof parsed.confidence === "number" ? parsed.confidence : (parsed.vrn && parsed.customer_name ? 0.9 : 0.6);
-
-    return {
-      extractedFields: parsed,
-      confidence,
-      raw: parsed,
-      text,
-    };
-  }
-
-  public async extractInvoiceWithGemini(base64Data?: string, mimeType = "image/jpeg", textInput?: string): Promise<{ extractedFields: any; confidence: number; raw: any; text: string }> {
-    const ai = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY!,
-      httpOptions: { headers: { "User-Agent": "aistudio-build" } },
-    });
-
-    const contents: any[] = [];
-    if (base64Data) {
-      contents.push({ inlineData: { data: base64Data, mimeType } });
-    }
-    contents.push({
-      text: "You are an expert CRM DMS invoice parsing assistant for Tata Motors workshops. " +
-        "Please read the provided invoice (image or pasted text) and extract all parameters: " +
-        "invoice_no, job_card_no, labour_amount, parts_amount, customer_name, vrn, chassis_no, engine_no, mileage (integer), invoice_date (YYYY-MM-DD), and list of assigned_technicians. " +
-        "Include a confidence score between 0.0 and 1.0." +
-        (textInput ? `\n\nPasted Invoice Text:\n${textInput}` : ""),
-    });
-
-    const response = await ai.models.generateContent({
-      model: GEMINI_VISION_MODEL,
-      contents,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            invoice_no: { type: Type.STRING },
-            job_card_no: { type: Type.STRING },
-            labour_amount: { type: Type.NUMBER },
-            parts_amount: { type: Type.NUMBER },
-            customer_name: { type: Type.STRING },
-            vrn: { type: Type.STRING },
-            chassis_no: { type: Type.STRING },
-            engine_no: { type: Type.STRING },
-            mileage: { type: Type.INTEGER },
-            invoice_date: { type: Type.STRING },
-            assigned_technicians: { type: Type.ARRAY, items: { type: Type.STRING } },
-            confidence: { type: Type.NUMBER },
-          },
-          required: ["invoice_no", "job_card_no", "labour_amount", "parts_amount", "customer_name", "vrn", "chassis_no", "engine_no", "mileage", "invoice_date", "assigned_technicians"],
-        },
-      },
-    });
-
-    const text = (response.text || "").trim();
-    if (!text) throw new Error("Gemini returned empty response for invoice.");
-
-    const parsed = JSON.parse(text);
-    const confidence = typeof parsed.confidence === "number" ? parsed.confidence : (parsed.invoice_no && parsed.vrn ? 0.95 : 0.6);
-
-    return {
-      extractedFields: parsed,
-      confidence,
-      raw: parsed,
-      text,
-    };
-  }
-
-  public async extractPartNumbersWithGemini(base64Data: string, mimeType = "image/jpeg"): Promise<{ extractedFields: any; confidence: number; raw: any; text: string }> {
-    const ai = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY!,
-      httpOptions: { headers: { "User-Agent": "aistudio-build" } },
-    });
-
-    const response = await ai.models.generateContent({
-      model: GEMINI_VISION_MODEL,
-      contents: [
-        { inlineData: { data: base64Data, mimeType } },
-        { text: "Extract all part numbers and part labels from this spare parts or invoice image. Output JSON with partNumbers array and confidence score (0.0 to 1.0)." },
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            partNumbers: { type: Type.ARRAY, items: { type: Type.STRING } },
-            confidence: { type: Type.NUMBER },
-          },
-          required: ["partNumbers"],
-        },
-      },
-    });
-
-    const text = (response.text || "").trim();
-    if (!text) throw new Error("Gemini returned empty response for parts photo.");
-
-    const parsed = JSON.parse(text);
-    const partNumbers = Array.isArray(parsed.partNumbers) ? parsed.partNumbers : [];
-    const confidence = typeof parsed.confidence === "number" ? parsed.confidence : (partNumbers.length > 0 ? 0.9 : 0.5);
-
-    return {
-      extractedFields: { partNumbers },
-      confidence,
-      raw: parsed,
-      text,
-    };
-  }
 
   // ===========================================================================
   // AZURE EXTRACTORS & PARSERS (FALLBACK)

@@ -15,7 +15,6 @@ import {
   RefreshCw,
   Mic,
   MicOff,
-  Video,
   Upload,
   Play,
   Loader,
@@ -32,11 +31,10 @@ import { getStaffToken } from "../lib/authToken";
 /**
  * Auth headers for the copilot's calls.
  *
- * All four /api/gemini/* endpoints sit behind the global /api JWT gate, and
- * this component sent only a Content-Type — so every request returned
- * "Access denied. No token provided." and the copilot has never answered a
- * single question. Verified against production: chat, generate-video,
- * video-status and video-download all 401 without a token.
+ * The /api/gemini/* endpoints sit behind the global /api JWT gate, and this
+ * component sent only a Content-Type — so every request returned "Access
+ * denied. No token provided." and the copilot has never answered a single
+ * question. Verified against production before the fix.
  */
 const authHeaders = (): Record<string, string> => {
   const t = getStaffToken();
@@ -81,8 +79,8 @@ export default function GeminiAssistant({
   const [useThinking, setUseThinking] = useState(false); // thinking mode option
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Sub tab navigation: "chat" | "voice" | "video"
-  const [activeSubTab, setActiveSubTab] = useState<"chat" | "voice" | "video">("chat");
+  // Sub tab navigation: "chat" | "voice"
+  const [activeSubTab, setActiveSubTab] = useState<"chat" | "voice">("chat");
 
   // --- LIVE VOICE ROOM STATES & REFS ---
   const [isVoiceConnected, setIsVoiceConnected] = useState(false);
@@ -97,15 +95,6 @@ export default function GeminiAssistant({
   const outputAudioCtxRef = useRef<AudioContext | null>(null);
   const nextStartTimeRef = useRef<number>(0);
 
-  // --- VIDEO ANIMATOR STATES ---
-  const [videoPrompt, setVideoPrompt] = useState("");
-  const [videoAspectRatio, setVideoAspectRatio] = useState<"16:9" | "9:16">("16:9");
-  const [selectedVideoImage, setSelectedVideoImage] = useState<string | null>(null);
-  const [selectedVideoImageMime, setSelectedVideoImageMime] = useState<string>("");
-  const [videoGenerating, setVideoGenerating] = useState(false);
-  const [videoGenStatus, setVideoGenStatus] = useState("");
-  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
-  const [videoError, setVideoError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -292,120 +281,6 @@ export default function GeminiAssistant({
     }
   };
 
-  // --- VEO VIDEO GENERATOR ENGINE ---
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setSelectedVideoImageMime(file.type);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        const base64String = (event.target.result as string).split(",")[1];
-        setSelectedVideoImage(base64String);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const triggerVideoGeneration = async () => {
-    if (!selectedVideoImage) return;
-
-    setVideoGenerating(true);
-    setVideoError(null);
-    setGeneratedVideoUrl(null);
-    setVideoGenStatus("Contacting Veo video generation engines...");
-
-    try {
-      const response = await fetch("/api/gemini/generate-video", {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({
-          prompt: videoPrompt,
-          aspectRatio: videoAspectRatio,
-          image: {
-            data: selectedVideoImage,
-            mimeType: selectedVideoImageMime
-          }
-        })
-      });
-
-      const data = await response.json();
-      if (!response.ok || !data.operationName) {
-        throw new Error(data.error || "Failed to start video generation.");
-      }
-
-      setVideoGenStatus("Initializing neural dynamic loops (Veo)...");
-      pollVideoStatus(data.operationName);
-    } catch (err: any) {
-      console.error(err);
-      setVideoError(err.message || "An error occurred starting video generation.");
-      setVideoGenerating(false);
-    }
-  };
-
-  const pollVideoStatus = (operationName: string) => {
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch("/api/gemini/video-status", {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ operationName })
-        });
-        const data = await response.json();
-        
-        if (data.error) {
-          clearInterval(interval);
-          setVideoError(data.error.message || "Failed to generate video.");
-          setVideoGenerating(false);
-          return;
-        }
-
-        if (data.done) {
-          clearInterval(interval);
-          setVideoGenStatus("Retrieving cinematic mp4 byte streams...");
-          await downloadGeneratedVideo(operationName);
-        } else {
-          const statuses = [
-            "Analyzing spatial depth coordinates...",
-            "Synthesizing mechanical frame transitions...",
-            "Computing optical vector fields...",
-            "Refining specular metallic surface highlights...",
-            "Assembling cohesive 3D vehicle dynamics...",
-            "Applying high-definition neural render loops..."
-          ];
-          const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
-          setVideoGenStatus(randomStatus);
-        }
-      } catch (err) {
-        console.error("Error polling video status:", err);
-      }
-    }, 6000);
-  };
-
-  const downloadGeneratedVideo = async (operationName: string) => {
-    try {
-      const response = await fetch("/api/gemini/video-download", {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({ operationName })
-      });
-      
-      if (!response.ok) {
-        throw new Error("Failed to download video bytes.");
-      }
-
-      const blob = await response.blob();
-      const videoUrl = URL.createObjectURL(blob);
-      setGeneratedVideoUrl(videoUrl);
-      setVideoGenerating(false);
-      setVideoGenStatus("Generation successful!");
-    } catch (err: any) {
-      console.error(err);
-      setVideoError(err.message || "Failed to download the generated video.");
-      setVideoGenerating(false);
-    }
-  };
 
   const handleSend = async (textToSend?: string) => {
     const promptText = (textToSend || input).trim();
@@ -722,17 +597,6 @@ export default function GeminiAssistant({
             <Mic className="h-4.5 w-4.5 text-emerald-500" />
             Live Voice Room
           </button>
-          <button 
-            onClick={() => setActiveSubTab("video")}
-            className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 cursor-pointer transition-all ${
-              activeSubTab === "video" 
-                ? "border-orange-500 text-orange-600 bg-white" 
-                : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/50"
-            }`}
-          >
-            <Video className="h-4.5 w-4.5 text-rose-500" />
-            Video Animator (Veo)
-          </button>
         </div>
 
         {/* TAB 1: COPILOT MULTI-TURN CHAT */}
@@ -1035,207 +899,6 @@ export default function GeminiAssistant({
 
               <div className="text-[10px] text-slate-500 leading-relaxed max-w-xs mx-auto pt-2">
                 Make sure you have granted microphone access to AI Studio. Audio streams are encrypted and processed in-memory.
-              </div>
-
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: VIDEO ANIMATOR (VEO) */}
-        {activeSubTab === "video" && (
-          <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
-            <div className="max-w-3xl mx-auto space-y-6">
-              
-              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-2">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-rose-500/10 text-rose-700 text-[10px] font-bold uppercase tracking-wider rounded-full border border-rose-500/20">
-                  <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
-                  VEO Video loop rendering (veo-3.1-fast-generate-preview)
-                </div>
-                <h3 className="text-lg font-black uppercase tracking-tight text-slate-800">Dynamic Vehicle & Bay Animator</h3>
-                <p className="text-xs text-slate-500 font-semibold leading-relaxed">
-                  Upload a photo of a vehicle, workshop bay, or mechanical components and use Google Veo to synthesize a professional high-fidelity video loop. Perfect for creating social media posts or dramatic workshop service loops!
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                
-                {/* Image upload zone and controls */}
-                <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 border-b border-slate-100 pb-2">
-                    1. Setup Animation Source
-                  </h4>
-
-                  {/* Image input selector */}
-                  <div className="space-y-2">
-                    <label className="ds-label block text-[10px] font-bold uppercase tracking-wider  ">Upload Reference Photo</label>
-                    
-                    {selectedVideoImage ? (
-                      <div className="relative border border-slate-200 rounded-xl overflow-hidden group">
-                        <img 
-                          src={`data:${selectedVideoImageMime};base64,${selectedVideoImage}`} 
-                          alt="Source Reference"
-                          className="w-full h-40 object-cover"
-                        />
-                        <button 
-                          onClick={() => setSelectedVideoImage(null)}
-                          className="absolute top-2 right-2 bg-slate-900/80 hover:bg-slate-900 text-white rounded-full p-1 text-[10px] uppercase font-bold px-2.5 cursor-pointer"
-                        >
-                          Clear
-                        </button>
-                      </div>
-                    ) : (
-                      <label className="flex flex-col items-center justify-center h-40 border-2 border-dashed border-slate-300 hover:border-orange-400 rounded-xl bg-slate-50 hover:bg-orange-50/20 cursor-pointer transition-all">
-                        <Upload className="h-8 w-8 text-slate-400 group-hover:text-orange-500" />
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mt-2">Select Reference Image</span>
-                        <span className="text-[8px] text-slate-400 mt-1 font-semibold">PNG, JPEG, WEBP up to 5MB</span>
-                        <input 
-                          type="file"
-                          accept="image/*"
-                          onChange={handleImageUpload}
-                          className="hidden"
-                        />
-                      </label>
-                    )}
-                  </div>
-
-                  {/* Aspect ratio picker */}
-                  <div className="space-y-1.5">
-                    <label className="ds-label block text-[10px] font-bold uppercase tracking-wider  ">Target Video Aspect Ratio</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => setVideoAspectRatio("16:9")}
-                        className={`py-2 px-3 rounded-lg border text-xs font-bold uppercase transition-all cursor-pointer ${
-                          videoAspectRatio === "16:9" 
-                            ? "bg-slate-900 border-slate-900 text-white shadow-xs" 
-                            : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600"
-                        }`}
-                      >
-                        📺 16:9 Landscape
-                      </button>
-                      <button
-                        onClick={() => setVideoAspectRatio("9:16")}
-                        className={`py-2 px-3 rounded-lg border text-xs font-bold uppercase transition-all cursor-pointer ${
-                          videoAspectRatio === "9:16" 
-                            ? "bg-slate-900 border-slate-900 text-white shadow-xs" 
-                            : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600"
-                        }`}
-                      >
-                        📱 9:16 Portrait
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Optional Text Guidance Prompt */}
-                  <div className="space-y-1.5">
-                    <label className="ds-label block text-[10px] font-bold uppercase tracking-wider  ">
-                      Animation Prompt Guidelines (Optional)
-                    </label>
-                    <textarea
-                      value={videoPrompt}
-                      onChange={(e) => setVideoPrompt(e.target.value)}
-                      placeholder="e.g. Slowly pan around the car, steam rising from the engine, sparks flying from soldering..."
-                      className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-semibold focus:ring-1 focus:ring-orange-500 h-20"
-                    />
-                  </div>
-
-                  {/* Trigger button */}
-                  <button
-                    onClick={triggerVideoGeneration}
-                    disabled={videoGenerating || !selectedVideoImage}
-                    className="ds-button-danger w-full   hover:bg-rose-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
-                  >
-                    {videoGenerating ? (
-                      <>
-                        <FunnySpinner className="h-4 w-4" />
-                        Rendering Animation...
-                      </>
-                    ) : (
-                      <>
-                        <Play className="h-4 w-4" />
-                        Generate Video
-                      </>
-                    )}
-                  </button>
-
-                  {videoError && (
-                    <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl text-xs text-rose-700 font-bold flex items-center gap-2">
-                      <ShieldAlert className="h-4 w-4 shrink-0" />
-                      {videoError}
-                    </div>
-                  )}
-
-                </div>
-
-                {/* Video Generation Result Player output */}
-                <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col justify-between h-full min-h-[350px]">
-                  
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 border-b border-slate-100 pb-2">
-                    2. Cinematic Output
-                  </h4>
-
-                  {/* Actual rendering state visualizer */}
-                  {videoGenerating ? (
-                    <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-4">
-                      
-                      {/* Bouncing rendering orb */}
-                      <div className="relative h-16 w-16 bg-rose-500/10 rounded-full flex items-center justify-center shadow-inner">
-                        <FunnySpinner className="h-8 w-8 text-rose-600" />
-                      </div>
-
-                      <div className="text-center space-y-1">
-                        <p className="text-xs font-bold text-slate-700 animate-pulse uppercase tracking-wider">Veo is synthesizing video...</p>
-                        <p className="text-[10px] text-slate-400 font-bold max-w-xs">{videoGenStatus}</p>
-                      </div>
-
-                      <div className="w-full max-w-[200px] bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                        <div className="bg-rose-500 h-full animate-[progress_15s_ease-in-out_infinite]" style={{ width: "70%" }}></div>
-                      </div>
-
-                    </div>
-                  ) : generatedVideoUrl ? (
-                    <div className="flex-1 flex flex-col space-y-4 items-center justify-center py-4">
-                      
-                      <div className={`relative border border-slate-200 rounded-xl overflow-hidden shadow-md ${
-                        videoAspectRatio === "9:16" ? "max-w-[200px]" : "w-full"
-                      }`}>
-                        <video 
-                          src={generatedVideoUrl} 
-                          controls 
-                          autoPlay 
-                          loop 
-                          className="w-full object-cover rounded-xl"
-                        />
-                      </div>
-
-                      <div className="flex gap-2">
-                        <a 
-                          href={generatedVideoUrl}
-                          download="WMS_Workshop_Dynamic_Loop.mp4"
-                          className="bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 px-4 rounded-lg text-[10px] uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-3xs"
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          Download Loop
-                        </a>
-                      </div>
-
-                    </div>
-                  ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-slate-400 space-y-2">
-                      <Video className="h-12 w-12 text-slate-200" />
-                      <p className="text-xs font-bold">Animation Output Screen</p>
-                      <p className="text-[10px] text-slate-400 max-w-xs font-semibold">
-                        Once you select a reference photo and trigger the rendering, your dynamic Veo MP4 video loop will appear here.
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="text-[9px] text-slate-400 font-bold border-t border-slate-100 pt-2 flex items-center gap-1">
-                    <CheckCircle className="h-3 w-3 text-emerald-500 shrink-0" />
-                    Powered by Google Veo &bull; High resolution video formatting
-                  </div>
-
-                </div>
-
               </div>
 
             </div>

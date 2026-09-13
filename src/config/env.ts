@@ -22,7 +22,7 @@ export const envConfig = {
   DB_SOCKET_PATH: process.env.DB_SOCKET_PATH,
   DB_SSL: process.env.DB_SSL === "true",
   PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 3001,
-  GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+  NEMOTRON_API_KEY: process.env.NEMOTRON_API_KEY || process.env.NVIDIA_API_KEY,
 
   // Azure AI Document Intelligence
   AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT:
@@ -62,7 +62,7 @@ export function validateEnvironment(): void {
   ];
 
   const optionalVars = [
-    "GEMINI_API_KEY",
+    "NEMOTRON_API_KEY",
     "REDIS_URL"
   ];
 

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { GEMINI_TEXT_MODEL } from "../config/geminiModels.ts";
+import { NEMOTRON_TEXT_MODEL } from "../config/nemotron";
 import { AICopilotPanel } from "./AICopilotPanel";
 import { 
   ShieldCheck, 
@@ -1093,7 +1093,7 @@ export default function PartsWarrantyManager({
                 </div>
               </div>
               <div className="flex items-center gap-1 text-[10px] font-mono text-slate-500 bg-slate-950 px-2.5 py-1 rounded border border-slate-800">
-                <span>Model: {GEMINI_TEXT_MODEL}</span>
+                <span>Model: {NEMOTRON_TEXT_MODEL}</span>
               </div>
             </div>
 
