@@ -18,14 +18,39 @@
  *
  * NOT ROUTED HERE
  *
- * The customer portal (/portal, /customer-portal) is a SEPARATE application
- * with its own auth and its own Vite build — main.tsx chooses between them
- * before this router ever mounts, and it must stay that way.
+ * The customer portal (/customer-portal) is a SEPARATE application with its own
+ * auth and its own Vite build, served by Express from dist/customer-portal/.
+ *
+ * That creates ONE collision, handled by TAB_PATH_ALIASES below: the workshop
+ * app also has a TAB whose id is "customer-portal" (the Customer Experience
+ * Platform, first entry under Service Operations). Both wanted /customer-portal,
+ * Express won, and the tab rendered as the dashboard under a URL naming a
+ * different application. The tab is therefore published at /customer-experience.
  *
  * /service-assist is a server-rendered page, not a React screen. The tab of the
- * same name embeds it in an iframe; the real page is served by Express under
- * its own role gate.
+ * same name fetches it with the staff token and shows it in an iframe.
  */
+
+/**
+ * Tabs whose id cannot be used as a URL because Express already owns that path.
+ *
+ * Keyed by tab id, valued by the path it is published at. Only the collisions
+ * need an entry — every other tab id IS its own path.
+ */
+const TAB_PATH_ALIASES: Record<string, string> = {
+  // Express serves the separate customer-portal SPA at /customer-portal, so the
+  // workshop's own Customer Experience tab cannot live there.
+  "customer-portal": "customer-experience",
+  // Express serves the Service Assist landing page at /service-assist, so the
+  // tab that embeds the knowledge base cannot live there either. Same defect:
+  // the server won the path and the tab rendered as the dashboard.
+  "service-assist": "service-knowledge",
+};
+
+/** Reverse of TAB_PATH_ALIASES: path segment -> tab id. */
+const PATH_TAB_ALIASES: Record<string, string> = Object.fromEntries(
+  Object.entries(TAB_PATH_ALIASES).map(([tab, path]) => [path, tab])
+);
 
 /** The screen shown at "/" — and the fallback when a path matches no tab. */
 export const DEFAULT_TAB = "dashboard";
@@ -70,13 +95,13 @@ export function tabFromPath(pathname: string): string | null {
   if (isNonAppPath(pathname)) return null;
   const first = pathname.split("/").filter(Boolean)[0];
   if (!first) return DEFAULT_TAB;
-  return first;
+  return PATH_TAB_ALIASES[first] ?? first;
 }
 
 /** The URL for a tab id. The default tab lives at the root. */
 export function pathFromTab(tabId: string): string {
   if (!tabId || tabId === DEFAULT_TAB) return "/";
-  return `/${tabId}`;
+  return `/${TAB_PATH_ALIASES[tabId] ?? tabId}`;
 }
 
 /**
