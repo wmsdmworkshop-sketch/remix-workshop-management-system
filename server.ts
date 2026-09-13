@@ -56,6 +56,7 @@ import serviceScheduleEvaluator from "./src/services/service-schedule-evaluator.
 import { pipelineRouter } from "./src/api/routes/pipeline.routes.ts";
 import { saIntakeRouter } from "./src/api/routes/sa-intake.routes.ts";
 import { floorExecutionRouter } from "./src/api/routes/floor-execution.routes.ts";
+import { registerJobCardCache } from "./src/core/jobcard-cache-bridge.ts";
 import { qcRoutes } from "./src/api/routes/qc.routes.ts";
 import { billingRouter } from "./src/api/routes/billing.routes.ts";
 import { DeepSeekEngine } from "./src/engines/deepseek-engine.ts";
@@ -1490,6 +1491,11 @@ async function startServer() {
 
   // Helper middleware to get the DB
   const getDB = () => cachedDB;
+
+  // Let direct job_card_master writers (the floor allocation bridge) patch the
+  // served cache. Without this a write reaches MySQL but never reaches
+  // GET /api/job-cards, which serves this snapshot rather than the database.
+  registerJobCardCache({ get: getDB });
   const setDB = (db: any) => {
     // Detect status changes and progress changes for WebSockets before saving
     if (cachedDB && cachedDB.jobCards && db && db.jobCards) {

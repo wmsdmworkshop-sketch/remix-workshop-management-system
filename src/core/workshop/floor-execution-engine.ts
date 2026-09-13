@@ -685,6 +685,16 @@ export class FloorExecutionEngine {
             );
         if (!upd?.affectedRows) {
           console.error(`[FloorExecutionEngine] job_card_master ${masterId} matched 0 rows on allocation bridge.`);
+        } else {
+          // The write above changes MySQL, but GET /api/job-cards serves an
+          // in-memory snapshot taken at boot — so without this the allocated
+          // technician's workspace keeps showing the pre-allocation state and
+          // the job appears not to have been assigned at all. Awaited so the
+          // supervisor's success response cannot outrun the refresh, and
+          // internally non-throwing so a cache problem never fails a committed
+          // allocation.
+          const { refreshCachedJobCard } = await import("../jobcard-cache-bridge.ts");
+          await refreshCachedJobCard(masterId);
         }
       }
       // job_cards is the legacy table; many vehicles have no row in it at all,
