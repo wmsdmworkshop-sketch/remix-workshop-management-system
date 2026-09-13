@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { isWorkCompleteStatus } from "../types";
+import { staffAuthHeaders } from "../lib/authToken";
 import { 
   ClipboardCheck, CheckCircle2, AlertOctagon, RefreshCw, BarChart3, 
   Map, Sparkles, Signature, FileText, Camera, Users, Clock 
@@ -29,6 +30,20 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
   // (mandatory structural checks + this job's own complaints/job-scope/parts),
   // not a fixed generic set. serverSidePassGate enforces mandatory items are
   // PASS before a PASS decision is accepted.
+  /**
+   * The real QC queue, from GET /api/qc/queue.
+   *
+   * This screen used to build the queue in the browser with
+   *   jobCards.filter(j => j.current_workflow_state === "QC_PENDING")
+   * and `current_workflow_state` EXISTS IN NO TABLE in this database. The field
+   * was always undefined, so the filter never matched and the queue read "No
+   * vehicles pending QC" for every role — while the floor engine had been
+   * recording real handoffs in tbl_qc_handoff the whole time.
+   */
+  const [qcQueue, setQcQueue] = useState<any[]>([]);
+  const [queueLoading, setQueueLoading] = useState(true);
+  const [queueError, setQueueError] = useState<string | null>(null);
+
   const [serverChecklist, setServerChecklist] = useState<any[]>([]);
   const [checklistLoading, setChecklistLoading] = useState(false);
   const [submittingDecision, setSubmittingDecision] = useState(false);
@@ -70,15 +85,35 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
     return null;
   }, [rtStartKm, rtEndKm]);
 
-  // Target job card lookup
+  /**
+   * The job being inspected — always one that is actually queued for QC.
+   *
+   * This used to fall back to `jobCards[0]`: with nothing selected, the screen
+   * silently targeted an ARBITRARY job card, typically one never handed off for
+   * inspection. Every QC action on this screen — checklist, road test, the
+   * PASS/FAIL decision — would then have been applied to the wrong vehicle. The
+   * fallback is now the first job in the real queue, and null when the queue is
+   * empty, so an inspector cannot pass a vehicle nobody submitted.
+   */
   const selectedJob = useMemo(() => {
-    return jobCards.find(j => j.job_id === selectedJobId) || jobCards[0] || null;
-  }, [jobCards, selectedJobId]);
+    const queuedIds = new Set(qcQueue.filter(q => q.resolved).map(q => Number(q.jobId)));
+    const chosen = selectedJobId != null && queuedIds.has(Number(selectedJobId))
+      ? jobCards.find(j => Number(j.job_id) === Number(selectedJobId))
+      : null;
+    if (chosen) return chosen;
+
+    const firstQueued = qcQueue.find(q => q.resolved);
+    if (!firstQueued) return null;
+    return jobCards.find(j => Number(j.job_id) === Number(firstQueued.jobId))
+      // The queue row itself is enough to act on if the job card list has not
+      // loaded it — better than targeting an unrelated job.
+      || { job_id: firstQueued.jobId, job_card_no: firstQueued.jobCardNo, vrn: firstQueued.vrn };
+  }, [jobCards, selectedJobId, qcQueue]);
 
   // Section 1: Dashboard KPIs — real values only. 0 is a valid, honest count;
   // no hardcoded fallback numbers or fixed percentage strings.
   const qcStats = useMemo(() => {
-    const waiting = jobCards.filter(j => j.current_workflow_state === "QC_PENDING").length;
+    const waiting = qcQueue.length;
     const underInspection = jobCards.filter(j => j.status === "In Progress" && j.remarks?.includes("[QC]")).length;
     const passedCount = jobCards.filter(j => isWorkCompleteStatus(j.status) && !j.remarks?.includes("[Rework]")).length;
     const failedCount = jobCards.filter(j => j.rework_count > 0).length;
@@ -96,7 +131,7 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
       // was never taken. Honest "—" until real timestamps are wired.
       avgQcTime: "—"
     };
-  }, [jobCards]);
+  }, [jobCards, qcQueue]);
 
   // Section 7: AI QC Copilot
   const aiCopilotData = useMemo(() => {
@@ -116,7 +151,7 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
   const loadChecklist = useCallback(async (jobId: number) => {
     setChecklistLoading(true);
     try {
-      const res = await fetch(`/api/qc/checklist/${jobId}`, { credentials: "include" });
+      const res = await fetch(`/api/qc/checklist/${jobId}`, { headers: staffAuthHeaders() });
       const data = await res.json();
       setServerChecklist(Array.isArray(data?.data) ? data.data : []);
     } catch {
@@ -124,6 +159,28 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
     }
     setChecklistLoading(false);
   }, []);
+
+  const loadQueue = useCallback(async () => {
+    setQueueLoading(true);
+    setQueueError(null);
+    try {
+      const res = await fetch("/api/qc/queue", { headers: staffAuthHeaders() });
+      const data = await res.json();
+      if (!res.ok || !data?.success) {
+        // An empty list and a failed load are different facts. Saying "no
+        // vehicles pending" when the request was refused is how this screen
+        // hid a real queue for months.
+        throw new Error(data?.error || `Could not load the QC queue (HTTP ${res.status}).`);
+      }
+      setQcQueue(Array.isArray(data.data) ? data.data : []);
+    } catch (e: any) {
+      setQcQueue([]);
+      setQueueError(e?.message || "Could not load the QC queue.");
+    }
+    setQueueLoading(false);
+  }, []);
+
+  useEffect(() => { loadQueue(); }, [loadQueue]);
 
   useEffect(() => {
     if (selectedJob?.job_id) loadChecklist(selectedJob.job_id);
@@ -143,8 +200,7 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
     try {
       const res = await fetch(`/api/qc/decision/${selectedJob.job_id}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: staffAuthHeaders(),
         body: JSON.stringify({
           decision,
           checklist: serverChecklist,
@@ -171,9 +227,8 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
   const rtApiCall = async (path: string, method: string, body?: any) => {
     const res = await fetch(`/api/qc/${path}`, {
       method,
-      headers: { "Content-Type": "application/json" },
+      headers: staffAuthHeaders(),
       body: body ? JSON.stringify(body) : undefined,
-      credentials: "include"
     });
     const data = await res.json();
     if (!res.ok || !data.success) throw new Error(data.error || "Request failed");
@@ -306,21 +361,48 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">QC Validation Queue</h3>
               </div>
               <div className="space-y-3">
-                {jobCards.filter(j => j.current_workflow_state === "QC_PENDING").map(job => (
+                {qcQueue.map(item => (
                   <button
-                    key={job.job_id}
-                    onClick={() => setSelectedJobId(job.job_id)}
+                    key={item.handoffId}
+                    onClick={() => item.resolved && setSelectedJobId(item.jobId)}
+                    disabled={!item.resolved}
+                    title={item.resolved ? undefined : "This handoff does not match any job card — it cannot be inspected."}
                     className={`w-full text-left p-3 rounded-xl border transition-all ${
-                      selectedJobId === job.job_id 
-                        ? "bg-blue-600/10 border-blue-600/30 text-white" 
+                      !item.resolved
+                        ? "bg-slate-950/40 border-amber-600/30 text-slate-500 cursor-not-allowed"
+                        : selectedJobId === item.jobId
+                        ? "bg-blue-600/10 border-blue-600/30 text-white"
                         : "bg-slate-950/40 border-slate-850 text-slate-300 hover:border-slate-800"
                     }`}
                   >
-                    <div className="font-bold text-xs">{job.job_card_no}</div>
-                    <div className="text-[10px] text-slate-500">{job.vrn} · {job.vehicle_model}</div>
+                    <div className="font-bold text-xs">{item.jobCardNo}</div>
+                    <div className="text-[10px] text-slate-500">
+                      {item.vrn}{item.serviceType ? ` · ${item.serviceType}` : ""}
+                    </div>
+                    {!item.resolved && (
+                      <div className="text-[10px] text-amber-500 mt-1 font-bold">Unlinked handoff</div>
+                    )}
                   </button>
                 ))}
-                {jobCards.filter(j => j.current_workflow_state === "QC_PENDING").length === 0 && (
+
+                {/* Loading, failure and genuinely-empty are three different
+                    facts. Reporting "no vehicles pending" for all three is what
+                    hid a real queue. */}
+                {queueLoading && (
+                  <div className="text-xs text-slate-500 text-center py-4">Loading QC queue…</div>
+                )}
+                {!queueLoading && queueError && (
+                  <div className="text-xs text-red-400 text-center py-4 space-y-2">
+                    <div>{queueError}</div>
+                    <button
+                      onClick={loadQueue}
+                      className="text-[10px] font-bold uppercase tracking-wider text-slate-300 border border-slate-700 rounded-lg px-3 py-1 hover:border-slate-500"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+                {!queueLoading && !queueError && qcQueue.length === 0 && (
                   <div className="text-xs text-slate-500 text-center py-4">No vehicles pending QC</div>
                 )}
               </div>

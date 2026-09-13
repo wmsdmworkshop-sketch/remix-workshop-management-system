@@ -215,4 +215,19 @@ router.get("/road-test/history/:jobId", authorize("qc", "view"), async (req: Req
   }
 });
 
+// GET /api/qc/queue
+// The vehicles waiting for inspection, read from tbl_qc_handoff — the table the
+// floor engine actually writes on handoff. The screen previously built this
+// list client-side from `current_workflow_state`, a field that exists in no
+// table, so the queue was always empty while real handoffs sat unread.
+router.get("/queue", authorize("qc", "view"), async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+    const queue = await engine.getQcQueue(resolveAuthBranchId(user));
+    res.json({ success: true, data: queue });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 export const qcRoutes = router;

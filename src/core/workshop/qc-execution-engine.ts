@@ -103,6 +103,73 @@ export class QcExecutionEngine {
     }
   }
 
+  // ─── QC QUEUE ─────────────────────────────────────────────────────────────
+
+  /**
+   * The vehicles actually waiting for quality inspection.
+   *
+   * WHY THIS EXISTS. The QC screen built its own queue in the browser with
+   *
+   *     jobCards.filter(j => j.current_workflow_state === "QC_PENDING")
+   *
+   * and `current_workflow_state` EXISTS IN NO TABLE in this database — not on
+   * job_card_master, not anywhere. The field was always undefined, so the
+   * filter never matched and the queue was permanently empty, for every role.
+   * Meanwhile the floor engine had been recording real handoffs in
+   * tbl_qc_handoff all along (JC-64655 and JC-29267 sit there as PENDING_QC).
+   * The work was queued; nothing ever read the queue.
+   *
+   * KEY SHAPES DIFFER, DELIBERATELY HANDLED HERE. tbl_qc_handoff.job_card_id is
+   * a VARCHAR holding the human job card NUMBER ("JC-64655"), while every QC
+   * route takes the NUMERIC job_card_master.job_card_id. The join converts
+   * between them, so the caller receives an id the decision endpoint accepts.
+   *
+   * A handoff whose job card cannot be resolved is returned with jobId null
+   * rather than dropped — an unresolvable handoff is a data fault worth seeing,
+   * not something to hide by filtering it away.
+   */
+  public async getQcQueue(branchId: number): Promise<any[]> {
+    // branchId is accepted for signature consistency with the rest of this
+    // engine, but tbl_qc_handoff.branch_id holds the STRING form ("BR-SEDAM")
+    // while callers pass the numeric branch — the two subsystems genuinely
+    // disagree on how a branch is identified (see the note in qc.routes.ts).
+    // Filtering on a mismatched shape would silently return nothing, which is
+    // exactly the class of bug this method exists to fix, so the rows are not
+    // branch-filtered until that disagreement is reconciled.
+    void branchId;
+
+    const [rows]: any = await this.execute(
+      `SELECT h.handoff_id,
+              h.job_card_id           AS job_card_no,
+              h.vrn,
+              h.status                AS handoff_status,
+              h.created_at            AS handed_off_at,
+              m.job_card_id           AS job_id,
+              m.job_status,
+              m.service_type,
+              m.customer_name,
+              m.assigned_to
+         FROM tbl_qc_handoff h
+         LEFT JOIN job_card_master m ON m.job_card_no = h.job_card_id
+        WHERE h.status = 'PENDING_QC'
+        ORDER BY h.created_at ASC`
+    );
+
+    return (rows || []).map((r: any) => ({
+      handoffId: r.handoff_id,
+      jobId: r.job_id != null ? Number(r.job_id) : null,
+      jobCardNo: r.job_card_no,
+      vrn: r.vrn,
+      status: r.job_status,
+      serviceType: r.service_type,
+      customerName: r.customer_name,
+      handedOffAt: r.handed_off_at,
+      // Explicit, so the screen can show the row as unactionable instead of
+      // offering a PASS button that would fail on an id that resolves to nothing.
+      resolved: r.job_id != null,
+    }));
+  }
+
   // ─── ROAD TEST — SET REQUIREMENT ──────────────────────────────────────────
 
   /**

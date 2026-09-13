@@ -130,6 +130,34 @@ export default function AppShell({
     return () => clearInterval(id);
   }, [fetchNotifications]);
 
+  /**
+   * Close the header popovers when they stop being in use.
+   *
+   * The account menu had a click-away overlay but nothing else, so it stayed
+   * open through an Escape press and through navigating to another screen —
+   * leaving "Change Password / Logout" floating over the new page, with Logout
+   * sitting under the pointer. Both menus now close on Escape and whenever the
+   * active screen changes.
+   */
+  React.useEffect(() => {
+    if (!userMenuOpen && !notifOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setUserMenuOpen(false);
+        setNotifOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [userMenuOpen, notifOpen]);
+
+  // Navigating away is "no longer in use" — a menu anchored to the header must
+  // not outlive the screen it was opened on.
+  React.useEffect(() => {
+    setUserMenuOpen(false);
+    setNotifOpen(false);
+  }, [activeTab]);
+
   // Determine current active workspace
   const activeWorkspace = WORKSPACE_MAPPING[activeTab] || "dashboard";
 
