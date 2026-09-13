@@ -27,6 +27,24 @@ import {
   Maximize2
 } from "lucide-react";
 import { Employee, Bay, JobCard, AlertLog, isOpenJobStatus } from "../types";
+import { getStaffToken } from "../lib/authToken";
+
+/**
+ * Auth headers for the copilot's calls.
+ *
+ * All four /api/gemini/* endpoints sit behind the global /api JWT gate, and
+ * this component sent only a Content-Type — so every request returned
+ * "Access denied. No token provided." and the copilot has never answered a
+ * single question. Verified against production: chat, generate-video,
+ * video-status and video-download all 401 without a token.
+ */
+const authHeaders = (): Record<string, string> => {
+  const t = getStaffToken();
+  return t
+    ? { "Content-Type": "application/json", Authorization: `Bearer ${t}` }
+    : { "Content-Type": "application/json" };
+};
+
 
 interface Message {
   role: "user" | "assistant";
@@ -301,7 +319,7 @@ export default function GeminiAssistant({
     try {
       const response = await fetch("/api/gemini/generate-video", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({
           prompt: videoPrompt,
           aspectRatio: videoAspectRatio,
@@ -331,7 +349,7 @@ export default function GeminiAssistant({
       try {
         const response = await fetch("/api/gemini/video-status", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders(),
           body: JSON.stringify({ operationName })
         });
         const data = await response.json();
@@ -369,7 +387,7 @@ export default function GeminiAssistant({
     try {
       const response = await fetch("/api/gemini/video-download", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ operationName })
       });
       
@@ -405,7 +423,7 @@ export default function GeminiAssistant({
     try {
       const response = await fetch("/api/gemini/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({
           messages: newMessages,
           selectedRole,
@@ -420,14 +438,26 @@ export default function GeminiAssistant({
       if (response.ok) {
         setMessages(prev => [...prev, { role: "assistant", content: data.reply, sources: data.sources }]);
       } else {
-        setErrorMsg(data.error || "Failed to communicate with Gemini assistant.");
-        setMessages(prev => [
-          ...prev, 
-          { 
-            role: "assistant", 
-            content: "⚠️ **System Error**: I could not retrieve a response from Gemini. Please make sure your `GEMINI_API_KEY` is correctly set in your environment or Secrets config." 
-          }
-        ]);
+        // Report the cause that actually applies. This always blamed
+        // GEMINI_API_KEY, which sent people to check a key that was never
+        // reached — the real causes are a lapsed session, a depleted AI
+        // account, or a retired model.
+        const status = response.status;
+        const serverMsg = String(data?.error || "");
+        let content: string;
+        if (status === 401) {
+          content = "⚠️ **Session expired** — sign in again to use the copilot.";
+        } else if (status === 403) {
+          content = "⚠️ **Not permitted** — your role cannot use the copilot.";
+        } else if (status === 429 || /credits are depleted|RESOURCE_EXHAUSTED|quota/i.test(serverMsg)) {
+          content = "⚠️ **AI unavailable** — the AI account has no credit left. Ask an administrator to top up billing.";
+        } else if (/no longer available|NOT_FOUND/i.test(serverMsg)) {
+          content = "⚠️ **AI unavailable** — the configured model is no longer available and needs updating.";
+        } else {
+          content = `⚠️ **System Error**: ${serverMsg || "Gemini did not return a response."}`;
+        }
+        setErrorMsg(serverMsg || "Failed to communicate with Gemini assistant.");
+        setMessages(prev => [...prev, { role: "assistant", content }]);
       }
     } catch (err: any) {
       console.error(err);
