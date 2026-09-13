@@ -24,8 +24,12 @@ export type OcrEvidenceType =
   | "FUEL_GAUGE"
   | "ODOMETER"
   // User-attached media (technician / advisor / billing) — same store, same
-  // 90-day retention. ocr_type is a plain string column, so these need no
-  // schema change.
+  // 90-day retention.
+  //
+  // NOTE: ocr_type is an ENUM, not a string column. A comment here previously
+  // claimed the opposite and concluded these needed no schema change; they did,
+  // and every upload of one failed with "Data truncated for column 'ocr_type'".
+  // Migration 025 widened the ENUM to include the three below.
   | "WORK_PHOTO"
   | "VEHICLE_CONDITION"
   | "DOCUMENT";

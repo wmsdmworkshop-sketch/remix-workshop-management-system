@@ -77,6 +77,15 @@ export const ComplaintsPanel: React.FC<Props> = ({ vrn, compact }) => {
                 {!!c.is_immobilized && <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold">IMMOBILIZED</span>}
                 {!!c.is_repeat && <span className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold">REPEAT</span>}
               </div>
+              {/* What the advisor asked the technician to actually do. Carried
+                  from the intake's job scope; without it the technician sees
+                  the symptom but not the instruction. */}
+              {c.proposed_inspection && (
+                <p className="text-[10px] text-cyan-300 mt-1.5 border-l-2 border-cyan-500/40 pl-2">
+                  <span className="text-slate-500 uppercase tracking-wider text-[9px]">Do: </span>
+                  {c.proposed_inspection}
+                </p>
+              )}
               <p className="text-[9px] text-slate-500 mt-1">by {c.authored_by || "—"}</p>
             </div>
           ))}

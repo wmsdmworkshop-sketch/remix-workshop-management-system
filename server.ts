@@ -3733,7 +3733,72 @@ async function startServer() {
       if (jobCardNo) { where.push("job_card_no = ?"); params.push(jobCardNo); }
       const [rows]: any = await dbPool.query(
         `SELECT * FROM tbl_job_complaints WHERE ${where.join(" OR ")} ORDER BY created_at DESC`, params);
-      res.json({ success: true, complaints: rows || [] });
+
+      // ALSO read the complaints captured during SA TECHNICAL INTAKE.
+      //
+      // There are two stores. The Complaints screen writes tbl_job_complaints;
+      // the technical intake writes its authenticated complaints as JSON into
+      // tbl_sa_intake.authenticated_complaints_json. This endpoint read only the
+      // first, so every downstream screen — technician, floor supervisor,
+      // manager — showed "No complaints logged for this vehicle" for a job whose
+      // complaint had been captured at intake.
+      //
+      // Observed on KA32AB9275 (JC-64655): the intake holds "1ST FREE SERVICE
+      // AND POOR PICK UP" with the scope "diagnostics using cummins tool", and
+      // the technician's screen said there were none. A technician working from
+      // that screen has no idea what he is meant to fix.
+      //
+      // Merged rather than migrated: the intake rows are the authenticated
+      // record and must not be duplicated into the other table by a read.
+      // Unifying the two stores is a larger change than this fix.
+      let intakeComplaints: any[] = [];
+      try {
+        const [intakeRows]: any = await dbPool.query(
+          `SELECT s.intake_id, s.job_card_id, s.sa_name, s.authenticated_at,
+                  s.authenticated_complaints_json, s.job_scope_json,
+                  TRIM(LEADING 'VIN-' FROM g.vin) AS vrn
+             FROM tbl_sa_intake s
+             INNER JOIN tbl_gate_entry g ON g.gate_entry_id = s.gate_entry_id
+            WHERE (? <> '' AND UPPER(REPLACE(TRIM(LEADING 'VIN-' FROM g.vin),'-','')) = ?)
+               OR (? <> '' AND s.job_card_id = ?)
+            ORDER BY s.created_at DESC`,
+          [vrn || "", vrn || "", jobCardNo || "", jobCardNo || ""]
+        );
+        for (const r of (intakeRows || [])) {
+          let parsed: any[] = [];
+          try { parsed = JSON.parse(r.authenticated_complaints_json || "[]"); } catch { parsed = []; }
+          let scope: any[] = [];
+          try { scope = JSON.parse(r.job_scope_json || "[]"); } catch { scope = []; }
+          parsed.forEach((c: any, i: number) => {
+            const text = String(c?.complaintText ?? c?.complaint ?? "").trim();
+            if (!text) return;
+            intakeComplaints.push({
+              complaint_id: `INTAKE-${r.intake_id}-${i}`,
+              job_card_no: r.job_card_id,
+              vrn: r.vrn,
+              complaint_text: text,
+              category: c?.category ?? null,
+              symptom: c?.symptom ?? null,
+              when_occurs: c?.whenOccurs ?? null,
+              is_repeat: c?.isRepeat ? 1 : 0,
+              is_immobilized: c?.isImmobilized ? 1 : 0,
+              is_safety_critical: c?.isSafetyCritical ? 1 : 0,
+              status: "OPEN",
+              authored_by: r.sa_name ?? null,
+              created_at: r.authenticated_at,
+              // What the advisor asked the technician to actually do.
+              proposed_inspection: scope[i]?.proposedInspection ?? null,
+              source: "SA_INTAKE",
+            });
+          });
+        }
+      } catch (e: any) {
+        // The primary list still returns; the shortfall is visible in the logs
+        // rather than silently narrowing what the technician sees.
+        console.error("[COMPLAINTS] intake merge failed:", e.message);
+      }
+
+      res.json({ success: true, complaints: [...(rows || []), ...intakeComplaints] });
     } catch (err: any) {
       console.error("[COMPLAINTS] list:", err.message);
       res.status(500).json({ error: "Failed to load complaints." });
