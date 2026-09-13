@@ -9,6 +9,7 @@
  * =============================================================================
  */
 
+import { GEMINI_VISION_MODEL } from "../config/geminiModels.ts";
 import { GoogleGenAI, Type } from "@google/genai";
 import { AzureOCRProcessor, extractJobCardFields } from "../engines/ocr-processor.ts";
 import { DeepSeekEngine } from "../engines/deepseek-engine.ts";
@@ -245,7 +246,7 @@ Output ONLY a JSON object matching this schema:
 }`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: GEMINI_VISION_MODEL,
       contents: [
         { inlineData: { data: base64Data, mimeType } },
         { text: prompt },
@@ -288,7 +289,7 @@ Output ONLY a JSON object matching this schema:
       "Include a confidence score from 0.0 to 1.0.";
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: GEMINI_VISION_MODEL,
       contents: [
         { inlineData: { data: base64Data, mimeType } },
         { text: prompt },
@@ -370,7 +371,7 @@ Output ONLY a JSON object matching this schema:
     });
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: GEMINI_VISION_MODEL,
       contents,
       config: {
         responseMimeType: "application/json",
@@ -416,7 +417,7 @@ Output ONLY a JSON object matching this schema:
     });
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: GEMINI_VISION_MODEL,
       contents: [
         { inlineData: { data: base64Data, mimeType } },
         { text: "Extract all part numbers and part labels from this spare parts or invoice image. Output JSON with partNumbers array and confidence score (0.0 to 1.0)." },

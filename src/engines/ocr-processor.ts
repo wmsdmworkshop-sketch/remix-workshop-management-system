@@ -1,4 +1,5 @@
 import { DeepSeekEngine } from "./deepseek-engine";
+import { GEMINI_VISION_MODEL } from "../config/geminiModels.ts";
 
 export type OCRProvider = 'GoogleVision' | 'Gemini' | 'Azure' | 'DeepSeek' | 'AWS' | 'EasyOCR' | 'Custom';
 
@@ -311,7 +312,7 @@ class GeminiOCRProcessor implements OCRProcessorProvider {
     ].join("\n");
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: GEMINI_VISION_MODEL,
       contents: [
         { text: prompt },
         {

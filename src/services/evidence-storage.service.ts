@@ -305,6 +305,25 @@ export class EvidenceStorageService {
    * return means the caller must NOT mark the record deleted, so a later run
    * retries rather than losing track of a file that is still on disk.
    */
+  /**
+   * Delete one attachment's stored file, by evidence id.
+   *
+   * The public entry point for a user removing a photo they attached. It reuses
+   * the same deletion logic the retention worker relies on — GCS or local disk,
+   * path-escape guarded, "already absent" treated as success — so there is only
+   * one place that knows how to remove stored media.
+   *
+   * Returns false when the bytes are still there, so the caller can refuse to
+   * flag the row and leave it to be retried.
+   */
+  public async deleteStoredMediaById(evidenceId: string, photoUrl: string | null): Promise<boolean> {
+    const ok = await this.deleteStoredMedia(photoUrl);
+    if (!ok) {
+      console.error(`[EvidenceStorage] could not remove the file for ${evidenceId}.`);
+    }
+    return ok;
+  }
+
   private async deleteStoredMedia(photoUrl: string | null): Promise<boolean> {
     if (!photoUrl) return true; // nothing was ever stored
     if (photoUrl.startsWith("data:")) return true; // placeholder, no file exists

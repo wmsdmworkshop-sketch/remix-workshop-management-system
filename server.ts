@@ -31,6 +31,12 @@ import { enforceFieldPermissions, describeRefusal, FIELD_PERMISSION_LEVELS, type
 import { BACKDATE_ROLES } from "./src/core/workshop/backdate-policy.ts";
 import { SA_ASSIGNMENT_ROLES } from "./src/core/workshop/assignment-roles.ts";
 import {
+  GEMINI_TEXT_MODEL,
+  GEMINI_VISION_MODEL,
+  GEMINI_PRO_MODEL,
+  GEMINI_LITE_MODEL,
+} from "./src/config/geminiModels.ts";
+import {
   areSlaBreachAlertsEnabled,
   invalidateSlaAlertPolicyCache,
   parseSlaAlertSetting,
@@ -4895,7 +4901,7 @@ Return EXACTLY a JSON object with this schema:
 Do not include any Markdown or formatting other than the clean JSON object.`;
 
             const aiRes = await ai.models.generateContent({
-              model: "gemini-2.5-flash",
+              model: GEMINI_TEXT_MODEL,
               contents: [
                 {
                   inlineData: {
@@ -5585,6 +5591,55 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
     }
   });
 
+  /**
+   * Remove an attachment the user uploaded.
+   *
+   * Mirrors the retention worker's ordering: the stored file is deleted FIRST
+   * and the row flagged only on success, so a failure retries instead of
+   * leaving bytes on disk that nothing tracks any more.
+   *
+   * The metadata row is KEPT with is_deleted = 1, never removed. Who uploaded
+   * what and when stays on the record — the same rule the 90-day retention
+   * policy follows. A wrong photo disappears from the screen; the fact that it
+   * was once attached does not.
+   */
+  app.delete("/api/attachments/:evidenceId", async (req: any, res) => {
+    const evidenceId = String(req.params.evidenceId || "").trim();
+    if (!evidenceId) {
+      return res.status(400).json({ success: false, error: "An evidenceId is required." });
+    }
+    try {
+      const [rows]: any = await dbPool.execute(
+        `SELECT evidence_id, photo_url, is_deleted FROM ocr_evidence WHERE evidence_id = ? LIMIT 1`,
+        [evidenceId]
+      );
+      const row = (rows || [])[0];
+      if (!row) {
+        return res.status(404).json({ success: false, error: "Attachment not found." });
+      }
+      if (row.is_deleted) {
+        return res.json({ success: true, alreadyRemoved: true });
+      }
+
+      const removed = await evidenceStorageService.deleteStoredMediaById(evidenceId, row.photo_url);
+      if (!removed) {
+        return res.status(500).json({
+          success: false,
+          error: "The file could not be removed from storage; nothing was changed.",
+        });
+      }
+
+      await dbPool.execute(
+        `UPDATE ocr_evidence SET is_deleted = 1 WHERE evidence_id = ?`,
+        [evidenceId]
+      );
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("[attachments] delete failed:", e.message);
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
   // ==========================================================================
   // TAT / NC MEASUREMENT CHAIN
   // The CRM job card and the invoice are attached to DWIP as documents; the
@@ -5756,7 +5811,7 @@ Several of these rows are often blank on a freshly printed job card — for any 
 with nothing written beside it, return an empty string. Never guess or infer a
 time from another field.`;
       const out = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: GEMINI_TEXT_MODEL,
         contents: [
           { inlineData: { mimeType: mimeType || "image/jpeg", data: String(base64Image).replace(/^data:[^;]+;base64,/, "") } },
           prompt,
@@ -5781,7 +5836,30 @@ time from another field.`;
       });
     } catch (e: any) {
       console.error("[jc-invoice-extract]", e?.message);
-      res.json({ success: true, available: false, reason: "Could not read the document — enter the details manually." });
+      // Every AI failure used to report "Could not read the document", which
+      // reads as a poor scan and tells the user to try harder. Two of the
+      // commonest causes are nothing of the sort, and nobody could act on them
+      // without reading the server logs:
+      //
+      //   404  the model was retired upstream (this is what broke OCR: Google
+      //        withdrew gemini-2.5-flash for new users and every call 404'd)
+      //   429  the Gemini account has no prepayment credit left
+      //
+      // Naming them means the right person fixes the right thing. The message
+      // still ends with the manual fallback, because that is what the user does
+      // next either way.
+      const msg = String(e?.message || "");
+      let reason = "Could not read the document — enter the details manually.";
+      if (/RESOURCE_EXHAUSTED|quota|credits are depleted|429/i.test(msg)) {
+        reason =
+          "Automatic reading is unavailable — the AI account has no credit left. " +
+          "Ask an administrator to top up billing. Enter the details manually for now.";
+      } else if (/no longer available|NOT_FOUND|404/i.test(msg)) {
+        reason =
+          "Automatic reading is unavailable — the configured AI model is no longer " +
+          "available and needs updating. Enter the details manually for now.";
+      }
+      res.json({ success: true, available: false, reason });
     }
   });
 
@@ -9301,17 +9379,18 @@ time from another field.`;
         }
       }
 
-      // Determine model based on inputs
-      let model = "gemini-2.5-flash";
+      // Determine model based on inputs. Ids come from config/geminiModels.ts
+      // so a retirement is one change, not eighteen.
+      let model = GEMINI_TEXT_MODEL;
       const config: any = { systemInstruction };
 
       if (image) {
-        model = "gemini-2.5-pro";
+        model = GEMINI_PRO_MODEL;
       } else if (useThinking) {
-        model = "gemini-2.5-pro";
+        model = GEMINI_PRO_MODEL;
         config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
       } else if (useLite) {
-        model = "gemini-2.5-flash-lite";
+        model = GEMINI_LITE_MODEL;
       }
 
       if (useSearch) {
@@ -9455,7 +9534,7 @@ time from another field.`;
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: GEMINI_TEXT_MODEL,
         contents: userPrompt,
         config: {
           systemInstruction,
@@ -9527,7 +9606,7 @@ time from another field.`;
       console.log(`Processing audio file with mimeType: ${mimeType}`);
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: GEMINI_TEXT_MODEL,
         contents: [
           {
             inlineData: {
@@ -10360,7 +10439,7 @@ ${JSON.stringify(headers)}
 Return a JSON object where keys are the uploaded CSV headers, and values are the matching target database columns. If a header does not match any target database column, map it to null. Do not include markdown formatting or quotes.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: GEMINI_TEXT_MODEL,
         contents: prompt,
         config: { responseMimeType: "application/json" }
       });
@@ -10485,7 +10564,7 @@ Extract these fields from the attached document and return EXACTLY a JSON object
 Return only the clean JSON object — no Markdown, no code fences.`;
 
       const aiRes = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: GEMINI_TEXT_MODEL,
         contents: [
           { inlineData: { mimeType: mimeType || "application/pdf", data: fileBase64 } },
           prompt
@@ -10620,7 +10699,7 @@ You MUST search the provided circular rules and output a JSON response. Ensure y
 Do not include any Markdown or formatting other than the clean JSON object.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: GEMINI_TEXT_MODEL,
         contents: systemPrompt,
         config: {
           responseMimeType: "application/json"
@@ -10663,7 +10742,7 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       console.log(`Performing OCR on image, extracting parts, mime: ${mimeType}`);
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: GEMINI_TEXT_MODEL,
         contents: [
           {
             inlineData: {

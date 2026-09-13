@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Camera as CapacitorCamera, CameraResultType, CameraSource } from "@capacitor/camera";
-import { Camera, Upload, FileText, X, Loader2, Paperclip, AlertCircle } from "lucide-react";
+import { Camera, Upload, FileText, X, Loader2, Paperclip, AlertCircle, Trash2 } from "lucide-react";
 import { getStaffToken } from "../lib/authToken";
 
 export interface AttachmentCategory {
@@ -38,6 +38,41 @@ export const MediaAttach: React.FC<MediaAttachProps> = ({ jobCardNo, vrn, token,
   const allowedKeys = categories.map((c) => c.key);
   const [category, setCategory] = useState<string>(categories[0]?.key || "DOCUMENT");
   const [items, setItems] = useState<any[]>([]);
+  /** evidence_id currently being removed, so its tile can show progress. */
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  /**
+   * Remove an attachment.
+   *
+   * Confirmed first, because it deletes the stored file — the metadata row is
+   * kept (is_deleted = 1) so who attached what and when stays on the record,
+   * which is the same rule the 90-day retention policy follows.
+   *
+   * The tile disappears only after the server confirms. A failed delete says so
+   * rather than removing it from the screen and leaving the file in place.
+   */
+  const deleteAttachment = async (rec: any) => {
+    const label = rec?.ocr_type ? String(rec.ocr_type).replace(/_/g, " ") : "this attachment";
+    if (!window.confirm(`Remove ${label}? The file is deleted permanently.`)) return;
+    setDeletingId(rec.evidence_id);
+    try {
+      const res = await fetch(`/api/attachments/${encodeURIComponent(rec.evidence_id)}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || !d?.success) {
+        alert(d?.error || `Could not remove the attachment (HTTP ${res.status}).`);
+        return;
+      }
+      setItems((prev) => prev.filter((x) => x.evidence_id !== rec.evidence_id));
+    } catch (e: any) {
+      alert(`Could not reach the server to remove the attachment. ${e?.message || ""}`.trim());
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
@@ -403,29 +438,42 @@ export const MediaAttach: React.FC<MediaAttachProps> = ({ jobCardNo, vrn, token,
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
               {items.map((r) => (
-                isPdf(r) ? (
-                  <a
-                    key={r.evidence_id}
-                    href={r.photo_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex flex-col items-center justify-center gap-1 aspect-square rounded-lg border border-slate-700 bg-slate-950 hover:border-cyan-500 transition-all p-1"
-                    title={`${r.ocr_type} — ${new Date(r.captured_at).toLocaleString()}`}
-                  >
-                    <FileText className="h-6 w-6 text-rose-400" />
-                    <span className="text-[8px] text-slate-400 font-bold">PDF</span>
-                  </a>
-                ) : (
+                <div key={r.evidence_id} className="relative group">
+                  {isPdf(r) ? (
+                    <a
+                      href={r.photo_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex flex-col items-center justify-center gap-1 aspect-square rounded-lg border border-slate-700 bg-slate-950 hover:border-cyan-500 transition-all p-1"
+                      title={`${r.ocr_type} — ${new Date(r.captured_at).toLocaleString()}`}
+                    >
+                      <FileText className="h-6 w-6 text-rose-400" />
+                      <span className="text-[8px] text-slate-400 font-bold">PDF</span>
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setPreview(r.photo_url)}
+                      className="w-full aspect-square rounded-lg overflow-hidden border border-slate-700 hover:border-cyan-500 transition-all"
+                      title={`${r.ocr_type} — ${new Date(r.captured_at).toLocaleString()}`}
+                    >
+                      <img src={r.photo_url} alt={r.ocr_type} className="w-full h-full object-cover" loading="lazy" />
+                    </button>
+                  )}
+                  {/* Always visible on touch, where there is no hover. */}
                   <button
-                    key={r.evidence_id}
                     type="button"
-                    onClick={() => setPreview(r.photo_url)}
-                    className="aspect-square rounded-lg overflow-hidden border border-slate-700 hover:border-cyan-500 transition-all"
-                    title={`${r.ocr_type} — ${new Date(r.captured_at).toLocaleString()}`}
+                    onClick={(e) => { e.stopPropagation(); deleteAttachment(r); }}
+                    disabled={deletingId === r.evidence_id}
+                    aria-label={`Remove ${r.ocr_type}`}
+                    title="Remove this attachment"
+                    className="absolute top-1 right-1 p-1 rounded-md bg-slate-950/85 border border-slate-700 text-slate-300 hover:text-red-400 hover:border-red-500/50 disabled:opacity-50 transition-all"
                   >
-                    <img src={r.photo_url} alt={r.ocr_type} className="w-full h-full object-cover" loading="lazy" />
+                    {deletingId === r.evidence_id
+                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                      : <Trash2 className="h-3 w-3" />}
                   </button>
-                )
+                </div>
               ))}
             </div>
           )}
