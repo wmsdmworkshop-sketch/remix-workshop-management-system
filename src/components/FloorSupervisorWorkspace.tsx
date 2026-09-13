@@ -145,16 +145,41 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
   // Technician Roster
   const technicianList = useMemo(() => {
     const techs = employees.filter(e => ["Technician", "Electrician", "Mechanic"].includes(e.role));
-    return techs.map((t, idx) => {
-      const activeJob = jobCards.find(j => j.technician_name?.includes(t.full_name) && j.status === "In Progress");
+    return techs.map((t) => {
+      // Match on assigned_to (employee id), NOT technician_name.
+      //
+      // The floor allocation writes job_card_master.assigned_to; it does not
+      // write technician_name at all. This matched on the name and so found
+      // nothing, leaving a technician who had just been given a bay and a job
+      // showing as "Available" with workload 0 — which is what was reported for
+      // RAJKUMAR after allocation ALLOC-65E37275 put him in B01.
+      //
+      // Matching by id is also the safer of the two: the file's own history
+      // records substring name matching mis-routing work between people whose
+      // names overlap.
+      const myJobs = jobCards.filter(
+        (j: any) => j.assigned_to != null && Number(j.assigned_to) === Number(t.employee_id)
+      );
+
+      // ALLOCATED is not the same as WORKING. A technician who has been given a
+      // job but has not pressed Start is neither free nor busy, and showing
+      // either would mislead the supervisor about who can take the next job.
+      const working = myJobs.find((j: any) => j.status === "In Progress" && j.started_at);
+      const allocated = myJobs.find((j: any) => !isWorkCompleteStatus(j.status));
+      const current = working || allocated || null;
+
       return {
         id: `TECH-${t.employee_id}`,
         name: t.full_name,
         role: t.role,
         certification: t.qualification || "Bronze",
-        isBusy: !!activeJob,
-        currentJob: activeJob ? activeJob.vrn : "Available",
-        loadCount: activeJob ? 1 : 0
+        state: working ? "WORKING" : allocated ? "ALLOCATED" : "AVAILABLE",
+        isBusy: !!current,
+        currentJob: current ? (current.vrn || "—") : "Available",
+        // The job card number, so the supervisor can see WHICH job without
+        // opening anything — asked for explicitly.
+        currentJobNo: current ? (current.job_card_no || `TEMP-${current.job_id}`) : null,
+        loadCount: myJobs.filter((j: any) => !isWorkCompleteStatus(j.status)).length
       };
     });
   }, [employees, jobCards]);
@@ -426,12 +451,19 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
               <div className="flex justify-between items-center">
                 <span className="font-bold text-white text-xs">{t.name}</span>
                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                  t.isBusy ? "bg-amber-500/20 text-amber-400" : "bg-emerald-500/20 text-emerald-400"
-                }`}>{t.isBusy ? "Busy" : "Available"}</span>
+                  t.state === "WORKING" ? "bg-amber-500/20 text-amber-400"
+                  : t.state === "ALLOCATED" ? "bg-blue-500/20 text-blue-400"
+                  : "bg-emerald-500/20 text-emerald-400"
+                }`}>
+                  {t.state === "WORKING" ? "Busy" : t.state === "ALLOCATED" ? "Assigned" : "Available"}
+                </span>
               </div>
               <p className="text-xs text-slate-400">{t.role} • Cert: <span className="text-slate-200 font-bold">{t.certification}</span></p>
               <div className="flex justify-between border-t border-slate-850 pt-2 text-[10px] text-slate-400">
-                <span>Current: {t.currentJob}</span>
+                <span>
+                  Current: {t.currentJob}
+                  {t.currentJobNo && <span className="text-slate-300 font-mono"> · {t.currentJobNo}</span>}
+                </span>
                 <span>Workload: {t.loadCount}</span>
               </div>
             </div>
