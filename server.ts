@@ -732,7 +732,7 @@ async function startServer() {
       { full_name: "Shashi Patil", username: "patilshashi5558@gmail.com", role: "service_advisor" },
       { full_name: "Ragu", username: "kulkarna040@gmail.com", role: "floor_supervisor" },
       { full_name: "Manju", username: "pujarimanjunath295@gmail.com", role: "warranty_advisor" },
-      { full_name: "PK", username: "kpkulkarni02@gmail.com", role: "floor_incharge" },
+      { full_name: "PK", username: "kpkulkarni02@gmail.com", role: "floor_supervisor" },
       { full_name: "Ahmed", username: "Mdadhn98@gmail.com", role: "workshop_manager" },
       { full_name: "Mustafa", username: "mustafaladaf50@gmail.com", role: "service_advisor" },
       { full_name: "Chetan", username: "devanandwarranty@gmail.com", role: "warranty_manager" },
@@ -1658,7 +1658,7 @@ async function startServer() {
    */
   const JOB_CARD_CREATE_ROLES = [
     "security_agent", "gate_personnel", "reception", "receptionist", "bay_reporter",
-    "gm_service", "service_advisor", "supervisor", "floor_supervisor", "floor_incharge",
+    "gm_service", "service_advisor", "supervisor", "floor_supervisor",
     "workshop_manager", "service_manager", "admin", "developer",
   ];
 
@@ -2043,7 +2043,7 @@ async function startServer() {
   // fresh literal list, so it cannot drift from the rest of the system.
   const OVERSIGHT_ROLES = [
     ...GROUP1_FULL_CONTROL, ...GM_OVERRIDE_ROLES,
-    "service_manager", "floor_supervisor", "floor_incharge", "dealer_principal",
+    "service_manager", "floor_supervisor", "dealer_principal",
   ].map(normaliseRoleName);
 
   // ─── JOB CARD CHAIN OF CUSTODY ────────────────────────────────────────────
@@ -8310,7 +8310,7 @@ time from another field.`;
   // started work the allocation is locked to GM/admin override (audited); and
   // the request body is validated instead of trusted.
   const TECHNICIAN_ASSIGN_ROLES = [
-    "floor_supervisor", "floor_incharge", "supervisor",
+    "floor_supervisor", "supervisor",
     "workshop_manager", "service_manager", "gm_service", "admin", "developer",
   ];
   const TECHNICIAN_REASSIGN_OVERRIDE_ROLES = ["gm_service", "admin", "developer"];
@@ -10932,7 +10932,7 @@ Return a JSON object where keys are the uploaded CSV headers, and values are the
       }
 
       const systemPrompt = `You are the chief RBAC Security Architect for DWIP Enterprise (Devanand Workshop Integrated Platform).
-Available Roles: [admin, developer, gm_service, service_manager, workshop_manager, floor_supervisor, floor_incharge, service_advisor, reception, receptionist, billing, accounts, cashier, parts_incharge, spares_manager, warranty_clerk, qc, security_agent, dkam, dealer_principal]
+Available Roles: [admin, developer, gm_service, service_manager, workshop_manager, floor_supervisor, service_advisor, reception, receptionist, billing, accounts, cashier, parts_incharge, spares_manager, warranty_clerk, qc, security_agent, dkam, dealer_principal]
 Available Modules: [Dashboard, Reception Intake, Gate Entry, Job Cards, Bay Monitor, Advisor Workspace, Supervisor Workspace, Parts Desk, Warranty Desk, Billing & Exit, Productivity, Employee Directory, Attendance, User Management, Master Data Hub]
 Available Field Names: [service_advisor, technician_name, bay_no, odometer, customer_name, customer_mobile, vehicle_model, priority, labour_amount, parts_amount, discount, job_description, pending_reason, remarks, date_completed, time_out]
 Available Permission Levels: [EDIT, VIEW_ONLY, HIDDEN, LOCKED, OVERRIDE]

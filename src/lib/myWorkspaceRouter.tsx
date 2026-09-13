@@ -23,7 +23,6 @@ const ROLE_TO_WORKSPACE: Record<string, React.ComponentType<any>> = {
   service_advisor: ServiceAdvisorWorkspace,
   technician: TechnicianWorkspace,
   floor_supervisor: FloorSupervisorWorkspace,
-  floor_incharge: FloorSupervisorWorkspace,
   supervisor: FloorSupervisorWorkspace,
   billing: BillingWorkspace,
   cashier: CashierWorkspace,

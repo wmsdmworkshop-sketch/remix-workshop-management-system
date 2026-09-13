@@ -69,7 +69,7 @@ function requireAuthenticatedUser(req: any): { id: string; name: string; branchI
   };
 }
 
-const FLOOR_CONTROL_ROLES = ["floor_supervisor", "floor_incharge", "supervisor", "service_manager", "works_manager", "workshop_manager", "gm_service", "admin", "developer"];
+const FLOOR_CONTROL_ROLES = ["floor_supervisor", "supervisor", "service_manager", "works_manager", "workshop_manager", "gm_service", "admin", "developer"];
 const FLOOR_EXECUTION_ROLES = ["technician", "lead_technician", ...FLOOR_CONTROL_ROLES];
 
 /**

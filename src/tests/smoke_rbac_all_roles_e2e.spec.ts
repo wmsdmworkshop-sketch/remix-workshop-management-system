@@ -18,7 +18,7 @@ const rolesToTest = [
   { role: "billing", username: "abdulqadeer999@gmail.com" },
   { role: "floor_supervisor", username: "kulkarna040@gmail.com" },
   { role: "warranty_manager", username: "pujarimanjunath295@gmail.com" },
-  { role: "floor_incharge", username: "kpkulkarni02@gmail.com" },
+  { role: "floor_supervisor", username: "kpkulkarni02@gmail.com" },
   { role: "workshop_manager", username: "Mdadhn98@gmail.com" },
   { role: "dkam", username: "nagesh" },
   { role: "cashier", username: "shivkumar" },

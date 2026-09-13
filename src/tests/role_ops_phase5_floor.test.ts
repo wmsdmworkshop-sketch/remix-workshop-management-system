@@ -26,7 +26,7 @@ describe("Phase 5 — Floor Control, Bay/Technician Allocation & Real-Time Repai
       "SLA_SA_TO_FLOOR",
       "JC-BREACH-501",
       floorUser.userId,
-      "floor_incharge",
+      "floor_supervisor",
       -2, // 2 mins in the past -> breached
       "BR-SEDAM"
     );

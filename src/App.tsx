@@ -543,6 +543,9 @@ export default function App() {
       { id: "jobs", label: "Job Cards", icon: Wrench },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
     ],
+    // The single floor role. `floor_incharge` was the same job under a second
+    // spelling; its nav carried CPSC Certification, which is kept here so the
+    // merge does not quietly remove a tab the floor already had.
     floor_supervisor: [
       { id: "jobs", label: "Job Cards", icon: Wrench },
       { id: "qc-workspace", label: "QC Workspace", icon: ShieldAlert },
@@ -550,6 +553,7 @@ export default function App() {
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "productivity", label: "Productivity", icon: TrendingUp },
       { id: "employees", label: "Employee Directory", icon: Users },
+      { id: "certification", label: "CPSC Certification", icon: Shield },
       { id: "attendance", label: "Attendance", icon: ClipboardCheck },
     ],
     warranty_advisor: [
@@ -565,16 +569,6 @@ export default function App() {
       { id: "warranty-clerk-workspace", label: "Warranty Desk", icon: ShieldAlert },
       { id: "parts-warranty", label: "Parts & Warranty", icon: Package },
       { id: "jobs", label: "Job Cards", icon: Wrench },
-    ],
-    floor_incharge: [
-      { id: "jobs", label: "Job Cards", icon: Wrench },
-      { id: "qc-workspace", label: "QC Workspace", icon: ShieldAlert },
-      { id: "bay-tat", label: "Bay Monitor", icon: Clock },
-      { id: "vehicle-lookup", label: "Vehicle History", icon: History },
-      { id: "productivity", label: "Productivity", icon: TrendingUp },
-      { id: "employees", label: "Employee Directory", icon: Users },
-      { id: "certification", label: "CPSC Certification", icon: Shield },
-      { id: "attendance", label: "Attendance", icon: ClipboardCheck },
     ],
     workshop_manager: [
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
@@ -827,7 +821,7 @@ export default function App() {
     if (!tabs.some(t => t.id === "attendance")) {
       tabs.push({ id: "attendance", label: "Attendance", icon: ClipboardCheck });
     }
-    const breakdownRoles = ["service_manager", "workshop_manager", "supervisor", "floor_supervisor", "floor_incharge", "admin", "developer"];
+    const breakdownRoles = ["service_manager", "workshop_manager", "supervisor", "floor_supervisor", "admin", "developer"];
     if (breakdownRoles.includes(role) && !tabs.some(t => t.id === "breakdown")) {
       const dbIdx = tabs.findIndex(t => t.id === "dashboard");
       const insertIdx = dbIdx !== -1 ? dbIdx + 1 : 0;

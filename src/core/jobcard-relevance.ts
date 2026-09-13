@@ -22,7 +22,7 @@ export interface RelevanceUser {
 }
 
 export const GROUP1_FULL_CONTROL = ["admin", "developer", "workshop_manager"];
-export const GROUP2_VIEW_ALL_EDIT_OWN = ["floor_supervisor", "service_manager", "floor_incharge"];
+export const GROUP2_VIEW_ALL_EDIT_OWN = ["floor_supervisor", "service_manager"];
 
 // GM (service) is NOT a blanket superuser. GM sees everything and MAY override any
 // job-card edit, but every override outside GM's own ownership/stage is AUDITED

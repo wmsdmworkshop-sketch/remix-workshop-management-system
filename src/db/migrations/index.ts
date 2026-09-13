@@ -37,6 +37,7 @@ import closeCompletedManagerAssignments from "./023_close_completed_manager_assi
 import advisorPartsAtEstimation from "./024_advisor_parts_at_estimation.ts";
 import ocrEvidenceUserMediaTypes from "./025_ocr_evidence_user_media_types.ts";
 import qcModuleFloorAndManagers from "./026_qc_module_floor_and_managers.ts";
+import mergeFloorRoles from "./027_merge_floor_roles.ts";
 export const allMigrations: Migration[] = [
   baseline,
   modulesMasterSeeding,
@@ -63,5 +64,6 @@ export const allMigrations: Migration[] = [
   closeCompletedManagerAssignments,
   advisorPartsAtEstimation,
   ocrEvidenceUserMediaTypes,
-  qcModuleFloorAndManagers
+  qcModuleFloorAndManagers,
+  mergeFloorRoles
 ];

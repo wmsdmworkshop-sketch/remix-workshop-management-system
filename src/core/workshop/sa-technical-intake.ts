@@ -797,9 +797,9 @@ export class SaTechnicalIntakeEngine {
       await VosCorePlatform.ownership.transferOwnership({
         vosId: payload.vosId,
         fromUserId: saId,
-        toUserId: "usr_floor_incharge",
+        toUserId: "usr_floor_supervisor",
         fromRole: "service_advisor",
-        toRole: "floor_incharge",
+        toRole: "floor_supervisor",
         reason: `Service Advisor ${saName} Completed Job Card & Handoff to Floor`
       });
 
@@ -866,7 +866,7 @@ export class SaTechnicalIntakeEngine {
         success: true,
         jobCardId: payload.jobCardId,
         previousOwnerRole: "service_advisor",
-        newOwnerRole: "floor_incharge",
+        newOwnerRole: "floor_supervisor",
         handoffAt: now.toISOString(),
         slaDueAt: slaDueAt.toISOString(),
         status: "FLOOR_READY",
@@ -884,7 +884,7 @@ export class SaTechnicalIntakeEngine {
         "SA_TO_FLOOR",
         payload.jobCardId,
         "FLOOR_INCHARGE_QUEUE",
-        "floor_incharge",
+        "floor_supervisor",
         now,
         slaDueAt,
         "ON_TRACK",
@@ -896,7 +896,7 @@ export class SaTechnicalIntakeEngine {
       success: true,
       jobCardId: payload.jobCardId,
       previousOwnerRole: "service_advisor",
-      newOwnerRole: "floor_incharge",
+      newOwnerRole: "floor_supervisor",
       handoffAt: now.toISOString(),
       slaDueAt: slaDueAt.toISOString(),
       status: "FLOOR_READY"

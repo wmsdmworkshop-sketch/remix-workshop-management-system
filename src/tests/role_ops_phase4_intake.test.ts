@@ -296,7 +296,7 @@ describe("Phase 4 — SA Technical Intake, Complaint Authentication & JC Creatio
     );
 
     expect(handoffRes.success).toBe(true);
-    expect(handoffRes.newOwnerRole).toBe("floor_incharge");
+    expect(handoffRes.newOwnerRole).toBe("floor_supervisor");
     expect(handoffRes.slaDueAt).toBeDefined();
     expect(mockHandoffSla.length).toBe(1);
     expect(mockHandoffSla[0].stage_name).toBe("SA_TO_FLOOR");

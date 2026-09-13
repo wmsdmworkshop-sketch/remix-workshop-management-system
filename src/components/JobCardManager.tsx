@@ -844,12 +844,12 @@ export default function JobCardManager({
   }, [employees, currentUser, showCreateModal]);
 
   // Deterministic technician eligibility. Supervisory / desk / gate roles are
-  // NEVER technicians (fixes floor_incharge showing up in the technician dropdown).
+  // NEVER technicians (fixes the floor role showing up in the technician dropdown).
   // A role qualifies only if it is not on the exclusion list AND names a hands-on
   // bay designation. No substring "incharge" match — that mislabelled supervisors.
   const NON_TECHNICIAN_ROLES = new Set([
     "admin", "developer", "gm_service", "workshop_manager", "service_manager",
-    "floor_supervisor", "floor_incharge", "service_advisor", "reception",
+    "floor_supervisor", "service_advisor", "reception",
     "security_agent", "gate_personnel", "cashier", "billing", "accounts",
     "warranty_clerk", "spares_manager", "parts_incharge", "tools_incharge",
     "qc", "dkam", "dealer_principal", "breakdown",

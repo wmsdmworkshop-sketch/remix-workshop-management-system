@@ -30,7 +30,7 @@ function authenticatedActor(req: any) {
 
 const VOS_GATE_ROLES = ["security_agent", "gate_personnel", "reception", "receptionist", "bay_reporter", "supervisor", "service_manager", "works_manager", "workshop_manager", "gm_service", "admin", "developer"];
 const VOS_SERVICE_ROLES = ["service_advisor", "service_manager", "works_manager", "workshop_manager", "gm_service", "admin", "developer"];
-const VOS_CONTROL_ROLES = ["supervisor", "floor_supervisor", "floor_incharge", "service_manager", "works_manager", "workshop_manager", "gm_service", "admin", "developer"];
+const VOS_CONTROL_ROLES = ["supervisor", "floor_supervisor", "service_manager", "works_manager", "workshop_manager", "gm_service", "admin", "developer"];
 const VOS_DEVIATION_APPROVER_ROLES = ["service_manager", "works_manager", "workshop_manager", "gm_service", "dealer_principal", "admin", "developer"];
 
 /**

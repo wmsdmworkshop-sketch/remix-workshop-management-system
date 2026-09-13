@@ -280,7 +280,6 @@ export default function UserManagement({ currentUser, token }: UserManagementPro
     { key: 'workshop_manager', label: 'Workshop Manager' },
     { key: 'technician', label: 'Technician' },
     { key: 'floor_supervisor', label: 'Floor Supervisor' },
-    { key: 'floor_incharge', label: 'Floor Incharge' },
     { key: 'reception', label: 'Receptionist' },
     { key: 'service_advisor', label: 'Service Advisor' },
     { key: 'breakdown', label: 'Breakdown Assistant' },
