@@ -1,8 +1,8 @@
 import { DeepSeekEngine } from "./deepseek-engine";
-import { isBaiduOcrConfigured, readWithBaiduOcr } from "./baidu-ocr-provider.ts";
+import { isNemotronOcrConfigured, readWithNemotronOcr } from "./nemotron-ocr-provider.ts";
 import { GEMINI_VISION_MODEL } from "../config/geminiModels.ts";
 
-export type OCRProvider = 'GoogleVision' | 'Gemini' | 'Azure' | 'Baidu' | 'DeepSeek' | 'AWS' | 'EasyOCR' | 'Custom';
+export type OCRProvider = 'GoogleVision' | 'Gemini' | 'Azure' | 'Nemotron' | 'DeepSeek' | 'AWS' | 'EasyOCR' | 'Custom';
 
 export interface OCRResult {
   text: string;
@@ -334,13 +334,13 @@ class GeminiOCRProcessor implements OCRProcessorProvider {
 const providers: Record<OCRProvider, OCRProcessorProvider> = {
   Azure: new AzureOCRProcessor(),
   // Runs against a separate inference service; unconfigured until
-  // BAIDU_OCR_ENDPOINT is set, and reports that rather than failing obscurely.
-  Baidu: {
+  // NEMOTRON_API_KEY is set, and reports that rather than failing obscurely.
+  Nemotron: {
     process: async (img: string) => {
-      if (!isBaiduOcrConfigured()) {
-        throw new Error("Baidu OCR is not configured — set BAIDU_OCR_ENDPOINT.");
+      if (!isNemotronOcrConfigured()) {
+        throw new Error("Nemotron OCR is not configured — set NEMOTRON_API_KEY.");
       }
-      return readWithBaiduOcr(img);
+      return readWithNemotronOcr(img);
     },
   },
   DeepSeek: new DeepSeekOCRProcessor(),
@@ -376,27 +376,27 @@ export async function verifyJobCard(
   } catch (primaryErr: any) {
     console.warn(`Primary OCR (${preferredProvider}) failed:`, primaryErr?.message);
 
-    // SECOND OPINION: Baidu Unlimited-OCR.
+    // SECOND OPINION: NVIDIA Nemotron Parse 2.0.
     //
     // Replaces the Gemini fallback, which could never run: Google retired the
     // models this app called (404) and the account is out of prepayment credit
     // (429), so every attempt failed silently and a failed Azure read became a
     // failed scan.
     //
-    // Baidu is a vision-language model published as weights, not a hosted API,
-    // so it runs as a separate inference service the owner supplies via
-    // BAIDU_OCR_ENDPOINT. When that is unset this is skipped entirely — the
+    // Nemotron Parse 2.0 is a HOSTED NIM API (model id nvidia/nemotron-parse-2.0,
+    // confirmed in NVIDIA's live catalogue), so it needs only a key —
+    // NEMOTRON_API_KEY. When that is unset this is skipped entirely — the
     // pipeline behaves exactly as Azure-only rather than pretending to have a
     // fallback it does not have.
-    if (isBaiduOcrConfigured()) {
+    if (isNemotronOcrConfigured()) {
       try {
-        const baiduRes = await readWithBaiduOcr(ocrImageBase64);
-        rawText = baiduRes.text;
-        confidence = baiduRes.confidence;
-        activeProvider = 'Baidu';
-        console.log("[OCR] Azure failed; Baidu second opinion succeeded.");
-      } catch (baiduErr: any) {
-        console.warn("Baidu OCR fallback failed:", baiduErr?.message);
+        const nemotronRes = await readWithNemotronOcr(ocrImageBase64);
+        rawText = nemotronRes.text;
+        confidence = nemotronRes.confidence;
+        activeProvider = 'Nemotron';
+        console.log("[OCR] Azure failed; Nemotron second opinion succeeded.");
+      } catch (nemotronErr: any) {
+        console.warn("Nemotron OCR fallback failed:", nemotronErr?.message);
       }
     }
   }
@@ -422,7 +422,7 @@ export async function verifyJobCard(
   // placeholder and the API answers 401 on every request, so the validation
   // step the comment promised was silently failing on every single scan.
   //
-  // Baidu re-reads the IMAGE rather than re-parsing Azure's text, which is the
+  // Nemotron re-reads the IMAGE rather than re-parsing Azure's text, which is the
   // point — a second opinion on text Azure already misread would inherit the
   // same mistake.
   //
@@ -431,49 +431,49 @@ export async function verifyJobCard(
   // becomes a real job card against the wrong vehicle, so an invalid answer is
   // discarded and the deterministic parser's result stands (possibly nothing,
   // in which case the operator types it, which is correct).
-  if (isBaiduOcrConfigured() && activeProvider !== 'Baidu') {
+  if (isNemotronOcrConfigured() && activeProvider !== 'Nemotron') {
     try {
-      const check = await readWithBaiduOcr(
+      const check = await readWithNemotronOcr(
         ocrImageBase64,
         'This is a photo of an Indian commercial vehicle number plate or instrument cluster. ' +
         'Read every character exactly as printed, preserving line breaks. ' +
         'Commercial plates are often painted in two lines with dots, e.g. "KA.32" then "AB.0507".'
       );
-      const baiduFields = extractJobCardFields(check.text);
-      console.log(`[OCR] Baidu validation read: "${check.text.replace(/\n/g, " | ")}" -> VRN ${baiduFields.vrn || "(none)"}`);
+      const nemotronFields = extractJobCardFields(check.text);
+      console.log(`[OCR] Nemotron validation read: "${check.text.replace(/\n/g, " | ")}" -> VRN ${nemotronFields.vrn || "(none)"}`);
 
-      if (baiduFields.vrn && baiduFields.vrn !== regexVrn) {
-        const state = baiduFields.vrn.split('-')[0];
+      if (nemotronFields.vrn && nemotronFields.vrn !== regexVrn) {
+        const state = nemotronFields.vrn.split('-')[0];
         if (INDIAN_STATES.includes(state)) {
           if (!regexVrn) {
-            // Azure's text yielded nothing parseable; Baidu found a valid plate.
-            console.log(`[OCR] Accepting Baidu VRN ${baiduFields.vrn} (Azure text yielded none).`);
-            extractedFields.vrn = baiduFields.vrn;
+            // Azure's text yielded nothing parseable; Nemotron found a valid plate.
+            console.log(`[OCR] Accepting Nemotron VRN ${nemotronFields.vrn} (Azure text yielded none).`);
+            extractedFields.vrn = nemotronFields.vrn;
           } else {
             // The two readers disagree. Neither is authoritative, so the
             // disagreement is RECORDED rather than resolved by guesswork — the
             // operator confirms the plate on screen either way.
             console.warn(
-              `[OCR] Readers disagree: Azure/regex "${regexVrn}" vs Baidu "${baiduFields.vrn}". ` +
+              `[OCR] Readers disagree: Azure/regex "${regexVrn}" vs Nemotron "${nemotronFields.vrn}". ` +
               `Keeping "${regexVrn}" for the operator to confirm.`
             );
           }
         } else {
-          console.warn(`[OCR] Discarded Baidu VRN "${baiduFields.vrn}" — "${state}" is not an Indian state code.`);
+          console.warn(`[OCR] Discarded Nemotron VRN "${nemotronFields.vrn}" — "${state}" is not an Indian state code.`);
         }
       }
 
       // Fill only what is genuinely missing; never overwrite a read value.
-      if (baiduFields.odometer && !extractedFields.odometer) {
-        extractedFields.odometer = baiduFields.odometer;
+      if (nemotronFields.odometer && !extractedFields.odometer) {
+        extractedFields.odometer = nemotronFields.odometer;
       }
-      if (baiduFields.chassisNo && !extractedFields.chassisNo) {
-        extractedFields.chassisNo = baiduFields.chassisNo;
+      if (nemotronFields.chassisNo && !extractedFields.chassisNo) {
+        extractedFields.chassisNo = nemotronFields.chassisNo;
       }
     } catch (valErr: any) {
       // Validation is an improvement, not a requirement. A failure here leaves
       // the Azure result exactly as it was.
-      console.warn("Baidu second-opinion validation failed:", valErr?.message);
+      console.warn("Nemotron second-opinion validation failed:", valErr?.message);
     }
   }
 
