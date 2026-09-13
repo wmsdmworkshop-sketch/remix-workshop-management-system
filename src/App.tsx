@@ -1275,7 +1275,16 @@ export default function App() {
     }
   };
 
-  const handleUpdateJob = async (id: number, updatedFields: Partial<JobCard>) => {
+  /**
+   * Returns whether the update was actually persisted.
+   *
+   * It used to return nothing, so a caller could not tell a saved write from a
+   * refused one. The advisor's "Save Estimate & Lock" relied on that: it fired
+   * "Estimate of ₹200 saved!" immediately, while the server was rejecting the
+   * write because parts_amount was locked for that role. Both messages appeared
+   * on screen at once, and the success one was false.
+   */
+  const handleUpdateJob = async (id: number, updatedFields: Partial<JobCard>): Promise<boolean> => {
     try {
       const res = await fetch(`/api/job-cards/${id}`, {
         method: "PUT",
@@ -1284,13 +1293,15 @@ export default function App() {
       });
       if (res.ok) {
         fetchAllData();
-      } else {
-        const err = await res.json().catch(() => ({ error: "Unknown error" }));
-        showToast(`Failed to update job card: ${err.error || res.statusText}`, "error");
+        return true;
       }
+      const err = await res.json().catch(() => ({ error: "Unknown error" }));
+      showToast(`Failed to update job card: ${err.error || res.statusText}`, "error");
+      return false;
     } catch (e: any) {
       console.error(e);
       showToast("Network error updating job card.", "error");
+      return false;
     }
   };
 

@@ -14,7 +14,7 @@ export interface FloorSupervisorWorkspaceProps {
   alertLogs: any[];
   allocations: any[];
   onRefresh: () => void;
-  onUpdateJob: (id: number, updatedFields: Partial<any>) => Promise<void>;
+  onUpdateJob: (id: number, updatedFields: Partial<any>) => Promise<boolean | void>;
   onAssignTechnicians: (id: number, allocs: any[]) => Promise<void>;
   currentUser?: any;
   aiModeEnabled?: boolean;

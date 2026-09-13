@@ -37,7 +37,7 @@ export interface WorkshopDashboardProps {
   allocations: any[];
   alertLogs: any[];
   onRefresh: () => void;
-  onUpdateJob: (id: number, updatedFields: Partial<any>) => Promise<void>;
+  onUpdateJob: (id: number, updatedFields: Partial<any>) => Promise<boolean | void>;
   onAssignTechnicians: (id: number, allocs: any[]) => Promise<void>;
   onResolveCarryForward?: (id: number, status: "Approved" | "Rejected") => Promise<void>;
   onResolveRework?: (id: number, status: "Approved" | "Rejected") => Promise<void>;

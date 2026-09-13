@@ -20,7 +20,7 @@ export interface ServiceAdvisorWorkspaceProps {
   employees: any[];
   alertLogs: any[];
   onRefresh: () => void;
-  onUpdateJob: (id: number, updatedFields: Partial<any>) => Promise<void>;
+  onUpdateJob: (id: number, updatedFields: Partial<any>) => Promise<boolean | void>;
   onAssignTechnicians: (id: number, allocs: any[]) => Promise<void>;
   currentUser?: any;
   aiModeEnabled?: boolean;
@@ -287,13 +287,21 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
     }, 500);
   };
 
-  const flushEstimateSave = (fields: Record<string, any>) => {
-    if (!selectedJob) return;
+  /**
+   * Returns whether the save actually persisted, so a caller can report the
+   * truth. It used to discard the promise, which is how "Estimate saved!" came
+   * to appear beside the server's refusal of the same write.
+   */
+  const flushEstimateSave = async (fields: Record<string, any>): Promise<boolean> => {
+    if (!selectedJob) return false;
     if (estimateSaveTimer.current) {
       clearTimeout(estimateSaveTimer.current);
       estimateSaveTimer.current = null;
     }
-    onUpdateJob(selectedJob.job_id, fields);
+    const ok = await onUpdateJob(selectedJob.job_id, fields);
+    // Older callers typed this as Promise<void>; treat "no result" as success
+    // so an un-migrated caller does not start reporting false failures.
+    return ok !== false;
   };
 
   // Canonical 5-minute handoff SLA threshold
@@ -1069,15 +1077,22 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
 
                 <div className="flex flex-wrap items-center gap-3 border-t border-slate-850 pt-4">
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       const labourVal = Number(labourInput) || 0;
                       const sparesVal = Number(sparesInput) || 0;
-                      flushEstimateSave({
+                      // Await the result. This fired unconditionally, so it
+                      // claimed the estimate was saved while the server was
+                      // refusing the write — the refusal toast and this success
+                      // message appeared together. A failure is now reported by
+                      // the toast alone; nothing here contradicts it.
+                      const ok = await flushEstimateSave({
                         labor_price: labourVal, labour_amount: labourVal,
                         parts_price: sparesVal, parts_amount: sparesVal,
                         current_workflow_state: "ESTIMATE_PENDING"
                       });
-                      alert(`Estimate of ₹${(labourVal + sparesVal).toLocaleString('en-IN')} saved to ${selectedJob.job_card_no}!`);
+                      if (ok) {
+                        alert(`Estimate of ₹${(labourVal + sparesVal).toLocaleString('en-IN')} saved to ${selectedJob.job_card_no}!`);
+                      }
                     }}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
                   >

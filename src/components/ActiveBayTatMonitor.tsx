@@ -47,7 +47,7 @@ interface ActiveBayTatMonitorProps {
   jobCards: JobCard[];
   bays: Bay[];
   employees: Employee[];
-  onUpdateJob: (id: number, updatedFields: Partial<JobCard>) => Promise<void>;
+  onUpdateJob: (id: number, updatedFields: Partial<JobCard>) => Promise<boolean | void>;
   onRefresh: () => Promise<void>;
 }
 

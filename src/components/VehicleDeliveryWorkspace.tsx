@@ -7,7 +7,7 @@ import {
 export interface VehicleDeliveryWorkspaceProps {
   jobCards: any[];
   onRefresh: () => void;
-  onUpdateJob: (id: number, updatedFields: Partial<any>) => Promise<void>;
+  onUpdateJob: (id: number, updatedFields: Partial<any>) => Promise<boolean | void>;
   currentUser?: any;
 }
 

@@ -66,7 +66,7 @@ interface DashboardProps {
   // these are the exact same props App.tsx already gave each cockpit's own
   // former standalone tab.
   allocations?: any[];
-  onUpdateJob?: (id: number, updatedFields: Partial<any>) => Promise<void>;
+  onUpdateJob?: (id: number, updatedFields: Partial<any>) => Promise<boolean | void>;
   // P1/D-5: widened to carry the write outcome through to JobCardManager,
   // which now reports success only when the request actually succeeded.
   onAssignTechnicians?: (id: number, allocs: any[]) => Promise<void | boolean>;
