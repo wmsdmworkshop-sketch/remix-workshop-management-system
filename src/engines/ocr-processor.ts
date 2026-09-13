@@ -1,7 +1,8 @@
 import { DeepSeekEngine } from "./deepseek-engine";
+import { isBaiduOcrConfigured, readWithBaiduOcr } from "./baidu-ocr-provider.ts";
 import { GEMINI_VISION_MODEL } from "../config/geminiModels.ts";
 
-export type OCRProvider = 'GoogleVision' | 'Gemini' | 'Azure' | 'DeepSeek' | 'AWS' | 'EasyOCR' | 'Custom';
+export type OCRProvider = 'GoogleVision' | 'Gemini' | 'Azure' | 'Baidu' | 'DeepSeek' | 'AWS' | 'EasyOCR' | 'Custom';
 
 export interface OCRResult {
   text: string;
@@ -332,6 +333,16 @@ class GeminiOCRProcessor implements OCRProcessorProvider {
 
 const providers: Record<OCRProvider, OCRProcessorProvider> = {
   Azure: new AzureOCRProcessor(),
+  // Runs against a separate inference service; unconfigured until
+  // BAIDU_OCR_ENDPOINT is set, and reports that rather than failing obscurely.
+  Baidu: {
+    process: async (img: string) => {
+      if (!isBaiduOcrConfigured()) {
+        throw new Error("Baidu OCR is not configured — set BAIDU_OCR_ENDPOINT.");
+      }
+      return readWithBaiduOcr(img);
+    },
+  },
   DeepSeek: new DeepSeekOCRProcessor(),
   Gemini: new GeminiOCRProcessor(),
   GoogleVision: new GeminiOCRProcessor(),
@@ -365,15 +376,27 @@ export async function verifyJobCard(
   } catch (primaryErr: any) {
     console.warn(`Primary OCR (${preferredProvider}) failed:`, primaryErr?.message);
 
-    // Fallback to Gemini if configured
-    if (process.env.GEMINI_API_KEY) {
+    // SECOND OPINION: Baidu Unlimited-OCR.
+    //
+    // Replaces the Gemini fallback, which could never run: Google retired the
+    // models this app called (404) and the account is out of prepayment credit
+    // (429), so every attempt failed silently and a failed Azure read became a
+    // failed scan.
+    //
+    // Baidu is a vision-language model published as weights, not a hosted API,
+    // so it runs as a separate inference service the owner supplies via
+    // BAIDU_OCR_ENDPOINT. When that is unset this is skipped entirely — the
+    // pipeline behaves exactly as Azure-only rather than pretending to have a
+    // fallback it does not have.
+    if (isBaiduOcrConfigured()) {
       try {
-        const geminiRes = await providers.Gemini.process(ocrImageBase64);
-        rawText = geminiRes.text;
-        confidence = geminiRes.confidence;
-        activeProvider = 'Gemini';
-      } catch (gemErr: any) {
-        console.warn("Gemini OCR fallback failed:", gemErr?.message);
+        const baiduRes = await readWithBaiduOcr(ocrImageBase64);
+        rawText = baiduRes.text;
+        confidence = baiduRes.confidence;
+        activeProvider = 'Baidu';
+        console.log("[OCR] Azure failed; Baidu second opinion succeeded.");
+      } catch (baiduErr: any) {
+        console.warn("Baidu OCR fallback failed:", baiduErr?.message);
       }
     }
   }
@@ -389,72 +412,68 @@ export async function verifyJobCard(
   const regexVrn = extractedFields.vrn;
   console.log(`[OCR] Regex-extracted VRN: ${regexVrn || "(none)"}`);
 
-  // 3. ALWAYS invoke DeepSeek AI Semantic Parser for validation & correction.
-  //    Previously DeepSeek was only called when VRN was null. But Azure
-  //    frequently misreads painted commercial plates (e.g. "KA 32 AB0307" →
-  //    Azure reads "KA 03 0002"), the regex matches the wrong pattern, and
-  //    DeepSeek was never consulted. Now we always ask DeepSeek to validate.
-  if (rawText.length > 2) {
+  // 3. SECOND-OPINION VALIDATION.
+  //
+  // Azure frequently misreads painted and stencilled commercial plates
+  // (e.g. "KA 32 AB0307" read as "KA 03 0002"), and the regex then matches the
+  // wrong pattern confidently. A second reader catches that.
+  //
+  // This replaces a DeepSeek call that has never worked: DEEPSEEK_API_KEY is a
+  // placeholder and the API answers 401 on every request, so the validation
+  // step the comment promised was silently failing on every single scan.
+  //
+  // Baidu re-reads the IMAGE rather than re-parsing Azure's text, which is the
+  // point — a second opinion on text Azure already misread would inherit the
+  // same mistake.
+  //
+  // Its answer remains a SUGGESTION, never authority: it is accepted only if it
+  // is a well-formed Indian plate with a real state code. A bad guess here
+  // becomes a real job card against the wrong vehicle, so an invalid answer is
+  // discarded and the deterministic parser's result stands (possibly nothing,
+  // in which case the operator types it, which is correct).
+  if (isBaiduOcrConfigured() && activeProvider !== 'Baidu') {
     try {
-      const deepseekPrompt = regexVrn
-        ? `The OCR engine returned this raw text from an Indian vehicle number plate photo:\n\n${rawText}\n\nOur regex parser extracted: "${regexVrn}"\nBut this might be wrong because OCR engines often misread painted/stenciled commercial vehicle plates.\nPlease analyze the raw OCR text and determine the CORRECT Vehicle Registration Number.\nIndian VRN formats: AB-12-CD-1234 (state-district-series-number), AB-12-C-1234, AB-12-1234, or BH series 24-BH-1234-AB.\nAlso extract odometer and chassis number if visible.`
-        : `The OCR engine returned this raw text from an Indian vehicle number plate photo:\n\n${rawText}\n\nPlease extract the Vehicle Registration Number (VRN).\nIndian VRN formats: AB-12-CD-1234 (state-district-series-number), AB-12-C-1234, AB-12-1234, or BH series 24-BH-1234-AB.\nCommercial plates are often painted in 2 lines with dots (e.g. Line 1: "KA.32", Line 2: "AB.0507" → "KA-32-AB-0507").\nAlso extract odometer and chassis number if visible.`;
+      const check = await readWithBaiduOcr(
+        ocrImageBase64,
+        'This is a photo of an Indian commercial vehicle number plate or instrument cluster. ' +
+        'Read every character exactly as printed, preserving line breaks. ' +
+        'Commercial plates are often painted in two lines with dots, e.g. "KA.32" then "AB.0507".'
+      );
+      const baiduFields = extractJobCardFields(check.text);
+      console.log(`[OCR] Baidu validation read: "${check.text.replace(/\n/g, " | ")}" -> VRN ${baiduFields.vrn || "(none)"}`);
 
-      const deepseekRes = await DeepSeekEngine.chat([
-        // The same photo pipeline is used for number plates AND instrument
-        // clusters. Framing it as a plate parser made odometer digits an
-        // afterthought on dashboard photos.
-        { role: "system", content: "You read Indian commercial vehicle number plates AND instrument clusters. On a cluster the odometer is the LARGEST distance figure (usually 5-7 digits); trip meters, speed, RPM and the clock are smaller — never return one of those as the odometer, and never return digits that belong to the registration number. Respond ONLY with valid JSON matching this schema: {\"vrn\": \"KA-32-AB-0307\", \"odometer\": 12345, \"chassis_no\": \"...\", \"confidence\": 0.98}. Never invent a value: if you cannot determine a field, set it to null." },
-        { role: "user", content: deepseekPrompt }
-      ], { model: "deepseek-chat", temperature: 0.1 });
-
-      const cleaned = deepseekRes.replace(/```json\n?|\n?```/g, "").trim();
-      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        console.log(`[OCR] DeepSeek parsed VRN: ${parsed.vrn}, regex VRN: ${regexVrn}`);
-        if (parsed.vrn) {
-          // Normalize DeepSeek's VRN to canonical format.
-          const dsRaw = String(parsed.vrn).toUpperCase().replace(/[^A-Z0-9]/g, '');
-          const dsWithSeries = dsRaw.match(/^([A-Z]{2})(\d{1,2})([A-Z]{1,3})(\d{1,4})$/);
-          const dsNoSeries = dsRaw.match(/^([A-Z]{2})(\d{1,2})(\d{1,4})$/);
-          const dsBh = dsRaw.match(/^(\d{2})BH(\d{4})([A-Z]{1,2})$/);
-
-          // Real-Data-Only: the model's answer is a SUGGESTION, never authority.
-          // Accept it only if it is genuinely a well-formed Indian plate with a
-          // real state code. Previously this assignment sat outside these
-          // branches, so an unparseable model answer (e.g. "AA 54 57" — "AA" is
-          // not an Indian state code) was written through anyway AND clobbered a
-          // correct regex result. A bad guess here becomes a real job card
-          // against the wrong vehicle, so an invalid answer is discarded.
-          let validated: string | null = null;
-          if (dsWithSeries && INDIAN_STATES.includes(dsWithSeries[1])) {
-            validated = `${dsWithSeries[1]}-${dsWithSeries[2].padStart(2, '0')}-${dsWithSeries[3]}-${dsWithSeries[4].padStart(4, '0')}`;
-          } else if (dsNoSeries && INDIAN_STATES.includes(dsNoSeries[1])) {
-            validated = `${dsNoSeries[1]}-${dsNoSeries[2].padStart(2, '0')}-${dsNoSeries[3].padStart(4, '0')}`;
-          } else if (dsBh) {
-            validated = `${dsBh[1]}-BH-${dsBh[2]}-${dsBh[3]}`;
-          }
-
-          if (validated) {
-            extractedFields.vrn = validated;
+      if (baiduFields.vrn && baiduFields.vrn !== regexVrn) {
+        const state = baiduFields.vrn.split('-')[0];
+        if (INDIAN_STATES.includes(state)) {
+          if (!regexVrn) {
+            // Azure's text yielded nothing parseable; Baidu found a valid plate.
+            console.log(`[OCR] Accepting Baidu VRN ${baiduFields.vrn} (Azure text yielded none).`);
+            extractedFields.vrn = baiduFields.vrn;
           } else {
-            // Keep whatever the deterministic parser found (possibly nothing —
-            // in which case the operator enters it manually, which is correct).
-            console.warn(`[OCR] Discarded invalid DeepSeek VRN "${parsed.vrn}" — not a valid Indian plate. Keeping regex result: ${regexVrn || "(none)"}`);
-            extractedFields.vrn = regexVrn;
+            // The two readers disagree. Neither is authoritative, so the
+            // disagreement is RECORDED rather than resolved by guesswork — the
+            // operator confirms the plate on screen either way.
+            console.warn(
+              `[OCR] Readers disagree: Azure/regex "${regexVrn}" vs Baidu "${baiduFields.vrn}". ` +
+              `Keeping "${regexVrn}" for the operator to confirm.`
+            );
           }
-        }
-        if (parsed.odometer && !extractedFields.odometer) {
-          extractedFields.odometer = Number(parsed.odometer);
-        }
-        if (parsed.chassis_no && !extractedFields.chassisNo) {
-          extractedFields.chassisNo = String(parsed.chassis_no);
+        } else {
+          console.warn(`[OCR] Discarded Baidu VRN "${baiduFields.vrn}" — "${state}" is not an Indian state code.`);
         }
       }
-    } catch (aiErr: any) {
-      console.warn("DeepSeek semantic plate validation failed:", aiErr?.message);
-      // Keep the regex result if DeepSeek fails
+
+      // Fill only what is genuinely missing; never overwrite a read value.
+      if (baiduFields.odometer && !extractedFields.odometer) {
+        extractedFields.odometer = baiduFields.odometer;
+      }
+      if (baiduFields.chassisNo && !extractedFields.chassisNo) {
+        extractedFields.chassisNo = baiduFields.chassisNo;
+      }
+    } catch (valErr: any) {
+      // Validation is an improvement, not a requirement. A failure here leaves
+      // the Azure result exactly as it was.
+      console.warn("Baidu second-opinion validation failed:", valErr?.message);
     }
   }
 
