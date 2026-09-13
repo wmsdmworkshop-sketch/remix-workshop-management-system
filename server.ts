@@ -2281,6 +2281,12 @@ async function startServer() {
     "/api/v1/devops/cron/sla-evaluator", // Cloud Scheduler cron — secured by its own Google-OIDC + x-cloudscheduler check below, not the app JWT
     "/api/v1/devops/cron/attendance-reminder", // Cloud Scheduler cron — same OIDC + x-cloudscheduler check, not the app JWT
     "/api/v1/devops/cron/retention", // Cloud Scheduler cron — same OIDC + x-cloudscheduler check; close-anchored media/activity retention
+    // Stored photos, loaded by <img src> which cannot send an Authorization
+    // header. Same reachability as the /uploads static mount that already
+    // serves the local-disk fallback, so this widens nothing; it only lets the
+    // GCS-stored photos load at all. Keys are random EVD- ids, and the route
+    // refuses any row flagged is_deleted.
+    "/api/media",
   ];
 
   app.use("/api", (req: any, res: any, next: any) => {
@@ -5653,6 +5659,59 @@ Do not include any Markdown or formatting other than the clean JSON object.`;
       res.json({ success: true, record });
     } catch (e: any) {
       res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  /**
+   * Serve one stored photo.
+   *
+   * The evidence bucket blocks public access, so the storage.googleapis.com URL
+   * held in photo_url answers 403 to a browser — an <img src> pointing at it
+   * renders broken. Rather than making the bucket public, which would expose
+   * gate photos, odometer readings and vehicle-condition shots to anyone
+   * holding a link, the application streams the bytes itself.
+   *
+   * Deliberately NOT behind authenticateToken: it is loaded by <img src>, which
+   * cannot send an Authorization header. That matches how /uploads already
+   * serves the local-disk fallback today, so this changes nothing about who can
+   * reach a photo — it only makes the GCS-stored ones reachable at all. The
+   * object key is a random EVD- id, not a guessable sequence.
+   *
+   * A row flagged is_deleted is refused: a photo removed by the user, or purged
+   * by the 90-day retention worker, must not keep serving from a cached URL.
+   */
+  app.get("/api/media/:evidenceId", async (req: any, res) => {
+    const evidenceId = String(req.params.evidenceId || "").trim();
+    if (!evidenceId) return res.status(400).send("An evidenceId is required.");
+    try {
+      const [rows]: any = await dbPool.execute(
+        `SELECT photo_url, is_deleted FROM ocr_evidence WHERE evidence_id = ? LIMIT 1`,
+        [evidenceId]
+      );
+      const row = (rows || [])[0];
+      if (!row) return res.status(404).send("Not found.");
+      if (row.is_deleted) return res.status(410).send("This attachment has been removed.");
+
+      const obj = await evidenceStorageService.readGcsObject(row.photo_url);
+      if (!obj) {
+        // Not in GCS — a local-disk fallback upload. Redirect to the static
+        // mount that already serves those rather than duplicating the logic.
+        if (String(row.photo_url || "").startsWith("/uploads/")) {
+          return res.redirect(row.photo_url);
+        }
+        return res.status(404).send("The stored file could not be read.");
+      }
+
+      res.setHeader("Content-Type", obj.contentType);
+      res.setHeader("Cache-Control", "private, max-age=3600");
+      obj.stream.on("error", (e: any) => {
+        console.error(`[media] stream failed for ${evidenceId}: ${e.message}`);
+        if (!res.headersSent) res.status(500).end();
+      });
+      obj.stream.pipe(res);
+    } catch (e: any) {
+      console.error("[media] failed:", e.message);
+      res.status(500).send("Could not load the attachment.");
     }
   });
 

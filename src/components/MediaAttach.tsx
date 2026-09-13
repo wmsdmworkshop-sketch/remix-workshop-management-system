@@ -289,6 +289,21 @@ export const MediaAttach: React.FC<MediaAttachProps> = ({ jobCardNo, vrn, token,
     }
   };
 
+  /**
+   * Where to load this attachment's bytes from.
+   *
+   * photo_url may hold a storage.googleapis.com URL, and the evidence bucket
+   * blocks public access — so that URL answers 403 and an <img src> pointing at
+   * it renders broken. /api/media/:evidenceId streams it through the app
+   * instead. Local-disk fallback uploads (/uploads/...) are already served
+   * directly and are left alone.
+   */
+  const mediaSrc = (r: any): string => {
+    const url = String(r?.photo_url || "");
+    if (url.startsWith("/uploads/")) return url;
+    return `/api/media/${encodeURIComponent(r.evidence_id)}`;
+  };
+
   const isPdf = (r: any) => String(r.photo_url || "").toLowerCase().endsWith(".pdf") || String(r.ocr_type) === "DOCUMENT" && String(r.photo_url || "").includes(".pdf");
   const busy = uploading || loading;
 
@@ -441,7 +456,7 @@ export const MediaAttach: React.FC<MediaAttachProps> = ({ jobCardNo, vrn, token,
                 <div key={r.evidence_id} className="relative group">
                   {isPdf(r) ? (
                     <a
-                      href={r.photo_url}
+                      href={mediaSrc(r)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex flex-col items-center justify-center gap-1 aspect-square rounded-lg border border-slate-700 bg-slate-950 hover:border-cyan-500 transition-all p-1"
@@ -453,11 +468,11 @@ export const MediaAttach: React.FC<MediaAttachProps> = ({ jobCardNo, vrn, token,
                   ) : (
                     <button
                       type="button"
-                      onClick={() => setPreview(r.photo_url)}
+                      onClick={() => setPreview(mediaSrc(r))}
                       className="w-full aspect-square rounded-lg overflow-hidden border border-slate-700 hover:border-cyan-500 transition-all"
                       title={`${r.ocr_type} — ${new Date(r.captured_at).toLocaleString()}`}
                     >
-                      <img src={r.photo_url} alt={r.ocr_type} className="w-full h-full object-cover" loading="lazy" />
+                      <img src={mediaSrc(r)} alt={r.ocr_type} className="w-full h-full object-cover" loading="lazy" />
                     </button>
                   )}
                   {/* Always visible on touch, where there is no hover. */}

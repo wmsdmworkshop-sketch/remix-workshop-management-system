@@ -328,6 +328,39 @@ export class EvidenceStorageService {
     return ok;
   }
 
+  /**
+   * Stream one stored object out of GCS.
+   *
+   * The bucket blocks public access, so the storage.googleapis.com URL written
+   * into photo_url is NOT fetchable by a browser — it answers 403. This lets the
+   * application serve the bytes itself instead of making the bucket public,
+   * which would expose gate photos, odometer readings and vehicle-condition
+   * shots to anyone holding a link.
+   *
+   * Returns null when the object is not in GCS (a local-disk fallback upload,
+   * or a path this does not recognise), so the caller can fall through.
+   */
+  public async readGcsObject(photoUrl: string | null): Promise<{ stream: NodeJS.ReadableStream; contentType: string } | null> {
+    if (!photoUrl || !this.gcsStorage || !this.bucketName) return null;
+    const prefix = `https://storage.googleapis.com/${this.bucketName}/`;
+    if (!photoUrl.startsWith(prefix)) return null;
+
+    const objectPath = photoUrl.slice(prefix.length);
+    try {
+      const file = this.gcsStorage.bucket(this.bucketName).file(objectPath);
+      const [exists] = await file.exists();
+      if (!exists) return null;
+      const [meta] = await file.getMetadata();
+      return {
+        stream: file.createReadStream(),
+        contentType: String(meta.contentType || "application/octet-stream"),
+      };
+    } catch (err: any) {
+      console.error(`[EvidenceStorage] could not read ${objectPath}: ${err.message}`);
+      return null;
+    }
+  }
+
   private async deleteStoredMedia(photoUrl: string | null): Promise<boolean> {
     if (!photoUrl) return true; // nothing was ever stored
     if (photoUrl.startsWith("data:")) return true; // placeholder, no file exists
