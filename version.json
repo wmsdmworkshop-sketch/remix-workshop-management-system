@@ -3,13 +3,15 @@
   "release": "DWIP-v2.0.0-GA",
   "tag": "v1.5",
   "enterprise": "Devanand Automobiles (Motors) LLP",
-  "buildTime": "2026-09-14T12:06:33+05:30",
+  "buildTime": "2026-09-14T12:26:00+05:30",
   "environment": "production",
   "buildNumber": "127",
-  "commit": "790d3154abfe01446a897f94d27230cd62f091dd",
-  "updatedAt": "2026-09-14T12:06:33+05:30",
-  "buildSourceCommit": "790d3154abfe01446a897f94d27230cd62f091dd",
+  "commit": "24b516b38dcdf4e03ca409480e43a868307fdc45",
+  "updatedAt": "2026-09-14T13:32:51+05:30",
+  "buildSourceCommit": "24b516b38dcdf4e03ca409480e43a868307fdc45",
   "releaseType": "PRODUCTION",
   "buildTimeNote": "Commit time of buildSourceCommit. No build step stamps this file; update at build if that changes.",
-  "workingTreeNote": "Built from the working tree, which carries UNCOMMITTED changes on top of buildSourceCommit (gate-out evidence repair, migration 030). Commit before the next deploy so this line is accurate."
+  "deployedImageTag": "790d315",
+  "deployedRevision": "dwip-enterprise-00234-jsn",
+  "deployedImageNote": "The running image is tagged :790d315, which names the PREVIOUS HEAD. The image was built by Cloud Build from the working tree, whose contents are exactly commit 24b516b38dcdf4e03ca409480e43a868307fdc45 (see docs/CHANGELOG.md v1.1.0-rc.3). Commit and image tag therefore disagree by one commit; a fresh deploy will tag with buildSourceCommit and they will converge."
 }
