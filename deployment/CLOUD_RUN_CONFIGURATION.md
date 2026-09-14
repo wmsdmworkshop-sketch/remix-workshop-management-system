@@ -1,5 +1,14 @@
 # DWIP Enterprise ERP — Cloud Run Service Configuration
 
+> [!WARNING]
+> **SUPERSEDED — this does not describe production.** The services `dwip-pilot` and
+> `dwip-prod` in this document were planned but never deployed. Live production is
+> **`dwip-enterprise`** (project `giga-course-dp497`, region `asia-south1`, containerPort **3001**).
+> See [DEPLOY_DWIP_ENTERPRISE.md](./DEPLOY_DWIP_ENTERPRISE.md) and [cloudbuild.yaml](./cloudbuild.yaml).
+> _Known wrong here:_ `dwip-pilot`/`dwip-prod`, `GEMINI_API_KEY` (AI is NVIDIA Nemotron),
+> and the `/api/ready` / `/api/metrics` probes — **no such routes are registered in `server.ts`**;
+> only `GET /api/health` exists.
+
 **Review:** GCP-002 — Final Configuration Specification  
 **Region:** asia-south1 (Mumbai, India)
 
@@ -46,7 +55,7 @@ GEMINI_API_KEY=DWIP_GEMINI_API_KEY:latest" \
 | `--concurrency=80` | 80 | MySQL pool = 10 connections. At 80 concurrency, DB queueing is minimal. 100 was too high. |
 | `--timeout=120` | 120s | Gemini AI routes can take 15-30s. Report generation routes can reach 45-60s. 60s was insufficient. |
 | `--allow-unauthenticated` | true | DWIP handles its own JWT-based auth — Cloud Run IAM auth would double-authenticate |
-| `DB_SSL=true` | true | Railway MySQL requires SSL encrypted connections |
+| `DB_SSL=true` | true | Cloud SQL requires SSL encrypted connections |
 | `TRUST_PROXY=1` | 1 | Cloud Run is behind a Google load balancer; tells Express to trust X-Forwarded-For |
 
 ---

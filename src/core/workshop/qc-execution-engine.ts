@@ -146,12 +146,13 @@ export class QcExecutionEngine {
               h.created_at            AS handed_off_at,
               m.job_card_id           AS job_id,
               m.job_status,
+              m.live_status,
               m.service_type,
               m.customer_name,
               m.assigned_to
          FROM tbl_qc_handoff h
          LEFT JOIN job_card_master m ON m.job_card_no = h.job_card_id
-        WHERE h.status = 'PENDING_QC'
+        WHERE h.status IN ('PENDING_QC','QC_IN_PROGRESS')
         ORDER BY h.created_at ASC`
     );
 
@@ -164,6 +165,11 @@ export class QcExecutionEngine {
       serviceType: r.service_type,
       customerName: r.customer_name,
       handedOffAt: r.handed_off_at,
+      // Handoff vs job state are deliberately both exposed: a row can be handed
+      // off while the job is still FLOOR_ALLOCATED, which is exactly the case the
+      // screen must render as "start the inspection" rather than "pass it".
+      handoffStatus: r.handoff_status,
+      liveStatus: r.live_status,
       // Explicit, so the screen can show the row as unactionable instead of
       // offering a PASS button that would fail on an id that resolves to nothing.
       resolved: r.job_id != null,
@@ -464,17 +470,44 @@ export class QcExecutionEngine {
       await conn.beginTransaction();
       await this.verifyJobOwnership(jobId, branchId, conn);
 
-      const [cur]: any = await conn.execute(`SELECT live_status FROM job_card_master WHERE job_card_id = ?`, [jobId]);
-      if (cur[0]?.live_status === "QC_IN_PROGRESS") { await conn.commit(); return; }
-      if (!["QC_PENDING"].includes(cur[0]?.live_status || "")) {
-        throw new Error(`QC_INVALID_TRANSITION: Job is in state '${cur[0]?.live_status}', expected QC_PENDING.`);
+      const [cur]: any = await conn.execute(
+        `SELECT job_card_no, live_status FROM job_card_master WHERE job_card_id = ?`, [jobId]);
+      const jobCardNo = cur[0]?.job_card_no != null ? String(cur[0].job_card_no) : null;
+      const state = cur[0]?.live_status;
+
+      // An open handoff row is the authoritative trigger. The floor writes it
+      // (floor-execution-engine.handoffToQc) and getQcQueue is built from it, but
+      // the bridging write of live_status='QC_PENDING' is best-effort and does not
+      // survive in practice — 0 of 185 real jobs are QC_PENDING — which left every
+      // genuine handoff un-acknowledgeable with QC_INVALID_TRANSITION. live_status
+      // is still accepted so the pre-existing contract, and the phase-7 tests that
+      // set up QC_PENDING jobs directly, keep working unchanged.
+      const [openHandoff]: any = await conn.execute(
+        `SELECT h.handoff_id FROM tbl_qc_handoff h
+           JOIN job_card_master m ON m.job_card_no = h.job_card_id
+          WHERE m.job_card_id = ? AND h.status IN ('PENDING_QC','QC_IN_PROGRESS')
+          ORDER BY h.created_at ASC LIMIT 1`, [jobId]);
+      const handoffId = openHandoff[0]?.handoff_id ?? null;
+
+      if (state !== "QC_IN_PROGRESS" && state !== "QC_PENDING" && !handoffId) {
+        throw new Error(`QC_INVALID_TRANSITION: Job is in state '${state}' with no open QC handoff.`);
       }
 
+      // The floor writes entity_id as the job card NUMBER ("JC-64655"), not the
+      // numeric id, so keying on the id alone never matched and the clock stayed
+      // open — and BREACHED — forever.
       await conn.execute(
         `UPDATE tbl_handoff_sla SET status = 'COMPLETED', accepted_at = NOW()
-          WHERE entity_id = ? AND stage_name = 'SLA_FLOOR_TO_QC' AND status = 'ON_TRACK'`,
-        [jobId.toString()]
+          WHERE entity_id IN (?, ?) AND stage_name = 'SLA_FLOOR_TO_QC' AND status = 'ON_TRACK'`,
+        [jobCardNo ?? jobId.toString(), jobId.toString()]
       );
+
+      if (handoffId) {
+        await conn.execute(`UPDATE tbl_qc_handoff SET status = 'QC_IN_PROGRESS' WHERE handoff_id = ?`, [handoffId]);
+      }
+
+      if (state === "QC_IN_PROGRESS") { await conn.commit(); return; }
+
       // live_status is the single stage field on job_card_master; it replaces the
       // legacy status + workshop_stage pair, which were always written together
       // with the same value. jobcard-relevance.ts's STAGE_RULES reads
@@ -526,6 +559,13 @@ export class QcExecutionEngine {
     // Gate 3: Job state
     const [job]: any = await this.execute(`SELECT live_status FROM job_card_master WHERE job_card_id = ?`, [jobId]);
     const state = job[0]?.live_status;
+    // A job that already carries a decision is not a gate failure to be fixed by
+    // starting an inspection — it is finished. Reporting it as
+    // "Must be QC_IN_PROGRESS" sent the inspector looking for a step they had
+    // already completed, so say what actually happened instead.
+    if (state === "QC_PASSED" || state === "QC_FAILED_REWORK") {
+      throw new Error(`QC_ALREADY_DECIDED: This inspection is already submitted — the job is in state '${state}'. No further decision is required.`);
+    }
     if (!["QC_IN_PROGRESS", "QC_PENDING"].includes(state)) {
       throw new Error(`QC_PASS_BLOCKED: Job is in state '${state}'. Must be QC_IN_PROGRESS.`);
     }
@@ -598,6 +638,15 @@ export class QcExecutionEngine {
             [jobId.toString(), branchId.toString()]
           );
       }
+
+      // Drain the QC queue. getQcQueue reads tbl_qc_handoff, and NOTHING ever
+      // updated that table — it was only ever INSERTed by the floor — so a decided
+      // job sat at status='PENDING_QC' and stayed in the queue permanently. This
+      // write is what actually removes the vehicle once it has been inspected.
+      await conn.execute(
+        `UPDATE tbl_qc_handoff h JOIN job_card_master m ON m.job_card_no = h.job_card_id
+            SET h.status = 'QC_COMPLETED'
+          WHERE m.job_card_id = ? AND h.status IN ('PENDING_QC','QC_IN_PROGRESS')`, [jobId]);
 
       await conn.commit();
 

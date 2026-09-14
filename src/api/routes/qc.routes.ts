@@ -94,7 +94,10 @@ router.post("/decision/:jobId", authorize("qc", "edit"), async (req: Request, re
     await engine.submitQcDecision(jobId, resolveAuthUserId(user), resolveAuthBranchId(user), body.decision, body.checklist || [], body.roadTestKm || 0, body.notes || "");
     res.json({ success: true, message: `QC Decision ${body.decision} Submitted` });
   } catch (error: any) {
-    const status = error.message?.startsWith("QC_PASS_BLOCKED") ? 422 : 500;
+    const status = error.message?.startsWith("QC_PASS_BLOCKED") ? 422
+      : error.message?.startsWith("QC_ALREADY_DECIDED") ? 409
+      : error.message?.includes("BRANCH_CONTEXT_MISSING") ? 401
+      : 500;
     res.status(status).json({ success: false, error: error.message });
   }
 });

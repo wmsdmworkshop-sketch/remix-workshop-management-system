@@ -1056,17 +1056,36 @@ async function startServer() {
     // Phase B (VOS upgrade): per-stage handoff SLA clocks. A clock opens when a stage
     // hands off to the next owner (billing→cashier, cashier→security) and closes on
     // acceptance; overdue open clocks flip to BREACHED.
+    //
+    // This block previously declared a DIFFERENT table than the one that actually
+    // exists: PK `handoff_id` with `job_id NOT NULL`, and no `sla_id`/`created_at`.
+    // Because it is IF NOT EXISTS and the production table already existed, it never
+    // ran — so its `job_id`/`opened_at` went missing and every gate-out statement
+    // naming them failed with ER_BAD_FIELD_ERROR (see migration 028). It was also
+    // wrong for a fresh install: `job_id NOT NULL` rejects billing-engine's inserts,
+    // which write `entity_id` only, and PK `handoff_id` rejects inserts that omit it.
+    //
+    // Keep this identical to the live table (and to src/db/schema.ts). The columns
+    // are nullable because the pipeline engines key on `entity_id` alone.
     await dbPool.execute(`
         CREATE TABLE IF NOT EXISTS tbl_handoff_sla (
-          handoff_id VARCHAR(50) PRIMARY KEY,
-          stage_name VARCHAR(60) NOT NULL,
-          job_id VARCHAR(50) NOT NULL,
-          entity_id VARCHAR(50) DEFAULT NULL,
+          sla_id INT AUTO_INCREMENT PRIMARY KEY,
+          entity_id VARCHAR(100) DEFAULT NULL,
+          stage_name VARCHAR(100) DEFAULT NULL,
+          status VARCHAR(50) DEFAULT 'ON_TRACK',
+          accepted_at TIMESTAMP NULL DEFAULT NULL,
+          branch_id VARCHAR(50) DEFAULT NULL,
+          eod_deadline DATETIME NULL,
+          target_sla_minutes INT NULL,
+          escalation_level INT DEFAULT 0,
+          escalated_at TIMESTAMP NULL DEFAULT NULL,
+          handoff_id VARCHAR(50) DEFAULT NULL,
           owner_role VARCHAR(50) DEFAULT NULL,
-          sla_due_at DATETIME NOT NULL,
-          status VARCHAR(30) NOT NULL DEFAULT 'ON_TRACK',
-          opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          accepted_at DATETIME NULL DEFAULT NULL,
+          owner_id VARCHAR(50) DEFAULT NULL,
+          sla_due_at TIMESTAMP NULL DEFAULT NULL,
+          created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+          job_id VARCHAR(50) DEFAULT NULL,
+          opened_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
           INDEX idx_sla_job (job_id),
           INDEX idx_sla_stage (stage_name),
           INDEX idx_sla_status (status)
@@ -1958,7 +1977,7 @@ async function startServer() {
       const placeholders = ids.map(() => "?").join(",");
       const [cards]: any = await dbPool.query(
         `SELECT job_card_id, job_card_no, vehicle_reg, created_by, service_advisor,
-                assigned_to, live_status, job_status
+                assigned_to, live_status, job_status, etd
            FROM job_card_master WHERE job_card_id IN (${placeholders})`,
         ids
       );
@@ -2000,17 +2019,58 @@ async function startServer() {
         visIds
       );
 
-      // The most recent OPEN handoff is who currently holds the vehicle.
-      const [handoffRows]: any = await dbPool.query(
-        `SELECT job_id, stage_name, owner_role, status, sla_due_at, opened_at
-           FROM tbl_handoff_sla
-          WHERE job_id IN (${visPh}) AND status IN ('ON_TRACK','BREACHED')
-          ORDER BY opened_at ASC`,
-        visIds.map((n: number) => String(n))
-      );
+      // The most recent handoff still in flight is who currently holds the vehicle.
+      //
+      // entity_id is POLYMORPHIC: it carries either the job card number
+      // ("JC-29267") or the numeric job_card_id as text ("6774"), depending on
+      // which engine opened the clock. openSla writes both job_id and entity_id,
+      // but the billing, QC and realtime-ownership engines write entity_id only —
+      // and `job_id` is NULL on all 626 rows in production. Keying on job_id (as
+      // this query did) therefore matched nothing, so NO job card ever reported a
+      // holder. Match both forms of entity_id instead.
+      //
+      // ACCEPTED counts as still-held: it is written when the receiving role takes
+      // the handoff, so they hold it until the clock COMPLETES. Only COMPLETED and
+      // MET mean nobody is currently holding it.
+      const entityKeys: string[] = [];
+      const jobIdByEntity = new Map<string, number>();
+      for (const r of visible) {
+        const jid = Number(r.job_card_id);
+        if (r.job_card_no) {
+          entityKeys.push(String(r.job_card_no));
+          jobIdByEntity.set(String(r.job_card_no).toUpperCase(), jid);
+        }
+        entityKeys.push(String(jid));
+        jobIdByEntity.set(String(jid), jid);
+      }
+      const [handoffRows]: any = entityKeys.length
+        ? await dbPool.query(
+            `SELECT entity_id, stage_name, owner_role, status, sla_due_at, opened_at, escalation_level
+               FROM tbl_handoff_sla
+              WHERE entity_id COLLATE utf8mb4_0900_ai_ci IN (${entityKeys.map(() => "?").join(",")})
+                AND status NOT IN ('COMPLETED', 'MET')
+              ORDER BY opened_at ASC`,
+            entityKeys
+          )
+        : [[]];
 
       const summaries: Record<string, any> = {};
-      for (const id of visIds) summaries[String(id)] = { complaints: 0, actors: 0, holder: null, holder_stage: null, breached: false };
+      for (const r of visible) {
+        summaries[String(r.job_card_id)] = {
+          complaints: 0,
+          actors: 0,
+          holder: null,
+          holder_stage: null,
+          breached: false,
+          escalated: false,
+          // Promised delivery time — a real, nullable column, surfaced as-is.
+          etd: r.etd ?? null,
+          // How long the current holder has had it, and when the handoff is due.
+          holder_since: null,
+          sla_due_at: null,
+          handoff_status: null,
+        };
+      }
       for (const r of (complaintRows || [])) {
         const k = String(r.job_id);
         if (summaries[k]) summaries[k].complaints = Number(r.n) || 0;
@@ -2020,12 +2080,17 @@ async function startServer() {
         if (summaries[k]) summaries[k].actors = Number(r.n) || 0;
       }
       for (const r of (handoffRows || [])) {
-        const k = String(r.job_id);
-        if (!summaries[k]) continue;
-        // Ordered ascending, so the last write wins = most recent open handoff.
+        const jobId = jobIdByEntity.get(String(r.entity_id || "").toUpperCase());
+        const k = jobId != null ? String(jobId) : null;
+        if (!k || !summaries[k]) continue;
+        // Ordered ascending, so the last write wins = most recent handoff in flight.
         summaries[k].holder = r.owner_role ?? null;
         summaries[k].holder_stage = r.stage_name ?? null;
+        summaries[k].holder_since = r.opened_at ?? null;
+        summaries[k].sla_due_at = r.sla_due_at ?? null;
+        summaries[k].handoff_status = r.status ?? null;
         if (r.status === "BREACHED") summaries[k].breached = true;
+        if (Number(r.escalation_level) > 0) summaries[k].escalated = true;
       }
 
       res.json({ success: true, summaries });
@@ -2192,13 +2257,22 @@ async function startServer() {
       );
 
       // Where the job sits between owners, and whether that handoff is overdue.
+      //
+      // Keyed on entity_id, NOT job_id. entity_id is the polymorphic column that
+      // actually carries the job card reference — either the number
+      // ("JC-29267") or the numeric job_card_id as text ("6774"), depending on
+      // which engine opened the clock — while job_id is NULL on all 626 rows in
+      // production. The original `WHERE job_id = ?` therefore returned an empty
+      // handoff trail for every job card, so a screen could report a holder it
+      // could not then show the history for. No status filter: the trail is the
+      // whole history, including completed clocks.
       const [handoffs]: any = await dbPool.query(
         `SELECT handoff_id, stage_name, owner_role, status, sla_due_at,
-                opened_at, accepted_at
+                opened_at, accepted_at, escalation_level
            FROM tbl_handoff_sla
-          WHERE job_id = ?
+          WHERE entity_id COLLATE utf8mb4_0900_ai_ci IN (?, ?)
           ORDER BY opened_at ASC`,
-        [String(jc.job_id)]
+        [String(jc.job_card_no || ""), String(jc.job_id)]
       );
 
       // Edits and GM overrides complete the custody picture: jc_activity_log
@@ -4032,7 +4106,7 @@ async function startServer() {
   // API: Force reload state from the database
   app.post("/api/db/reload", authenticateToken, requireRoles(["admin", "developer"]), async (req, res) => {
     try {
-      console.log("Forcing manual reload of database data from Railway MySQL...");
+      console.log("Forcing manual reload of database data from MySQL...");
       const freshDB = await syncLoad();
 
       // Always automatically populate/recalculate the productivity splits from MySQL's job_cards table on manual reload!
@@ -6773,29 +6847,49 @@ time from another field.`;
     } catch (e: any) { console.error("[GATE-EVENT]", eventType, e.message); }
   };
 
-  // Cashier queue (invoice-driven, Phase A): jobs with a raised invoice (= billing
-  // evidence) and no active gate pass yet. Enriched with live job-card + payment state.
+  // Cashier queue: jobs whose billing is COMPLETE (= billing evidence) and which have
+  // no active gate pass yet. Enriched with live job-card + payment state.
+  //
+  // Source is tbl_pre_invoice — the real billing table that billing-engine.ts keeps
+  // up to date — NOT tbl_invoice. tbl_invoice is a 4-column stub in production
+  // (pre_invoice_id, job_id, invoice_no, status) with ZERO rows; it has no
+  // amount/tax_amount, so this endpoint died with ER_BAD_FIELD_ERROR. tbl_pre_invoice
+  // is the single source of truth for billing evidence: its BILLING_COMPLETED rows are
+  // exactly the vehicles the cashier must release.
+  //
+  // The SLA subqueries join on entity_id because billing-engine.ts writes the pre-invoice
+  // id there for SLA_BILLING_TO_CASHIER. The explicit COLLATE is required, not cosmetic:
+  // these columns are utf8mb4_0900_ai_ci but the connection collation is
+  // utf8mb4_unicode_ci, so an unqualified CAST(... AS CHAR) raises
+  // ER_CANT_AGGREGATE_2COLLATIONS. Pinning it keeps this independent of connection settings.
   app.get("/api/gate-out/cashier-queue", authenticateToken, requireRoles(GATE_PASS_ISSUE_ROLES), async (_req: any, res: any) => {
     try {
       await markSlaBreaches();
       const [invoices]: any = await dbPool.execute(`
-        SELECT i.job_id, i.invoice_no, i.amount, i.tax_amount,
-               (SELECT payment_mode FROM tbl_payments p WHERE p.job_id = i.job_id AND p.status='COMPLETED' LIMIT 1) AS payment_mode,
-               (SELECT status FROM tbl_credit_requests cr WHERE cr.job_id = i.job_id ORDER BY requested_at DESC LIMIT 1) AS credit_status,
-               (SELECT status FROM tbl_handoff_sla s WHERE s.job_id = i.job_id AND s.stage_name = 'SLA_BILLING_TO_CASHIER' ORDER BY s.opened_at DESC LIMIT 1) AS sla_status,
-               (SELECT sla_due_at FROM tbl_handoff_sla s WHERE s.job_id = i.job_id AND s.stage_name = 'SLA_BILLING_TO_CASHIER' ORDER BY s.opened_at DESC LIMIT 1) AS sla_due_at,
+        SELECT pi.job_id, pi.job_card_no, pi.vrn, pi.customer_name, pi.pre_invoice_id,
+               v.grand_total AS amount,
+               (COALESCE(v.cgst, 0) + COALESCE(v.sgst, 0) + COALESCE(v.igst, 0)) AS tax_amount,
+               (SELECT payment_mode FROM tbl_payments p WHERE p.job_id = pi.job_id AND p.status='COMPLETED' LIMIT 1) AS payment_mode,
+               (SELECT status FROM tbl_credit_requests cr WHERE cr.job_id = pi.job_id ORDER BY requested_at DESC LIMIT 1) AS credit_status,
+               (SELECT s.status FROM tbl_handoff_sla s WHERE s.entity_id = CAST(pi.pre_invoice_id AS CHAR) COLLATE utf8mb4_0900_ai_ci AND s.stage_name = 'SLA_BILLING_TO_CASHIER' ORDER BY s.created_at DESC LIMIT 1) AS sla_status,
+               (SELECT s.sla_due_at FROM tbl_handoff_sla s WHERE s.entity_id = CAST(pi.pre_invoice_id AS CHAR) COLLATE utf8mb4_0900_ai_ci AND s.stage_name = 'SLA_BILLING_TO_CASHIER' ORDER BY s.created_at DESC LIMIT 1) AS sla_due_at,
                tc.owner_id AS claimed_by
-        FROM tbl_invoice i
-        LEFT JOIN tbl_gate_pass gp ON gp.job_id = i.job_id AND gp.status <> 'REVOKED'
-        LEFT JOIN tbl_task_claims tc ON tc.job_id = i.job_id AND tc.task_type = 'CASHIER'
-        WHERE gp.gate_pass_id IS NULL AND i.status <> 'CANCELLED'`);
+        FROM tbl_pre_invoice pi
+        LEFT JOIN tbl_pre_invoice_version v ON v.pre_invoice_id = pi.pre_invoice_id AND v.version = pi.current_version
+        LEFT JOIN tbl_gate_pass gp ON gp.job_id = pi.job_id AND gp.status <> 'REVOKED'
+        LEFT JOIN tbl_task_claims tc ON tc.job_id = pi.job_id AND tc.task_type = 'CASHIER'
+        WHERE gp.gate_pass_id IS NULL AND pi.status = 'BILLING_COMPLETED'`);
       const jcById = new Map<number, any>((getDB().jobCards || []).map((j: any) => [Number(j.job_id), j]));
       const rows = (invoices || []).map((inv: any) => {
         const j = jcById.get(Number(inv.job_id)) || {};
+        // Prefer the persisted billing record over the cached job card — the cache
+        // lookup is unreliable for jobs the sync has not loaded, which is how this
+        // queue previously surfaced rows with a null VRN.
         return {
-          job_id: Number(inv.job_id), job_card_no: j.job_card_no, vrn: j.vrn,
-          customer_name: j.customer_name, vehicle_model: j.vehicle_model, status: j.status,
-          invoice_no: inv.invoice_no, invoice_amount: inv.amount, tax_amount: inv.tax_amount,
+          job_id: Number(inv.job_id), job_card_no: inv.job_card_no || j.job_card_no, vrn: inv.vrn || j.vrn,
+          customer_name: inv.customer_name || j.customer_name, vehicle_model: j.vehicle_model, status: j.status,
+          pre_invoice_id: inv.pre_invoice_id, invoice_no: j.invoice_no ?? null,
+          invoice_amount: inv.amount, tax_amount: inv.tax_amount,
           payment_mode: inv.payment_mode, credit_status: inv.credit_status, claimed_by: inv.claimed_by,
           sla_status: inv.sla_status, sla_due_at: inv.sla_due_at,
         };
@@ -6817,9 +6911,12 @@ time from another field.`;
       const jc = (getDB().jobCards || []).find((j: any) => Number(j.job_id) === jobId);
       if (!jc) return res.status(404).json({ error: "Job card not found." });
 
-      // Eligibility (Phase A, invoice-aware): needs a raised invoice (billing evidence),
+      // Eligibility (Phase A, invoice-aware): needs billing evidence (billing complete)
       // plus a release basis — a recorded payment, an approved credit, or a manual override.
-      const [inv]: any = await dbPool.execute(`SELECT invoice_id FROM tbl_invoice WHERE job_id = ? AND status <> 'CANCELLED' LIMIT 1`, [String(jobId)]);
+      // Billing evidence is read from tbl_pre_invoice, the real billing table. It used to
+      // read `invoice_id` from tbl_invoice, a column that does not exist in production,
+      // which made this endpoint 500 rather than issue a gate pass.
+      const [inv]: any = await dbPool.execute(`SELECT pre_invoice_id FROM tbl_pre_invoice WHERE job_id = ? AND status = 'BILLING_COMPLETED' LIMIT 1`, [Number(jobId)]);
       const [paid]: any = await dbPool.execute(`SELECT payment_id FROM tbl_payments WHERE job_id = ? AND status = 'COMPLETED' LIMIT 1`, [String(jobId)]);
       const [creditOk]: any = await dbPool.execute(`SELECT credit_request_id FROM tbl_credit_requests WHERE job_id = ? AND status = 'GM_APPROVED' LIMIT 1`, [String(jobId)]);
       const hasInvoice = (inv || []).length > 0;
@@ -7206,7 +7303,10 @@ time from another field.`;
       if (!(await areSlaBreachAlertsEnabled())) { return res.json([]); }
       const stage = String(req.query?.stage || "");
       const params: any[] = [];
-      let where = `status IN ('ON_TRACK','BREACHED')`;
+      // Must be qualified: tbl_invoice and tbl_gate_pass both also have `status`,
+      // so a bare `status` raises ER_NON_UNIQ_ERROR (column is ambiguous) and the
+      // endpoint 500s. `stage_name` is unique to tbl_handoff_sla, so it stays bare.
+      let where = `s.status IN ('ON_TRACK','BREACHED')`;
       if (stage) { where += ` AND stage_name = ?`; params.push(stage); }
       const [rows]: any = await dbPool.execute(
         `SELECT s.*, i.invoice_no, gp.gate_pass_no,

@@ -3,12 +3,13 @@
   "release": "DWIP-v2.0.0-GA",
   "tag": "v1.5",
   "enterprise": "Devanand Automobiles (Motors) LLP",
-  "buildTime": "2026-09-12T16:31:07+05:30",
+  "buildTime": "2026-09-14T12:06:33+05:30",
   "environment": "production",
-  "buildNumber": "126",
-  "commit": "7a2bccc0c649dcbf27bbfc1630c013cd949496c1",
-  "updatedAt": "2026-09-12T16:31:07+05:30",
-  "buildSourceCommit": "7a2bccc0c649dcbf27bbfc1630c013cd949496c1",
+  "buildNumber": "127",
+  "commit": "790d3154abfe01446a897f94d27230cd62f091dd",
+  "updatedAt": "2026-09-14T12:06:33+05:30",
+  "buildSourceCommit": "790d3154abfe01446a897f94d27230cd62f091dd",
   "releaseType": "PRODUCTION",
-  "buildTimeNote": "Commit time of buildSourceCommit. No build step stamps this file; update at build if that changes."
+  "buildTimeNote": "Commit time of buildSourceCommit. No build step stamps this file; update at build if that changes.",
+  "workingTreeNote": "Built from the working tree, which carries UNCOMMITTED changes on top of buildSourceCommit (gate-out evidence repair, migration 030). Commit before the next deploy so this line is accurate."
 }

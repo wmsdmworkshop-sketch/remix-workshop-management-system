@@ -122,6 +122,13 @@ try {
   await validateSchema();
 
   console.log("[setup_test_db] Creating genuinely-missing test tables...");
+  // Several tables below are DROP+CREATE'd as simplified, FK-free mocks (roles,
+  // role_permissions, modules, …). Now that the baseline DDL is a faithful copy of
+  // production, other tables carry foreign keys that reference them — most notably
+  // `roles` — so those DROPs fail with "Cannot drop table 'roles' referenced by a
+  // foreign key constraint" unless checks are off. Restored further below, before
+  // the truncate section (which manages its own toggling).
+  await pool.execute(`SET FOREIGN_KEY_CHECKS = 0`);
   await pool.execute(`
       CREATE TABLE IF NOT EXISTS dealer_configurations (
         config_key VARCHAR(100) PRIMARY KEY,
@@ -462,22 +469,35 @@ try {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
     `);
+    // Must mirror the live table exactly (and server.ts / src/db/schema.ts).
+    // This mock previously declared PK `handoff_id` with NOT NULL on entity_id,
+    // owner_id, owner_role, sla_due_at and branch_id — every one of which is
+    // nullable in production. The sandbox was therefore STRICTER than production,
+    // so engine inserts that succeed live could fail here, and the missing
+    // job_id/opened_at columns went unnoticed because the mock never had them
+    // either. Test fidelity is the point of this file; keep it faithful.
     await pool.execute(`
       CREATE TABLE IF NOT EXISTS tbl_handoff_sla (
-        handoff_id VARCHAR(50) PRIMARY KEY,
-        stage_name VARCHAR(50) NOT NULL,
-        entity_id VARCHAR(50) NOT NULL,
-        owner_id VARCHAR(50) NOT NULL,
-        owner_role VARCHAR(50) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        accepted_at TIMESTAMP NULL,
-        sla_due_at TIMESTAMP NOT NULL,
+        sla_id INT AUTO_INCREMENT PRIMARY KEY,
+        entity_id VARCHAR(100) DEFAULT NULL,
+        stage_name VARCHAR(100) DEFAULT NULL,
         status VARCHAR(50) DEFAULT 'ON_TRACK',
-        escalation_level INT DEFAULT 0,
-        escalated_at TIMESTAMP NULL,
-        branch_id VARCHAR(50) NOT NULL,
+        accepted_at TIMESTAMP NULL DEFAULT NULL,
+        branch_id VARCHAR(50) DEFAULT NULL,
         eod_deadline DATETIME NULL,
-        target_sla_minutes INT NULL
+        target_sla_minutes INT NULL,
+        escalation_level INT DEFAULT 0,
+        escalated_at TIMESTAMP NULL DEFAULT NULL,
+        handoff_id VARCHAR(50) DEFAULT NULL,
+        owner_role VARCHAR(50) DEFAULT NULL,
+        owner_id VARCHAR(50) DEFAULT NULL,
+        sla_due_at TIMESTAMP NULL DEFAULT NULL,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        job_id VARCHAR(50) DEFAULT NULL,
+        opened_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_sla_job (job_id),
+        INDEX idx_sla_stage (stage_name),
+        INDEX idx_sla_status (status)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
     `);
   await pool.execute(`
@@ -643,6 +663,16 @@ try {
     CREATE TABLE tbl_invoice (
       invoice_id VARCHAR(50) PRIMARY KEY,
       invoice_number VARCHAR(100) UNIQUE,
+      -- KNOWN DIVERGENCE (unresolved, 2026-09-14): tbl_invoice has two competing
+      -- definitions. This mock follows the finance definition
+      -- (drizzle_mysql/0019_finance_management.sql + src/db/schema.ts:1971 +
+      -- src/core/finance/invoice-engine.ts), which uses invoice_number.
+      -- PRODUCTION instead has the gate-out definition
+      -- (pre_invoice_id PK, job_id, invoice_no, status) and has NO invoice_number
+      -- column at all. The gate-out endpoints read invoice_no/job_id, so both sets
+      -- are carried here to keep this test DB able to exercise both paths.
+      invoice_no VARCHAR(100) NULL,
+      job_id VARCHAR(50) NULL,
       invoice_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       invoice_type VARCHAR(50),
       customer_id VARCHAR(50),
@@ -745,6 +775,7 @@ try {
 
 
   console.log("[setup_test_db] ✓ genuinely-missing test tables created");
+  await pool.execute(`SET FOREIGN_KEY_CHECKS = 1`);
 
   // `job_cards` is DROP+CREATE'd fresh on every run by wms_test_schema.sql
   // above, resetting its AUTO_INCREMENT to 1 — but every table below is only

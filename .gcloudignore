@@ -44,3 +44,9 @@ src/scripts/
 test_engine.js
 .artifacts/
 
+# Archived files removed from the app (see _quarantine/MANIFEST.md). 378.7 MB and
+# never needed to build — it was the bulk of every deploy upload. Also gitignored,
+# so a fresh checkout would not have it either; excluding it keeps CI and local
+# deploys uploading the same set.
+_quarantine/
+

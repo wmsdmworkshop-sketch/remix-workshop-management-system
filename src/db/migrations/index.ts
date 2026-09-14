@@ -38,6 +38,9 @@ import advisorPartsAtEstimation from "./024_advisor_parts_at_estimation.ts";
 import ocrEvidenceUserMediaTypes from "./025_ocr_evidence_user_media_types.ts";
 import qcModuleFloorAndManagers from "./026_qc_module_floor_and_managers.ts";
 import mergeFloorRoles from "./027_merge_floor_roles.ts";
+import handoffSlaMissingColumns from "./028_handoff_sla_missing_columns.ts";
+import missingPermissionModules from "./029_missing_permission_modules.ts";
+import evidenceGateoutColumns from "./030_evidence_gateout_columns.ts";
 export const allMigrations: Migration[] = [
   baseline,
   modulesMasterSeeding,
@@ -65,5 +68,8 @@ export const allMigrations: Migration[] = [
   advisorPartsAtEstimation,
   ocrEvidenceUserMediaTypes,
   qcModuleFloorAndManagers,
-  mergeFloorRoles
+  mergeFloorRoles,
+  handoffSlaMissingColumns,
+  missingPermissionModules,
+  evidenceGateoutColumns
 ];

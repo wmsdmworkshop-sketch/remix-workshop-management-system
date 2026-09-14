@@ -1670,8 +1670,8 @@ export async function syncLoad(): Promise<any> {
       }
     }
 
-    // Tables have data or no local file. Fetch complete structure from Railway MySQL!
-    console.log("Fetching state from Railway MySQL...");
+    // Tables have data or no local file. Fetch the complete structure from MySQL!
+    console.log("Fetching state from MySQL...");
     const [employees] = await db.query("SELECT * FROM employees") as any[];
     
     // Fetch bays 1-9 dynamically from bay_master

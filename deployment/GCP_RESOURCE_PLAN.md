@@ -1,5 +1,13 @@
 # DWIP Enterprise ERP — GCP Resource Plan
 
+> [!WARNING]
+> **SUPERSEDED — this does not describe production.** The resource inventory below
+> (`dwip-pilot`, `dwip-prod`, `dwip-images`, `dwip-cloudrun-sa`, project `dwip-pilot-XXXXXX`)
+> is a planning estimate and does not match what is deployed. Actual: project `giga-course-dp497`,
+> one Cloud Run service `dwip-enterprise`, Artifact Registry repo `cloud-run-source-deploy`,
+> service account `772298398554-compute@developer.gserviceaccount.com`.
+> See [DEPLOY_DWIP_ENTERPRISE.md](./DEPLOY_DWIP_ENTERPRISE.md).
+
 ## Resource Architecture
 
 ```
@@ -36,8 +44,8 @@
 │     ├─ DWIP_DB_DATABASE                                          │
 │     └─ DWIP_GEMINI_API_KEY                                       │
 │         │                                                         │
-│         ▼ (external, not in GCP)                                 │
-│   Railway MySQL (Pilot Database)                                 │
+│         ▼ (now Google Cloud SQL)                                 │
+│   Cloud SQL (Production Database)                                 │
 │     └─ Database: railway                                          │
 │                                                                   │
 │   Cloud Logging (structured logs from Cloud Run)                 │
@@ -66,7 +74,7 @@
 
 | Resource | Purpose |
 |---|---|
-| Cloud SQL for MySQL (2nd Gen) | Replace Railway MySQL |
+| Cloud SQL for MySQL (2nd Gen) | Production database (already in use) |
 | Cloud Storage bucket | Asset/report/document storage |
 | Serverless VPC Connector | Private Cloud SQL connectivity |
 | Cloud CDN | Frontend SPA acceleration |

@@ -67,8 +67,20 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
   const [rtStartedAt, setRtStartedAt] = useState<string | null>(null);
   const [rtRemarks, setRtRemarks] = useState<string>("");
   const [rtLoading, setRtLoading] = useState(false);
+  const [rtHydrating, setRtHydrating] = useState(false);
   const [rtError, setRtError] = useState<string | null>(null);
   const [rtSuccess, setRtSuccess] = useState<string | null>(null);
+
+  // Starting an inspection = acknowledging the floor handoff
+  // (POST /api/qc/acknowledge/:jobId). Nothing in this screen ever called it, so
+  // the QC PASS gate rejected every decision with QC_PASS_BLOCKED.
+  const [ackLoading, setAckLoading] = useState(false);
+  const [ackError, setAckError] = useState<string | null>(null);
+
+  // The decision outcome, kept on screen after the alert is dismissed. Without it
+  // the only evidence a decision landed was a transient alert, and a stale queue
+  // made it look like nothing had happened.
+  const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
 
   const rtElapsed = useMemo(() => {
     if (!rtStartedAt || rtStatus !== "IN_PROGRESS") return null;
@@ -84,6 +96,13 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
     if (!isNaN(start) && !isNaN(end) && end >= start) return (end - start).toFixed(1);
     return null;
   }, [rtStartKm, rtEndKm]);
+
+  // Derived guards for the Road Test tab. The engine is the real gate — it rejects
+  // illegal transitions with RT_INVALID_TRANSITION — so these only keep the UI
+  // honest: a run starts once the requirement is REQUIRED, and completes only
+  // while it is genuinely in progress.
+  const rtStarted = rtStatus === "IN_PROGRESS";
+  const rtFinished = rtStatus === "PASSED" || rtStatus === "FAILED";
 
   /**
    * The job being inspected — always one that is actually queued for QC.
@@ -113,8 +132,16 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
   // Section 1: Dashboard KPIs — real values only. 0 is a valid, honest count;
   // no hardcoded fallback numbers or fixed percentage strings.
   const qcStats = useMemo(() => {
-    const waiting = qcQueue.length;
-    const underInspection = jobCards.filter(j => j.status === "In Progress" && j.remarks?.includes("[QC]")).length;
+    // Both open-work counters come from the real queue (tbl_qc_handoff) rather than
+    // the legacy in-memory heuristic `status === "In Progress" && remarks.includes("[QC]")`.
+    // That filter matched nothing, so "Under Inspection" read 0 while a vehicle was
+    // genuinely QC_IN_PROGRESS and "Waiting for QC" counted work already underway.
+    // A dashboard that contradicts the database is what made a submitted inspection
+    // look like it had never happened.
+    const waiting = qcQueue.filter(q => q.handoffStatus === "PENDING_QC").length;
+    const underInspection = qcQueue.filter(
+      q => q.handoffStatus === "QC_IN_PROGRESS" || q.liveStatus === "QC_IN_PROGRESS"
+    ).length;
     const passedCount = jobCards.filter(j => isWorkCompleteStatus(j.status) && !j.remarks?.includes("[Rework]")).length;
     const failedCount = jobCards.filter(j => j.rework_count > 0).length;
     const totalDecided = passedCount + failedCount;
@@ -215,6 +242,19 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
         return;
       }
       alert(decision === "PASS" ? "Quality check PASS. Job routed to Service Advisor for pre-invoice." : "Quality check FAIL. Job returned to Technician for rework.");
+      setDecisionNotice(
+        decision === "PASS"
+          ? `${selectedJob.job_card_no || `Job ${selectedJob.job_id}`} — QC PASS recorded. Sent to the Service Advisor for pre-invoice; it is no longer queued for inspection.`
+          : `${selectedJob.job_card_no || `Job ${selectedJob.job_id}`} — QC FAIL recorded. Returned to the technician for rework.`
+      );
+      // The server drains tbl_qc_handoff on decision, but this component kept its
+      // own stale copy of the queue — so the decided vehicle stayed on screen as
+      // "inspection in progress" and offered a decision the gate then rejected with
+      // "Must be QC_IN_PROGRESS". Clearing the selection and reloading is what makes
+      // the screen agree with the database.
+      setSelectedJobId(null);
+      setServerChecklist([]);
+      await loadQueue();
       onRefresh();
     } catch (e: any) {
       alert(`Failed to submit decision: ${e.message || "network error"}`);
@@ -295,6 +335,72 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
     }
   };
 
+  /**
+   * Hydrate the authoritative road-test record for the selected job from
+   * GET /api/qc/road-test/history/:jobId (qc_road_tests).
+   *
+   * Without this the Road Test tab was unusable after any reload: rtRoadTestId
+   * stayed null, so handleStartRoadTest/handleCompleteRoadTest both returned
+   * early and the inspector could never start or finish the test they had set up.
+   * History is chronological, so the newest row is the live record.
+   */
+  const loadRoadTest = useCallback(async (jobId: number) => {
+    setRtHydrating(true);
+    setRtError(null);
+    try {
+      const res = await fetch(`/api/qc/road-test/history/${jobId}`, { headers: staffAuthHeaders() });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data?.error || "Failed to load road test record.");
+      const rows: any[] = Array.isArray(data.data) ? data.data : [];
+      const latest = rows.length ? rows[rows.length - 1] : null;
+      setRtRoadTestId(latest ? Number(latest.road_test_id) : null);
+      setRtRequirement(latest?.requirement_status ?? null);
+      setRtStatus(latest?.status ?? null);
+      setRtTesterName(latest?.tester_name ?? "");
+      setRtStartKm(latest?.start_odometer != null ? String(latest.start_odometer) : "");
+      setRtEndKm(latest?.end_odometer != null ? String(latest.end_odometer) : "");
+      setRtStartedAt(latest?.started_at ? new Date(latest.started_at).toISOString() : null);
+      setRtRemarks(latest?.remarks ?? "");
+    } catch (e: any) {
+      setRtError(e.message);
+    } finally {
+      setRtHydrating(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedJob?.job_id) loadRoadTest(selectedJob.job_id);
+  }, [selectedJob?.job_id, loadRoadTest]);
+
+  // The queue row for the job being inspected — carries both the handoff status
+  // and the job's live_status, because they can disagree (handed off while still
+  // FLOOR_ALLOCATED) and that disagreement is what made the screen unusable.
+  const selectedQueueRow = useMemo(
+    () => qcQueue.find(q => Number(q.jobId) === Number(selectedJob?.job_id)) ?? null,
+    [qcQueue, selectedJob?.job_id]
+  );
+  const inspectionStarted =
+    selectedQueueRow?.handoffStatus === "QC_IN_PROGRESS" || selectedQueueRow?.liveStatus === "QC_IN_PROGRESS";
+
+  const handleStartInspection = async () => {
+    if (!selectedJob?.job_id) return;
+    setAckLoading(true); setAckError(null);
+    try {
+      const res = await fetch(`/api/qc/acknowledge/${selectedJob.job_id}`, {
+        method: "POST",
+        headers: staffAuthHeaders(),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data.success) throw new Error(data?.error || "Failed to start the inspection.");
+      await loadQueue();
+      await loadChecklist(selectedJob.job_id);
+    } catch (e: any) {
+      setAckError(e.message);
+    } finally {
+      setAckLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6 bg-[#0B1220] text-slate-100 min-h-screen p-4 md:p-6" lang="en">
       {/* Header */}
@@ -336,6 +442,17 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
 
       {activeTab === "dashboard" && (
         <div className="space-y-6">
+          {decisionNotice && (
+            <div className="flex items-start justify-between gap-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">
+              <span className="text-[11px] text-emerald-400">{decisionNotice}</span>
+              <button
+                onClick={() => setDecisionNotice(null)}
+                className="text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-200"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
           {/* SECTION 1: Dashboard metrics */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             {[
@@ -352,6 +469,44 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
               </div>
             ))}
           </div>
+
+          {/* SECTION 1b: Start the inspection. This acknowledges the floor handoff and
+              is what moves the job to QC_IN_PROGRESS — the state the PASS gate requires.
+              Without it every decision is rejected with QC_PASS_BLOCKED. */}
+          {selectedJob && (
+            <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider block">Selected vehicle</span>
+                  <span className="text-sm font-bold text-slate-200">
+                    {selectedJob.job_card_no || `Job ${selectedJob.job_id}`}
+                    {selectedJob.vrn ? ` · ${selectedJob.vrn}` : ""}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={`text-[10px] font-black uppercase tracking-wider ${inspectionStarted ? "text-blue-400" : "text-amber-400"}`}>
+                    {inspectionStarted ? "Inspection in progress" : "Awaiting inspection start"}
+                  </span>
+                  <button
+                    onClick={handleStartInspection}
+                    disabled={ackLoading || inspectionStarted || !selectedJob.job_id}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
+                  >
+                    {ackLoading ? "Starting…" : inspectionStarted ? "Inspection started" : "Start inspection"}
+                  </button>
+                </div>
+              </div>
+              {ackError && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-[11px] text-red-400">{ackError}</div>
+              )}
+              {!inspectionStarted && !ackError && (
+                <p className="text-[10px] text-slate-500">
+                  A QC decision can only be recorded once the inspection is started — the QC PASS gate
+                  requires the job to be QC_IN_PROGRESS.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* SECTION 2: QC Queue list */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -444,6 +599,194 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
         </div>
       )}
 
+      {activeTab === "roadtest" && (
+        !selectedJob ? (
+          <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg space-y-4">
+            <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
+              <Map className="h-4 w-4 text-blue-400" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Road Test</h3>
+            </div>
+            <p className="text-xs text-slate-500 italic text-center py-6">
+              No vehicle selected. Pick one from the QC Validation Queue on the dashboard first.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* SECTION 5: Authoritative road test (qc_road_tests) */}
+            <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg space-y-4 lg:col-span-2">
+              <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <Map className="h-4 w-4 text-blue-400" />
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                    Road Test — {selectedJob.job_card_no || `Job ${selectedJob.job_id}`}
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  {rtHydrating && <span className="text-[10px] text-slate-500">Loading…</span>}
+                  <button
+                    onClick={() => selectedJob?.job_id && loadRoadTest(selectedJob.job_id)}
+                    disabled={rtHydrating}
+                    className="flex items-center gap-1 px-2 py-1 bg-slate-950/40 border border-slate-850 hover:border-slate-700 disabled:opacity-60 text-slate-300 font-bold text-[9px] uppercase tracking-wider rounded-lg transition-all"
+                  >
+                    <RefreshCw className="h-3 w-3" /> Refresh
+                  </button>
+                </div>
+              </div>
+
+              {rtError && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-[11px] text-red-400">{rtError}</div>
+              )}
+              {rtSuccess && (
+                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-[11px] text-emerald-400">{rtSuccess}</div>
+              )}
+
+              {/* Step 1 — requirement */}
+              <div className="space-y-2">
+                <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider block">1 · Road test requirement</span>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handleSetRequirement("REQUIRED")}
+                    disabled={rtLoading || rtStarted || rtFinished}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
+                  >
+                    Mark required
+                  </button>
+                  <button
+                    onClick={() => handleSetRequirement("NOT_REQUIRED")}
+                    disabled={rtLoading || rtStarted || rtFinished}
+                    className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-slate-700 disabled:opacity-60 text-slate-300 font-bold text-xs uppercase tracking-wider rounded-xl transition-all"
+                  >
+                    Mark not required
+                  </button>
+                </div>
+                {(rtStarted || rtFinished) && (
+                  <p className="text-[10px] text-slate-500">
+                    Requirement locked — this road test is already {rtStarted ? "in progress" : "completed"}.
+                  </p>
+                )}
+              </div>
+
+              {/* Step 2 — start */}
+              <div className="space-y-2 border-t border-slate-800 pt-4">
+                <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider block">2 · Start run</span>
+                {rtRequirement === "NOT_REQUIRED" ? (
+                  <p className="text-xs text-slate-500 italic">Road test not required for this vehicle.</p>
+                ) : (
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div>
+                      <label className="text-[10px] text-slate-500 font-bold uppercase block mb-1">Start odometer (km)</label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        placeholder="e.g. 42150"
+                        value={rtStartKm}
+                        onChange={(e) => setRtStartKm(e.target.value)}
+                        disabled={rtStarted || rtFinished}
+                        className="w-40 bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-xs text-slate-200 outline-none disabled:opacity-60"
+                      />
+                    </div>
+                    <button
+                      onClick={handleStartRoadTest}
+                      disabled={rtLoading || rtStarted || rtFinished || rtRoadTestId == null || rtRequirement !== "REQUIRED"}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
+                    >
+                      {rtStarted ? "In progress" : "Start road test"}
+                    </button>
+                    {rtRoadTestId == null && (
+                      <span className="text-[10px] text-slate-500">Set the requirement first.</span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Step 3 — complete */}
+              {rtRequirement === "REQUIRED" && (
+                <div className="space-y-2 border-t border-slate-800 pt-4">
+                  <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider block">3 · Complete run</span>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div>
+                      <label className="text-[10px] text-slate-500 font-bold uppercase block mb-1">End odometer (km)</label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        placeholder="e.g. 42162"
+                        value={rtEndKm}
+                        onChange={(e) => setRtEndKm(e.target.value)}
+                        disabled={!rtStarted}
+                        className="w-40 bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-xs text-slate-200 outline-none disabled:opacity-60"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-[220px]">
+                      <label className="text-[10px] text-slate-500 font-bold uppercase block mb-1">Remarks</label>
+                      <input
+                        type="text"
+                        placeholder="Braking, steering, noise, vibration notes…"
+                        value={rtRemarks}
+                        onChange={(e) => setRtRemarks(e.target.value)}
+                        disabled={rtFinished}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-xs text-slate-200 outline-none disabled:opacity-60"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => handleCompleteRoadTest("PASSED")}
+                      disabled={rtLoading || !rtStarted || rtFinished}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
+                    >
+                      Pass
+                    </button>
+                    <button
+                      onClick={() => handleCompleteRoadTest("FAILED")}
+                      disabled={rtLoading || !rtStarted || rtFinished}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-colors"
+                    >
+                      Fail
+                    </button>
+                    {!rtStarted && <span className="text-[10px] text-slate-500 self-center">Start the run before completing it.</span>}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Live record, as stored server-side */}
+            <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg space-y-3">
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
+                <Clock className="h-4 w-4 text-blue-400" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Road Test Record</h3>
+              </div>
+              <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-850 space-y-2.5 text-xs">
+                {[
+                  ["Record ID", rtRoadTestId != null ? String(rtRoadTestId) : "—"],
+                  ["Requirement", rtRequirement ?? "Not set"],
+                  ["Status", rtStatus ?? "Not started"],
+                  ["Tester", rtTesterName || "—"],
+                  ["Start odometer", rtStartKm ? `${rtStartKm} km` : "—"],
+                  ["End odometer", rtEndKm ? `${rtEndKm} km` : "—"],
+                  ["Distance", rtDistanceKm ? `${rtDistanceKm} km` : "—"],
+                  ["Elapsed", rtElapsed ?? "—"],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex items-center justify-between gap-3">
+                    <span className="text-slate-500">{label}</span>
+                    <span className="font-bold text-slate-200 text-right">{value}</span>
+                  </div>
+                ))}
+              </div>
+              {rtStatus === "PASSED" && (
+                <p className="flex items-center gap-1.5 text-[11px] text-emerald-400">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Road test passed.
+                </p>
+              )}
+              {rtStatus === "FAILED" && (
+                <p className="flex items-center gap-1.5 text-[11px] text-red-400">
+                  <AlertOctagon className="h-3.5 w-3.5" /> Road test failed — record a FAIL decision in Decision Center.
+                </p>
+              )}
+            </div>
+          </div>
+        )
+      )}
+
       {activeTab === "checklist" && selectedJob && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* SECTION 3: Digital QC Checklist */}
@@ -508,6 +851,22 @@ export const QCInspectorWorkspace: React.FC<QCInspectorWorkspaceProps> = React.m
 
       {activeTab === "decision" && selectedJob && (
         <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg space-y-4">
+          {!inspectionStarted && (
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 space-y-2">
+              <p className="text-[11px] text-amber-400">
+                This vehicle's inspection has not been started, so a decision will be rejected
+                (QC_PASS_BLOCKED: the job must be QC_IN_PROGRESS). Start the inspection first.
+              </p>
+              <button
+                onClick={handleStartInspection}
+                disabled={ackLoading}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-[10px] uppercase tracking-wider rounded-lg"
+              >
+                {ackLoading ? "Starting…" : "Start inspection"}
+              </button>
+              {ackError && <p className="text-[10px] text-red-400">{ackError}</p>}
+            </div>
+          )}
           {/* SECTION 6: QC Decision & Rework Allocation */}
           <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
             <Signature className="h-4 w-4 text-blue-400" />

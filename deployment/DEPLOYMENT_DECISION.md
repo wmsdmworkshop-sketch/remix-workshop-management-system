@@ -1,5 +1,13 @@
 # DWIP Enterprise ERP — Deployment Decision
 
+> [!WARNING]
+> **SUPERSEDED — this does not describe production.** This is a GCP-001 sprint decision
+> record for the planned `dwip-pilot`/`dwip-prod` services, which were never deployed.
+> Production is the single service **`dwip-enterprise`** (project `giga-course-dp497`).
+> See [DEPLOY_DWIP_ENTERPRISE.md](./DEPLOY_DWIP_ENTERPRISE.md).
+> _Known wrong here:_ `server/app.ts` (the entry point is `server.ts`), `GEMINI_API_KEY`,
+> and the `/api/ready` readiness check — that route does not exist in `server.ts`.
+
 **Sprint:** GCP-002 — Google Cloud Deployment Validation  
 **Date:** 2026-07-15  
 **Decision Authority:** Enterprise Cloud Architecture Board
@@ -46,7 +54,7 @@
 | Monitoring alerts not yet configured | Post-Deploy | Alerting plan documented in FINAL_DEPLOYMENT_REVIEW.md |
 | No Cloud Armor WAF | Accepted Risk | Pilot is restricted; WAF is RC2 production requirement |
 | SIGTERM handler not implemented | Known RC1.1 Constraint | dumb-init + 30s Cloud Run grace period sufficient for pilot |
-| Railway MySQL no HA | Accepted Risk | Documented; restart only at shift change |
+| Database high availability | Accepted Risk | Documented; restart only at shift change |
 
 ---
 
@@ -85,7 +93,7 @@ Before running `setup-gcp.sh`, the operator MUST complete:
 
 1. ✅ Confirm GCP Project ID is available  
 2. ✅ Run `gcloud auth login` and `gcloud auth application-default login`  
-3. ✅ Confirm Railway MySQL is live and credentials are available  
+3. ✅ Confirm the Cloud SQL database is live and credentials are available  
 4. ✅ Generate JWT secrets: `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`  
 
 Then execute:

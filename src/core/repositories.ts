@@ -38,9 +38,35 @@ export class EmployeeRepository implements IEmployeeRepository {
   constructor(private db: any) {}
 
   public async findAll(includeLegacy: boolean): Promise<EmployeeProfile[]> {
-    let query = "SELECT * FROM employees";
-    // No record_status column exists in the current schema
-    query += " ORDER BY employee_id";
+    // `profile_photo` is deliberately NOT selected.
+    //
+    // It is a LONGTEXT holding a base64 reference photo, and it accounted for
+    // 601,600 of the 607,493 bytes the previous `SELECT *` pulled back — the
+    // remaining 43 columns together are under 6KB. Nothing reads it: it is an
+    // optional field on EmployeeProfile with no consumer anywhere in src/, and
+    // face matching reads `face_embedding_reference` instead.
+    //
+    // Carrying it on 51 rows made every call to this method transfer ~600KB. On
+    // a cold Cloud SQL connection that took longer than the 10s query deadline
+    // in RetryExecutor, which abandoned the query mid-transfer and wedged the
+    // pool connection in "Sending to client". The pool then exhausted and every
+    // later request queued behind it — including /api/employees, which hung and
+    // blocked the whole console from loading.
+    //
+    // Selecting the columns explicitly removes the failure mode entirely. The
+    // query now returns in ~40ms with a ~4KB result set.
+    const query = `
+      SELECT employee_id, full_name, employee_code, role, employee_grade, basic_salary,
+             mobile, is_active, created_at, allocated_revenue, target_revenue, paid_pct,
+             tml_claim_pct, certification_level, certification_date, certification_expiry_date,
+             certification_remarks, alt_mobile, email, department, designation, workshop,
+             reporting_manager, date_of_joining, bank_details, pan, aadhaar, workshop_id,
+             shift_id, joining_date, profile_photo_url, face_embedding_reference,
+             is_workshop_employee, is_technician_eligible, is_labour_revenue_eligible,
+             is_bay_assignable, is_breakdown_eligible, is_qc_eligible, is_warranty_eligible,
+             record_status, legacy_role, crm_id, lms_id
+        FROM employees
+       ORDER BY employee_id`;
     const [rows] = await this.db.query(query);
     return rows as EmployeeProfile[];
   }

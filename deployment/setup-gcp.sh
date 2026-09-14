@@ -2,6 +2,16 @@
 # ═══════════════════════════════════════════════════════════════
 # DWIP Enterprise ERP — Google Cloud Foundation Setup Script
 # Version:   RC1.1
+#
+# !! SUPERSEDED — DO NOT RUN AGAINST THE PRODUCTION PROJECT AS-IS !!
+# This script creates Artifact Registry repo `dwip-images`, Cloud Run services
+# `dwip-pilot` / `dwip-prod` and service account `dwip-cloudrun-sa`. NONE of those
+# match live production, which is:
+#   project  giga-course-dp497
+#   service  dwip-enterprise   (single service)
+#   repo     cloud-run-source-deploy
+#   SA       772298398554-compute@developer.gserviceaccount.com
+# Running it would create duplicate, unused resources. See DEPLOY_DWIP_ENTERPRISE.md.
 # Target:    Google Cloud Platform — asia-south1 (Mumbai)
 # ═══════════════════════════════════════════════════════════════
 # USAGE:

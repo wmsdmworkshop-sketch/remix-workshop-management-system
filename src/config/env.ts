@@ -38,6 +38,10 @@ export const envConfig = {
   DB_HEALTH_TIMEOUT: process.env.DB_HEALTH_TIMEOUT ? parseInt(process.env.DB_HEALTH_TIMEOUT, 10) : 10000,
   DB_MAX_RETRIES: process.env.DB_MAX_RETRIES ? parseInt(process.env.DB_MAX_RETRIES, 10) : 2,
   DB_RETRY_DELAY: process.env.DB_RETRY_DELAY ? parseInt(process.env.DB_RETRY_DELAY, 10) : 500,
+  // Cloud SQL over the public internet regularly needs >2s to accept a connection. A connect
+  // timeout shorter than observed latency makes every connect fail, which trips the pool OFFLINE
+  // and surfaces as spurious 401s and an empty in-memory dataset.
+  DB_CONNECT_TIMEOUT: process.env.DB_CONNECT_TIMEOUT ? parseInt(process.env.DB_CONNECT_TIMEOUT, 10) : 15000,
 
   // Auth & RBAC Hardening Configuration (WP-02)
   AUTH_CACHE_TTL_MS: process.env.AUTH_CACHE_TTL_MS ? parseInt(process.env.AUTH_CACHE_TTL_MS, 10) : 300000,

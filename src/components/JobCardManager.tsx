@@ -79,6 +79,409 @@ interface JobCardManagerProps {
   onClearAssignFilter?: () => void;
 }
 
+/**
+ * Formats an ISO/SQL timestamp for display. Returns null when absent so callers
+ * render an explicit absence rather than "Invalid Date".
+ */
+function fmtStamp(v?: string | null): string | null {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** One `label: value` line; a missing value reads as an explicit absence. */
+function DetailRow({ label, value, mono }: { label: string; value?: string | number | null; mono?: boolean }) {
+  const shown =
+    value === undefined || value === null || String(value).trim() === "" ? null : String(value);
+  return (
+    <div className="flex items-start justify-between gap-3 py-[3px]">
+      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider shrink-0">{label}</span>
+      {shown === null ? (
+        <span className="text-[10px] italic text-slate-400 text-right">Not recorded</span>
+      ) : (
+        <span className={`text-[10px] font-semibold text-slate-800 text-right ${mono ? "font-mono" : ""}`}>
+          {shown}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Human label for a role key such as `floor_supervisor` -> "Floor Supervisor". */
+function roleLabel(v?: string | null): string | null {
+  if (!v) return null;
+  return String(v)
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Elapsed time since a timestamp, as a compact duration. Null when unknown. */
+function elapsedSince(iso?: string | null): string | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return null;
+  const mins = Math.max(0, Math.floor((Date.now() - t) / 60000));
+  const d = Math.floor(mins / 1440);
+  const h = Math.floor((mins % 1440) / 60);
+  const m = mins % 60;
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+/**
+ * WHERE the vehicle is, WHO is holding it, WHY it is not moving and HOW LONG
+ * they have had it.
+ *
+ * Every value comes from the custody summary. An unrecorded holder or reason
+ * renders as an explicit absence — never as a guessed name or a plausible-looking
+ * reason the workshop could act on.
+ */
+function CustodyBlock({ summary }: { summary?: any }) {
+  if (!summary) return null;
+  const held = elapsedSince(summary.holder_since);
+  const dueMs = summary.sla_due_at ? new Date(summary.sla_due_at).getTime() : null;
+  const overdue = dueMs != null && !Number.isNaN(dueMs) ? dueMs < Date.now() : false;
+  const alarm = Boolean(summary.breached) || overdue;
+
+  return (
+    <div className={`rounded-lg border p-2 ${alarm ? "border-red-300 bg-red-50" : "border-slate-200 bg-slate-50"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+          Currently held by
+        </span>
+        {held && (
+          <span
+            className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider ${
+              alarm ? "border-red-300 bg-white text-red-700" : "border-slate-300 bg-white text-slate-800"
+            }`}
+          >
+            {held}
+            {alarm ? " · overdue" : ""}
+          </span>
+        )}
+      </div>
+      <div className="mt-1">
+        <DetailRow label="Holding role" value={roleLabel(summary.holder)} />
+        <DetailRow label="At stage" value={summary.holder_stage} />
+        <DetailRow label="Holding since" value={fmtStamp(summary.holder_since)} />
+        <DetailRow label="SLA due" value={fmtStamp(summary.sla_due_at)} />
+        <DetailRow label="Escalated" value={summary.escalated ? "Yes — past target" : "No"} />
+        <DetailRow label="Promised (ETD)" value={fmtStamp(summary.etd)} />
+        <DetailRow label="Handoff" value={summary.handoff_status} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The full chain of custody for one job card, read from
+ * `/api/job-cards/:id/custody`: every handoff between owners, every recorded
+ * action, and every logged complaint.
+ *
+ * A failed fetch is reported as a failure, and an empty trail as genuinely
+ * nothing recorded. The two are never conflated — and the response's retention
+ * fields are used to distinguish "nothing happened" from "this was purged".
+ */
+function CustodyTrail({
+  state,
+  data,
+  error,
+}: {
+  state: "idle" | "loading" | "error";
+  data: any;
+  error?: string;
+}) {
+  if (state === "loading") {
+    return <p className="text-[10px] font-semibold text-slate-500">Loading the chain of custody…</p>;
+  }
+  if (state === "error") {
+    return (
+      <p className="text-[10px] font-semibold text-red-600">
+        {error || "Could not load the chain of custody."}
+      </p>
+    );
+  }
+  if (!data) {
+    return <p className="text-[10px] italic text-slate-400">Select a job card to load its custody trail.</p>;
+  }
+
+  const handoffs: any[] = data.handoffs || [];
+  const events: any[] = data.events || [];
+  const complaints: any[] = data.complaints || [];
+  const recentEvents = events.slice(-12).reverse();
+
+  return (
+    <div className="space-y-3">
+      {/* Handoffs between owners — where it has been, and who had it. */}
+      <div>
+        <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+          Handoff trail ({handoffs.length})
+        </p>
+        {handoffs.length === 0 ? (
+          <p className="text-[10px] italic text-slate-400">No handoffs recorded for this job card.</p>
+        ) : (
+          <div className="space-y-1">
+            {handoffs.map((h) => (
+              <div key={h.handoff_id} className="rounded border border-slate-200 px-2 py-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold text-slate-800">
+                    {String(h.stage_name || "").replace(/_/g, " ") || "Unnamed stage"}
+                  </span>
+                  <span
+                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${
+                      h.status === "BREACHED"
+                        ? "border-red-200 bg-red-50 text-red-700"
+                        : h.status === "COMPLETED"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-slate-200 bg-slate-50 text-slate-600"
+                    }`}
+                  >
+                    {h.status || "—"}
+                  </span>
+                </div>
+                <p className="text-[9px] text-slate-500">
+                  Held by {roleLabel(h.owner_role) || "not recorded"} · opened{" "}
+                  {fmtStamp(h.opened_at) || "not recorded"}
+                  {h.accepted_at ? ` · accepted ${fmtStamp(h.accepted_at)}` : " · not yet accepted"}
+                </p>
+                {h.sla_due_at && (
+                  <p className="text-[9px] text-slate-500">SLA due {fmtStamp(h.sla_due_at)}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Complaints raised against the vehicle, and whether still open. */}
+      <div>
+        <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+          Complaints ({complaints.length})
+        </p>
+        {complaints.length === 0 ? (
+          <p className="text-[10px] italic text-slate-400">No complaints logged for this job card.</p>
+        ) : (
+          <div className="space-y-1">
+            {complaints.map((c) => (
+              <div key={c.complaint_id} className="rounded border border-slate-200 px-2 py-1">
+                <p className="text-[10px] text-slate-800">{c.complaint_text || "—"}</p>
+                <p className="text-[9px] text-slate-500">
+                  {c.category || "uncategorised"} · {c.status || "—"} · raised by{" "}
+                  {c.authored_by || "not recorded"} · {fmtStamp(c.created_at) || "—"}
+                  {c.is_safety_critical ? " · SAFETY CRITICAL" : ""}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Who acted, in what role, on what, and when. */}
+      <div>
+        <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+          Activity ({events.length}{events.length > 12 ? ", latest 12" : ""})
+        </p>
+        {recentEvents.length === 0 ? (
+          <p className="text-[10px] italic text-slate-400">
+            {data.job_closed_at
+              ? `Nothing recorded in the ${data.retention_days}-day retention window after this job closed.`
+              : "No activity recorded yet for this job card."}
+          </p>
+        ) : (
+          <div className="space-y-1">
+            {recentEvents.map((e) => (
+              <div key={e.id} className="rounded border border-slate-200 px-2 py-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold text-slate-800">
+                    {String(e.action_type || "").replace(/_/g, " ")}
+                  </span>
+                  <span className="text-[9px] text-slate-500">{fmtStamp(e.at) || "—"}</span>
+                </div>
+                <p className="text-[9px] text-slate-500">
+                  by {e.actor_name || "not recorded"}
+                  {e.actor_role ? ` (${roleLabel(e.actor_role)})` : ""}
+                  {e.action_detail ? ` · ${e.action_detail}` : ""}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {Array.isArray(data.edits) && data.edits.length > 0 && (
+        <div>
+          <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+            Field edits ({data.edits.length})
+          </p>
+          <div className="space-y-1">
+            {data.edits.map((ed) => (
+              <div key={ed.audit_id} className="rounded border border-slate-200 px-2 py-1">
+                <p className="text-[10px] text-slate-800">
+                  {ed.action || "edit"} · {ed.changed_by || "not recorded"}
+                </p>
+                <p className="text-[9px] text-slate-500">
+                  Why: {ed.justification || "no justification recorded"} · {fmtStamp(ed.created_at) || "—"}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {Array.isArray(data.gm_overrides) && data.gm_overrides.length > 0 && (
+        <div>
+          <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+            GM overrides ({data.gm_overrides.length})
+          </p>
+          <div className="space-y-1">
+            {data.gm_overrides.map((o) => (
+              <div key={o.id} className="rounded border border-slate-200 px-2 py-1">
+                <p className="text-[10px] text-slate-800">
+                  {o.action || "override"} · {o.gm_name || "not recorded"}
+                </p>
+                <p className="text-[9px] text-slate-500">
+                  State: {o.jc_state || "—"} · {fmtStamp(o.created_at) || "—"}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The complete readout of one job card: identity, live workflow position,
+ * workload/billing state, assignment, every recorded timestamp and money.
+ *
+ * The live workflow stage (`live_status`, surfaced as `workshop_stage`) is shown
+ * SEPARATELY from `status` (job_status). They are different vocabularies and can
+ * legitimately disagree — a job can be workload-"Ready" while the workflow sits
+ * at "QC_PASSED". Conflating the two is what previously put "Completed" on a
+ * card beside a live Start Intake button.
+ */
+function JobCardFullDetail({
+  job,
+  srTypeName,
+  custody,
+}: {
+  job: JobCard;
+  srTypeName?: string | null;
+  custody?: any;
+}) {
+  const stage = job.workshop_stage || job.live_status_master || null;
+  const technicianList = (job.technician_assignments || []).map(
+    (t) => `${t.technician_name} (${t.role_type})`
+  );
+  const techLine = technicianList.length ? technicianList.join(", ") : job.technician_name || null;
+  const labour = job.labor_price != null ? Number(job.labor_price) : null;
+  const parts = job.parts_price != null ? Number(job.parts_price) : null;
+  const total = (labour || 0) + (parts || 0);
+  const money = (n: number) => `₹${n.toLocaleString("en-IN")}`;
+
+  return (
+    <div className="space-y-2">
+      {/* WHERE it is, WHO is holding it, WHY it is not moving and HOW LONG they
+          have had it — first, because that is the question the workshop actually
+          asks about a stationary vehicle. */}
+      {custody && <CustodyBlock summary={custody} />}
+
+      {/* Live workflow position + the two independent state vocabularies */}
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+            Live workflow status
+          </span>
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded border border-slate-300 bg-white text-slate-800 uppercase tracking-wider">
+            {stage || "Not recorded"}
+          </span>
+        </div>
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <span className="text-[9px] font-bold px-2 py-0.5 rounded border border-slate-200 bg-white text-slate-700 uppercase tracking-wider">
+            Workload: {job.status || "—"}
+          </span>
+          <span className="text-[9px] font-bold px-2 py-0.5 rounded border border-slate-200 bg-white text-slate-700 uppercase tracking-wider">
+            Billing: {job.billing_status || "—"}
+          </span>
+          {job.tat_status ? (
+            <span className="text-[9px] font-bold px-2 py-0.5 rounded border border-slate-200 bg-white text-slate-700 uppercase tracking-wider">
+              TAT: {job.tat_status}
+            </span>
+          ) : null}
+          {job.rework_count ? (
+            <span className="text-[9px] font-bold px-2 py-0.5 rounded border border-red-200 bg-red-50 text-red-700 uppercase tracking-wider">
+              Rework ×{job.rework_count}
+            </span>
+          ) : null}
+        </div>
+        {(job.current_queue || job.current_workflow_state) && (
+          <p className="mt-1 text-[9px] font-semibold text-slate-500">
+            Queue: {job.current_queue || "—"} · Workflow state: {job.current_workflow_state || "—"}
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-lg border border-slate-200 p-2">
+        <DetailRow label="Job card" value={job.job_card_no} mono />
+        <DetailRow label="Vehicle" value={job.vrn} mono />
+        <DetailRow label="Make / model" value={`${job.vehicle_make || ""} ${job.vehicle_model || ""}`.trim()} />
+        <DetailRow label="Year" value={job.vehicle_year} />
+        <DetailRow label="Chassis" value={job.chassis_no || job.chassis_number} mono />
+        <DetailRow label="Odometer" value={job.km_reading ?? job.odometer_reading} />
+        <DetailRow label="Customer" value={job.customer_name} />
+        <DetailRow label="Mobile" value={job.customer_mobile} mono />
+        <DetailRow label="Service type" value={srTypeName} />
+        <DetailRow label="Priority" value={job.priority} />
+        <DetailRow label="Complaint" value={job.job_description} />
+      </div>
+
+      <div className="rounded-lg border border-slate-200 p-2">
+        <DetailRow label="Service advisor" value={job.service_advisor} />
+        <DetailRow label="Technician" value={techLine} />
+        <DetailRow label="Bay" value={job.bay_no} />
+        <DetailRow label="Labourers" value={job.no_of_laborers} />
+      </div>
+
+      <div className="rounded-lg border border-slate-200 p-2">
+        <DetailRow label="Date in" value={fmtStamp(job.date_in || job.started_at)} />
+        <DetailRow label="Expected out" value={fmtStamp(job.expected_date_out) || fmtStamp(job.etd)} />
+        <DetailRow label="Completed" value={fmtStamp(job.date_completed || job.completed_at)} />
+        <DetailRow label="Gate out" value={fmtStamp(job.gate_out_time)} />
+        <DetailRow label="Invoice" value={job.invoice_no} mono />
+        <DetailRow label="Labour" value={labour != null ? money(labour) : null} />
+        <DetailRow label="Parts" value={parts != null ? money(parts) : null} />
+        <DetailRow label="Total" value={total > 0 ? money(total) : null} />
+      </div>
+
+      {(job.pending_reason || job.remarks) && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 space-y-1">
+          {job.pending_reason && (
+            <p className="text-[10px] text-amber-900">
+              <span className="font-bold uppercase tracking-wider text-[9px]">Pending:</span>{" "}
+              {job.pending_reason}
+            </p>
+          )}
+          {job.remarks && (
+            <p className="text-[10px] text-amber-900">
+              <span className="font-bold uppercase tracking-wider text-[9px]">Remarks:</span>{" "}
+              {job.remarks}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function JobCardManager({
   jobCards,
   bays,
@@ -995,6 +1398,12 @@ export default function JobCardManager({
   const [listDate, setListDate] = useState("");
   const [listStatus, setListStatus] = useState("All");
   const [showBilledClosed, setShowBilledClosed] = useState(false);
+  /**
+   * The job card currently under the pointer, plus where to draw its detail
+   * card. This is only a PEEK — it never assigns `selectedJob`, so hovering can
+   * never clobber an in-progress edit in the panel on the right.
+   */
+  const [hoverCard, setHoverCard] = useState<{ job: JobCard; top: number; left: number } | null>(null);
   // Dashboard drill-down: "sa" = open & no advisor, "tech" = advisor set but no technician.
   const [assignFilter, setAssignFilter] = useState<"sa" | "tech" | null>(initialAssignFilter);
   React.useEffect(() => { setAssignFilter(initialAssignFilter); }, [initialAssignFilter]);
@@ -1008,7 +1417,19 @@ export default function JobCardManager({
 
     return jobCards.filter(job => {
       const s = String(job.status || '').toLowerCase();
-      const isClosed = s === 'billed' || s === 'out of workshop' || s === 'invoiced' || s === 'completed' || !!job.gate_out_time;
+
+      // DELIVERED VEHICLES ARE HISTORY, NOT WORK.
+      //
+      // A vehicle that has been handed over — or that carries a recorded gate-out,
+      // which is the ground truth that it left the site — has finished its visit.
+      // It must not appear in the working list at all, and the "Show Billed/Closed"
+      // toggle must not be able to pull it back in: that toggle exists for jobs
+      // still on site that are merely billed or administratively closed. This is
+      // also what keeps historical imports out of the operational queue.
+      const isDelivered = s === 'delivered' || !!job.gate_out_time;
+      if (isDelivered) return false;
+
+      const isClosed = s === 'billed' || s === 'out of workshop' || s === 'invoiced' || s === 'completed';
       if (!showBilledClosed && isClosed) return false;
 
       const matchesSearch =
@@ -1027,6 +1448,19 @@ export default function JobCardManager({
     });
   }, [jobCards, listSearch, listDate, listStatus, showBilledClosed, assignFilter]);
 
+  /**
+   * Vehicles kept out of the working list because they are delivered — i.e.
+   * history. Counted so the screen can SAY why a card is absent instead of
+   * leaving an unexplained empty list.
+   */
+  const deliveredCount = useMemo(
+    () =>
+      jobCards.filter(
+        (j) => String(j.status || "").toLowerCase() === "delivered" || !!j.gate_out_time
+      ).length,
+    [jobCards]
+  );
+
   // Keep the detail panel pointed at live data. selectedJob used to be set once
   // (on mount or drill-down) and never re-synced, so typing a search left the
   // panel showing whatever job happened to load first, and a mutation (e.g.
@@ -1043,6 +1477,73 @@ export default function JobCardManager({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobCards, filteredJobCards]);
+
+  // ─── CHAIN OF CUSTODY ──────────────────────────────────────────────────────
+  //
+  // Where each vehicle is, who is holding it, why it is not moving, and how long
+  // they have had it. The list and hover card read the BATCH summary (one request
+  // for the whole visible list rather than one per card); the detail panel reads
+  // the per-job trail, which merges tbl_handoff_sla, jc_activity_log and
+  // tbl_job_complaints. A failure here leaves the custody block absent — it never
+  // renders a guessed holder.
+  const [custodySummary, setCustodySummary] = useState<Record<string, any>>({});
+  const [custodyDetail, setCustodyDetail] = useState<any>(null);
+  const [custodyState, setCustodyState] = useState<"idle" | "loading" | "error">("idle");
+  const [custodyError, setCustodyError] = useState<string>("");
+
+  const custodyKey = useMemo(
+    () => filteredJobCards.map((j) => j.job_id).filter((v) => v != null).join(","),
+    [filteredJobCards]
+  );
+
+  useEffect(() => {
+    if (!custodyKey) { setCustodySummary({}); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = getStaffToken();
+        const res = await fetch(
+          `/api/job-cards/custody-summary?ids=${encodeURIComponent(custodyKey)}`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setCustodySummary(data?.summaries || {});
+      } catch {
+        /* ambient context: absent, not fabricated */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [custodyKey]);
+
+  const selectedJobId = selectedJob?.job_id ?? null;
+  useEffect(() => {
+    if (!selectedJobId) { setCustodyDetail(null); setCustodyState("idle"); return; }
+    let cancelled = false;
+    setCustodyState("loading");
+    setCustodyError("");
+    (async () => {
+      try {
+        const token = getStaffToken();
+        const res = await fetch(
+          `/api/job-cards/${encodeURIComponent(String(selectedJobId))}/custody`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
+        );
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error || `Request failed (${res.status})`);
+        }
+        const data = await res.json();
+        if (!cancelled) { setCustodyDetail(data); setCustodyState("idle"); }
+      } catch (e: any) {
+        if (!cancelled) {
+          setCustodyError(e?.message || "Could not load the chain of custody.");
+          setCustodyState("error");
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedJobId]);
 
   const handleExportCSV = () => {
     const headers = [
@@ -1477,13 +1978,61 @@ export default function JobCardManager({
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full items-start">
+
+      {/* HOVER DETAIL CARD — the complete details and live status of the card
+          under the pointer, shown without having to click into it. It is
+          read-only and `pointer-events-none` on purpose: it must never steal the
+          hover that opened it, and it must never be focusable. Clicking a card
+          still pins it properly on the right. Positioned and clamped in JS so it
+          stays fully on screen at any window width; touch devices simply never
+          fire the hover and fall through to click. */}
+      {hoverCard && (
+        <div
+          role="tooltip"
+          aria-live="polite"
+          className="fixed z-[60] w-[360px] max-w-[calc(100vw-1rem)] max-h-[80vh] overflow-y-auto rounded-xl border border-slate-300 bg-white p-3 shadow-2xl pointer-events-none"
+          style={{ top: hoverCard.top, left: hoverCard.left }}
+        >
+          <div className="flex items-start justify-between gap-2 border-b border-slate-200 pb-2 mb-2">
+            <div>
+              <p className="text-[10px] font-mono font-bold text-slate-500 uppercase">
+                {hoverCard.job.job_card_no}
+              </p>
+              <p className="text-sm font-bold text-slate-900 tracking-tight uppercase">
+                {hoverCard.job.vrn}
+              </p>
+            </div>
+            {hoverCard.job.priority === "Express" && (
+              <span className="bg-red-50 text-red-600 border border-red-200/50 text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">
+                Express
+              </span>
+            )}
+          </div>
+          <JobCardFullDetail
+            job={hoverCard.job}
+            srTypeName={
+              srTypes.find((s) => s.sr_type_id === hoverCard.job.sr_type_id)?.sr_type_name || null
+            }
+            custody={custodySummary[String(hoverCard.job.job_id)]}
+          />
+          <p className="mt-2 pt-2 border-t border-slate-100 text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+            Click to open this job card
+          </p>
+        </div>
+      )}
       
       {/* LEFT: JOB CARDS LIST */}
-      <div className="lg:col-span-1 bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-4 max-h-[800px] overflow-y-auto">
+      <div
+        className="lg:col-span-1 bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-4 max-h-[800px] overflow-y-auto"
+        onScroll={() => setHoverCard(null)}
+      >
         <div className="flex items-center justify-between border-b border-slate-200 pb-3 bg-slate-50/50 -mx-4 -mt-4 p-4">
           <div>
             <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Job Cards</h2>
-            <p className="text-[10px] text-slate-400 font-medium">Queue of vehicle workshop repairs.</p>
+            <p className="text-[10px] text-slate-400 font-medium">
+              {filteredJobCards.length} in the workshop
+              {deliveredCount > 0 ? ` · ${deliveredCount} delivered (history)` : ""}
+            </p>
           </div>
           <button 
             onClick={() => setShowCreateModal(true)}
@@ -1602,12 +2151,20 @@ export default function JobCardManager({
               )}
             </div>
           ) : filteredJobCards.length === 0 ? (
-            <div className="p-4 rounded-lg border border-dashed border-slate-200 text-center">
+            <div className="p-4 rounded-lg border border-dashed border-slate-200 text-center space-y-1">
               <p className="text-xs font-semibold text-slate-500">
                 {jobCards.length === 0
                   ? "No job cards yet."
+                  : deliveredCount === jobCards.length && deliveredCount > 0
+                  ? "No vehicles are currently in the workshop."
                   : "No job cards match these filters."}
               </p>
+              {deliveredCount > 0 && jobCards.length > 0 && (
+                <p className="text-[10px] text-slate-400">
+                  {deliveredCount} delivered vehicle{deliveredCount === 1 ? "" : "s"} — kept in
+                  history, not in this list.
+                </p>
+              )}
             </div>
           ) : filteredJobCards.map((job) => {
             const isSelected = selectedJob?.job_id === job.job_id;
@@ -1627,6 +2184,25 @@ export default function JobCardManager({
               <div 
                 key={job.job_id}
                 onClick={() => setSelectedJob(job)}
+                onMouseEnter={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  const CARD_W = 360;
+                  const GAP = 14;
+                  // Prefer the right of the list; flip to the left when that would
+                  // overflow, then clamp so the card is always fully on screen.
+                  const preferred =
+                    r.right + GAP + CARD_W > window.innerWidth
+                      ? r.left - GAP - CARD_W
+                      : r.right + GAP;
+                  const maxLeft = Math.max(8, window.innerWidth - CARD_W - 8);
+                  const maxTop = Math.max(8, window.innerHeight - 430);
+                  setHoverCard({
+                    job,
+                    top: Math.max(8, Math.min(r.top, maxTop)),
+                    left: Math.max(8, Math.min(preferred, maxLeft)),
+                  });
+                }}
+                onMouseLeave={() => setHoverCard(null)}
                 className={`p-3 rounded-lg border transition-all cursor-pointer flex flex-col justify-between ${
                   isSelected 
                     ? "border-orange-500 bg-orange-500/5 shadow-xs" 
@@ -1652,6 +2228,36 @@ export default function JobCardManager({
                   <GateProgressBar job={job} />
                 </div>
 
+                {/* WHO holds it and HOW LONG, ambient on the card, so the holder is
+                    visible without opening anything. Renders only when a real open
+                    handoff exists — never a placeholder. */}
+                {custodySummary[String(job.job_id)]?.holder && (
+                  <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                    <span
+                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${
+                        custodySummary[String(job.job_id)].breached
+                          ? "border-red-200 bg-red-50 text-red-700"
+                          : "border-slate-200 bg-slate-50 text-slate-600"
+                      }`}
+                    >
+                      Held by {roleLabel(custodySummary[String(job.job_id)].holder)}
+                    </span>
+                    {elapsedSince(custodySummary[String(job.job_id)].holder_since) && (
+                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                        {elapsedSince(custodySummary[String(job.job_id)].holder_since)}
+                      </span>
+                    )}
+                    {custodySummary[String(job.job_id)].holder_stage && (
+                      <span
+                        className="text-[9px] font-semibold text-slate-500 truncate max-w-[170px]"
+                        title={String(custodySummary[String(job.job_id)].holder_stage).replace(/_/g, " ")}
+                      >
+                        {String(custodySummary[String(job.job_id)].holder_stage).replace(/_/g, " ")}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-500 font-medium">
                   <p className="line-clamp-1">{job.vehicle_make} {job.vehicle_model} • {srType?.sr_type_name}</p>
                   <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
@@ -1671,6 +2277,26 @@ export default function JobCardManager({
             {/* Full gate-in → gate-out journey for the selected vehicle. */}
             <div className="rounded-xl border border-slate-200 bg-slate-950 p-4">
               <GateProgressBar job={selectedJob} variant="full" />
+            </div>
+
+            {/* The complete details + live status for the selected card, so the
+                same readout is available on click as on hover. */}
+            <JobCardFullDetail
+              job={selectedJob}
+              srTypeName={
+                srTypes.find((s) => s.sr_type_id === selectedJob.sr_type_id)?.sr_type_name || null
+              }
+              custody={custodySummary[String(selectedJob.job_id)]}
+            />
+
+            {/* The full trail: every handoff between owners and every recorded
+                action, so "who held it, why, and for how long" is answerable from
+                the screen itself rather than a database query. */}
+            <div className="rounded-xl border border-slate-200 p-3">
+              <p className="text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-2">
+                Chain of custody
+              </p>
+              <CustodyTrail state={custodyState} data={custodyDetail} error={custodyError} />
             </div>
 
             {/* Header / Meta */}

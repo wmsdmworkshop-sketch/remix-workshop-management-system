@@ -24,10 +24,13 @@ export function getApiBaseUrl(): string {
     return envUrl.trim().replace(/\/+$/, '');
   }
 
-  const isNative = typeof window !== 'undefined' && (
-    Capacitor.isNativePlatform() ||
-    (window.location && window.location.hostname === 'localhost' && !!(window as any).Capacitor)
-  );
+  // `@capacitor/core` defines `window.Capacitor` on plain web as well, so its
+  // mere presence is NOT a native signal. Treating it as one made every desktop
+  // localhost dev session send /api/* to production, where CORS refused it and
+  // the app could never load data. `isNativePlatform()` is the real signal and
+  // already covers the bundled-asset case: that WebView runs at
+  // https://localhost but is still a native platform.
+  const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform();
 
   if (isNative) {
     return DEFAULT_PRODUCTION_API_URL;

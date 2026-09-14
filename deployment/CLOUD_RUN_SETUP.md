@@ -1,5 +1,15 @@
 # DWIP Enterprise ERP — Cloud Run Setup Guide
 
+> [!WARNING]
+> **SUPERSEDED — this does not describe production.** It documents the planned
+> `dwip-pilot` / `dwip-prod` topology from the GCP-001 sprint, which was never deployed.
+> Production is a single service: **`dwip-enterprise`** (project `giga-course-dp497`, region `asia-south1`).
+> See [DEPLOY_DWIP_ENTERPRISE.md](./DEPLOY_DWIP_ENTERPRISE.md) for the current runbook and
+> [cloudbuild.yaml](./cloudbuild.yaml) for the live pipeline.
+> _Known wrong here:_ service names `dwip-pilot`/`dwip-prod`, Artifact Registry repo `dwip-images`,
+> service account `dwip-cloudrun-sa`, `GEMINI_API_KEY` (AI is NVIDIA Nemotron — `NEMOTRON_API_KEY`),
+> and `server/app.ts` / `health/health.controller.ts` (the only server entry point is `server.ts`).
+
 ## Document Information
 
 | Field | Value |
@@ -7,7 +17,7 @@
 | Application | DWIP Enterprise ERP RC1.1 |
 | Target Platform | Google Cloud Run (Fully Managed) |
 | Region | asia-south1 (Mumbai, India) |
-| Database | Railway MySQL (Pilot) |
+| Database | Google Cloud SQL for MySQL 8 |
 | Registry | Google Artifact Registry |
 | CI/CD | Google Cloud Build |
 
@@ -22,8 +32,8 @@ Before starting, confirm these prerequisites are met:
 - [ ] `docker` installed locally (for local image testing)
 - [ ] `gcloud auth login` completed
 - [ ] GitHub repository: `wmsdmworkshop-sketch/remix-workshop-management-system`
-- [ ] Railway MySQL database running with pilot data loaded
-- [ ] Railway MySQL public TCP host, port, user, password available
+- [ ] Cloud SQL for MySQL 8 database running with production data loaded
+- [ ] Cloud SQL host, port, user, password available
 
 ---
 
@@ -78,11 +88,12 @@ CUST_JWT_VAL=$(node -e "console.log(require('crypto').randomBytes(48).toString('
 echo -n "$JWT_VAL"      | gcloud secrets versions add DWIP_JWT_SECRET          --data-file=- --project=$PROJECT_ID
 echo -n "$CUST_JWT_VAL" | gcloud secrets versions add DWIP_CUSTOMER_JWT_SECRET --data-file=- --project=$PROJECT_ID
 
-# Database credentials — from Railway dashboard
-echo -n "YOUR_RAILWAY_DB_HOST"     | gcloud secrets versions add DWIP_DB_HOST     --data-file=- --project=$PROJECT_ID
-echo -n "YOUR_RAILWAY_DB_USER"     | gcloud secrets versions add DWIP_DB_USER     --data-file=- --project=$PROJECT_ID
-echo -n "YOUR_RAILWAY_DB_PASSWORD" | gcloud secrets versions add DWIP_DB_PASSWORD --data-file=- --project=$PROJECT_ID
-echo -n "railway"                  | gcloud secrets versions add DWIP_DB_DATABASE --data-file=- --project=$PROJECT_ID
+# Database credentials — from the Cloud SQL instance
+echo -n "YOUR_CLOUD_SQL_DB_HOST"     | gcloud secrets versions add DWIP_DB_HOST     --data-file=- --project=$PROJECT_ID
+echo -n "YOUR_CLOUD_SQL_DB_USER"     | gcloud secrets versions add DWIP_DB_USER     --data-file=- --project=$PROJECT_ID
+echo -n "YOUR_CLOUD_SQL_DB_PASSWORD" | gcloud secrets versions add DWIP_DB_PASSWORD --data-file=- --project=$PROJECT_ID
+# Schema name is `railway` — a legacy name from the app's original Railway.app hosting, retained deliberately.
+echo -n "railway"                    | gcloud secrets versions add DWIP_DB_DATABASE --data-file=- --project=$PROJECT_ID
 
 # Gemini API Key — from Google AI Studio
 echo -n "YOUR_GEMINI_API_KEY" | gcloud secrets versions add DWIP_GEMINI_API_KEY --data-file=- --project=$PROJECT_ID

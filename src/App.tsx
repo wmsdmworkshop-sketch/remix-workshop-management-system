@@ -176,6 +176,35 @@ export default function App() {
     },
     [navigate]
   );
+
+  // ─── IN-APP BACK ──────────────────────────────────────────────────────────
+  //
+  // Navigation is URL-driven, so the browser's own history also contains entries
+  // from BEFORE the app was opened — `navigate(-1)` can therefore walk the user
+  // straight out of DWIP. This keeps a stack of the tabs actually visited in
+  // this session instead, and the Back button is hidden when that stack is empty
+  // rather than shown dead.
+  const [navHistory, setNavHistory] = React.useState<string[]>([]);
+  const lastTabRef = React.useRef<string>(activeTab);
+
+  React.useEffect(() => {
+    if (lastTabRef.current === activeTab) return;
+    const from = lastTabRef.current;
+    lastTabRef.current = activeTab;
+    // Bounded, so a long session cannot grow this without limit.
+    setNavHistory((h) => [...h, from].slice(-25));
+  }, [activeTab]);
+
+  const handleGoBack = React.useCallback(() => {
+    const prev = navHistory[navHistory.length - 1];
+    if (!prev) return;
+    // Set the ref before navigating, so the effect above does not record this
+    // hop as a new forward navigation and make Back oscillate between two tabs.
+    lastTabRef.current = prev;
+    setNavHistory((h) => h.slice(0, -1));
+    setActiveTab(prev);
+  }, [navHistory, setActiveTab]);
+
   const [lookupQuery, setLookupQuery] = useState<string>("");
 
   // Authentication State (Declared first so useEffect hooks can read user safely)
@@ -959,8 +988,19 @@ export default function App() {
   // away from wiping the workshop.
 
   // Fetch all database state from server
-  const fetchAllData = async (authToken?: string) => {
-    const activeToken = authToken || token;
+  const fetchAllData = async (authToken?: unknown) => {
+    // A REAL token string may override the session token. Nothing else may.
+    //
+    // This function is handed to 21 screens as `onRefresh`, and several wire it
+    // straight onto an onClick — e.g. the floor supervisor's "Sync Workspace"
+    // button (`onClick={onRefresh}`). React therefore calls it with the CLICK
+    // EVENT as the first argument. The old `authToken || token` treated that
+    // truthy object as a token, sent `Authorization: Bearer [object Object]`,
+    // got a correct 401 back, and the 401 branch below signed the user out — so
+    // "Sync Workspace" logged people out instead of refreshing. Guarding here
+    // fixes every call site at once.
+    const activeToken =
+      typeof authToken === "string" && authToken.trim() !== "" ? authToken : token;
     // P1/D-6: a failed load used to be logged to the console only, so the Job
     // Cards list rendered its "no job cards" empty state — a failed fetch was
     // indistinguishable from a genuinely empty workshop.
@@ -975,6 +1015,31 @@ export default function App() {
         "Authorization": `Bearer ${activeToken}`
       };
 
+      // Every request gets its own deadline, and none of them can reject.
+      //
+      // These nine used to run in a single bare Promise.all. fetch() rejects on
+      // a network error and never settles at all on a hung socket, so ONE slow
+      // endpoint was enough to leave Promise.all pending forever — setJobCards
+      // never ran, and the Job Cards screen read "0 in the workshop" while
+      // /api/job-cards was answering 200 with all 627 cards. A slow employees
+      // query did exactly that: it dragged a 600KB photo blob, blew the 10s
+      // query deadline, and wedged the request open.
+      //
+      // Now a slow endpoint degrades its own screen only. The 20s deadline is
+      // generous enough for a genuine cold-start query but still finite.
+      const FETCH_DEADLINE_MS = 20000;
+      const fetchWithDeadline = async (url: string): Promise<Response | null> => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), FETCH_DEADLINE_MS);
+        try {
+          return await fetch(url, { headers, signal: controller.signal });
+        } catch {
+          return null;
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+
       const [
         empRes,
         bayRes,
@@ -986,18 +1051,21 @@ export default function App() {
         alertRes,
         splitRes
       ] = await Promise.all([
-        fetch("/api/employees", { headers }),
-        fetch("/api/bays", { headers }),
-        fetch("/api/sr-types", { headers }),
-        fetch("/api/job-cards", { headers }),
-        fetch("/api/job-revenues", { headers }),
-        fetch("/api/carry-forward", { headers }),
-        fetch("/api/rework", { headers }),
-        fetch("/api/alerts", { headers }),
-        fetch("/api/revenue-splits", { headers })
-      ]);
+        "/api/employees",
+        "/api/bays",
+        "/api/sr-types",
+        "/api/job-cards",
+        "/api/job-revenues",
+        "/api/carry-forward",
+        "/api/rework",
+        "/api/alerts",
+        "/api/revenue-splits"
+      ].map(fetchWithDeadline));
 
-      if (empRes.status === 401 || jobRes.status === 401) {
+      // Only the REAL session token may sign the user out. A caller that passed
+      // its own token (the login flow) getting a 401 means that token was bad,
+      // not that the current session died — signing out here would be wrong.
+      if ((empRes?.status === 401 || jobRes?.status === 401) && activeToken === token) {
         console.warn("Session expired or invalid token. Logging out...");
         handleLogout();
         return;
@@ -1017,7 +1085,14 @@ export default function App() {
       // told rather than shown a fabricated empty workshop.
       const failed: string[] = [];
 
-      const readJson = async (res: Response, label: string): Promise<any | null> => {
+      const readJson = async (res: Response | null, label: string): Promise<any | null> => {
+        // A request that never came back is a failure of that screen, not a
+        // reason to abandon the other eight.
+        if (!res) {
+          console.error(`[fetchAllData] ${label} did not respond within ${FETCH_DEADLINE_MS}ms`);
+          failed.push(label);
+          return null;
+        }
         if (!res.ok) {
           console.error(`[fetchAllData] ${label} failed: HTTP ${res.status}`);
           failed.push(label);
@@ -1674,6 +1749,8 @@ export default function App() {
       aiModeCanToggle={aiModeCanToggle}
       aiModeCanRequest={aiModeCanRequest}
       aiModePendingRequests={aiModePending}
+      onBack={handleGoBack}
+      canGoBack={navHistory.length > 0}
     >
 
           {activeTab === "my-workspace" && (() => {
@@ -1938,6 +2015,13 @@ export default function App() {
               onAssignTechnicians={handleAssignTechnicians}
               currentUser={user}
               aiModeEnabled={aiModeEnabled}
+              onNavigate={(tabId, assignFilter) => {
+                // KPI-tile drill-down. The assign filter is set only for the job
+                // list, and always explicitly, so the destination reflects the
+                // tile pressed rather than a filter left over from an earlier one.
+                if (tabId === "jobs") setJobsAssignFilter(assignFilter ?? null);
+                setActiveTab(tabId);
+              }}
             />
           )}
 

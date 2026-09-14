@@ -27,17 +27,32 @@
 
 const BASE_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 
+/**
+ * Environment lookup that is safe in the browser.
+ *
+ * `process` exists on the server only. PartsWarrantyManager imports the model
+ * ids below into the staff SPA, so a bare `process.env.X` at module scope threw
+ * "ReferenceError: process is not defined" while the module was still being
+ * evaluated — which blanked the entire app before it could mount. On the client
+ * there is nothing to read, and nothing that *should* be read: resolveKey()
+ * below hands out the NVIDIA API key, which is server-only. An empty object here
+ * means a browser caller reports "AI is not configured" rather than silently
+ * appearing to have a working provider.
+ */
+const serverEnv: Record<string, string | undefined> =
+  typeof process !== "undefined" && process.env ? process.env : {};
+
 /** Text: chat, summarisation, classification, structured extraction from text. */
 export const NEMOTRON_TEXT_MODEL =
-  process.env.NEMOTRON_TEXT_MODEL || "nvidia/nemotron-3.5-lightning-30b-a3b";
+  serverEnv.NEMOTRON_TEXT_MODEL || "nvidia/nemotron-3.5-lightning-30b-a3b";
 
 /** Vision: reading text out of photographs and scanned documents. */
 export const NEMOTRON_VISION_MODEL =
-  process.env.NEMOTRON_VISION_MODEL || "nvidia/nemotron-parse-2.0";
+  serverEnv.NEMOTRON_VISION_MODEL || "nvidia/nemotron-parse-2.0";
 
 /** Audio: transcribing a spoken note. */
 export const NEMOTRON_AUDIO_MODEL =
-  process.env.NEMOTRON_AUDIO_MODEL || "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
+  serverEnv.NEMOTRON_AUDIO_MODEL || "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
 
 /**
  * The configured key, or "" when there is nothing usable.
@@ -50,7 +65,7 @@ export const NEMOTRON_AUDIO_MODEL =
  * sent upstream to fail.
  */
 function resolveKey(): string {
-  const raw = (process.env.NEMOTRON_API_KEY || process.env.NVIDIA_API_KEY || "").trim();
+  const raw = (serverEnv.NEMOTRON_API_KEY || serverEnv.NVIDIA_API_KEY || "").trim();
   if (!raw) return "";
   if (/^(your[_-]|<|xxx|placeholder|changeme|todo)/i.test(raw)) return "";
   if (!raw.startsWith("nvapi-")) return "";
@@ -126,7 +141,7 @@ export async function callNemotron(
   }
 
   const model = opts.model || NEMOTRON_TEXT_MODEL;
-  const timeoutMs = Number(opts.timeoutMs || process.env.NEMOTRON_TIMEOUT_MS || 45000); // realdata-allow: request timeout in ms, not displayed data
+  const timeoutMs = Number(opts.timeoutMs || serverEnv.NEMOTRON_TIMEOUT_MS || 45000); // realdata-allow: request timeout in ms, not displayed data
 
   const messages: any[] = [];
   if (opts.system) messages.push({ role: "system", content: opts.system });

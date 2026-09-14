@@ -1,5 +1,11 @@
 # DWIP Enterprise ERP — Google Cloud Deployment Checklist
 
+> [!WARNING]
+> **SUPERSEDED — this does not describe production.** The checklist targets the planned
+> `dwip-pilot`/`dwip-prod` services and a `DWIP_GEMINI_API_KEY` secret. Live production is the
+> single service **`dwip-enterprise`** and the AI provider is NVIDIA Nemotron
+> (`NEMOTRON_API_KEY`), not Gemini. See [DEPLOY_DWIP_ENTERPRISE.md](./DEPLOY_DWIP_ENTERPRISE.md).
+
 **Sprint:** GCP-002  
 **Status:** FINAL — Pre-Execution Gate
 
@@ -15,8 +21,8 @@
 | A4 | `gcloud auth application-default login` completed | ☐ |
 | A5 | GCP Project ID confirmed and available | ☐ |
 | A6 | GitHub repo `wmsdmworkshop-sketch/remix-workshop-management-system` accessible | ☐ |
-| A7 | Railway MySQL database is LIVE and accessible | ☐ |
-| A8 | Railway DB host, user, password, database name confirmed | ☐ |
+| A7 | Cloud SQL database is LIVE and accessible | ☐ |
+| A8 | Cloud SQL host, user, password, database name confirmed | ☐ |
 | A9 | Gemini API key available (optional) | ☐ |
 
 ---

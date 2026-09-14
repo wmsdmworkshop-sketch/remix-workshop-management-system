@@ -44,3 +44,6 @@ public/uploads/
 # Local DB backups (contain real customer PII — names, mobile numbers)
 backups/
 
+# Spreadsheet exports staged for DMS/history import (contain real customer PII)
+imports/
+

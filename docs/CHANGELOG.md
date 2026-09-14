@@ -9,6 +9,83 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.3 — gate-out evidence schema repair — **RELEASE**
+
+**Build source:** working tree at `790d315` plus **uncommitted** changes (the
+deploy pipeline builds the working tree, not the commit). Committing before the
+next deploy would make this line accurate.
+**Release type:** PRODUCTION
+
+Found by driving a real job card from gate-in to gate-out end to end.
+
+### Fixed
+
+- **Gate-out was impossible** (production-critical). `tbl_evidence` was missing
+  `job_id`, `gate_pass_id`, `image_url`, `capture_source` and `captured_by`, and
+  `tbl_gate_out` was missing `image_url`. Both tables are declared in `server.ts`
+  with `CREATE TABLE IF NOT EXISTS`, but already existed from a different lineage,
+  so the declarations were silent no-ops — the same defect migration 028 fixed for
+  `tbl_handoff_sla`. Effect: `POST /api/gate-out/evidence` answered 500, so no
+  rear-plate capture could ever be registered, and `recordGateOut()` then refused
+  with `REAR_EVIDENCE_REQUIRED` — instructing the operator to perform the one step
+  that could not succeed. **No vehicle could be gated out in any environment.**
+  Fixed by migration `030_evidence_gateout_columns.ts` (additive, nullable,
+  `INFORMATION_SCHEMA`-guarded, idempotent).
+- **`captureCrmInvoice` accepted a missing invoice date.** `crm_invoice_date` is
+  NOT NULL with no default and was bound with no fallback, so omitting it surfaced
+  as a raw mysql2 `Bind parameters must not contain undefined` inside a 500,
+  naming neither the field nor the caller. Now rejected as
+  `BILLING_INVOICE_DATE_REQUIRED`.
+- **A billing readiness gate could block every job at once.** The pending-parts
+  count compared a varchar job-number column against a bound value; a numeric bind
+  makes MySQL compare numerically, coercing every non-numeric stored value to 0 and
+  matching the whole table — so the gate reported a table-wide count as pending
+  parts work and blocked billing for every job. Now cast to `CHAR` with an explicit
+  collation.
+- **`SELECT *` on `employees` removed** from `EmployeeRepository.findAll`. One
+  `profile_photo` LONGTEXT row carried 601,600 of the 607,493 bytes returned; the
+  other 43 columns total under 6KB. It is an optional field with no reader. The
+  oversized transfer could exceed the query deadline mid-flight and wedge a pool
+  connection, exhausting the pool (297ms → 43ms).
+- **`fetchAllData` no longer blanks the console when one endpoint stalls.** All
+  nine requests ran in one bare `Promise.all`, so a single slow endpoint left it
+  pending forever and the Job Cards screen read "0 in the workshop" while
+  `/api/job-cards` was returning 200 with all 627 cards. Each request now has its
+  own deadline and cannot reject.
+- **`DB_CONNECT_TIMEOUT` is configurable** (default 15000, was a hardcoded 2000).
+  Cloud SQL over its public IP regularly needs longer than 2s to accept a
+  connection — a *successful* probe was observed at 3330ms — so connects aborted,
+  the pool tripped OFFLINE and auth returned 401s.
+
+### Added
+
+- `src/tests/gate_in_to_gate_out.e2e.spec.ts` — drives one vehicle from gate-in to
+  gate-out as a single super user, asserting persisted state at every stage.
+- `test-infra/seed_test_superuser.ts` — seeds the one super user the workflow
+  suites authenticate as (the sandbox had `sbx_*` accounts in the database but in
+  no file in the repository).
+
+### Verified
+
+Full journey against the isolated `wms_test` schema: gate-in → allocation → SA
+estimate → floor QC handoff → QC acknowledge → QC PASS → SA acknowledge →
+`PRE_INVOICE_READY` → billing chain → `BILLING_COMPLETED` → payment → gate pass →
+rear-plate evidence → gate-out. Persisted end state read back from the database:
+`job_card_master.live_status = 'COMPLETED'`, `tbl_pre_invoice.status =
+'BILLING_COMPLETED'`, `tbl_gate_out.verification_result = 'VERIFIED'`,
+`tbl_evidence.lifecycle_status = 'VERIFIED'`.
+
+### Known, not fixed
+
+- `wms_test.role_permissions` lacks `can_comment`, which the application expects.
+  The sandbox's role-permission seeding therefore silently does nothing. Verified
+  against the test schema only; **unconfirmed against production.**
+- `RetryExecutor` still abandons in-flight queries on timeout without cancelling
+  them, so the pool-connection leak mechanism remains — only its main trigger was
+  removed. A durable fix requires the timeout to destroy the connection.
+
+---
+
 ## v1.1.0-rc.2 — P1 Job Card truthfulness — **TEST RELEASE**
 
 **Build source commit:** `b21754c96df95b048bef400720ef504ef7196c86`

@@ -2824,7 +2824,11 @@ export const tbl_handoff_sla = mysqlTable('tbl_handoff_sla', {
   status: varchar('status', { length: 50 }).default('ON_TRACK'),
   escalation_level: int('escalation_level').default(0),
   escalated_at: timestamp('escalated_at'),
-  branch_id: varchar('branch_id', { length: 50 }).notNull()
+  branch_id: varchar('branch_id', { length: 50 }).notNull(),
+  // Gate-out SLA clocks (migration 028) key on a stable job id alongside the
+  // per-stage entity_id. Nullable: the pipeline engines write entity_id only.
+  job_id: varchar('job_id', { length: 50 }),
+  opened_at: timestamp('opened_at').defaultNow()
 });
 
 // -------------------------------------------------------------------

@@ -1,5 +1,15 @@
 # DWIP Enterprise ERP — Security Baseline
 
+> [!NOTE]
+> **Partly superseded.** The controls described here broadly still apply, but the
+> resource names are from the planned GCP-001 topology: the service account is
+> `772298398554-compute@developer.gserviceaccount.com` (not `dwip-cloudrun-sa`), and the AI
+> provider is NVIDIA Nemotron (`NEMOTRON_API_KEY`) — the `GEMINI_API_KEY` row below is obsolete.
+> **The secret-storage rows are also wrong:** production holds `JWT_SECRET`,
+> `CUSTOMER_JWT_SECRET`, `DB_PASSWORD`, `DB_HOST` etc. as **plaintext Cloud Run environment
+> variables on the running service** — Secret Manager and `dwip-cloudrun-sa` are not in use.
+> See [DEPLOY_DWIP_ENTERPRISE.md](./DEPLOY_DWIP_ENTERPRISE.md) for current infrastructure facts.
+
 **Version:** RC1.1  
 **Review:** GCP-002  
 **Standard:** Google Cloud Security Foundations + OWASP Top 10
@@ -34,7 +44,7 @@
 | `DB_HOST` | Secret Manager | On infrastructure change | dwip-cloudrun-sa only |
 | `DB_USER` | Secret Manager | On infrastructure change | dwip-cloudrun-sa only |
 | `DB_DATABASE` | Secret Manager | On infrastructure change | dwip-cloudrun-sa only |
-| `GEMINI_API_KEY` | Secret Manager | As per Google AI Studio policy | dwip-cloudrun-sa only |
+| `NEMOTRON_API_KEY` | Secret Manager / Cloud Run env var | As per NVIDIA NIM policy | dwip service account only |
 
 ### Rules
 - ✅ Secrets never in environment variables (`--set-env-vars`) — always `--set-secrets`
@@ -72,7 +82,7 @@
 | Referrer-Policy | ✅ `strict-origin-when-cross-origin` |
 | Permissions-Policy | ✅ `camera=(self), geolocation=(self), microphone=()` |
 | CORS | ✅ Allowlist-only: Cloud Run URL + `ADDITIONAL_CORS_ORIGINS` |
-| VPC | ❌ Not required for Railway MySQL (public TCP with SSL) |
+| VPC | ❌ Not required for Cloud SQL over public TCP with SSL |
 | Cloud Armor | ❌ Not provisioned (RC1.1 pilot) — RECOMMENDED for production |
 
 ---
@@ -94,10 +104,10 @@
 
 | Control | Status |
 |---|---|
-| Database transit encryption | ✅ `DB_SSL=true` — Railway provides TLS |
-| Database at-rest encryption | ✅ Railway encrypts at rest |
+| Database transit encryption | ✅ `DB_SSL=true` — Cloud SQL provides TLS |
+| Database at-rest encryption | ✅ Cloud SQL encrypts at rest |
 | PII in logs | ⚠️ `customer_mobile` and `vrn` MAY appear in error logs — review |
-| Backup encryption | ✅ Railway automated encrypted backups |
+| Backup encryption | ✅ Cloud SQL automated encrypted backups |
 
 ---
 

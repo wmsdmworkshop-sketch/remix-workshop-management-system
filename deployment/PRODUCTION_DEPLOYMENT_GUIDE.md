@@ -1,5 +1,14 @@
 # DWIP Enterprise ERP — Production Deployment Guide
 
+> [!WARNING]
+> **SUPERSEDED — this does not describe production.** It promotes an image from
+> `dwip-pilot` to `dwip-prod`; neither service exists. Production is the single service
+> **`dwip-enterprise`**, deployed image-only through [cloudbuild.yaml](./cloudbuild.yaml).
+> See [DEPLOY_DWIP_ENTERPRISE.md](./DEPLOY_DWIP_ENTERPRISE.md) for the current runbook.
+> _Known wrong here:_ `dwip-pilot`/`dwip-prod`, the `GEMINI_API_KEY` secret, and the
+> `GET /api/ready` readiness check — that route is not registered in `server.ts`
+> (only `GET /api/health` exists).
+
 **Application:** DWIP Enterprise ERP RC1.1  
 **Platform:** Google Cloud Run (asia-south1)  
 **Document Type:** Operational Runbook  
@@ -38,15 +47,15 @@ Cloud Run: dwip-prod
 - [ ] All 7 Secret Manager secrets populated with real values
 
 ### Database
-- [ ] Railway MySQL database is RUNNING and ACCESSIBLE
-- [ ] Secret `DWIP_DB_HOST` contains correct Railway host
+- [ ] Cloud SQL database is RUNNING and ACCESSIBLE
+- [ ] Secret `DWIP_DB_HOST` contains the correct Cloud SQL host
 - [ ] Readiness check `GET /api/ready` returns `READY` locally
 
 ### Security
 - [ ] JWT secrets are 64+ char random values
 - [ ] No `.env` file committed to Git
 - [ ] `workshop_db.json` excluded from Docker image (`.dockerignore`)
-- [ ] `DB_SSL=true` for Railway connection
+- [ ] `DB_SSL=true` for the Cloud SQL connection
 
 ### CI/CD
 - [ ] GitHub repository connected to Cloud Build
@@ -239,7 +248,7 @@ gcloud secrets versions disable VERSION_NUMBER --secret=DWIP_JWT_SECRET --projec
 | Symptom | Likely Cause | Action |
 |---|---|---|
 | Container startup fails | Missing secret | Check Cloud Logging for `MISSING` env var output |
-| HTTP 503 on all routes | DB unreachable | Check `GET /api/ready` — if NOT_READY, Railway MySQL is down |
+| HTTP 503 on all routes | DB unreachable | Check `GET /api/ready` — if NOT_READY, the Cloud SQL database is unreachable |
 | HTTP 401 on login | Wrong JWT_SECRET version | Verify secret version in Secret Manager |
 | Memory OOM | Traffic spike | Increase `--memory` to 1Gi via `gcloud run services update` |
 | Build fails at lint | TypeScript error | Fix error locally, push fix commit |

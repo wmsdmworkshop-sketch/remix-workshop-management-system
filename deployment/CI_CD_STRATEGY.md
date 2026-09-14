@@ -1,5 +1,12 @@
 # DWIP Enterprise ERP — CI/CD Strategy
 
+> [!WARNING]
+> **SUPERSEDED — this does not describe production.** The `dwip-pilot` → `dwip-prod`
+> promotion flow below was never implemented. Production deploys are a **manual human gate**
+> to the single service **`dwip-enterprise`**.
+> See [DEPLOY_DWIP_ENTERPRISE.md](./DEPLOY_DWIP_ENTERPRISE.md) for the real pre-flight gates
+> and [cloudbuild.yaml](./cloudbuild.yaml) for the actual pipeline.
+
 **Review:** GCP-002  
 **Version:** RC1.1
 

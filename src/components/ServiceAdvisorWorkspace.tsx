@@ -467,20 +467,33 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
           actionType: "CREATE_ESTIMATE",
           jobCard: j
         });
-      } else if (j.current_workflow_state === "QC_PASSED" || j.status === "QC Passed" || j.status === "Ready") {
+      } else if (
+        // The REAL stage field. `current_workflow_state` exists in no table (always
+        // undefined) and job_card_master.job_status is "Ready" for EVERY in-flight
+        // job, so the old `j.status === "Ready"` clause matched every single vehicle
+        // and advertised "Send Pre-Invoice" before QC had even run. workshop_stage is
+        // the in-memory mirror of job_card_master.live_status — the authoritative stage.
+        ["QC_PASSED", "PRE_INVOICE_READY", "SA_PRE_INVOICE_REVIEW"].includes(String(j.workshop_stage || ""))
+      ) {
+        // QC PASS alone does not open the pre-invoice — the advisor must acknowledge
+        // the handoff, which is what writes PRE_INVOICE_READY. So the two stages are
+        // different actions, not one.
+        const acked = j.workshop_stage !== "QC_PASSED";
         items.push({
           id: j.job_id,
           vrn: j.vrn,
           jobNo: j.job_card_no || `TEMP-${j.job_id}`,
           customer: j.customer_name || "Customer",
-          stage: "Pre-Invoice & Delivery Ready",
+          stage: acked ? "Pre-Invoice & Delivery Ready" : "QC Passed — Awaiting Your Acknowledgement",
           waitingMins: elapsedMins,
           slaRemaining,
           isBreached: false,
           urgency: "MEDIUM",
-          reason: "Vehicle passed 25-point QC; pre-invoice & handover ready",
-          actionLabel: "Send Pre-Invoice",
-          actionType: "SEND_PREINVOICE",
+          reason: acked
+            ? "QC passed and acknowledged; the pre-invoice can be compiled"
+            : "Vehicle passed the 25-point QC — acknowledge it to unlock the pre-invoice",
+          actionLabel: acked ? "Send Pre-Invoice" : "Acknowledge QC Pass",
+          actionType: acked ? "SEND_PREINVOICE" : "ACK_QC_PASSED",
           jobCard: j
         });
       } else if (isBreached) {
@@ -573,8 +586,40 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
       return;
     }
     const jobId = item.jobCard?.job_id ?? item.id;
+
+    // QC PASS does not by itself put a vehicle into the pre-invoice queue — the
+    // advisor has to acknowledge the handoff, and THAT is what writes
+    // PRE_INVOICE_READY (billing-engine refuses to compile anything not in that
+    // state). Nothing in the UI ever called /api/qc/sa-acknowledge, so this step was
+    // unreachable and the pre-invoice queue could never fill.
+    if (item.actionType === "ACK_QC_PASSED") {
+      void acknowledgeQcPassed(Number(jobId));
+      return;
+    }
+
     if (jobId != null) setSelectedJobId(Number(jobId));
     setActiveTab("my-work");
+  };
+
+  // Acknowledge a QC PASS: QC_PASSED -> PRE_INVOICE_READY, which is the gate the
+  // billing engine checks before it will compile a pre-invoice.
+  const acknowledgeQcPassed = async (jobId: number) => {
+    if (!Number.isFinite(jobId) || jobId <= 0) return;
+    try {
+      const t = getStaffToken();
+      const res = await fetch(`/api/qc/sa-acknowledge/${jobId}`, {
+        method: "POST",
+        headers: t ? { "Content-Type": "application/json", Authorization: `Bearer ${t}` } : { "Content-Type": "application/json" },
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data.success) {
+        alert(data?.error || "Failed to acknowledge the QC pass.");
+        return;
+      }
+      await onRefresh();
+    } catch (e: any) {
+      alert(`Failed to acknowledge QC: ${e.message || "network error"}`);
+    }
   };
 
   // Edit intake data — justification-gated (every edit needs a reason). The
@@ -623,7 +668,11 @@ export const ServiceAdvisorWorkspace: React.FC<ServiceAdvisorWorkspaceProps> = R
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none border-b border-slate-800">
         {[
           { id: "my-attention", label: "MY ATTENTION", count: myAttentionItems.length, badgeColor: "bg-red-500 text-white" },
-          { id: "my-vehicles", label: "MY VEHICLES TODAY", count: jobCards.length, badgeColor: "bg-blue-600 text-white" },
+          // Was `jobCards.length` — the RAW, unfiltered job-card total (185), which is
+          // neither this advisor's vehicles nor today's. It contradicted the panel's own
+          // header two hundred lines down, which correctly shows filteredVehicles.length.
+          // `myJobCards` is the scoped list this tab actually renders.
+          { id: "my-vehicles", label: "MY VEHICLES TODAY", count: myJobCards.length, badgeColor: "bg-blue-600 text-white" },
           { id: "my-work", label: "MY WORK & ESTIMATES", count: dashboardStats.pendingEstimates + dashboardStats.pendingApprovals, badgeColor: "bg-amber-500 text-slate-950" },
           { id: "my-billing", label: "MY BILLING & GATE PASS", count: null, badgeColor: "" },
           { id: "my-performance", label: "MY PERFORMANCE", count: null, badgeColor: "" },
@@ -1531,7 +1580,11 @@ const SAPreInvoicePanel: React.FC<{ currentUser?: any; jobCards: any[]; onRefres
       {loading ? (
         <p className="text-xs text-slate-400 text-center py-4">Loading…</p>
       ) : readyQueue.length === 0 ? (
-        <p className="text-xs text-slate-500 italic text-center py-4">No vehicles ready for pre-invoicing.</p>
+        <p className="text-xs text-slate-500 italic text-center py-4">
+          No vehicles ready for pre-invoicing. Only jobs you have acknowledged after a QC PASS appear
+          here — acknowledging is what sets the job to PRE_INVOICE_READY, which the billing engine
+          requires before it will compile a pre-invoice.
+        </p>
       ) : (
         <div className="space-y-2">
           {readyQueue.map((j: any) => (

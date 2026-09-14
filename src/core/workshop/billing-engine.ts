@@ -270,8 +270,23 @@ export class BillingEngine {
     // 4. No PENDING/ACKNOWLEDGED parts requests. tbl_parts_requests.job_card_id
     // is actually the job_card_no STRING (matches how floor-execution-engine.ts
     // writes it), not the numeric job_card_master.job_card_id.
+    //
+    // CAST(? AS CHAR) is load-bearing, not decoration. `job_card_id` is a
+    // varchar, so `job_card_id = 0` puts MySQL into a NUMERIC comparison: every
+    // stored value that isn't numeric ('JC-TEST-501', 'JC-…') coerces to 0 and
+    // matches. One wrongly-typed or zeroed bind therefore makes this gate report
+    // the table's entire row count and block billing for EVERY job, with a
+    // message that looks like real pending parts work. Forcing the parameter to
+    // a string makes such a bind match nothing instead — a loud, local failure
+    // rather than a silent, workshop-wide one. Observed live on 2026-09-14.
+    //
+    // The COLLATE is required too: a bare CAST uses the CONNECTION collation
+    // (utf8mb4_unicode_ci) while the column is utf8mb4_0900_ai_ci, and comparing
+    // the two raises "Illegal mix of collations ... for operation '='".
     const [pendingParts]: any = await this.execute(
-      `SELECT COUNT(*) AS cnt FROM tbl_parts_requests WHERE job_card_id = ? AND status IN ('PENDING','ACKNOWLEDGED')`,
+      `SELECT COUNT(*) AS cnt FROM tbl_parts_requests
+        WHERE job_card_id = CAST(? AS CHAR) COLLATE utf8mb4_0900_ai_ci
+          AND status IN ('PENDING','ACKNOWLEDGED')`,
       [job.job_card_no]
     );
     if (pendingParts[0].cnt > 0) {
@@ -1151,6 +1166,17 @@ export class BillingEngine {
     }
     if (!payload.crm_invoice_number || payload.crm_invoice_number.trim() === "") {
       throw new Error(`BILLING_INVOICE_NO_REQUIRED: CRM invoice number is mandatory.`);
+    }
+    // crm_invoice_date is NOT NULL in tbl_crm_billing_evidence and is bound
+    // directly (no `?? null`, unlike its neighbours). An omitted date therefore
+    // reached mysql2 as `undefined` and surfaced as the raw driver error "Bind
+    // parameters must not contain undefined" inside a 500 — no indication of
+    // which field was missing or that it was the caller's. Validated here, next
+    // to the invoice number, so it fails with a nameable reason.
+    if (!payload.crm_invoice_date) {
+      throw new Error(
+        `BILLING_INVOICE_DATE_REQUIRED: CRM invoice date is mandatory (tbl_crm_billing_evidence.crm_invoice_date is NOT NULL).`
+      );
     }
 
     // Run all 13 validation checks

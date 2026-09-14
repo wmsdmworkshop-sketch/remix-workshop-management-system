@@ -2,7 +2,7 @@ import React from "react";
 import { 
   LayoutDashboard, Truck, Wrench, Package, Users, TrendingUp, Settings, 
   HelpCircle, User, LogOut, ChevronRight, Bell, Search, Activity, Sparkles, Building,
-  Menu, X, KeyRound, ClipboardCheck
+  Menu, X, KeyRound, ClipboardCheck, ArrowLeft
 } from "lucide-react";
 import ChangePasswordModal from "./ChangePasswordModal";
 
@@ -87,6 +87,14 @@ interface AppShellProps {
   aiModeCanRequest?: boolean;
   /** Pending activation requests — shown to approvers as a badge. */
   aiModePendingRequests?: number;
+  /**
+   * Return to the previous screen. In-app only: the handler is undefined (and
+   * the button hidden) when the user has not navigated anywhere yet, because
+   * the browser's own history may contain entries from BEFORE the app opened
+   * and going back there would leave DWIP entirely.
+   */
+  onBack?: () => void;
+  canGoBack?: boolean;
   children: React.ReactNode;
 }
 
@@ -101,6 +109,8 @@ export default function AppShell({
   aiModeCanToggle = false,
   aiModeCanRequest = false,
   aiModePendingRequests = 0,
+  onBack,
+  canGoBack = false,
   children
 }: AppShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
@@ -343,6 +353,19 @@ export default function AppShell({
         {/* 2. TOP HEADER */}
         <header className="h-14 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between z-30 shrink-0">
           <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
+            {/* Back to the previous screen. Hidden entirely on a fresh load
+                where there is nothing to go back to, rather than shown dead. */}
+            {canGoBack && onBack && (
+              <button
+                onClick={onBack}
+                className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:border-orange-500/40 shrink-0 cursor-pointer"
+                title="Back to the previous screen"
+                aria-label="Go back"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+            )}
+
             {/* Mobile Hamburger Button */}
             <button 
               onClick={() => setMobileMenuOpen(true)}

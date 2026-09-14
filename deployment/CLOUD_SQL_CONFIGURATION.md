@@ -1,12 +1,20 @@
 # DWIP Enterprise ERP — Cloud SQL Configuration
 
+> [!NOTE]
+> **Live database:** Cloud SQL instance **`wms-mysql-db`**, reached over **public IP** with the
+> credentials supplied as plaintext Cloud Run env vars (`DB_HOST`, `DB_PORT`, `DB_USER`,
+> `DB_PASSWORD`, `DB_DATABASE`) — no Cloud SQL connector or Unix socket is in use.
+> The schema is still named `railway` (legacy name). The `dwip-prod` commands and the socket-based
+> plan below were never applied; the live service is `dwip-enterprise`.
+> See [DEPLOY_DWIP_ENTERPRISE.md](./DEPLOY_DWIP_ENTERPRISE.md).
+
 **Review:** GCP-002  
-**Status:** DEFERRED — RC2 Sprint  
-**Current Pilot Database:** Railway-managed MySQL 8.0 (retained for RC1.1 pilot)
+**Status:** LIVE — Cloud SQL is the current production database. The RC2 plan below is retained as a historical record.  
+**Current Production Database:** Google Cloud SQL for MySQL 8, reached over TCP with `DB_SSL=true`. The schema is still named `railway` — a legacy name from the app's original Railway.app hosting (see `src/config/env.ts`).
 
 ---
 
-## RC1.1 Pilot — Railway MySQL Configuration
+## Historical — RC1.1 Pilot Railway MySQL Configuration (no longer in use)
 
 ### Connection Parameters
 
@@ -19,7 +27,7 @@ Database:  railway                    → Secret: DWIP_DB_DATABASE
 SSL:       true                       → Env var: DB_SSL=true
 ```
 
-### Railway MySQL Reliability Characteristics
+### (Historical) Railway MySQL Reliability Characteristics
 
 | Feature | Railway Status | Notes |
 |---|---|---|
@@ -67,9 +75,9 @@ gcloud sql instances create dwip-mysql-prod \
 
 | Parameter | Value | Rationale |
 |---|---|---|
-| Version | MYSQL_8_0 | Matches Railway/current schema |
+| Version | MYSQL_8_0 | Matches the existing schema |
 | Tier | db-n1-standard-2 | 2 vCPU, 7.5 GB RAM — production workload |
-| Storage | 100 GB SSD, auto-increase | Railway dump is 3.3 GB; headroom for growth |
+| Storage | 100 GB SSD, auto-increase | Source dump is 3.3 GB; headroom for growth |
 | Availability | REGIONAL (HA) | Automatic failover, 99.95% SLA |
 | Backups | Daily at 02:00 AM | Low-traffic window |
 | PITR | 7-day transaction log | Point-in-time recovery enabled |

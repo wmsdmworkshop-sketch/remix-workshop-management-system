@@ -35,7 +35,15 @@ export interface JobProgress {
 const STAGE_PROGRESS: Record<string, { percent: number; label: string; tone: JobProgress["tone"] }> = {
   // --- Intake ---
   Waiting: { percent: 3, label: "Awaiting Gate-In", tone: "pending" },
+  // Real live_status values. `workshop_stage` is populated from live_status, so
+  // any value absent from this map silently fell through to the coarse `status`
+  // and the card was mislabelled. Several were missing on both sides: a job at
+  // QC_PASSED with job_status 'Ready' read "In Workshop" because NEITHER value
+  // appeared here.
+  Unassigned: { percent: 3, label: "Awaiting Allocation", tone: "pending" },
+  Assigned: { percent: 5, label: "Assigned", tone: "pending" },
   GATE_IN: { percent: 8, label: "Gate-In Complete", tone: "pending" },
+  GATE_ENTRY_DONE: { percent: 8, label: "Gate-In Complete", tone: "pending" },
   INTAKE_PENDING: { percent: 16, label: "Reception Intake", tone: "pending" },
   WAITING_ADVISOR: { percent: 22, label: "Awaiting Advisor", tone: "pending" },
 
@@ -50,21 +58,34 @@ const STAGE_PROGRESS: Record<string, { percent: number; label: string; tone: Job
   Active: { percent: 58, label: "Work In Progress", tone: "active" },
   "Carry Forward": { percent: 58, label: "Carried Forward", tone: "held" },
   Rework: { percent: 52, label: "Rework", tone: "problem" },
+  FLOOR_ALLOCATED: { percent: 45, label: "On the Floor", tone: "active" },
 
   // --- Quality ---
   Completed: { percent: 72, label: "Work Completed", tone: "active" },
+  // `Ready` is the job_status "work finished, vehicle not yet released" state and
+  // was missing entirely, so 19 live rows displayed as "In Workshop".
+  Ready: { percent: 96, label: "Ready for Gate-Out", tone: "done" },
   "QC Passed": { percent: 84, label: "QC Passed", tone: "active" },
+  QC_PASSED: { percent: 84, label: "QC Passed", tone: "active" },
   "QC Failed": { percent: 66, label: "QC Failed", tone: "problem" },
+  QC_FAILED_REWORK: { percent: 52, label: "Rework", tone: "problem" },
 
   // --- Closing ---
   FINAL_REVIEW: { percent: 88, label: "Final Review", tone: "active" },
   SA_PRE_INVOICE_REVIEW: { percent: 90, label: "Pre-Invoice Review", tone: "active" },
+  PRE_INVOICE_READY: { percent: 90, label: "Pre-Invoice Ready", tone: "active" },
   BILLING_PENDING: { percent: 92, label: "Billing Pending", tone: "active" },
   BILLING_IN_PROGRESS: { percent: 93, label: "Billing In Progress", tone: "active" },
   BILLING_COMPLETED: { percent: 95, label: "Billing Complete", tone: "active" },
   "Awaiting Gate Out": { percent: 96, label: "Awaiting Gate-Out", tone: "active" },
   Invoiced: { percent: 98, label: "Invoiced", tone: "done" },
   Closed: { percent: 100, label: "Gate-Out Complete", tone: "done" },
+  // The two terminal values this platform actually writes: `Delivered` is the
+  // job_status end state and `GATE_OUT` the live_status end state. Both were
+  // absent, so a finished card whose gate_out_time was not recorded — e.g. a
+  // historical backfill row — read "In Workshop" instead of "Gate-Out Complete".
+  Delivered: { percent: 100, label: "Gate-Out Complete", tone: "done" },
+  GATE_OUT: { percent: 100, label: "Gate-Out Complete", tone: "done" },
 
   // --- Terminal ---
   Cancelled: { percent: 0, label: "Cancelled", tone: "cancelled" },

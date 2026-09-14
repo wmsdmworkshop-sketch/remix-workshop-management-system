@@ -18,6 +18,12 @@ export interface FloorSupervisorWorkspaceProps {
   onAssignTechnicians: (id: number, allocs: any[]) => Promise<void>;
   currentUser?: any;
   aiModeEnabled?: boolean;
+  /**
+   * Navigate to another screen. When `tabId` is "jobs", `assignFilter`
+   * pre-filters the Job Cards list ("tech" = advisor set but no technician yet).
+   * The KPI tiles are drill-downs: a number you cannot open is a dead end.
+   */
+  onNavigate?: (tabId: string, assignFilter?: "sa" | "tech" | null) => void;
 }
 
 export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> = React.memo(({
@@ -30,7 +36,8 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
   onUpdateJob,
   onAssignTechnicians,
   currentUser,
-  aiModeEnabled = true
+  aiModeEnabled = true,
+  onNavigate
 }) => {
   const [activeTab, setActiveTab] = useState<string>("my-attention");
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
@@ -324,16 +331,31 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
       {activeTab === "my-attention" && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {/* Each tile is a drill-down into the screen that owns the number.
+                A KPI you cannot open is a dead end — the supervisor could read
+                "157 active jobs" but had no way to see which 157. */}
             {[
-              { label: "Active Jobs", val: supervisorStats.active, color: "text-white" },
-              { label: "Unallocated", val: pendingQueue.length, color: "text-amber-400 font-bold" },
-              { label: "Bay Utilization", val: supervisorStats.bayUtil, color: "text-emerald-400" },
-              { label: "SLA Alerts", val: supervisorStats.warnings, color: "text-red-400 font-black" }
+              { label: "Active Jobs", val: supervisorStats.active, color: "text-white", tab: "jobs", filter: null as "sa" | "tech" | null, hint: "Open the job card list" },
+              { label: "Unallocated", val: pendingQueue.length, color: "text-amber-400 font-bold", tab: "jobs", filter: "tech" as "sa" | "tech" | null, hint: "Job cards waiting for a technician" },
+              { label: "Bay Utilization", val: supervisorStats.bayUtil, color: "text-emerald-400", tab: "bay-tat", filter: null as "sa" | "tech" | null, hint: "Open the bay monitor" },
+              { label: "SLA Alerts", val: supervisorStats.warnings, color: "text-red-400 font-black", tab: "jobs", filter: null as "sa" | "tech" | null, hint: "Job cards carrying SLA alerts" }
             ].map((stat, idx) => (
-              <div key={idx} className="bg-slate-900 border border-slate-800 p-4 rounded-xl text-center space-y-1">
+              <button
+                key={idx}
+                type="button"
+                onClick={() => onNavigate?.(stat.tab, stat.filter)}
+                disabled={!onNavigate}
+                title={onNavigate ? stat.hint : undefined}
+                className="bg-slate-900 border border-slate-800 p-4 rounded-xl text-center space-y-1 transition-all cursor-pointer hover:border-blue-500 hover:bg-slate-800/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-default disabled:hover:border-slate-800 disabled:hover:bg-slate-900"
+              >
                 <span className="text-[9px] text-slate-500 font-bold uppercase block">{stat.label}</span>
                 <span className={`text-lg font-black ${stat.color}`}>{stat.val}</span>
-              </div>
+                {onNavigate && (
+                  <span className="block text-[8px] font-bold uppercase tracking-wider text-slate-600">
+                    View details →
+                  </span>
+                )}
+              </button>
             ))}
           </div>
 

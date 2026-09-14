@@ -43,7 +43,7 @@ export const createPool = () => {
     waitForConnections: true,
     queueLimit: 0,
     dateStrings: true, // Return dates as strings to avoid automatic timezone conversions
-    connectTimeout: 2000,
+    connectTimeout: envConfig.DB_CONNECT_TIMEOUT,
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000,
   };
