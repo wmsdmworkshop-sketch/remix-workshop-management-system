@@ -9,6 +9,94 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.6 — pending-action reminders in the Android app — **RELEASE**
+
+**Build source:** working tree at `31ad600` plus these changes.
+**Release type:** PRODUCTION (web) · **the native half additionally needs a new APK**
+
+**Owner request (2026-09-14):** "in the android app send notification to the user where
+his actions are pending, every 5 mins."
+
+### What was built
+
+- **`src/lib/action-reminders.ts`** — the policy, pure and unit-testable: what counts
+  as a pending action, when a reminder may fire, and what it is allowed to say.
+- **`src/lib/action-reminder-scheduler.ts`** — the effectful half: reads the user's own
+  work, publishes one Android notification, and runs the 5-minute timer.
+- Mounted once in `AppShell`; notification permission and channel are set up on first use.
+- Android: `@capacitor/local-notifications@8.3.1` added, `POST_NOTIFICATIONS` and
+  `VIBRATE` declared, plugin wired through `capacitor.build.gradle` and
+  `capacitor.settings.gradle`.
+- The user's own pending work is read from `/api/my/summary` (`mine.pending`,
+  `mine.breaches`) and `/api/my/alerts` (the itemised alerts the server derives for
+  that user). NOT from `/api/notifications`, which is workshop-wide and would tell
+  every user about everyone's work.
+
+### The three rules that stop it being muted
+
+A naive "fire every 5 minutes" gets the app silenced inside a day, so:
+
+1. **It never fires when nothing is pending.** A clock-driven nudge that claims work
+   against an empty queue is a fabricated statement about someone's workload, and it
+   destroys the signal for the times it matters. When the queue empties, any standing
+   reminder is WITHDRAWN rather than left in the tray describing work already done.
+2. **Every tick republishes ONE notification id**, so the tray shows the current
+   reminder instead of ~96 near-identical copies across a working day.
+3. **08:00–20:00 window.** A 03:00 reminder does not get actioned; it gets the app
+   silenced. Overridable per device via `dwip_reminder_window`
+   (`{"startHour":9,"endHour":18}`); a malformed value falls back to the default
+   rather than opening the window to all hours.
+
+Empty results, failed fetches and unreadable fields all resolve to "say nothing" —
+never to 0, which would read as "nothing to do" and silently disable the reminder.
+
+### DELIVERY LIMIT — the honest scope
+
+**This cannot fire every 5 minutes while the app is closed.** It runs on a JS timer
+inside the Capacitor WebView, so it fires while the app is running and stops when
+Android suspends the WebView. Android's floor for periodic background work
+(WorkManager) is **15 minutes**, enforced by the OS — no timer can beat it. True
+background delivery needs one of:
+
+- **FCM server push** — a Firebase project, `google-services.json`, a device-token
+  table and `@capacitor/push-notifications`; or
+- a **native foreground service**, which works but shows a permanent "DWIP is
+  running" notification.
+
+Neither is part of this change, and nothing here pretends otherwise: on the web, and
+in any APK built before the plugin existed, `isActionReminderSupported()` is false and
+the entire path is an honest no-op.
+
+### The native half needs a rebuilt APK
+
+The Android app is a remote-URL WebView shell (`capacitor.config.ts` → `server.url`),
+so the JS ships with the web deploy — but the PLUGIN it calls only exists in an APK
+built after this change. **Every APK distributed so far lacks it.**
+
+`public/downloads/*.apk` were deliberately NOT overwritten: they are separately named
+legacy artifacts (`dwip-driver`, `dwip-executive`, `dwip-customer`) and no build step
+regenerates them. The new build is a discrete artifact for review.
+
+R8 keep rules already covered the new plugin generically
+(`-keep class com.capacitorjs.plugins.** { *; }`), which matters because Capacitor
+loads plugins by reflection and a stripped plugin fails only at runtime.
+
+### Verified
+
+- `src/tests/action-reminders.test.ts` (new, 27 cases): the 5-minute interval and the
+  fixed notification id; the window (inclusive start, exclusive end, midnight-wrapping
+  night shift, zero-width = unrestricted); a malformed override falling back to the
+  default instead of all hours; counts read from `mine.*` with a `counts.*` fallback;
+  itemised alerts with severity mapping; junk input never throwing and never inventing
+  a count; `buildReminderNotification` returning **null** for an empty queue (so it can
+  never say "0 pending"); singular/plural wording; fingerprint stability; and
+  `decideReminder` refusing outside the window even with real work, and refusing an
+  empty queue during it.
+- `npm run build:rc1` succeeds; `tsc --noEmit` adds no new errors; the suite's 7
+  failures are unchanged from before this change (228 tests, up from 201).
+
+---
+
 ## v1.1.0-rc.5 — gate pass requires settled payment — **RELEASE**
 
 **Build source:** working tree at `f3aeee4` plus these changes.

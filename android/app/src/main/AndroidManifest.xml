@@ -43,6 +43,15 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!--
+      Pending-action reminders. Android 13+ requires POST_NOTIFICATIONS to be
+      granted at RUNTIME as well as declared here, so the app asks on first use
+      and stays silent if the user refuses (see action-reminder-scheduler.ts).
+      VIBRATE is what makes a reminder noticeable on a bench or in a bay.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- Camera photo file access: Android 13+ requires granular media permissions -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />

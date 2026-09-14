@@ -5,6 +5,10 @@ import {
   Menu, X, KeyRound, ClipboardCheck, ArrowLeft
 } from "lucide-react";
 import ChangePasswordModal from "./ChangePasswordModal";
+import {
+  registerActionReminderTapHandler,
+  startActionReminderScheduler,
+} from "../lib/action-reminder-scheduler";
 
 export interface TabItem {
   id: string;
@@ -139,6 +143,19 @@ export default function AppShell({
     const id = setInterval(fetchNotifications, 60000);
     return () => clearInterval(id);
   }, [fetchNotifications]);
+
+  /**
+   * Pending-action reminders (the Android nag about work waiting on YOU).
+   *
+   * Deliberately a no-op on the web and in any APK built before the notification
+   * plugin was added — see src/lib/action-reminder-scheduler.ts, which also
+   * documents why the 5-minute cadence runs only while the app is in the
+   * foreground (Android's background floor is 15 minutes).
+   */
+  React.useEffect(() => {
+    registerActionReminderTapHandler();
+    return startActionReminderScheduler();
+  }, []);
 
   /**
    * Close the header popovers when they stop being in use.
