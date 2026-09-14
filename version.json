@@ -6,13 +6,13 @@
   "buildTime": "2026-09-14T12:26:00+05:30",
   "environment": "production",
   "buildNumber": "130",
-  "commit": "31ad600",
-  "updatedAt": "2026-09-14T14:40:00+05:30",
-  "buildSourceCommit": "31ad600",
+  "commit": "8250cfe",
+  "updatedAt": "2026-09-14T15:05:00+05:30",
+  "buildSourceCommit": "8250cfe",
   "releaseType": "PRODUCTION",
-  "buildSourceNote": "Build 130 carries v1.1.0-rc.6: pending-action reminders in the Android app (5-minute cadence while the app runs, 08:00-20:00 window, silent when nothing is pending). The native plugin additionally requires a rebuilt APK. See docs/CHANGELOG.md.",
+  "buildSourceNote": "Build 130 carries v1.1.0-rc.6: pending-action reminders in the Android app (5-minute cadence while the app runs, 08:00-20:00 window, silent when nothing is pending). The web half is live; the native plugin additionally requires a rebuilt APK, which was built and verified (plugin present in assets/capacitor.plugins.json AND in classes.dex, so R8 did not strip it). See docs/CHANGELOG.md.",
   "buildTimeNote": "Commit time of buildSourceCommit. No build step stamps this file; update at build if that changes.",
-  "deployedImageTag": "9bfe22b",
-  "deployedRevision": "dwip-enterprise-00235-jxv",
-  "deployedImageNote": "Converged: the image tagged :9bfe22b was built by Cloud Build from a CLEAN working tree at commit 9bfe22b7fc8893be539d5d4c6547f590ba7904c4, so the tag, buildSourceCommit and the image contents now name the same revision. The only commits after it are metadata-only (this file), which are not in the image. This resolves the one-commit offset recorded for build 127."
+  "deployedImageTag": "8250cfe",
+  "deployedRevision": "dwip-enterprise-00237-8v7",
+  "deployedImageNote": "Converged: image tagged :8250cfe built by Cloud Build from a CLEAN working tree at commit 8250cfe. Intermediate revisions in this run: 00234-jsn (build 127), 00235-jxv (build 128, rc.4 active-jobs fix), 00236-47v (build 129, rc.5 gate-pass settlement rule), 00237-8v7 (this one). Verified after deploy: the served bundle /assets/index-B5qxLwKO.js contains the reminder marker 'dwip-action-reminders', so the web half of rc.6 is live. NOTE: the commits for builds 129 and 130 are NOT yet on origin - git push is blocked by a 403 (stored credential belongs to 'Jingu12', which lacks write access to wmsdmworkshop-sketch/remix-workshop-management-system)."
 }
