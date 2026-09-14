@@ -3,6 +3,7 @@ import {
   ClipboardList, Clock, AlertTriangle, TrendingUp, Gift, CalendarCheck, Loader2, RefreshCw, Bell, CheckCircle2, UserX, Wrench, ShieldCheck,
 } from "lucide-react";
 import { staffAuthHeaders } from "../lib/authToken";
+import { hasLeftWorkshop } from "../types";
 
 /**
  * "MY RESPONSIBILITY" — Phase 3: My Workspace.
@@ -116,12 +117,17 @@ export default function MyWorkspace({ currentUser, onOpenJob }: Props) {
 
   useEffect(() => { load(); }, []);
 
-  const isClosed = (s: string) => ["completed", "invoiced", "cancelled"].includes(String(s || "").toLowerCase());
+  // A card is live unless the vehicle has left the site — the same definition the
+  // job card list and /api/my/summary use (see hasLeftWorkshop). This previously
+  // tested ['completed','invoiced','cancelled'], none of which job_card_master's
+  // job_status ENUM can hold, so every card counted as pending.
   const jobs: any[] = data?.jobs || [];
-  const pendingJobs = useMemo(() => jobs.filter(j => !isClosed(j.status)), [jobs]);
+  const pendingJobs = useMemo(() => jobs.filter(j => !hasLeftWorkshop(j)), [jobs]);
   const now = Date.now();
+  // The delivery promise lives in `etd` (JobCard.etd); the four field names read
+  // here before are written by nothing in the codebase, so this was always empty.
   const breachJobs = useMemo(() => pendingJobs.filter(j => {
-    const due = j.promised_delivery || j.promised_delivery_date || j.expected_delivery || j.due_date;
+    const due = j.etd || j.expected_date_out;
     const t = due ? new Date(due).getTime() : NaN;
     return !isNaN(t) && t < now;
   }), [pendingJobs]);
@@ -279,9 +285,9 @@ export default function MyWorkspace({ currentUser, onOpenJob }: Props) {
         <div className="divide-y divide-slate-50 max-h-[420px] overflow-y-auto">
           {jobs.length === 0 && <p className="text-xs text-slate-400 italic p-4">No job cards assigned or related to you yet.</p>}
           {jobs.map((j) => {
-            const due = j.promised_delivery || j.promised_delivery_date || j.expected_delivery || j.due_date;
+            const due = j.etd || j.expected_date_out;
             const t = due ? new Date(due).getTime() : NaN;
-            const breached = !isNaN(t) && t < now && !isClosed(j.status);
+            const breached = !isNaN(t) && t < now && !hasLeftWorkshop(j);
             return (
               <button
                 key={j.job_id}
@@ -296,7 +302,7 @@ export default function MyWorkspace({ currentUser, onOpenJob }: Props) {
                   </div>
                   <p className="text-[11px] text-slate-500 truncate">{j.customer_name} {j.current_workflow_state ? `· ${j.current_workflow_state}` : ""}</p>
                 </div>
-                <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded border uppercase ${isClosed(j.status) ? "bg-slate-50 text-slate-500 border-slate-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
+                <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded border uppercase ${hasLeftWorkshop(j) ? "bg-slate-50 text-slate-500 border-slate-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
                   {j.status}
                 </span>
               </button>

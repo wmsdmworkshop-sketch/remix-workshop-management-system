@@ -639,6 +639,33 @@ export function isDeliveredStatus(status?: string | null): boolean {
 }
 
 /**
+ * The vehicle has left the site, so the card is HISTORY, not work.
+ *
+ * Two independent signals, either one sufficient:
+ *   - status === 'Delivered'   — the workflow's own claim that the visit ended;
+ *   - a recorded gate_out_time — the ground truth that it physically left.
+ *
+ * gate_out_time has to stand on its own because historically imported cards
+ * carry a gate-out stamp while their status was mapped from a free-text column,
+ * and because the gate-out route stamps the time whether or not the workload
+ * status was moved with it.
+ *
+ * Deliberately NOT the same as isWorkCompleteStatus: 'Ready' means the work is
+ * done but the vehicle is still on site, still holding a bay, and still the
+ * workshop's problem. Only departure removes a card from the floor.
+ *
+ * This exists so "still in the workshop" has ONE definition. Two copies of it
+ * had already drifted — see isDeliveredStatus's siblings above for why comparing
+ * against values the schema cannot hold is the recurring failure mode here.
+ */
+export function hasLeftWorkshop(
+  job: { status?: string | null; gate_out_time?: string | null } | null | undefined
+): boolean {
+  if (!job) return false;
+  return isDeliveredStatus(job.status) || !!job.gate_out_time;
+}
+
+/**
  * Waiting for allocation — no technician and no bay yet.
  * Replaces the `status === "Waiting" && !bay_id` idiom.
  */

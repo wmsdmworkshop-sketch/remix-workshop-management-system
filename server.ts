@@ -157,6 +157,7 @@ import {
   OvertimeRequest,
   Workshop,
   isDeliveredStatus,
+  hasLeftWorkshop,
   isWorkCompleteStatus,
   isOpenJobStatus
 } from "./src/types";
@@ -10141,14 +10142,20 @@ time from another field.`;
       const myJobs = (db.jobCards || []).filter((jc: any) =>
         isOwnedBy(jc, me) || (isInMyStage(jc, me.role) && !isUnassignedCard(jc)));
 
-      const isClosed = (s: string) => ["completed", "invoiced", "cancelled"].includes(String(s || "").toLowerCase());
-      const pending = myJobs.filter((jc: any) => !isClosed(jc.status));
+      // "Live" means the vehicle has NOT left the site. This used to read
+      // ['completed','invoiced','cancelled'] — three values job_card_master's
+      // job_status ENUM cannot hold — so it matched nothing and every card,
+      // including all delivered history, counted as active. See hasLeftWorkshop.
+      const pending = myJobs.filter((jc: any) => !hasLeftWorkshop(jc));
 
-      // Breach = still open AND promised delivery time has passed (best-effort over
-      // whichever field the card carries).
+      // Breach = still open AND promised delivery time has passed.
+      // The promise lives in `etd` (JobCard.etd — 627/628 production rows carry
+      // one). The four names previously read here (promised_delivery,
+      // promised_delivery_date, expected_delivery, due_date) are set by nothing
+      // anywhere in the codebase, so this count could only ever be 0.
       const now = Date.now();
       const breaches = pending.filter((jc: any) => {
-        const due = jc.promised_delivery || jc.promised_delivery_date || jc.expected_delivery || jc.due_date;
+        const due = jc.etd || jc.expected_date_out;
         if (!due) return false;
         const t = new Date(due).getTime();
         return !isNaN(t) && t < now;
@@ -10186,13 +10193,16 @@ time from another field.`;
 
       let workshop: { active: number; unassigned: number; breaches: number; revenue: number } | null = null;
       if (isManager) {
-        const openJobs = (db.jobCards || []).filter((jc: any) => !isClosed(jc.status));
+        // Workshop-wide tiles count WORK, never history: a delivered vehicle is
+        // finished business and must not inflate the active-job, unassigned,
+        // breach or WIP-revenue figures. Same predicate as the job card list.
+        const openJobs = (db.jobCards || []).filter((jc: any) => !hasLeftWorkshop(jc));
         const unassigned = openJobs.filter((jc: any) => {
           const sa = String(jc.service_advisor || "").trim().toLowerCase();
           return sa === "" || sa === "unassigned";
         });
         const wsBreaches = openJobs.filter((jc: any) => {
-          const due = jc.promised_delivery || jc.promised_delivery_date || jc.expected_delivery || jc.due_date;
+          const due = jc.etd || jc.expected_date_out;
           if (!due) return false;
           const t = new Date(due).getTime();
           return !isNaN(t) && t < now;
@@ -10215,7 +10225,7 @@ time from another field.`;
       const clampPct = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
       // The cards this person is accountable for: whole workshop for managers,
       // personal queue for everyone else.
-      const relevant = isManager ? (db.jobCards || []).filter((jc: any) => !isClosed(jc.status)) : myJobs;
+      const relevant = isManager ? (db.jobCards || []).filter((jc: any) => !hasLeftWorkshop(jc)) : myJobs;
       const relevantBreaches = isManager ? (workshop?.breaches ?? 0) : (breaches.length + slaBreaches);
 
       // 1. On-time handling: share of responsible cards with no breach.
@@ -10376,9 +10386,9 @@ time from another field.`;
     const explicitJobAlertIds = new Set(explicitAlerts.map((alert: any) => Number(alert.job_id)).filter(Number.isFinite));
     const now = Date.now();
     const derivedAlerts = relevantJobs
-      .filter((jc: any) => !["completed", "invoiced", "cancelled"].includes(String(jc.status || "").toLowerCase()))
+      .filter((jc: any) => !hasLeftWorkshop(jc))
       .filter((jc: any) => {
-        const due = jc.promised_delivery || jc.promised_delivery_date || jc.expected_delivery || jc.due_date;
+        const due = jc.etd || jc.expected_date_out;
         return due && !isNaN(new Date(due).getTime()) && new Date(due).getTime() < now && !explicitJobAlertIds.has(Number(jc.job_id));
       })
       .map((jc: any) => ({

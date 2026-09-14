@@ -35,7 +35,7 @@ import {
   HelpCircle,
   X
 } from "lucide-react";
-import { JobCard, Bay, SRType, Employee, JobTechnicianMap, JobRevenue, JobRevenueSplitDetail, User, isOpenJobStatus, isWorkCompleteStatus, isDeliveredStatus, isAwaitingAllocationStatus } from "../types";
+import { JobCard, Bay, SRType, Employee, JobTechnicianMap, JobRevenue, JobRevenueSplitDetail, User, isOpenJobStatus, isWorkCompleteStatus, isDeliveredStatus, isAwaitingAllocationStatus, hasLeftWorkshop } from "../types";
 import JobCardPreview from "./reception/JobCardPreview";
 import GateProgressBar from "./GateProgressBar";
 import { getStaffToken } from "../lib/authToken";
@@ -1426,8 +1426,11 @@ export default function JobCardManager({
       // toggle must not be able to pull it back in: that toggle exists for jobs
       // still on site that are merely billed or administratively closed. This is
       // also what keeps historical imports out of the operational queue.
-      const isDelivered = s === 'delivered' || !!job.gate_out_time;
-      if (isDelivered) return false;
+      //
+      // Shared with the API's workshop KPIs (src/types.ts hasLeftWorkshop) so this
+      // list and the My Workspace counters cannot disagree about what counts as
+      // still being in the workshop.
+      if (hasLeftWorkshop(job)) return false;
 
       const isClosed = s === 'billed' || s === 'out of workshop' || s === 'invoiced' || s === 'completed';
       if (!showBilledClosed && isClosed) return false;
@@ -1454,10 +1457,7 @@ export default function JobCardManager({
    * leaving an unexplained empty list.
    */
   const deliveredCount = useMemo(
-    () =>
-      jobCards.filter(
-        (j) => String(j.status || "").toLowerCase() === "delivered" || !!j.gate_out_time
-      ).length,
+    () => jobCards.filter((j) => hasLeftWorkshop(j)).length,
     [jobCards]
   );
 

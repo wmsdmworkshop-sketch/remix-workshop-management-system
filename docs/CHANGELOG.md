@@ -9,6 +9,75 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.4 — workshop "active jobs" counted delivered history — **RELEASE**
+
+**Build source:** working tree at `71c022c` plus these uncommitted changes.
+**Release type:** PRODUCTION
+
+Found by reading the live My Workspace dashboard against the Job Cards screen
+beside it: the tile said **628 active jobs in the workshop**, while the list said
+**64 in the workshop · 564 delivered (history)**. Both are computed from the same
+628-card array. Only one of them was right.
+
+### Fixed
+
+- **"Active Jobs (Workshop)" reported 628 instead of 64** — it counted every
+  delivered vehicle in history as live work. The endpoint excluded
+  `['completed','invoiced','cancelled']`, three values `job_card_master.job_status`
+  cannot hold (its ENUM is `Open, In Progress, Waiting Parts, Ready, Delivered,
+  Carry Forward, Assigned, Unassigned, In Queue`), so the filter matched **0 of 628
+  rows** and the count was the whole table. The same phantom values also sat in
+  `MyWorkspace.tsx`. This is the failure mode `src/types.ts` already documents at
+  length; the identical bug was fixed once before, and that pass left a Dashboard
+  reading "0 open job cards" against 162 genuinely open.
+  Fixed by adding **`hasLeftWorkshop()`** to `src/types.ts` as the single definition
+  of "still on site" (`status === 'Delivered'` **or** a recorded `gate_out_time`),
+  and using it in `server.ts` (active jobs, unassigned, breaches, WIP revenue, and
+  the compliance denominator), `MyWorkspace.tsx` and `JobCardManager.tsx`. The last
+  of those already carried this exact predicate inline — to the letter — which is
+  precisely how the two screens came to disagree: two copies of one rule.
+  `'Ready'` deliberately does **not** count as gone. The work is finished, but the
+  vehicle is still holding a bay and is still the workshop's problem.
+- **"SLA / ETD Breaches" could only ever read 0.** It tested
+  `promised_delivery || promised_delivery_date || expected_delivery || due_date` —
+  four names that are set by nothing anywhere in the codebase. The delivery promise
+  lives in `etd` (627 of 628 production rows carry one). Now reads `etd`. On live
+  data the honest figure is **63**, not 0. The same dead lookup existed in the
+  personal breach count, in the derived SLA alert feed (`/api/my/alerts`), and in
+  the per-card "Breach" pill.
+
+### Behaviour changes that follow from the fix
+
+- The personal "Assigned to me" pending count now excludes delivered cards.
+  Previously every card a person could see counted as pending.
+- Workshop-wide unassigned/breach/WIP-revenue figures are now computed over the 64
+  live cards rather than all 628, so those tiles move as well.
+- `JobCardManager`'s separate "billed / out of workshop" **toggle** predicate is a
+  different concept — jobs still on site but administratively closed — and was
+  deliberately left alone.
+
+### Verified
+
+- `src/tests/workshop-active-jobs.test.ts` (new, 7 cases) builds a 628-card fixture
+  in the production shape and asserts 64 live / 564 history, that the old predicate
+  reproduces the wrong 628, that a `Ready` card with no gate-out is **not** gone,
+  and that the four phantom date fields match nothing.
+- A read-only probe against production `job_card_master` confirmed 0 rows match the
+  old predicate and 64 match the new one — the same 64 the job list displays.
+- `tsc --noEmit`: no new errors. `EmployeeDirectory.tsx`,
+  `engines/vehicle-passport/index.ts` and `lib/auth.ts` fail as they did before.
+
+### Known, not fixed
+
+Three more comparisons of the same phantom-value class were found and left alone —
+they are outside the reported defect and each needs its own verification before it
+is touched: `src/engines/overtime-rules.ts:189` (`['Completed','Invoiced',
+'Cancelled']`, so overtime excludes nothing), `src/components/GateEntryManager.tsx:626`,
+and `src/App.tsx:2201` / `:2263` (`['Closed','Cancelled']`, partly masked by a
+correct `gate_out_time` test beside it).
+
+---
+
 ## v1.1.0-rc.3 — gate-out evidence schema repair — **RELEASE**
 
 **Build source:** working tree at `790d315` plus **uncommitted** changes (the
