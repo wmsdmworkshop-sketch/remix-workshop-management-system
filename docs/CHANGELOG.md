@@ -9,6 +9,101 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.5 — gate pass requires settled payment — **RELEASE**
+
+**Build source:** working tree at `f3aeee4` plus these changes.
+**Release type:** PRODUCTION
+
+**Business rule (owner, 2026-09-14):** at any stage, nobody other than `developer` or
+`gm_service` may issue a gate-out pass unless payment is settled against the billing —
+the final consolidated invoice amount.
+
+### The hole this closes
+
+`POST /api/gate-out/create-gate-pass` required only that SOME row existed in `tbl_payments`
+with status `COMPLETED`. **The amount was never compared to the invoice.** A ₹1 token
+payment therefore released a ₹66,655 vehicle, and the balance left the yard with it. The pass
+recorded `release_basis = 'PAID'` in that case, so the audit trail asserted a settled payment
+that had never happened.
+
+### Fixed
+
+- **New `src/core/workshop/release-settlement.ts`** — the rule in the shared layer, with one
+  place that answers "may this vehicle be released?":
+  - `developer` and `gm_service` may release without settlement, and that override is
+    audited as `GATE_PASS_SETTLEMENT_OVERRIDE` rather than logged as an ordinary pass.
+  - Everyone else needs `collected >= final consolidated invoice amount` (₹0.01 tolerance).
+  - A refusal returns **402 Payment Required** carrying `invoiceAmount`, `paidAmount`,
+    `shortfall` and `creditApproved`, so the cashier sees the exact balance rather than a
+    bare string.
+  - **`admin` is NOT exempt.** The rule names two roles, and `admin` is system
+    administration, not commercial authority — so an admin must also collect first. This is
+    a tightening: any holder of `GATE_PASS_ISSUE_ROLES` (which includes `admin`, `cashier`,
+    `service_manager`, `workshop_manager`) previously released on a part payment.
+- **Two invoice lineages, because taking one would have been wrong.** The live billing record
+  (`tbl_pre_invoice_version.grand_total` at `current_version`, which `billing-engine.ts`
+  maintains) is preferred; the DMS consolidated invoice (`invoices.final_consolidated_amt`,
+  joined on `order_no = job_card_no`) is the fallback. This matters because **`tbl_pre_invoice`
+  is empty in production** (its 81 fixture rows were removed on 2026-09-14) while `invoices`
+  holds 9,538 rows — a billing-record-only rule would have left every imported vehicle
+  permanently unreleasable.
+- **Duplicate `order_no` rows take the MAXIMUM amount**, never the first match. Production has
+  up to 4 invoices sharing one `order_no` (re-catalogued under C/D/I prefixes). On the rows
+  inspected every copy carried an identical amount, but taking the maximum means a partial or
+  superseded document can never understate what is owed.
+- **An unreadable amount is never treated as settled.** `parseAmount` returns null for
+  `null` / `""` / `"N/A"` / `"TBD"` / `"12abc"` instead of coercing to 0 — a 0 invoice would
+  make every payment look settled and release the vehicle for free.
+- **`record-payment` now allows top-ups.** It previously refused any second payment
+  (`PAYMENT_ALREADY_RECORDED`), which would have deadlocked every part-paid job the moment the
+  full-settlement rule landed: the new gate requires the whole invoice, and there was no way
+  left to collect the balance. It now accepts further payments and guards the two real risks —
+  `PAYMENT_ALREADY_SETTLED` and `PAYMENT_EXCEEDS_BALANCE`.
+- **Cashier screen** (`CashierWorkspace.tsx`) now shows invoice / collected / balance, gates the
+  button on the server's `may_issue`, and prefills the **outstanding balance** rather than the
+  full invoice. It previously read `job.crm_invoice_amount` — a field no endpoint returns — and
+  rendered the literal text `Net: ₹undefined`, while offering the pass whenever *any*
+  `payment_mode` had been recorded.
+
+### Not changed, deliberately
+
+- **A GM-approved credit no longer lets a non-exempt role release.** The rule names only
+  `developer` and `gm_service`, so the credit stays valid but is exercised BY that authority —
+  `gm_service` or `developer` issues the pass. The refusal message says so explicitly. If the
+  intent is for a cashier to release on a GM-approved credit, that is a one-line change in
+  `evaluateReleaseSettlement`.
+- The **Manual Gate Pass** workflow (`billing-engine.raiseManualGatePassRequest` /
+  `gmApproveManualGatePass`) is already GM-gated at approval and does not mint a `tbl_gate_pass`
+  row, so it needs no extra check.
+- The dead `jc.status in ('invoiced','completed')` fallback went with the old block. Neither
+  value is legal in `job_card_master.job_status`, so it had never fired.
+
+### Current production effect
+
+None of the 64 live jobs has an invoice — `tbl_pre_invoice` is empty and none matches an
+`invoices` row — so all of them are refused with `GATE_PASS_NO_INVOICE`. That is the SAME
+outcome as before this change, which also refused them ("no invoice raised for this job yet").
+The settlement rule starts to bite as soon as real invoices exist.
+
+### Verified
+
+- `src/tests/release-settlement.test.ts` (new, 20 cases): a part payment is refused for
+  cashier/admin/service_manager/workshop_manager; exact payment and overpayment are allowed;
+  ₹0.01 tolerance honoured but a ₹1 shortfall refused; `developer` / `gm_service` /
+  `"GM Service"` / `"gm-service"` all exempt; admin/cashier/managers NOT exempt; no invoice →
+  `GATE_PASS_NO_INVOICE`; unreadable amount → `GATE_PASS_SOURCE_DOWN` and never settled; a
+  zero-value invoice (warranty) releases; the billing record is preferred over the consolidated
+  invoice; the consolidated fallback is used; duplicates resolve to the maximum; an unreadable
+  billing table falls through to the consolidated invoice.
+- The production join was **proven, not assumed**: `invoices.order_no` is `utf8mb4_unicode_ci`
+  while `job_card_master.job_card_no` is `utf8mb4_0900_ai_ci`, and comparing them WITHOUT an
+  explicit `COLLATE` raises `ER_CANT_AGGREGATE_2COLLATIONS`. That is a loud failure — the safe
+  direction for a money check, since a silently empty match set would have read as "no invoice".
+- All 9,538 `final_consolidated_amt` values are plain numerics (checked), so there is no
+  silent-zero coercion.
+
+---
+
 ## v1.1.0-rc.4 — workshop "active jobs" counted delivered history — **RELEASE**
 
 **Build source:** commit `9bfe22b` (clean tree — the image tag and the commit now name the same revision).

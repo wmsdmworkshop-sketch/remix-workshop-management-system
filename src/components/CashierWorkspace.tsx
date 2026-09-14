@@ -4,6 +4,12 @@ import {
   DollarSign, Clock, ShieldCheck, CreditCard, Send, CheckCircle2, AlertTriangle 
 } from "lucide-react";
 
+/** Indian-format money. Never invents a figure: an unknown amount renders as "—". */
+const fmt = (n: any) =>
+  n == null || !Number.isFinite(Number(n))
+    ? "—"
+    : Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 export interface CashierWorkspaceProps {
   currentUser?: any;
 }
@@ -166,9 +172,24 @@ export const CashierWorkspace: React.FC<CashierWorkspaceProps> = ({ currentUser 
               {myQueue.map(job => (
                 <div key={job.job_id} className="p-3 bg-slate-950/40 border border-slate-850 rounded-xl">
                   <div className="font-mono text-xs font-bold text-emerald-400">{job.vrn}</div>
-                  <div className="text-[10px] text-slate-400 mb-2">Net: ₹{job.crm_invoice_amount}</div>
-                  
-                  {job.payment_mode || job.credit_status === 'GM_APPROVED' || job.mgp_status === 'APPROVED' ? (
+                  {/* Invoice vs collected vs outstanding, straight from the server's own
+                      settlement evaluation. This block previously read
+                      `job.crm_invoice_amount`, a field no endpoint returns, so it rendered
+                      the literal text "Net: ₹undefined". */}
+                  <div className="text-[10px] text-slate-400">Invoice: ₹{fmt(job.invoice_amount)}</div>
+                  <div className="text-[10px] text-slate-400">Collected: ₹{fmt(job.paid_amount)}</div>
+                  {job.settled ? (
+                    <div className="text-[10px] font-bold text-emerald-400 mb-2">Fully settled</div>
+                  ) : (
+                    <div className="text-[10px] font-bold text-amber-400 mb-2">
+                      Balance due: ₹{fmt(job.shortfall)}
+                    </div>
+                  )}
+
+                  {/* `may_issue` is the SERVER's verdict for this caller — settled payment,
+                      or an exempt role (developer / gm_service). The server refuses anyway;
+                      this only stops the screen offering a button that cannot succeed. */}
+                  {job.may_issue ? (
                     <button 
                       onClick={() => handleCreateGatePass(job.job_id)}
                       className="ds-button-success w-full py-2 text-xs font-bold uppercase rounded-lg"
@@ -179,11 +200,14 @@ export const CashierWorkspace: React.FC<CashierWorkspaceProps> = ({ currentUser 
                     <button 
                       onClick={() => {
                         setSelectedJob(job);
-                        setAmountReceived(job.crm_invoice_amount);
+                        // Prefill the OUTSTANDING balance — that is what has to be collected.
+                        // Prefilling the full invoice would double-count anything already
+                        // received and invite an overpayment.
+                        setAmountReceived(job.shortfall ?? 0);
                       }}
                       className="w-full py-2 bg-blue-600/20 text-blue-400 border border-blue-600/30 text-xs font-bold uppercase rounded-lg"
                     >
-                      Process Payment / Credit
+                      Collect ₹{fmt(job.shortfall)} &amp; Issue Pass
                     </button>
                   )}
                 </div>
@@ -202,7 +226,7 @@ export const CashierWorkspace: React.FC<CashierWorkspaceProps> = ({ currentUser 
                 <div key={job.job_id} className="p-3 bg-slate-950/40 border border-slate-850 rounded-xl flex justify-between items-center">
                   <div>
                     <div className="font-mono text-xs font-bold text-blue-400">{job.vrn}</div>
-                    <div className="text-[10px] text-slate-400">Net: ₹{job.crm_invoice_amount}</div>
+                    <div className="text-[10px] text-slate-400">Invoice: ₹{fmt(job.invoice_amount)}</div>
                   </div>
                   <button 
                     onClick={() => handleClaim(job.job_id)}
@@ -223,6 +247,30 @@ export const CashierWorkspace: React.FC<CashierWorkspaceProps> = ({ currentUser 
               <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
                 <DollarSign className="h-4 w-4 text-emerald-400" />
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Action: {selectedJob.vrn}</h3>
+              </div>
+
+              {/* The rule, stated where the cashier acts on it. */}
+              <div className="p-3 bg-slate-950/60 border border-slate-850 rounded-xl text-[10px] space-y-1">
+                <div className="flex justify-between text-slate-400">
+                  <span>Final consolidated invoice</span>
+                  <span className="font-bold text-slate-200">₹{fmt(selectedJob.invoice_amount)}</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Already collected</span>
+                  <span className="font-bold text-slate-200">₹{fmt(selectedJob.paid_amount)}</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Balance due</span>
+                  <span className={selectedJob.settled ? "font-bold text-emerald-400" : "font-bold text-amber-400"}>
+                    ₹{fmt(selectedJob.shortfall)}
+                  </span>
+                </div>
+                {!selectedJob.may_issue && (
+                  <p className="text-amber-400/90 pt-1 border-t border-slate-850">
+                    The gate pass cannot be issued until the invoice is settled in full. Only
+                    gm_service or developer may release a vehicle without full payment.
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">

@@ -30,6 +30,13 @@ import { enforceFieldPermissions, describeRefusal, FIELD_PERMISSION_LEVELS, type
 import { BACKDATE_ROLES } from "./src/core/workshop/backdate-policy.ts";
 import { SA_ASSIGNMENT_ROLES } from "./src/core/workshop/assignment-roles.ts";
 import {
+  evaluateReleaseSettlement,
+  isReleaseSettlementExempt,
+  resolveFinalInvoiceAmount,
+  resolveSettledAmount,
+  SETTLEMENT_TOLERANCE,
+} from "./src/core/workshop/release-settlement.ts";
+import {
   callNemotron,
   isNemotronConfigured,
   parseJsonReply,
@@ -6863,13 +6870,14 @@ time from another field.`;
   // these columns are utf8mb4_0900_ai_ci but the connection collation is
   // utf8mb4_unicode_ci, so an unqualified CAST(... AS CHAR) raises
   // ER_CANT_AGGREGATE_2COLLATIONS. Pinning it keeps this independent of connection settings.
-  app.get("/api/gate-out/cashier-queue", authenticateToken, requireRoles(GATE_PASS_ISSUE_ROLES), async (_req: any, res: any) => {
+  app.get("/api/gate-out/cashier-queue", authenticateToken, requireRoles(GATE_PASS_ISSUE_ROLES), async (req: any, res: any) => {
     try {
       await markSlaBreaches();
       const [invoices]: any = await dbPool.execute(`
         SELECT pi.job_id, pi.job_card_no, pi.vrn, pi.customer_name, pi.pre_invoice_id,
                v.grand_total AS amount,
                (COALESCE(v.cgst, 0) + COALESCE(v.sgst, 0) + COALESCE(v.igst, 0)) AS tax_amount,
+               COALESCE((SELECT SUM(p.amount) FROM tbl_payments p WHERE p.job_id = pi.job_id AND p.status='COMPLETED'), 0) AS paid_amount,
                (SELECT payment_mode FROM tbl_payments p WHERE p.job_id = pi.job_id AND p.status='COMPLETED' LIMIT 1) AS payment_mode,
                (SELECT status FROM tbl_credit_requests cr WHERE cr.job_id = pi.job_id ORDER BY requested_at DESC LIMIT 1) AS credit_status,
                (SELECT s.status FROM tbl_handoff_sla s WHERE s.entity_id = CAST(pi.pre_invoice_id AS CHAR) COLLATE utf8mb4_0900_ai_ci AND s.stage_name = 'SLA_BILLING_TO_CASHIER' ORDER BY s.created_at DESC LIMIT 1) AS sla_status,
@@ -6881,16 +6889,25 @@ time from another field.`;
         LEFT JOIN tbl_task_claims tc ON tc.job_id = pi.job_id AND tc.task_type = 'CASHIER'
         WHERE gp.gate_pass_id IS NULL AND pi.status = 'BILLING_COMPLETED'`);
       const jcById = new Map<number, any>((getDB().jobCards || []).map((j: any) => [Number(j.job_id), j]));
+      // Whether THIS caller can release without full payment, so the screen can state the
+      // rule instead of offering a button the server will refuse. The server still decides.
+      const callerExempt = isReleaseSettlementExempt(req.user?.role);
       const rows = (invoices || []).map((inv: any) => {
         const j = jcById.get(Number(inv.job_id)) || {};
         // Prefer the persisted billing record over the cached job card — the cache
         // lookup is unreliable for jobs the sync has not loaded, which is how this
         // queue previously surfaced rows with a null VRN.
+        const invoiceAmount = inv.amount != null ? Number(inv.amount) : null;
+        const paidAmount = Number(inv.paid_amount || 0);
+        const shortfall = invoiceAmount != null ? Math.max(0, invoiceAmount - paidAmount) : null;
+        const settled = invoiceAmount != null && paidAmount + SETTLEMENT_TOLERANCE >= invoiceAmount;
         return {
           job_id: Number(inv.job_id), job_card_no: inv.job_card_no || j.job_card_no, vrn: inv.vrn || j.vrn,
           customer_name: inv.customer_name || j.customer_name, vehicle_model: j.vehicle_model, status: j.status,
           pre_invoice_id: inv.pre_invoice_id, invoice_no: j.invoice_no ?? null,
           invoice_amount: inv.amount, tax_amount: inv.tax_amount,
+          paid_amount: paidAmount, shortfall, settled,
+          may_issue: settled || callerExempt,
           payment_mode: inv.payment_mode, credit_status: inv.credit_status, claimed_by: inv.claimed_by,
           sla_status: inv.sla_status, sla_due_at: inv.sla_due_at,
         };
@@ -6917,24 +6934,42 @@ time from another field.`;
       // Billing evidence is read from tbl_pre_invoice, the real billing table. It used to
       // read `invoice_id` from tbl_invoice, a column that does not exist in production,
       // which made this endpoint 500 rather than issue a gate pass.
-      const [inv]: any = await dbPool.execute(`SELECT pre_invoice_id FROM tbl_pre_invoice WHERE job_id = ? AND status = 'BILLING_COMPLETED' LIMIT 1`, [Number(jobId)]);
-      const [paid]: any = await dbPool.execute(`SELECT payment_id FROM tbl_payments WHERE job_id = ? AND status = 'COMPLETED' LIMIT 1`, [String(jobId)]);
-      const [creditOk]: any = await dbPool.execute(`SELECT credit_request_id FROM tbl_credit_requests WHERE job_id = ? AND status = 'GM_APPROVED' LIMIT 1`, [String(jobId)]);
-      const hasInvoice = (inv || []).length > 0;
-      const hasPayment = (paid || []).length > 0;
-      const hasCredit = (creditOk || []).length > 0;
-      // Fallback for jobs invoiced before Phase A existed: treat billed status as invoice evidence.
-      const billed = hasInvoice || ["invoiced", "completed"].includes(String(jc.status || "").toLowerCase());
-      if (!billed) {
-        return res.status(400).json({ error: "GATE_PASS_NOT_ELIGIBLE: no invoice raised for this job yet." });
+      // ── SETTLEMENT GATE (owner rule, 2026-09-14) ──────────────────────────
+      // Nobody except `developer` or `gm_service` may issue a gate-out pass until the
+      // final consolidated invoice is FULLY collected. This replaces a check that only
+      // required SOME row in tbl_payments to exist: the amount was never compared, so a
+      // token part-payment released the vehicle and the balance walked out with it.
+      // The rule, its two invoice sources and the role exemption all live in
+      // src/core/workshop/release-settlement.ts.
+      const settlement = await evaluateReleaseSettlement({
+        pool: dbPool,
+        role: req.user?.role,
+        jobId,
+        jobCardNo: jc.job_card_no,
+      });
+      if (!settlement.mayIssue) {
+        // 402 Payment Required states the intent; the body is structured so the cashier
+        // screen can show the exact outstanding balance rather than a bare string.
+        return res.status(402).json({
+          error: settlement.message,
+          code: settlement.code,
+          invoiceAmount: settlement.invoiceAmount,
+          invoiceSource: settlement.invoiceSource,
+          invoiceReferences: settlement.invoiceReferences,
+          paidAmount: settlement.paidAmount,
+          shortfall: settlement.shortfall,
+          creditApproved: settlement.creditApproved,
+        });
       }
       // Release basis is derived exclusively from persisted payment or GM-credit records.
       // Manual gate passes are governed by the BillingEngine workflow; this legacy endpoint
       // must never mint one from a client-supplied releaseBasis value.
+      const fullyPaid = settlement.invoiceAmount != null
+        && settlement.paidAmount + SETTLEMENT_TOLERANCE >= settlement.invoiceAmount;
       let basis: string;
-      if (hasPayment) basis = "PAID";
-      else if (hasCredit) basis = "CREDIT_APPROVED";
-      else return res.status(400).json({ error: "GATE_PASS_NOT_ELIGIBLE: record a payment or obtain GM-approved credit." });
+      if (fullyPaid) basis = "PAID";
+      else if (settlement.creditApproved) basis = "CREDIT_APPROVED";
+      else basis = "OVERRIDE"; // only reachable for an exempt role — audited below
       // A pass with a mandatory reference for non-cash modes (mirror engine rule).
       if (paymentMode && ["UPI", "NEFT", "RTGS", "IMPS", "CARD", "CHEQUE"].includes(String(paymentMode).toUpperCase()) && !String(referenceNumber || "").trim()) {
         return res.status(400).json({ error: `PAYMENT_REFERENCE_REQUIRED: reference is mandatory for ${paymentMode}.` });
@@ -6969,7 +7004,18 @@ time from another field.`;
           await syncSave(db);
         }
       } catch (e: any) { console.error("[GATE-OUT] Failed to stamp GATEPASS_ISSUED:", e.message); }
-      await emitGateEvent("GATE_PASS_CREATED", jobId, { user: req.user?.full_name, role: "Cashier", remarks: `Gate pass ${gpNo} issued (${basis}).`, payload: { gatePassId: gpId, gatePassNo: gpNo, releaseBasis: basis } });
+      await emitGateEvent("GATE_PASS_CREATED", jobId, { user: req.user?.full_name, role: req.user?.role || "Cashier", remarks: `Gate pass ${gpNo} issued (${basis}).`, payload: { gatePassId: gpId, gatePassNo: gpNo, releaseBasis: basis, invoiceAmount: settlement.invoiceAmount, paidAmount: settlement.paidAmount } });
+      // An exempt role releasing a vehicle that is NOT fully paid is an override, not an
+      // ordinary pass. Recorded separately so revenue control can find these later —
+      // this is the audit trail for "who let it out without the money".
+      if (settlement.exempt && !fullyPaid) {
+        await emitGateEvent("GATE_PASS_SETTLEMENT_OVERRIDE", jobId, {
+          user: req.user?.full_name,
+          role: req.user?.role,
+          remarks: `${settlement.role} issued gate pass ${gpNo} without settled payment — invoice ${settlement.invoiceAmount ?? "unreadable"}, collected ${settlement.paidAmount}.`,
+          payload: { gatePassId: gpId, gatePassNo: gpNo, role: settlement.role, invoiceAmount: settlement.invoiceAmount, invoiceSource: settlement.invoiceSource, paidAmount: settlement.paidAmount, shortfall: settlement.shortfall },
+        });
+      }
       res.status(201).json({ gatePassId: gpId, gatePassNo: gpNo, vrn: normVrn(jc.vrn) });
     } catch (err: any) {
       console.error("[GATE-OUT] create-gate-pass:", err.message);
@@ -7149,8 +7195,34 @@ time from another field.`;
       if (["UPI", "NEFT", "RTGS", "IMPS", "CARD", "CHEQUE"].includes(String(paymentMode).toUpperCase()) && !String(referenceNumber || "").trim()) {
         return res.status(400).json({ error: `PAYMENT_REFERENCE_REQUIRED: reference is mandatory for ${paymentMode}.` });
       }
-      const [existing]: any = await dbPool.execute(`SELECT payment_id FROM tbl_payments WHERE job_id = ? AND status = 'COMPLETED' LIMIT 1`, [String(jobId)]);
-      if ((existing || []).length > 0) return res.status(409).json({ error: "PAYMENT_ALREADY_RECORDED" });
+      // TOP-UPS MUST BE POSSIBLE. This used to refuse any second payment outright, which
+      // deadlocked the job the moment a part payment was taken: the gate pass now requires
+      // the FULL invoice, so refusing the balance left no way to ever collect it. Instead we
+      // accept further payments until the invoice is settled, and guard the two ways a
+      // cashier can get it wrong — collecting against an already-settled invoice, and
+      // collecting more than is outstanding (fat-fingered double entry).
+      const jcForAmount = (getDB().jobCards || []).find((j: any) => Number(j.job_id) === jobId);
+      const invoice = await resolveFinalInvoiceAmount(dbPool, jobId, jcForAmount?.job_card_no);
+      const alreadyPaid = await resolveSettledAmount(dbPool, jobId);
+      if (invoice.amount != null) {
+        if (alreadyPaid + SETTLEMENT_TOLERANCE >= invoice.amount) {
+          return res.status(409).json({
+            error: `PAYMENT_ALREADY_SETTLED: the invoice of Rs.${invoice.amount} is already fully collected (Rs.${alreadyPaid} received).`,
+            invoiceAmount: invoice.amount,
+            paidAmount: alreadyPaid,
+            shortfall: 0,
+          });
+        }
+        const outstanding = invoice.amount - alreadyPaid;
+        if (Number(amount) > outstanding + SETTLEMENT_TOLERANCE) {
+          return res.status(400).json({
+            error: `PAYMENT_EXCEEDS_BALANCE: only Rs.${outstanding.toFixed(2)} is outstanding on an invoice of Rs.${invoice.amount}; Rs.${Number(amount)} was entered.`,
+            invoiceAmount: invoice.amount,
+            paidAmount: alreadyPaid,
+            outstanding,
+          });
+        }
+      }
       const payId = genId("PAY");
       await dbPool.execute(
         `INSERT INTO tbl_payments (payment_id, job_id, amount, payment_mode, reference_number, cashier_id, status) VALUES (?, ?, ?, ?, ?, ?, 'COMPLETED')`,
