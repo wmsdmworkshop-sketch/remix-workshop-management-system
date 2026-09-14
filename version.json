@@ -6,13 +6,13 @@
   "buildTime": "2026-09-14T12:26:00+05:30",
   "environment": "production",
   "buildNumber": "128",
-  "commit": "24b516b38dcdf4e03ca409480e43a868307fdc45",
-  "updatedAt": "2026-09-14T13:45:00+05:30",
-  "buildSourceCommit": "24b516b38dcdf4e03ca409480e43a868307fdc45",
+  "commit": "9bfe22b7fc8893be539d5d4c6547f590ba7904c4",
+  "updatedAt": "2026-09-14T13:52:00+05:30",
+  "buildSourceCommit": "9bfe22b7fc8893be539d5d4c6547f590ba7904c4",
   "releaseType": "PRODUCTION",
-  "buildSourceNote": "Build 128 carries the v1.1.0-rc.4 workshop active-jobs fix (unknown-status KPI counted delivered history, and the ETD breach tile read four field names that exist nowhere). See docs/CHANGELOG.md.",
+  "buildSourceNote": "Build 128 carries the v1.1.0-rc.4 workshop active-jobs fix (the KPI counted delivered history as live work, and the ETD breach tile read four field names that exist nowhere). See docs/CHANGELOG.md.",
   "buildTimeNote": "Commit time of buildSourceCommit. No build step stamps this file; update at build if that changes.",
-  "deployedImageTag": "790d315",
-  "deployedRevision": "dwip-enterprise-00234-jsn",
-  "deployedImageNote": "The running image is tagged :790d315, which names the PREVIOUS HEAD. The image was built by Cloud Build from the working tree, whose contents are exactly commit 24b516b38dcdf4e03ca409480e43a868307fdc45 (see docs/CHANGELOG.md v1.1.0-rc.3). Commit and image tag therefore disagree by one commit; a fresh deploy will tag with buildSourceCommit and they will converge."
+  "deployedImageTag": "9bfe22b",
+  "deployedRevision": "dwip-enterprise-00235-jxv",
+  "deployedImageNote": "Converged: the image tagged :9bfe22b was built by Cloud Build from a CLEAN working tree at commit 9bfe22b7fc8893be539d5d4c6547f590ba7904c4, so the tag, buildSourceCommit and the image contents now name the same revision. The only commits after it are metadata-only (this file), which are not in the image. This resolves the one-commit offset recorded for build 127."
 }

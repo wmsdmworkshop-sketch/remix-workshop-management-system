@@ -11,7 +11,7 @@ file does not stand in for them.
 
 ## v1.1.0-rc.4 — workshop "active jobs" counted delivered history — **RELEASE**
 
-**Build source:** working tree at `71c022c` plus these uncommitted changes.
+**Build source:** commit `9bfe22b` (clean tree — the image tag and the commit now name the same revision).
 **Release type:** PRODUCTION
 
 Found by reading the live My Workspace dashboard against the Job Cards screen
@@ -66,6 +66,19 @@ beside it: the tile said **628 active jobs in the workshop**, while the list sai
   old predicate and 64 match the new one — the same 64 the job list displays.
 - `tsc --noEmit`: no new errors. `EmployeeDirectory.tsx`,
   `engines/vehicle-passport/index.ts` and `lib/auth.ts` fail as they did before.
+- **Verified live in production** on revision `dwip-enterprise-00235-jxv`. The tile now
+  reads **63** and the job list reads **"63 in the workshop · 565 delivered (history)"** —
+  the two screens agree for the first time. "SLA / ETD Breaches" moved 0 → **63**,
+  "Unassigned (No SA)" 15 → **2**, "Assigned to me" breaches 0 → **3**, and **My Alerts**
+  went from empty to 3 real derived SLA alerts. All of those move together because they
+  shared the one dead `etd` lookup and the one phantom status test.
+  The live count is 63 rather than the 64 measured minutes earlier because a vehicle was
+  gated out in between; 63 + 565 = 628 and `COUNT(DISTINCT job_card_id)` is also 628, so
+  no card was lost.
+- The `gate_out_time` half of the predicate is load-bearing, not decoration: two imported
+  cards (`JC-DevAus-AA1-2627-001755` / `-002069`) carry `job_status='Assigned'` but a real
+  gate-out stamp with `live_status='GATE_OUT'`. Judging purely on status would have counted
+  two departed vehicles as live work.
 
 ### Known, not fixed
 
