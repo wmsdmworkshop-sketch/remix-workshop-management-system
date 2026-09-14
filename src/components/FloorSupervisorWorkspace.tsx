@@ -45,8 +45,18 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
   // Allocation Modal State
   const [showAllocateModal, setShowAllocateModal] = useState<boolean>(false);
   const [selectedAllocationJob, setSelectedAllocationJob] = useState<any | null>(null);
-  const [selectedBay, setSelectedBay] = useState<string>("B-01");
-  const [selectedTech, setSelectedTech] = useState<string>("TECH-001");
+  // Both start EMPTY. They used to default to the literals "B-01" and
+  // "TECH-001", neither of which exists in the real rosters: `tbl_bays.bay_id`
+  // is "B01".."I7", and technician option values are `TECH-${employee_id}`
+  // (e.g. TECH-31). A controlled <select> whose value matches no <option>
+  // renders with nothing selected, so the technician box was silently blank and
+  // CONFIRM posted technicianId "TECH-001" together with an empty
+  // technicianName. The bay list escaped the same fate only because the effect
+  // below overwrites the value with the first AVAILABLE bay once the roster
+  // loads — the technician select had no equivalent, hence the empty default
+  // plus the real one set further down.
+  const [selectedBay, setSelectedBay] = useState<string>("");
+  const [selectedTech, setSelectedTech] = useState<string>("");
   const [isOverride, setIsOverride] = useState<boolean>(false);
   const [overrideReason, setOverrideReason] = useState<string>("");
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -191,6 +201,17 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
     });
   }, [employees, jobCards]);
 
+  // Give the technician select a REAL default, mirroring what the bay effect
+  // does for the bay (setSelectedBay(firstAvailable.bayId)). Only fills an
+  // empty selection, so it never overwrites the supervisor's own choice, and
+  // prefers an idle technician because "allocate to whoever is free" is the
+  // common case.
+  useEffect(() => {
+    if (selectedTech) return;
+    const preferred = technicianList.find(t => !t.isBusy) || technicianList[0];
+    if (preferred) setSelectedTech(String(preferred.id));
+  }, [technicianList, selectedTech]);
+
   const handleAcknowledge = async (jobCardId: string) => {
     try {
       const token = localStorage.getItem("dwip_token") || localStorage.getItem("token") || localStorage.getItem("wms_token");
@@ -214,6 +235,13 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
 
   const handleAllocateCommit = async () => {
     if (!selectedAllocationJob) return;
+    // Refuse an incomplete selection HERE rather than posting a phantom id the
+    // server can only answer with "Bay or Technician unavailable" — which is
+    // what the old "TECH-001" default produced.
+    if (!selectedBay || !selectedTech) {
+      alert("Select both a bay and a technician before confirming.");
+      return;
+    }
     if (isOverride && !overrideReason) {
       alert("Please provide a mandatory reason for overriding the AI recommendation.");
       return;
@@ -536,6 +564,7 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
                     className="w-full bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-slate-200 outline-none"
                   >
                     {floorBays.length === 0 && <option value="">No bays configured</option>}
+                    {selectedBay === "" && <option value="">Select a bay…</option>}
                     {floorBays.map((b: any) => {
                       const status = String(b.status || "").toUpperCase();
                       const isAvailable = status === "AVAILABLE";
@@ -556,6 +585,8 @@ export const FloorSupervisorWorkspace: React.FC<FloorSupervisorWorkspaceProps> =
                   onChange={(e) => setSelectedTech(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-850 rounded-xl p-2.5 text-slate-200 outline-none"
                 >
+                  {technicianList.length === 0 && <option value="">No technicians configured</option>}
+                  {selectedTech === "" && <option value="">Select a technician…</option>}
                   {technicianList.map(t => (
                     <option key={t.id} value={t.id}>{t.name} ({t.certification}) - {t.isBusy ? "Busy" : "Available"}</option>
                   ))}

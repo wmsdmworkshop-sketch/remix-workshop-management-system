@@ -9,6 +9,89 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.7 — the allocated bay now reaches the job card, and the technician timer starts — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Found by** driving one real gate-in → gate-out on production (`KA32AA5828` / `JC-41368`) end
+to end and watching what each screen did. Every defect below was observed live and confirmed
+against the database, not inferred.
+
+### 1. The floor allocation modal offered values that do not exist
+
+`FloorSupervisorWorkspace` initialised its selects to the literals `"B-01"` and `"TECH-001"`.
+Neither is a real id: `tbl_bays.bay_id` is `B01`…`B09`/`I1`…`I7`, and the technician options are
+built as `TECH-${employee_id}`. A controlled `<select>` whose value matches no `<option>` renders
+with **nothing selected**, so the technician box was silently blank and CONFIRM posted
+`technicianId: "TECH-001"` with an empty `technicianName`. The bay list escaped the same fate only
+because a later effect overwrites it with the first AVAILABLE bay once the roster loads.
+
+Now: both default to `""`, a real (first non-busy) technician is chosen when the roster arrives,
+placeholder options explain the empty state, and CONFIRM refuses an incomplete selection instead of
+posting a phantom id.
+
+### 2. The allocated bay never reached the job card
+
+`allocateJobAndBay()` wrote the bay as a **string** (`"B09"`) into `tbl_job_allocations` /
+`tbl_repair_executions` / `tbl_bays`, and deliberately did **not** write
+`job_card_master.bay_id` — the comment reasoned that the column is `int unsigned` and a string
+write would coerce to `0`. The coercion concern is real; the conclusion was wrong. `bays` carries a
+**`bay_code`** column holding exactly those strings (`bay_code 'B09' -> bay_id 9`), so the correct
+integer was always one lookup away.
+
+Leaving it NULL was not neutral: `TechnicianWorkspace` printed "Bay: Not yet allocated" for a
+vehicle physically sitting in a bay, which is what the technician saw after a successful allocation.
+
+Now the bridge resolves `bay_code` and writes the int in the same single UPDATE as `live_status`
+and `assigned_to`. The allocation ledger remains authoritative; this is its projection onto the
+app-wide record.
+
+### 3. The technician's Start button never reached the server
+
+`handleStartTimer` was a bare client-side `setInterval` with no request at all. The engine route
+that starts the repair (`POST /api/floor-execution/timer/start`) existed and was tested, but **no
+component ever called it** — so the `tbl_repair_executions` row created at allocation stayed
+`NOT_STARTED` forever and **no repair time was ever recorded against any job**, which is exactly
+the condition the engine's own comment warns about.
+
+Now it POSTs the start, runs the local timer only once the server accepts, and surfaces the
+server's reason on refusal. The component reads its work item from `/api/floor-execution/tech-work`,
+which is also where the bay is shown from.
+
+### 4. Technicians were identified by the wrong id (this blocked #3)
+
+`authenticateJwt` sets `id` = the **login** id (70) and `employee_id` = 31, but the technician
+routes passed `user.id` while `tbl_repair_executions.technician_id` stores `TECH-<employee_id>`
+(`TECH-31`). Two consequences, both silent: `/tech-work` filtered on `'70'` and always returned an
+empty queue, and `startRepairTimer`'s accept gate compared `'TECH-31'` with `'70'` and could only
+answer `NOT_YOUR_JOB` — to the very technician the job was allocated to.
+
+Fixed with a `requireTechnicianRef()` helper used by `tech-work` and timer start/pause/resume.
+
+### 5. `getTechnicianWork` now returns the VRN
+
+The floor lane keys a work item on the SA-intake reference (`DWIP-TEMP-…`), which matches no job
+card number, so a caller could not join a work item back to the vehicle the app displays. The VRN
+is read from `tbl_gate_entry.vin` via `tbl_sa_intake.gate_entry_id` — **`tbl_sa_intake.vrn` itself
+is NULL on every real row**, so joining on the obvious column would have returned nothing. Without
+this, a technician holding two open jobs (this one did: `B06` and `B09`) could be shown the wrong
+bay.
+
+### Deliberately NOT changed
+
+- The allocation ledger is still keyed on the `DWIP-TEMP-…` intake reference rather than the job
+  card number. Reconciling that changes how intake rows are keyed, so it needs an explicit decision.
+- The technician's STOP posts the QC handoff but does not complete the `tbl_repair_executions` row,
+  which therefore stays `IN_PROGRESS`.
+
+### Verification
+
+Type gate clean for all four changed files (9 pre-existing errors remain in other files);
+`lint:fabrication` pass (885 files); component tests 38/38; unit tests 221/228 with the same 7
+pre-existing failures.
+
+---
+
 ## v1.1.0-rc.6 — pending-action reminders in the Android app — **RELEASE**
 
 **Build source:** working tree at `31ad600` plus these changes.

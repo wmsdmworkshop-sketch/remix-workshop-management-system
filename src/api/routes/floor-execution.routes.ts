@@ -21,7 +21,7 @@ function requireFloorRoles(allowedRoles: string[]) {
 // and that refusal is gone — see the note there. Cross-branch access is reasoned
 // about in AuthorizationService.checkBranchAccess(), not here.)
 
-function requireAuthenticatedUser(req: any): { id: string; name: string; branchId: string; role: string } {
+function requireAuthenticatedUser(req: any): { id: string; name: string; employeeId: number | null; branchId: string; role: string } {
   const user = req.user;
   if (!user?.id) {
     throw new Error("AUTHENTICATED_USER_CONTEXT_REQUIRED");
@@ -66,7 +66,27 @@ function requireAuthenticatedUser(req: any): { id: string; name: string; branchI
     // out explicitly rather than left blank.)
     branchId: user.branchId != null ? String(user.branchId) : "BR-SEDAM",
     role,
+    employeeId: user.employee_id != null ? Number(user.employee_id) : null,
   };
+}
+
+/**
+ * The identifier the FLOOR LANE stores a technician under: `TECH-<employee_id>`.
+ *
+ * `tbl_repair_executions.technician_id` and `tbl_job_allocations.technician_id`
+ * are written by allocateJobAndBay() as `TECH-${employee_id}`. The technician
+ * routes used to pass `user.id` instead — the LOGIN id (e.g. 70) — which matches
+ * no row at all, so two things were silently broken for every real technician:
+ *   - GET /tech-work filtered on technician_id = '70' and returned an empty
+ *     queue, and
+ *   - startRepairTimer's accept gate compared 'TECH-31' against '70' and could
+ *     only ever answer NOT_YOUR_JOB ("allocated to TECH-31, not to you") for the
+ *     very technician it was allocated to.
+ * Falls back to the login id only when the token carries no employee_id (e.g. a
+ * global-context admin/developer account that has no employee record).
+ */
+function requireTechnicianRef(user: { id: string; employeeId: number | null }): string {
+  return user.employeeId != null ? `TECH-${user.employeeId}` : user.id;
 }
 
 const FLOOR_CONTROL_ROLES = ["floor_supervisor", "supervisor", "service_manager", "works_manager", "workshop_manager", "gm_service", "admin", "developer"];
@@ -165,7 +185,7 @@ floorExecutionRouter.post("/allocate", authenticateJwt, requireFloorRoles(FLOOR_
  */
 floorExecutionRouter.get("/tech-work", authenticateJwt, requireFloorRoles(FLOOR_EXECUTION_ROLES), async (req: Request, res: Response) => {
   try {
-    const work = await floorExecutionEngine.getTechnicianWork(requireAuthenticatedUser(req).id);
+    const work = await floorExecutionEngine.getTechnicianWork(requireTechnicianRef(requireAuthenticatedUser(req)));
     res.json({ success: true, data: work });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -178,7 +198,7 @@ floorExecutionRouter.get("/tech-work", authenticateJwt, requireFloorRoles(FLOOR_
 floorExecutionRouter.post("/timer/start", authenticateJwt, requireFloorRoles(FLOOR_EXECUTION_ROLES), async (req: Request, res: Response) => {
   try {
     const { executionId } = req.body;
-    const result = await floorExecutionEngine.startRepairTimer(executionId, requireAuthenticatedUser(req).id);
+    const result = await floorExecutionEngine.startRepairTimer(executionId, requireTechnicianRef(requireAuthenticatedUser(req)));
     res.json({ success: true, data: result });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -191,7 +211,7 @@ floorExecutionRouter.post("/timer/start", authenticateJwt, requireFloorRoles(FLO
 floorExecutionRouter.post("/timer/pause", authenticateJwt, requireFloorRoles(FLOOR_EXECUTION_ROLES), async (req: Request, res: Response) => {
   try {
     const { executionId, pauseReason } = req.body;
-    const result = await floorExecutionEngine.pauseRepairTimer(executionId, requireAuthenticatedUser(req).id, pauseReason);
+    const result = await floorExecutionEngine.pauseRepairTimer(executionId, requireTechnicianRef(requireAuthenticatedUser(req)), pauseReason);
     res.json({ success: true, data: result });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -204,7 +224,7 @@ floorExecutionRouter.post("/timer/pause", authenticateJwt, requireFloorRoles(FLO
 floorExecutionRouter.post("/timer/resume", authenticateJwt, requireFloorRoles(FLOOR_EXECUTION_ROLES), async (req: Request, res: Response) => {
   try {
     const { executionId } = req.body;
-    const result = await floorExecutionEngine.resumeRepairTimer(executionId, requireAuthenticatedUser(req).id);
+    const result = await floorExecutionEngine.resumeRepairTimer(executionId, requireTechnicianRef(requireAuthenticatedUser(req)));
     res.json({ success: true, data: result });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

@@ -49,6 +49,12 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
   const [submittingPartRequest, setSubmittingPartRequest] = useState(false);
   const [completingJob, setCompletingJob] = useState(false);
 
+  // This technician's live work row from `tbl_repair_executions` — the record
+  // allocateJobAndBay() creates when a bay and technician are assigned. It is
+  // the only place the allocated bay is tied to this technician, and its
+  // execution_id is what starts the repair clock.
+  const [workItem, setWorkItem] = useState<any | null>(null);
+
   // Jobs actually allocated to THIS technician (job_card_master.assigned_to
   // == my employee_id, the single-technician allocation flow that's wired
   // up). This used to include any job with NO technician assigned at all —
@@ -71,6 +77,28 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
   const selectedJob = useMemo(() => {
     return myJobs.find(j => j.job_id === selectedJobId) || myJobs[0] || null;
   }, [myJobs, selectedJobId]);
+
+  /**
+   * The bay this job is actually in.
+   *
+   * The allocation writes the bay as a STRING ("B09") into
+   * tbl_job_allocations / tbl_repair_executions. job_card_master.bay_id is a
+   * separate, int-keyed projection of the same allocation and was previously
+   * never written at all, so this line used to read NULL and tell every
+   * technician "Bay: Not yet allocated" for a vehicle sitting in a bay. Prefer
+   * the work item (authoritative for the job we hold one for) and fall back to
+   * the job card, so whichever layer is populated the bay is shown honestly —
+   * and an empty state stays empty rather than inventing a bay.
+   */
+  const bayLabel = (job: any): string => {
+    // `workItem` is resolved for the SELECTED job (see the effect below), so
+    // this compares on the job's own id rather than on job_card_id — the floor
+    // lane stores that as an SA-intake reference ("DWIP-TEMP-…"), not the job
+    // card number, so comparing it to job_card_no would never match.
+    const isSelectedJob = !!selectedJob && !!job && String(job.job_id) === String(selectedJob.job_id);
+    const raw = (isSelectedJob ? workItem?.bay_id : null) || job?.bay_no || job?.bay_id || null;
+    return raw ? `Bay: ${raw}` : "Bay: Not yet allocated";
+  };
 
   /**
    * This technician's finished work, newest first.
@@ -128,8 +156,37 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
   }, [selectedJob]);
 
   // Labour tracking controls
-  const handleStartTimer = () => {
+  //
+  // Starting IS the acceptance of the job: the engine begins the SLA clock at
+  // started_at, on the reasoning that a job allocated at 09:00 but physically
+  // picked up at 14:00 must not be judged five hours late. That is why this has
+  // to reach the server. It used to be a bare setInterval with NO request at
+  // all, so the tbl_repair_executions row created at allocation stayed
+  // NOT_STARTED forever and no repair time was ever recorded against a job.
+  const handleStartTimer = async () => {
     if (timerActive) return;
+    if (!workItem?.execution_id) {
+      alert(
+        "No open work item was found for this vehicle, so the repair clock cannot start. " +
+          "Ask the floor supervisor to allocate the bay and technician for this job card."
+      );
+      return;
+    }
+    try {
+      const res = await fetch("/api/floor-execution/timer/start", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ executionId: workItem.execution_id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        alert(`Could not start the repair clock: ${data?.error || res.statusText}`);
+        return;
+      }
+    } catch (e: any) {
+      alert(`Could not start the repair clock: ${e.message || "network error"}`);
+      return;
+    }
     setTimerActive(true);
     const interval = setInterval(() => {
       setTimerSeconds(prev => prev + 1);
@@ -164,6 +221,41 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
   useEffect(() => {
     if (selectedJob?.job_card_no) loadPartsRequests(selectedJob.job_card_no);
   }, [selectedJob?.job_card_no, loadPartsRequests]);
+
+  // Load this technician's work item so the Start button has a real
+  // execution_id to accept, and so the bay can be shown from the record the
+  // allocation actually wrote.
+  useEffect(() => {
+    if (!selectedJob) { setWorkItem(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/floor-execution/tech-work", { headers: authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled || !res.ok || !data?.success) return;
+        const rows = [
+          data?.data?.currentJob,
+          ...(Array.isArray(data?.data?.nextJobs) ? data.data.nextJobs : []),
+          ...(Array.isArray(data?.data?.completedToday) ? data.data.completedToday : []),
+        ].filter(Boolean);
+        // Match on the VRN first: the floor lane keys its work items on the
+        // SA-intake reference ("DWIP-TEMP-…"), not the job card number, so
+        // vrn (surfaced by /tech-work from the gate entry) is the reliable
+        // join. A technician can hold several open jobs, so the remaining
+        // fallbacks must stay last-resort rather than guessing a bay.
+        const mine =
+          rows.find((r: any) => String(r.vrn) === String(selectedJob.vrn)) ||
+          rows.find((r: any) => String(r.job_card_id) === String(selectedJob.job_card_no)) ||
+          (rows.length === 1 ? rows[0] : null) ||
+          data?.data?.currentJob ||
+          null;
+        if (!cancelled) setWorkItem(mine);
+      } catch {
+        if (!cancelled) setWorkItem(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedJob?.job_card_no, selectedJob?.vrn]);
 
   // Technician marks the job QC-ready. The backend's completion gate
   // (validateFloorCompletionGate, inside handoffToQc) blocks this — with the
@@ -447,7 +539,7 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
                     <div className="font-mono text-xs font-bold">{job.vrn}</div>
                     <div className="text-[10px] text-slate-400 mt-1">{job.vehicle_make} {job.vehicle_model} • {job.status}</div>
                     <div className="text-[10px] text-blue-400 mt-1 font-bold">
-                      {job.bay_no ? `Bay: ${job.bay_no}` : job.bay_id ? `Bay: ${job.bay_id}` : "Bay: Not yet allocated"}
+                      {bayLabel(job)}
                     </div>
                   </button>
                 ))}
@@ -499,7 +591,7 @@ export const TechnicianWorkspace: React.FC<TechnicianWorkspaceProps> = React.mem
               <span className="font-mono font-bold text-white">{selectedJob.vrn}</span>
               <span className="text-slate-400">{selectedJob.vehicle_make} {selectedJob.vehicle_model}</span>
               <span className="text-blue-400 font-bold">
-                {selectedJob.bay_no ? `Bay: ${selectedJob.bay_no}` : selectedJob.bay_id ? `Bay: ${selectedJob.bay_id}` : "Bay: Not yet allocated"}
+                {bayLabel(selectedJob)}
               </span>
             </div>
             <ComplaintsPanel vrn={selectedJob.vrn} />

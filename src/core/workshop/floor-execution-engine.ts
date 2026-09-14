@@ -673,16 +673,48 @@ export class FloorExecutionEngine {
         // as a string. Writing "B-01" into an int column would coerce to 0 and
         // record a bay that does not exist.
         const techEmployeeId = Number(String(technicianId).replace(/^TECH-/i, ""));
-        const [upd]: any = Number.isNaN(techEmployeeId)
-          ? await db.execute(
-              `UPDATE job_card_master SET live_status = 'FLOOR_ALLOCATED' WHERE job_card_id = ?`,
-              [masterId]
-            )
-          : await db.execute(
-              `UPDATE job_card_master SET live_status = 'FLOOR_ALLOCATED', assigned_to = ?
-                WHERE job_card_id = ?`,
-              [techEmployeeId, masterId]
-            );
+
+        // RESOLVE THE BAY TO THE int id THAT job_card_master.bay_id EXPECTS.
+        //
+        // The note above used to conclude this column must stay NULL because bay
+        // ids are strings ("B09") and the column is `int unsigned`, so writing one
+        // would coerce to 0. That is right about the coercion and wrong about the
+        // conclusion: `bays` carries a `bay_code` column whose values ARE those
+        // strings — bay_code 'B09' -> bay_id 9 — which is exactly the mapping the
+        // int column needs. Leaving it NULL was not neutral. Every screen that
+        // reads the bay off the job card (TechnicianWorkspace's "Bay: Not yet
+        // allocated", JobCardManager, the bay monitors) then showed a vehicle
+        // physically sitting in a bay as unallocated, and the technician had no
+        // way to learn which bay he owned. The allocation ledger stays
+        // authoritative; this is its projection onto the app-wide record, the
+        // same way live_status and assigned_to are projected above.
+        let masterBayId: number | null = null;
+        try {
+          const [bayRows]: any = await db.execute(
+            `SELECT bay_id FROM bays WHERE bay_code = ? LIMIT 1`,
+            [bayId]
+          );
+          const resolvedBay = bayRows?.[0]?.bay_id;
+          masterBayId = resolvedBay == null ? null : Number(resolvedBay);
+        } catch (e: any) {
+          console.error("[FloorExecutionEngine] Could not map bay_code to bays.bay_id:", e.message);
+        }
+
+        const setClauses = ["live_status = 'FLOOR_ALLOCATED'"];
+        const setParams: any[] = [];
+        if (!Number.isNaN(techEmployeeId)) {
+          setClauses.push("assigned_to = ?");
+          setParams.push(techEmployeeId);
+        }
+        if (masterBayId !== null) {
+          setClauses.push("bay_id = ?");
+          setParams.push(masterBayId);
+        }
+        setParams.push(masterId);
+        const [upd]: any = await db.execute(
+          `UPDATE job_card_master SET ${setClauses.join(", ")} WHERE job_card_id = ?`,
+          setParams
+        );
         if (!upd?.affectedRows) {
           console.error(`[FloorExecutionEngine] job_card_master ${masterId} matched 0 rows on allocation bridge.`);
         } else {
@@ -735,10 +767,17 @@ export class FloorExecutionEngine {
   }> {
     let rows: any[] = [];
     try {
+      // `vrn` is read from the GATE ENTRY, not from tbl_sa_intake (whose own vrn
+      // column is NULL on every real row). The floor lane keys a work item on
+      // the SA-intake reference ("DWIP-TEMP-…"), which matches no job card
+      // number, so without this the VRN is the only identifier a caller has to
+      // join a technician's work item back to the vehicle the app displays.
       const [dbRows] = await db.execute(
-        `SELECT e.*, a.bay_id, a.allocated_by 
+        `SELECT e.*, a.bay_id, a.allocated_by, g.vin AS vrn
          FROM tbl_repair_executions e
          LEFT JOIN tbl_job_allocations a ON e.job_card_id = a.job_card_id
+         LEFT JOIN tbl_sa_intake si ON e.job_card_id = si.job_card_id
+         LEFT JOIN tbl_gate_entry g ON si.gate_entry_id = g.gate_entry_id
          WHERE e.technician_id = ?
          ORDER BY e.started_at DESC`,
         [technicianId]
