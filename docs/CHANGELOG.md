@@ -9,6 +9,74 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.10 — the billing queue can finally return a row — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Found before the advisor clicked Compile**, by calling `/api/billing/my-queue` as the biller. Had we
+not, the journey would have reached Billing and found a 500 instead of a job.
+
+### The defect
+
+`BillingEngine.getBillingQueue()` LEFT JOINs `tbl_handoff_sla`:
+
+```sql
+LEFT JOIN tbl_handoff_sla sla
+  ON sla.entity_id = CAST(pi.pre_invoice_id AS CHAR)
+ AND sla.stage_name = 'SLA_SA_TO_BILLING'
+```
+
+`tbl_handoff_sla.entity_id` is `utf8mb4_0900_ai_ci`. A bare `CAST(... AS CHAR)` takes the **connection**
+collation (`utf8mb4_unicode_ci`), and MySQL refuses to compare the two:
+
+```
+Error 1267: Illegal mix of collations (utf8mb4_0900_ai_ci,IMPLICIT)
+            and (utf8mb4_unicode_ci,IMPLICIT) for operation '='
+```
+
+So `GET /api/billing/my-queue` returned **HTTP 500 for every caller, always** — the queue has never
+been able to show a handed-off pre-invoice.
+
+The same file already carried the correct form in `checkPhase8Readiness()`
+(`CAST(? AS CHAR) COLLATE utf8mb4_0900_ai_ci`); the `COLLATE` was simply never applied to this JOIN.
+This is the trap already recorded in the project's own notes — a bare `CAST` uses the connection
+collation, not the column's.
+
+### Why it stayed hidden
+
+The Billing screen renders **"No pre-invoices handed off to billing yet."** when the queue call fails.
+Because `tbl_pre_invoice` was *also* genuinely empty, that message was indistinguishable from the
+truth. It would have stayed "correct" straight through the first real handoff — the failure was
+scheduled to surface at exactly the moment the operator first had something to bill.
+
+### The fix
+
+One `COLLATE utf8mb4_0900_ai_ci` on the CAST, matching the precedent in the same file.
+
+**Proved against production before deploying:**
+
+| Query | Result |
+| --- | --- |
+| old (no COLLATE) | `ER_CANT_AGGREGATE_2COLLATIONS` |
+| new (with COLLATE) | `0` rows, no error |
+
+The `0` is correct — `tbl_pre_invoice` is still empty. **Verified live after deploy:**
+`GET /api/billing/my-queue` returns `200 {"success":true,"data":[]}` as `dev-207`.
+
+### Deployed
+
+Cloud Build `6bc9c437-8c64-4f97-bdd6-bc1cbafe536e` — SUCCESS in 5m36s → image
+`dwip-enterprise:2b0c34c` → revision **`dwip-enterprise-00241-wxf`**, latest-ready, 100% of traffic.
+
+### Found alongside it, not fixed here
+
+`GET /api/billing/pending-red-alerts` also returns 500: `Unknown column 'mgp.mgp_number'`.
+`tbl_manual_gate_pass_request` is a **3-column stub** (`mgp_id`, `job_id`, `status`) and **no table in
+the schema has an `mgp_number` column at all**. The Manual Gate Pass feature therefore has no schema —
+restoring it is a schema change, not a hotfix, and is left as a separate decision.
+
+---
+
 ## v1.1.0-rc.9 — the advisor can build a pre-invoice again — **RELEASE**
 
 **Release type:** PRODUCTION
