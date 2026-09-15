@@ -893,11 +893,29 @@ export class BillingEngine {
       blockers.push({ code: "BV_PARTS_RECONCILED", description: "Parts requests not fully resolved.", owner: "PARTS_INCHARGE" });
     }
     // BV_LABOUR_PRESENT
+    //
+    // This used to require at least one row in job_card_service_item, and NOTHING
+    // in this codebase ever writes that table — the advisor's estimate flow records
+    // a single combined job_card_master.estimated_amount and nothing else. See the
+    // note in checkPhase8Readiness(), which was retargeted for exactly this reason;
+    // this sibling check was left behind. The consequence was a gate that could not
+    // pass for ANY job, ever: "No labour/service items on job."
+    //
+    // Labour now counts as present when the itemised table has rows, OR the
+    // pre-invoice carries totals, OR the job card carries a captured estimate. The
+    // itemised path is still honoured, so real line items are never ignored.
     const [labourCount]: any = await this.execute(
       `SELECT COUNT(*) AS cnt FROM job_card_service_item WHERE job_card_id = ?`,
       [pi.job_id]
     );
-    if (labourCount[0].cnt === 0) {
+    const [capturedRow]: any = await this.execute(
+      `SELECT estimated_amount FROM job_card_master WHERE job_card_id = ?`,
+      [pi.job_id]
+    );
+    const capturedEstimate = Number(capturedRow?.[0]?.estimated_amount) || 0;
+    const storedLabourTotal = Number(pi.labour_total) || 0;
+    const storedPartsTotal = Number(pi.parts_total) || 0;
+    if (labourCount[0].cnt === 0 && storedLabourTotal + storedPartsTotal === 0 && capturedEstimate === 0) {
       blockers.push({ code: "BV_LABOUR_PRESENT", description: "No labour/service items on job.", owner: "SA" });
     }
     // BV_DISCOUNT_AUTHORIZED
@@ -913,6 +931,14 @@ export class BillingEngine {
       blockers.push({ code: "BV_CRM_EVIDENCE_STATUS", description: "CRM billing evidence already VALIDATED for this job.", owner: "SYSTEM" });
     }
     // BV_COMMERCIAL_TAMPERING — server re-validates totals
+    //
+    // Itemised sums are used when they exist. Otherwise the recompute falls back to
+    // the job card's captured estimate — which is precisely the figure
+    // compilePreInvoice() used as labourTotal when it built this invoice, so the
+    // comparison is "does the stored invoice still agree with the commercial figure
+    // it was built from", which is the control's real purpose. Reading only the
+    // permanently-empty itemised tables made it fire on every job with
+    // "Server-recomputed grand_total 0 ≠ stored 2360".
     const [liveLab]: any = await this.execute(
       `SELECT COALESCE(SUM(labour_amount), 0) AS lt FROM job_card_service_item WHERE job_card_id = ?`,
       [pi.job_id]
@@ -921,7 +947,8 @@ export class BillingEngine {
       `SELECT COALESCE(SUM(total_price), 0) AS pt FROM job_card_parts WHERE job_card_id = ?`,
       [pi.job_id]
     );
-    const liveLabour = parseFloat(liveLab[0].lt) || 0;
+    const itemisedLabour = parseFloat(liveLab[0].lt) || 0;
+    const liveLabour = itemisedLabour > 0 ? itemisedLabour : capturedEstimate;
     const liveParts2 = parseFloat(liveParts[0].pt) || 0;
     const liveTaxable = liveLabour + liveParts2 - parseFloat(pi.authorized_discount);
     const gstPct = parseFloat(pi.gst_rate) / 100;
