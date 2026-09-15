@@ -6801,7 +6801,19 @@ time from another field.`;
   // normalize+match, single-gate-out lock, revoke rules) against the real schema.
   // ===========================================================================
   const GATE_PASS_ISSUE_ROLES = ["admin", "developer", "gm_service", "workshop_manager", "service_manager", "cashier"];
-  const GATE_OUT_SECURITY_ROLES = ["admin", "developer", "gm_service", "workshop_manager", "security_agent", "gate_personnel"];
+  // "reception" is a TEMPORARY PILOT OVERRIDE, added on the owner's instruction
+  // (2026-09-15): production has NO security_agent and NO gate_personnel ACCOUNT —
+  // verified, zero active users in either role — so the exit step had no operator
+  // and no vehicle could be gated out at all. Reception (AFROZ, dev-328) works it
+  // instead until a real security login exists.
+  //
+  // NOTE THE AUTHORITY THIS GRANTS. Reception can now call POST /api/gate-out/gate-out,
+  // which RELEASES A VEHICLE, and POST /api/gate-out/evidence, which records the
+  // rear-plate capture behind it — and can claim the SECURITY task in claim-task.
+  // That is a security control handed to a front-desk role. Delete "reception" from
+  // this list the moment a security_agent account is created; the correct fix is an
+  // account in the right role, not a widened role list.
+  const GATE_OUT_SECURITY_ROLES = ["admin", "developer", "gm_service", "workshop_manager", "security_agent", "gate_personnel", "reception"];
   const normVrn = (s: any) => String(s ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const genId = (prefix: string) => `${prefix}-${Date.now().toString(36).toUpperCase()}${Math.floor(100 + Math.random() * 900)}`;
 
