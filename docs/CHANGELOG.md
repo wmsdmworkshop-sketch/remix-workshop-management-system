@@ -79,6 +79,30 @@ are `admin`, `billing`, `cashier` and `gm_service` — but no user is assigned t
 So once the pre-invoice is handed off, the billing stage has no operator. Creating users is reserved to
 the owner (*"never ever create any unknown user in any module"*), so this is reported rather than fixed.
 
+### Deployed
+
+Cloud Build `bba7e7ec-d446-4463-8dd0-34287ebba68b` — **SUCCESS** in 5m50s → image
+`dwip-enterprise:d6f2dcd` → revision **`dwip-enterprise-00240-286`**, with `/api/health` reporting
+that revision and MySQL connected.
+
+Migration 031 applied on boot — `schema_migrations` now reads `v31 sa_pre_invoice_module`
+(`2026-09-15 08:47:45`), module `PRE_INVOICE` exists as id 17, and the grants landed for
+`service_advisor`, `billing`, `cashier` and `gm_service`.
+
+### Proof, obtained without mutating anything
+
+Called as `emp029` (`service_advisor`) against a job that does not exist — so the handler fails on
+business grounds *after* authorization, and a 403 would have meant the fix did not work:
+
+```
+POST /api/billing/pre-invoice/compile/999999
+  before rc.9 → 403 AUTHORIZATION_DENIED   (handler never ran)
+  after  rc.9 → 404 P8_JOB_NOT_FOUND       (authorization passed, handler ran, nothing written)
+```
+
+The real compile for `JC-41368` was deliberately **not** performed. Issuing a pre-invoice is the
+operator's paperwork step, and the permission fix is already proven without it.
+
 ---
 
 ## v1.1.0-rc.8 — a stage change now reaches the screen that displays it — **RELEASE**
