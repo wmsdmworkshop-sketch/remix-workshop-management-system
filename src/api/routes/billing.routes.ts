@@ -116,7 +116,11 @@ router.post("/pre-invoice/check-readiness/:jobId", authorize("billing", "view"),
 });
 
 // POST /api/billing/pre-invoice/compile/:jobId
-router.post("/pre-invoice/compile/:jobId", authorize("billing", "edit"), async (req: Request, res: Response) => {
+// The advisor builds the pre-invoice (src/workflow.md), so this half of the chain
+// is gated on PRE_INVOICE, not Billing. Billing.edit also gates crm-invoice and
+// manual-gate-pass/:mgpId/gm-action; granting that to service_advisor would let an
+// advisor release a vehicle, which the 2026-09-14 settlement rule forbids.
+router.post("/pre-invoice/compile/:jobId", authorize("pre_invoice", "edit"), async (req: Request, res: Response) => {
   try {
     const user = req.user!;
     const jobId = parseInt(req.params.jobId);
@@ -133,7 +137,7 @@ router.post("/pre-invoice/compile/:jobId", authorize("billing", "edit"), async (
 });
 
 // POST /api/billing/pre-invoice/review/:preInvoiceId
-router.post("/pre-invoice/review/:preInvoiceId", authorize("billing", "edit"), async (req: Request, res: Response) => {
+router.post("/pre-invoice/review/:preInvoiceId", authorize("pre_invoice", "edit"), async (req: Request, res: Response) => {
   try {
     const user = req.user!;
     const piId = parseInt(req.params.preInvoiceId);
@@ -146,7 +150,7 @@ router.post("/pre-invoice/review/:preInvoiceId", authorize("billing", "edit"), a
 });
 
 // POST /api/billing/pre-invoice/send-to-customer/:preInvoiceId
-router.post("/pre-invoice/send-to-customer/:preInvoiceId", authorize("billing", "edit"), async (req: Request, res: Response) => {
+router.post("/pre-invoice/send-to-customer/:preInvoiceId", authorize("pre_invoice", "edit"), async (req: Request, res: Response) => {
   try {
     const user = req.user!;
     const piId = parseInt(req.params.preInvoiceId);
@@ -159,7 +163,7 @@ router.post("/pre-invoice/send-to-customer/:preInvoiceId", authorize("billing", 
 });
 
 // POST /api/billing/pre-invoice/capture-confirmation/:preInvoiceId
-router.post("/pre-invoice/capture-confirmation/:preInvoiceId", authorize("billing", "edit"), async (req: Request, res: Response) => {
+router.post("/pre-invoice/capture-confirmation/:preInvoiceId", authorize("pre_invoice", "edit"), async (req: Request, res: Response) => {
   try {
     const user = req.user!;
     const piId = parseInt(req.params.preInvoiceId);
@@ -193,7 +197,7 @@ router.post("/pre-invoice/recompile/:preInvoiceId", authorize("billing", "edit")
 });
 
 // POST /api/billing/handoff/:preInvoiceId
-router.post("/handoff/:preInvoiceId", authorize("billing", "edit"), async (req: Request, res: Response) => {
+router.post("/handoff/:preInvoiceId", authorize("pre_invoice", "edit"), async (req: Request, res: Response) => {
   try {
     const user = req.user!;
     const piId = parseInt(req.params.preInvoiceId);
