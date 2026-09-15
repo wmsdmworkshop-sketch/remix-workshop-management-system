@@ -9,6 +9,78 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.9 — the advisor can build a pre-invoice again — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Found by** continuing the same live journey past the rc.8 fix. rc.8 removed the reason the advisor
+could not *see* the stage; rc.9 removes the reason the advisor could not *act* on it.
+
+### What was true when rc.8 landed
+
+The cache fix worked, and every engine gate was clear — confirmed by calling the API as the advisor:
+
+```
+GET  /api/billing/ready-from-qc                → 200   lists KA32AA5828 (PRE_INVOICE_READY)
+POST /api/billing/pre-invoice/check-readiness/7386 → 200   {"ready":true,"blockers":[]}
+```
+
+No `P8_NOT_READY`, no `P8_NO_SERVICE_ITEMS`. The exact `estimated_amount` the advisor had typed was
+there. The vehicle was, by every server-side measure, ready to compile.
+
+### What was still wrong
+
+The five routes the advisor's own screen calls were all `authorize("billing", "edit")`:
+
+| Route | |
+| --- | --- |
+| `POST /api/billing/pre-invoice/compile/:jobId` | compile |
+| `POST /api/billing/pre-invoice/review/:preInvoiceId` | SA review |
+| `POST /api/billing/pre-invoice/send-to-customer/:preInvoiceId` | send |
+| `POST /api/billing/pre-invoice/capture-confirmation/:preInvoiceId` | confirm |
+| `POST /api/billing/handoff/:preInvoiceId` | hand off to billing |
+
+`service_advisor` holds `Billing` with **`can_view = 1, can_edit = 0`**. `AuthorizationService.checkPermission`
+denies by default, there is no delegation row, and the only row in `user_overrides` belongs to someone
+else. So the Compile button could only ever return **403 `AUTHORIZATION_DENIED`** — which is what the
+console had been reporting all along.
+
+This is the same shape of defect as migration 029: a route gated on a module the role performing the
+work does not hold. The button was unreachable, not broken.
+
+### Why not simply grant `Billing.can_edit = 1`
+
+Because `Billing` edit also gates `crm-invoice` (captures the statutory CRM invoice),
+`manual-gate-pass/raise` and `manual-gate-pass/:mgpId/gm-action`. Granting it to `service_advisor` would
+let an advisor approve a **Manual Gate Pass** — release a vehicle — which is precisely the authority the
+owner restricted on 2026-09-14: *"only `developer` and `gm_service` may issue a gate-out pass without
+payment settled."* Widening the module would have quietly undone a rule set the day before. The five
+advisor steps are carved out instead.
+
+### The fix
+
+Migration **031** creates module `PRE_INVOICE` (named after the route key `pre_invoice`, following the
+026/029 precedent — `findByRoleAndModule` compares `LOWER(module_name)` with no space/underscore
+normalisation) and grants it view+edit to `service_advisor`. The five routes above are re-gated onto it.
+
+`billing`, `cashier` and `gm_service` are granted it too, because they hold `Billing.can_edit = 1` today
+and so could already call these five routes — omitting them would have silently **removed** a
+capability. That is the one place this migration is wider than 029's "single role and no wider" rule,
+and it is deliberate: 029 created access that did not exist, this moves access that did.
+`admin`/`developer` bypass the lookup and need no row.
+
+Idempotent and additive: the module is created only if absent, a grant is inserted only if absent,
+nothing existing is modified or removed. Reversal is deleting the `PRE_INVOICE` rows.
+
+### Found and flagged, not acted on
+
+**Production has no `billing` or `cashier` user account at all.** Roles holding `Billing.can_edit = 1`
+are `admin`, `billing`, `cashier` and `gm_service` — but no user is assigned to `billing` or `cashier`.
+So once the pre-invoice is handed off, the billing stage has no operator. Creating users is reserved to
+the owner (*"never ever create any unknown user in any module"*), so this is reported rather than fixed.
+
+---
+
 ## v1.1.0-rc.8 — a stage change now reaches the screen that displays it — **RELEASE**
 
 **Release type:** PRODUCTION
