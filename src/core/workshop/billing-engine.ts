@@ -1847,6 +1847,13 @@ export class BillingEngine {
   }
 
   public async getBillingQueue(branchId: number): Promise<any[]> {
+    // The COLLATE on line below is load-bearing, for the same reason as the one in
+    // checkPhase8Readiness(). tbl_handoff_sla.entity_id is utf8mb4_0900_ai_ci, but a
+    // bare CAST(... AS CHAR) takes the CONNECTION collation (utf8mb4_unicode_ci), and
+    // comparing the two raises "Illegal mix of collations ... for operation '='".
+    // Without it this endpoint threw a 500 for EVERY caller, so the Billing queue was
+    // never once able to show a handed-off pre-invoice — an empty screen that looked
+    // like "nothing has been handed off yet" while actually being a hard failure.
     const [rows]: any = await this.execute(
       `SELECT pi.pre_invoice_id, pi.job_id, pi.job_card_no, pi.vrn, pi.customer_name,
               pi.status, pi.service_advisor_name, pi.billing_acknowledged_by,
@@ -1854,7 +1861,7 @@ export class BillingEngine {
               sla.accepted_at AS sla_started_at
        FROM tbl_pre_invoice pi
        JOIN tbl_pre_invoice_version piv ON piv.pre_invoice_id = pi.pre_invoice_id AND piv.version = pi.current_version
-       LEFT JOIN tbl_handoff_sla sla ON sla.entity_id = CAST(pi.pre_invoice_id AS CHAR) AND sla.stage_name = 'SLA_SA_TO_BILLING'
+       LEFT JOIN tbl_handoff_sla sla ON sla.entity_id = CAST(pi.pre_invoice_id AS CHAR) COLLATE utf8mb4_0900_ai_ci AND sla.stage_name = 'SLA_SA_TO_BILLING'
        WHERE pi.branch_id = ? AND pi.status IN ('BILLING_HANDED_OFF','BILLING_IN_PROGRESS')
        ORDER BY sla.accepted_at ASC`,
       [branchId]
