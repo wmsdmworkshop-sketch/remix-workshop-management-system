@@ -71,7 +71,20 @@ The DB-backed legacy suites could **not** be run: `role_ops_phase7_qc` and `role
 report `ECONNREFUSED 127.0.0.1:3307` because the local test MySQL is not running. Those 15 legacy
 failures are environmental and are not regressions. The helper cannot mask a real failure either
 way, since `registerJobCardCache()` is called only by `server.ts`.
+### Deployed
 
+Cloud Build `ea3f3885-5510-4558-be67-721008dd938d` — **SUCCESS** in 5m49s → image
+`dwip-enterprise:95dd946` → revision **`dwip-enterprise-00239-hjw`**, latest-ready and serving 100%
+of traffic. `/api/health` reports `cloudRunRevision: dwip-enterprise-00239-hjw` with MySQL
+connected, and the revision carries all **16** env vars (image-only deploy; nothing was dropped).
+
+The served bundle is **unchanged** at `/assets/index-D03uZ4w-.js`. That is the expected result, not
+a stale deploy: rc.8 touches no frontend source, so the hash *should* be identical. The revision
+name is the proof of the new build.
+
+Because the new revision rebuilds the in-memory job-card cache from MySQL at boot, `JC-41368`
+should already surface in the SA's MY ATTENTION queue as `PRE_INVOICE_READY` / **Send Pre-Invoice**,
+with no second acknowledgement. Operator confirmation of that is still outstanding.
 ---
 
 ## v1.1.0-rc.7 — the allocated bay now reaches the job card, and the technician timer starts — **RELEASE**
