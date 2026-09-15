@@ -1806,8 +1806,16 @@ export class BillingEngine {
   // so it would never actually match a real job_card_master.job_card_id —
   // faking a join that can't return real data would be worse than omitting it.
   public async getReadyFromQcQueue(branchId: number, saName: string): Promise<any[]> {
+    // `job_card_id AS job_id` is load-bearing, not cosmetic. The column is
+    // job_card_id, but this router's convention — and every consumer of it — calls
+    // that value `job_id` (see getMyPreInvoices / getBillingQueue, which return
+    // `pi.job_id`). ServiceAdvisorWorkspace's pre-invoice panel reads `j.job_id`
+    // and passes it straight into POST /pre-invoice/compile/:jobId, so without the
+    // alias it sent the literal string "undefined", parseInt produced NaN, and the
+    // route answered "Invalid jobId" — the compile button could never work, and the
+    // React key on each row was undefined too.
     const [rows]: any = await this.execute(
-      `SELECT job_card_id, job_card_no, vehicle_reg AS vrn, customer_name, live_status, service_advisor
+      `SELECT job_card_id AS job_id, job_card_no, vehicle_reg AS vrn, customer_name, live_status, service_advisor
        FROM job_card_master
        WHERE live_status = 'PRE_INVOICE_READY'
          AND (? = '' OR service_advisor = ?)
