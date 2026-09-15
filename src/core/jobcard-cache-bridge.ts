@@ -45,6 +45,28 @@ export function registerJobCardCache(a: CacheAccessor): void {
 }
 
 /**
+ * Patch the served cache after a stage write has COMMITTED.
+ *
+ * Call this immediately after `conn.commit()` — or after a successful
+ * `db.execute()` on an autocommit connection — never inside a transaction. If
+ * it ran before the commit, a rollback would leave the cache advertising a
+ * stage the database never took, which is the same class of lie this module
+ * exists to remove.
+ *
+ * Never throws, and no-ops when no cache is registered (unit tests, CLI
+ * scripts, migrations): a cache problem must never fail a transition that has
+ * already committed.
+ *
+ * Exists so each stage writer says "patch the cache for this job" in one line
+ * rather than repeating the dynamic-import dance, and so the rule is greppable:
+ * every `UPDATE job_card_master SET live_status` needs one of these next to it.
+ */
+export async function syncCachedJobCard(masterId: number | string | null | undefined): Promise<void> {
+  if (masterId === null || masterId === undefined || masterId === "") return;
+  await refreshCachedJobCard(masterId);
+}
+
+/**
  * Re-read one job card from MySQL and patch the cached copy in place.
  *
  * `masterId` is job_card_master.job_card_id (the numeric primary key), which is

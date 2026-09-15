@@ -1,6 +1,10 @@
 import { pool as db } from "../../db/index";
 import { randomUUID } from "crypto";
 import { VosCorePlatform } from "../vos";
+// Patches the in-memory snapshot GET /api/job-cards serves — see the module
+// header on jobcard-cache-bridge.ts. Every job_card_master.live_status write
+// needs one of these after its commit, or the UI keeps showing the old stage.
+import { syncCachedJobCard } from "../jobcard-cache-bridge.ts";
 
 /**
  * Physical bay capacity. A bay holds one vehicle on the floor, but a second can
@@ -725,8 +729,7 @@ export class FloorExecutionEngine {
           // supervisor's success response cannot outrun the refresh, and
           // internally non-throwing so a cache problem never fails a committed
           // allocation.
-          const { refreshCachedJobCard } = await import("../jobcard-cache-bridge.ts");
-          await refreshCachedJobCard(masterId);
+          await syncCachedJobCard(masterId);
         }
       }
       // job_cards is the legacy table; many vehicles have no row in it at all,
@@ -1386,6 +1389,7 @@ export class FloorExecutionEngine {
           `UPDATE job_card_master SET live_status = 'QC_PENDING' WHERE job_card_id = ?`,
           [qcMasterId]
         );
+        await syncCachedJobCard(qcMasterId);
       } else {
         console.error(
           `[FloorExecutionEngine] No job_card_master row resolves for ${jobCardId} on QC handoff; QC will not see it.`

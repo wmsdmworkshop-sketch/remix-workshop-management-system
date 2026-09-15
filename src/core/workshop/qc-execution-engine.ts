@@ -19,6 +19,10 @@
  */
 import { pool as db } from "../../db/index.ts";
 import { VosCorePlatform } from "../vos/index.ts";
+// Patches the in-memory snapshot GET /api/job-cards serves. Without it a stage
+// write lands in MySQL and every cache-fed screen keeps rendering the previous
+// stage until the server restarts — see the module header on jobcard-cache-bridge.ts.
+import { syncCachedJobCard } from "../jobcard-cache-bridge.ts";
 
 // ─── Injectable DB provider (for testing with mock pools) ─────────────────────
 let customDb: any = null;
@@ -515,6 +519,9 @@ export class QcExecutionEngine {
       // so the RBAC/view-filter still sees this transition.
       await conn.execute(`UPDATE job_card_master SET live_status = 'QC_IN_PROGRESS' WHERE job_card_id = ?`, [jobId]);
       await conn.commit();
+      // After the commit, never inside it: a rollback must not leave the cache
+      // advertising a stage the database never took.
+      await syncCachedJobCard(jobId);
 
       try {
         await VosCorePlatform.timeline.addNode({ vosId: `vos-${jobId}`, timelineType: "OPERATIONAL", eventType: "QUALITY_CHECK_STARTED", title: "QC Inspector Acknowledged Handoff", metadata: { branchId, qcInspectorId } });
@@ -649,6 +656,7 @@ export class QcExecutionEngine {
           WHERE m.job_card_id = ? AND h.status IN ('PENDING_QC','QC_IN_PROGRESS')`, [jobId]);
 
       await conn.commit();
+      await syncCachedJobCard(jobId);
 
       try {
         await VosCorePlatform.timeline.addNode({
@@ -685,6 +693,7 @@ export class QcExecutionEngine {
       await conn.execute(`UPDATE rework_tracking SET rework_completed = true WHERE original_job_id = ? AND rework_completed = false`, [jobId]);
       await conn.execute(`UPDATE job_card_master SET live_status = 'QC_PENDING' WHERE job_card_id = ?`, [jobId]);
       await conn.commit();
+      await syncCachedJobCard(jobId);
 
       try {
         await VosCorePlatform.timeline.addNode({ vosId: `vos-${jobId}`, timelineType: "OPERATIONAL", eventType: "REWORK_COMPLETED", title: "Rework Completed — Returned to QC Queue", metadata: { branchId, floorSupervisorId, techId, notes } });
@@ -733,6 +742,11 @@ export class QcExecutionEngine {
       // FLOOR_ALLOCATED) and the billing queue was permanently empty.
       await conn.execute(`UPDATE job_card_master SET live_status = 'PRE_INVOICE_READY' WHERE job_card_id = ?`, [jobId]);
       await conn.commit();
+      // THE fix for "nothing changes after clicking Acknowledge QC Pass": the
+      // advisor's MY ATTENTION card is built from the cached workshop_stage, so
+      // without this the button appears to do nothing while the database is
+      // already correct — and the pre-invoice panel stays hidden.
+      await syncCachedJobCard(jobId);
 
       try {
         await VosCorePlatform.timeline.addNode({ vosId: `vos-${jobId}`, timelineType: "OPERATIONAL", eventType: "SA_ACKNOWLEDGED_QC", title: "Service Advisor Acknowledged QC — Pre-Invoice Ready", metadata: { branchId, saId } });

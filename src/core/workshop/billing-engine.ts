@@ -20,6 +20,10 @@
  */
 
 import { pool as db } from "../../db/index.ts";
+// Patches the in-memory snapshot GET /api/job-cards serves — see the module
+// header on jobcard-cache-bridge.ts. Every job_card_master.live_status write
+// needs one of these after its commit, or the UI keeps showing the old stage.
+import { syncCachedJobCard } from "../jobcard-cache-bridge.ts";
 
 // ─── Injectable DB provider (for test isolation) ─────────────────────────────
 let customDb: any = null;
@@ -490,6 +494,7 @@ export class BillingEngine {
         );
 
       await conn.commit();
+      await syncCachedJobCard(jobId);
 
       // NON-CRITICAL POST-COMMIT — tbl_workflow_history uses job_id, old_state, new_state, event_type
       try {
@@ -574,6 +579,7 @@ export class BillingEngine {
       `UPDATE job_card_master SET live_status = 'PRE_INVOICE_SENT' WHERE job_card_id = ?`,
       [pi.job_id]
     );
+    await syncCachedJobCard(pi.job_id);
 
     // SLA: SLA_CUSTOMER_CONFIRMATION
       await this.execute(
@@ -656,6 +662,7 @@ export class BillingEngine {
       );
 
       await conn.commit();
+      await syncCachedJobCard(pi.job_id);
       return { confirmationId };
     } catch (err) {
       await conn.rollback();
@@ -717,6 +724,7 @@ export class BillingEngine {
       );
 
       await conn.commit();
+      await syncCachedJobCard(pi.job_id);
     } catch (err) {
       await conn.rollback();
       throw err;
@@ -778,6 +786,7 @@ export class BillingEngine {
       );
 
       await conn.commit();
+      await syncCachedJobCard(pi.job_id);
     } catch (err) {
       await conn.rollback();
       throw err;
@@ -997,6 +1006,7 @@ export class BillingEngine {
       );
 
       await conn.commit();
+      await syncCachedJobCard(pi.job_id);
     } catch (err) {
       await conn.rollback();
       throw err;
@@ -1319,6 +1329,7 @@ export class BillingEngine {
       );
 
       await conn.commit();
+      await syncCachedJobCard(pi.job_id);
 
       // NON-CRITICAL POST-COMMIT — tbl_workflow_history schema: job_id, old_state, new_state, event_type, user, workshop_id, payload
       try {
@@ -1441,6 +1452,7 @@ export class BillingEngine {
       );
 
       await conn.commit();
+      await syncCachedJobCard(jobId);
       return { mgpId };
     } catch (err) {
       await conn.rollback();
@@ -1525,6 +1537,7 @@ export class BillingEngine {
         );
 
         await conn.commit();
+        await syncCachedJobCard(mgp.job_id);
 
         // NON-CRITICAL POST-COMMIT: RED ALERT event
         try {
@@ -1557,6 +1570,7 @@ export class BillingEngine {
         `UPDATE job_card_master SET live_status = 'BILLING_IN_PROGRESS' WHERE job_card_id = ?`,
         [mgp.job_id]
       );
+      await syncCachedJobCard(mgp.job_id);
       return { billingStatus: "BILLING_IN_PROGRESS" };
     } else {
       // RETURN_FOR_CLARIFICATION
@@ -1570,6 +1584,7 @@ export class BillingEngine {
         `UPDATE job_card_master SET live_status = 'BILLING_IN_PROGRESS' WHERE job_card_id = ?`,
         [mgp.job_id]
       );
+      await syncCachedJobCard(mgp.job_id);
       return { billingStatus: "BILLING_IN_PROGRESS" };
     }
   }
@@ -1725,6 +1740,7 @@ export class BillingEngine {
       );
 
       await conn.commit();
+      await syncCachedJobCard(mgp.job_id);
 
       // NON-CRITICAL POST-COMMIT
       try {
