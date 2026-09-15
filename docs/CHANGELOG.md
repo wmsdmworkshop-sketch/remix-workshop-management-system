@@ -9,6 +9,115 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.13 — reception works the exit step, because nobody else could — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Owner instruction, 2026-09-15:** *"cashier does not exist right now we can give over ride to gm, security
+login can be overide by reception for now"*. One half needed a change. The other half did not, and saying
+so is part of the record.
+
+### The cashier half needed nothing
+
+`GATE_PASS_ISSUE_ROLES` already contains `gm_service`, and under the 2026-09-14 settlement rule only
+`developer` and `gm_service` are exempt from full settlement. The GM (`sayeed_dp`, user 21) could already
+record payment and issue the gate pass. **No code change was made for this**, and none was needed.
+
+### The security half did
+
+```
+GATE_OUT_SECURITY_ROLES =
+  [admin, developer, gm_service, workshop_manager, security_agent, gate_personnel]
+```
+
+Production has **zero** active users in `security_agent` and **zero** in `gate_personnel` — verified by
+query, not assumed. The exit step had no operator at all, so **no vehicle could be gated out**, by anyone.
+The stage was not slow or awkward; it was unreachable.
+
+`"reception"` was added to the list.
+
+### What that grants — stated plainly
+
+Reception (`AFROZ`, `dev-328`) can now call:
+
+| Endpoint | Effect |
+| --- | --- |
+| `POST /api/gate-out/gate-out` | **releases a vehicle** |
+| `POST /api/gate-out/evidence` | records the rear-plate capture behind it |
+| `GET /api/gate-out/security-queue` | reads the security queue |
+| `POST /api/gate-out/claim-task` | claims the **SECURITY** task |
+| `GET /api/gate-out/gate-pass-ready` | lists gate-pass-ready vehicles |
+
+That is a security control moved to a front-desk role. The comment in `server.ts` and the commit message
+both say so, so a future reader meets the warning at the code, not only here.
+
+**To revert:** delete `"reception"` from `GATE_OUT_SECURITY_ROLES`. The correct permanent fix is a user
+account in `security_agent` — an account in the right role, not a widened role list.
+
+---
+
+## v1.1.0-rc.12 — a validator that could never be satisfied — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Reported by the operator, verbatim:** `2 blocker(s) - [BV_LABOUR_PRESENT] No labour/service items on
+job. - [BV_COMMERCIAL_TAMPERING] Server-recomputed grand_total 0 ≠ stored 2360.`
+
+### The defect
+
+Both blockers came from `billingValidate()`. Neither described a real problem, and neither could ever
+clear — so the Validate button was a dead end no matter how correct the pre-invoice was.
+
+The validator read `job_card_service_item` and `job_card_parts`. **Nothing in the codebase writes to
+either table.** Both hold zero rows. The pre-invoice's labour was real — it was captured as
+`job_card_master.estimated_amount = 2000.00` and priced on the pre-invoice as ₹2,000 labour + ₹360 GST =
+₹2,360 — but the validator never looked there.
+
+`BV_COMMERCIAL_TAMPERING` is the more dangerous of the two, because it is a *commercial control*. With a
+zero recomputed total and a stored ₹2,360, it was comparing the wrong number to the right one and calling
+the difference tampering.
+
+This is a **repeat**: the sibling check `checkPhase8Readiness()` in the same file had already been
+retargeted away from these empty tables during rc.8/rc.9 for exactly this reason. This validator was left
+behind when its sibling was fixed.
+
+### The fix
+
+- `BV_LABOUR_PRESENT` passes on **itemised rows OR the pre-invoice's own totals OR the captured
+  `estimated_amount`**.
+- `BV_COMMERCIAL_TAMPERING` uses `capturedEstimate` as the labour fallback when `SUM(labour_amount) = 0`,
+  so the comparison runs against a real number and **tamper detection is preserved, not disabled**.
+
+### For owner review
+
+`BV_COMMERCIAL_TAMPERING` is a control that catches a server-recomputed total disagreeing with a stored
+one. rc.12 changes **what it compares**, not whether it compares — but that is still a change to a
+commercial control's data source, and it is flagged here so it is a conscious decision rather than a
+silent one.
+
+---
+
+## v1.1.0-rc.11 — "Invalid jobId" — **RELEASE**
+
+**Release type:** PRODUCTION
+
+### The defect
+
+The operator clicked Compile and the screen answered `Invalid jobId`.
+
+A naming mismatch across a boundary. The engine's `getReadyFromQcQueue()` selected `job_card_id`, but
+`SAPreInvoicePanel` reads `j.job_id` from each row. The panel therefore sent the **literal string**
+`"undefined"`, `parseInt` produced `NaN`, and the route answered **400**.
+
+Nothing was wrong with the engine, the route, or the permissions. Two halves simply used different names
+for the same column.
+
+### The fix
+
+`SELECT job_card_id AS job_id, ...` — the alias the caller actually reads.
+
+---
+
 ## v1.1.0-rc.10 — the billing queue can finally return a row — **RELEASE**
 
 **Release type:** PRODUCTION
