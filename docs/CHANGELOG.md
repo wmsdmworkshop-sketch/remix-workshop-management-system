@@ -9,6 +9,71 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.8 — a stage change now reaches the screen that displays it — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Found by** driving one real vehicle (`JC-41368` / `KA32AA5828`) from QC into pre-invoice. The
+defect is not in the workflow — the workflow was correct and the database agreed — it is that the
+UI could not see any of it.
+
+### What the operator saw
+
+The Service Advisor clicked **Acknowledge QC Pass**. Nothing happened: no error, no spinner, no
+change to the card. Clicking it again did nothing either. The pre-invoice panel stayed hidden and
+Billing stayed empty, so from the chair the whole journey had stalled with no explanation.
+
+### What was actually true
+
+`job_card_master.live_status` **had** moved to `PRE_INVOICE_READY`, timed to the second of the
+click. The write was right; the read was wrong.
+
+`GET /api/job-cards` does not read MySQL. It returns `db.jobCards`, an in-memory snapshot built
+once by `syncLoad()` at server boot. Engine code writes `job_card_master` directly, so a transition
+lands in the database while the API keeps serving the boot-time values — until the server restarts.
+
+`refreshCachedJobCard()` already existed for exactly this, and
+`src/core/jobcard-cache-bridge.ts` documents the hazard in its own header — *"the write succeeds,
+the supervisor sees success, and the technician's workspace keeps returning the pre-allocation
+snapshot"*. But it had **one** caller: the floor allocation bridge. Only allocation ever reached
+the screen. Every QC and billing transition did not.
+
+### The fix
+
+The bridge is now exposed as `syncCachedJobCard()` and called after **every committed**
+`job_card_master.live_status` write — 18 call sites across three engines:
+
+| Engine | Sites |
+| --- | --- |
+| `qc-execution-engine.ts` | `QC_IN_PROGRESS`, `QC_PASSED`/`QC_FAILED_REWORK`, `QC_PENDING` (rework), `PRE_INVOICE_READY` |
+| `floor-execution-engine.ts` | `FLOOR_ALLOCATED` (allocation), `QC_PENDING` (QC handoff) |
+| `billing-engine.ts` | `SA_PRE_INVOICE_REVIEW` ×2, `PRE_INVOICE_SENT`, `CUSTOMER_CONFIRMED`, `BILLING_PENDING`, `BILLING_IN_PROGRESS` ×3, `MANUAL_GATE_PASS_PENDING_GM`, `MANUAL_GATE_PASS_APPROVED`, `BILLING_COMPLETED` ×2 |
+
+Two properties are deliberate, and both are load-bearing:
+
+- **Called after `conn.commit()`, never inside the transaction.** Patching before the commit would
+  let a rollback leave the cache advertising a stage the database never took — the same class of lie
+  this change removes, just pointing the other way.
+- **Never throws, and no-ops when no cache is registered.** A cache problem must not fail a
+  transition that has already committed, and unit tests, CLI scripts and migrations (which never
+  register a cache) are unaffected.
+
+The floor allocation site was switched onto the shared helper, so the file has one pattern rather
+than a dynamic import sitting next to a static one.
+
+### Verification
+
+Type gate clean for the four touched files (the 9 known pre-existing errors in `EmployeeDirectory`,
+`engines/vehicle-passport` and `lib/auth.ts` are untouched). `lint:fabrication` PASS over 885 files.
+Component tests 4 files / 38 tests PASS.
+
+The DB-backed legacy suites could **not** be run: `role_ops_phase7_qc` and `role_ops_phase8_billing`
+report `ECONNREFUSED 127.0.0.1:3307` because the local test MySQL is not running. Those 15 legacy
+failures are environmental and are not regressions. The helper cannot mask a real failure either
+way, since `registerJobCardCache()` is called only by `server.ts`.
+
+---
+
 ## v1.1.0-rc.7 — the allocated bay now reaches the job card, and the technician timer starts — **RELEASE**
 
 **Release type:** PRODUCTION
