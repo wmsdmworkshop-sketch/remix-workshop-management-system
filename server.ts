@@ -2486,9 +2486,18 @@ async function startServer() {
     // fabricated — a guessed row would attribute an attack to a real person.
     if (!Number.isInteger(id) || id <= 0) return;
     try {
-      // TRUST_PROXY=1 is set on the Cloud Run service, so req.ip already resolves
-      // the real client through the load balancer. Trimmed to the column width.
-      const ip = String(req.ip || req.socket?.remoteAddress || "").trim().slice(0, 45) || null;
+      // Cloud Run puts the REAL CLIENT first in X-Forwarded-For and appends its own
+      // internal hops after it. Express with trust proxy=1 resolves `req.ip` to the
+      // LAST hop, which on the first live verification recorded a link-local
+      // `169.254.169.126` for every sign-in — an internal address that makes the
+      // column worthless in an audit trail. The leftmost entry is the origin.
+      //
+      // NOTE this is a client-supplied CLAIM: a caller can send its own
+      // X-Forwarded-For, and Cloud Run appends what it actually saw. That is
+      // acceptable for an audit record, but it must NEVER be used for an
+      // authorisation or rate-limiting decision.
+      const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+      const ip = (forwarded || String(req.ip || req.socket?.remoteAddress || "")).trim().slice(0, 45) || null;
       await dbPool.execute(
         "INSERT INTO login_history (user_id, login_at, ip_address, status) VALUES (?, NOW(), ?, ?)",
         [id, ip, status]
