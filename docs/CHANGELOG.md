@@ -9,6 +9,53 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.21 — Staff Activity now live-refreshes, and punches vs sign-ins explained — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Reported by the owner:** *"plz check the staff activity why it is not updating in realtime, abdul gani's
+punches showing as 10 but last login signin is not recorded what does it mean"*.
+
+### The staleness was real — my gap
+
+The screen fetched **once on mount** (`useEffect(..., [load])`) and never again. Anything that happened while it
+was open — a punch, a sign-in, an action — stayed invisible until someone pressed Refresh. A report about live
+systems that never updates reads as stale, which is exactly how it was read.
+
+It now polls **every 60 seconds**, matching the notifications poll rather than the 10s operational dashboards:
+this is monthly aggregate reporting, not a live queue, and a faster cadence would re-scan 61 accounts plus five
+grouped aggregates for no benefit. The poll is skipped while the tab is hidden, uses a silent path so it cannot
+flash or blank the table mid-read, refreshes an open drill-down too, and the header now states when the data was
+fetched. The polling effect is declared *after* `openDetail` deliberately — the dependency array is evaluated
+during render, so referencing it earlier would hit the temporal dead zone.
+
+### Abdul Gani: both numbers were right
+
+`ABDUL GANI SHEK` (`dev-206`, user 51, employee_id 1, role `BD ASSISTANT/ DRIVER`) held **10 attendance
+punches** (5–16 Sep, all Present) and **zero sign-in rows**. They are recorded by three independent systems:
+
+| What | Table | Keyed on | Recording since |
+| --- | --- | --- | --- |
+| Attendance punch | `workforce_attendance` | `employee_id` | long before today |
+| Sign-in | `login_history` | `user_id` | **today, 12:06 IST** |
+| Platform actions | `jc_activity_log`, `security_audit_logs` | actor id | — |
+
+So **10** is his punch-days across twelve days, and **Never recorded** means no sign-in has been captured since
+the cutover. His most recent punch was written at `03:51:22Z` = **09:21 IST** — before recording began, on a
+session already open — so it produced no login row. The banner now leads with that independence: *"Sign-in,
+attendance and activity are recorded by three INDEPENDENT systems — a punch does not imply a recorded
+sign-in."*
+
+### One thing found and deliberately NOT changed
+
+`check_in` normally matches `created_at` converted to IST (8 Sep: `09:38` vs `04:08:37Z`). Two rows do not —
+`attendance_id` 40 and 36 both carry `check_in = 13:07` while their `created_at` convert to 09:21 and 09:18 IST.
+The same value on two different days looks like a manual `EDIT_ATTENDANCE_TIME`, which the endpoint supports.
+Editing a punch time is legitimate, so this is flagged rather than "corrected" — but it means **a punch time
+cannot always be re-derived from the row's creation time**.
+
+---
+
 ## v1.1.0-rc.20 — "Never recorded" was correct, but the screen didn't say why — **RELEASE**
 
 **Release type:** PRODUCTION
