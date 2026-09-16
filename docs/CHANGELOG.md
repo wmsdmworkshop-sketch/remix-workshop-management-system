@@ -9,6 +9,42 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.20 — "Never recorded" was correct, but the screen didn't say why — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Asked by the owner:** *"LAST SIGNIN SHOWS NEVER RECORDED ?"*
+
+**It was correct behaviour — and here is the proof rather than the assurance:**
+
+| | |
+| --- | --- |
+| The viewer's session (`user_id` 30, `developer`) was issued | **06:10:59 UTC = 11:40:59 IST** |
+| Login recording went live | **06:36:06 UTC = 12:06:06 IST** |
+
+The session was issued **25 minutes before the feature existed**, and a session is a **24-hour JWT**, so no
+new sign-in had occurred. `login_history` held 6 rows, **four of them real successful sign-ins that day**
+(users 94, 29, 21, 55) — recording demonstrably worked. Both `jwt.sign` sites that mint a session are
+instrumented, so no login path was missed. The token's `iat` was decoded out of the browser, not inferred.
+
+**The screen explained itself badly, and that part was mine:**
+
+1. The banner was gated on `rows.every(r => !r.last_login_at)`. As soon as a few people signed in the
+   condition went false and **the explanation vanished** — leaving a bare "Never recorded" with no context
+   for everyone else. Now `.some(...)`, so it persists while any account is still unexplained.
+2. The copy states the actual reason — 24-hour session tokens — instead of only "recording started today",
+   and names the exact cutover time.
+3. The viewer's own row is marked **"you"** and reads *"This session predates recording"* with an
+   explanatory tooltip, instead of the identical bare text everyone else receives.
+
+**To populate your own row: sign out and sign back in.** Nothing else is needed.
+
+**Also verified end-to-end while diagnosing:** the rc.19 timezone fix renders correctly in the live UI —
+HR DAPL 1:09 pm (07:39:18Z), MUSTAFA 1:10 pm (07:40:00Z), sayeed 1:08 pm (07:38:31Z), SHASHI KUMAR
+1:05 pm (07:35:51Z), Suryakant 12:15 pm (06:45:20Z). Every one previously read 5h30m early.
+
+---
+
 ## v1.1.0-rc.19 — timestamps rendered 5h30m early; instants and wall-clock separated — **RELEASE**
 
 **Release type:** PRODUCTION
