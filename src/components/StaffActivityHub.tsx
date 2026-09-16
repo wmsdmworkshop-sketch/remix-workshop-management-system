@@ -177,9 +177,18 @@ export default function StaffActivityHub() {
   const [detail, setDetail] = useState<DetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  /** Which person's drill-down is open, so the live refresh can update it too. */
+  const [detailUserId, setDetailUserId] = useState<number | null>(null);
+  /** When the data on screen was last fetched — the screen must say how fresh it is. */
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  /**
+   * `silent` is the background-refresh path. It must NOT flip the loading flag,
+   * or a 60s poll would flash the Refresh spinner and (on first load) blank the
+   * table while the operator is reading it.
+   */
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const res = await fetch(`/api/admin/user-activity/staff?days=${days}`, { headers: staffAuthHeaders() });
@@ -192,12 +201,13 @@ export default function StaffActivityHub() {
         throw new Error(body?.error || `Request failed (${res.status}).`);
       }
       setData(await res.json());
+      setLastUpdated(new Date());
     } catch (e: any) {
       // Keep the last good data on screen; surface the failure rather than
       // silently degrading to an empty table that reads like "no activity".
       setError(e?.message || "Failed to load staff activity.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [days]);
 
@@ -206,10 +216,13 @@ export default function StaffActivityHub() {
   }, [load]);
 
   const openDetail = useCallback(
-    async (userId: number) => {
-      setDetailLoading(true);
-      setDetailError(null);
-      setDetail(null);
+    async (userId: number, silent = false) => {
+      setDetailUserId(userId);
+      if (!silent) {
+        setDetailLoading(true);
+        setDetailError(null);
+        setDetail(null);
+      }
       try {
         const res = await fetch(`/api/admin/user-activity/${userId}?days=${days}`, { headers: staffAuthHeaders() });
         if (isSessionExpiredResponse(res)) {
@@ -224,11 +237,39 @@ export default function StaffActivityHub() {
       } catch (e: any) {
         setDetailError(e?.message || "Failed to load that person's activity.");
       } finally {
-        setDetailLoading(false);
+        if (!silent) setDetailLoading(false);
       }
     },
     [days]
   );
+
+  /**
+   * LIVE REFRESH.
+   *
+   * This screen originally fetched once on mount and never again, so anything that
+   * happened while it was open — a punch, a sign-in, an action — stayed invisible
+   * until someone pressed Refresh. That makes a report of live systems look stale
+   * and untrustworthy, which is exactly how the owner read it.
+   *
+   * 60s, matching the app's notifications poll rather than its 10s operational
+   * dashboards: this is aggregate reporting over a month, not a live queue, and a
+   * faster cadence would re-scan 61 accounts plus five grouped aggregates for no
+   * benefit. Skipped entirely while the tab is hidden — a background tab has nobody
+   * reading it, and polling it would be pure load.
+   *
+   * Declared AFTER openDetail on purpose: the dependency array is evaluated during
+   * render, so referencing it earlier would hit the temporal dead zone.
+   */
+  useEffect(() => {
+    const POLL_MS = 60000;
+    const tick = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      load(true);
+      if (detailUserId != null) openDetail(detailUserId, true);
+    };
+    const id = setInterval(tick, POLL_MS);
+    return () => clearInterval(id);
+  }, [load, detailUserId, openDetail]);
 
   const rows = useMemo(() => {
     const all = data?.rows || [];
@@ -253,6 +294,11 @@ export default function StaffActivityHub() {
             <h1 className="text-xl font-black text-white uppercase tracking-tight">Staff Activity</h1>
             <p className="text-[11px] text-slate-500">
               Sign-ins, attendance and platform usage — admin, developer and GM only.
+            </p>
+            <p className="text-[10px] text-slate-600">
+              {lastUpdated
+                ? `Updated ${lastUpdated.toLocaleTimeString("en-IN", { timeZone: SITE_TIME_ZONE })} · auto-refreshes every 60s`
+                : "Loading…"}
             </p>
           </div>
         </div>
@@ -315,11 +361,13 @@ export default function StaffActivityHub() {
         <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
           <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
           <p className="text-[11px] text-amber-200/90">
-            Sign-ins are recorded from <strong>16 September 2026, 12:06 IST</strong> onward. The login-history
-            table existed before that but nothing wrote to it, and past sign-ins cannot be recovered. Because a
-            session is a <strong>24-hour token</strong>, anyone already signed in when this began — including
-            you, if your row is empty — keeps showing <em>Never recorded</em> until they next sign out and back
-            in. Attendance and activity figures cover the full period and are unaffected.
+            <strong>Sign-in, attendance and activity are recorded by three INDEPENDENT systems</strong> — a
+            punch does not imply a recorded sign-in, and a sign-in does not imply a punch. Sign-ins only began
+            being recorded on <strong>16 September 2026, 12:06 IST</strong>; the table existed before that but
+            nothing wrote to it, and past sign-ins cannot be recovered. Because a session is a{" "}
+            <strong>24-hour token</strong>, anyone already signed in when recording began — including you, if
+            your row is empty — keeps showing <em>Never recorded</em> until they next sign out and back in.
+            Attendance and activity cover the full period and are unaffected.
           </p>
         </div>
       )}
@@ -473,6 +521,7 @@ export default function StaffActivityHub() {
               onClick={() => {
                 setDetail(null);
                 setDetailError(null);
+                setDetailUserId(null);
               }}
               className="text-slate-500 hover:text-slate-200"
               aria-label="Close detail"
