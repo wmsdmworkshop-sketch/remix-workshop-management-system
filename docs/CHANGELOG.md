@@ -9,6 +9,110 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.16 — the login trail recorded an internal address, not the client — **RELEASE**
+
+**Release type:** PRODUCTION
+
+Found by exercising the new login trail against production rather than trusting it. Migration 32 applied,
+the foreign key was gone, the insert succeeded — and every recorded row carried `ip_address`
+**`169.254.169.126`**, a link-local address belonging to one of Cloud Run's internal hops.
+
+Express with `trust proxy=1` resolves `req.ip` to the **last** entry in `X-Forwarded-For`. Cloud Run puts the
+real client **first** and appends its own hops after it, so the last entry is infrastructure. Now takes the
+leftmost entry, falling back to `req.ip`.
+
+The code comment records that this value is a client-supplied **claim** — a caller can send its own
+`X-Forwarded-For` — which is acceptable for an audit record but must never drive an authorisation or
+rate-limiting decision.
+
+Worth stating plainly: the migration, the FK removal and the insert were all correct, and the column was
+still useless. Only a live request showed it.
+
+---
+
+## v1.1.0-rc.15 — staff activity reporting; and a security override built on my own error — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Requested by the owner:** *"can i also see the user activity like his compliance report, when did he login
+did he punched attendance, how much active he is"*, visible *"only to the developer and gm service and
+hr/admin"*.
+
+### The correction, first — I was wrong, and it granted a security control away
+
+In rc.13 I added `"reception"` to `GATE_OUT_SECURITY_ROLES`, stating that production had **zero
+`security_agent` accounts**. **That was false.**
+
+**`suryakant` (user 45) is an active `security_agent`** with a valid bcrypt password and
+`must_change_password = 0`. My probe counted security users through a `LEFT JOIN` onto `roles` and returned
+0; I trusted the count without querying the account table directly. *A zero from a join is evidence about the
+join, not about the world.*
+
+The consequence was not theoretical. It handed a **front-desk role the ability to release a vehicle** — a
+security control, given away on a false premise.
+
+The real defect was never a missing account. `security_agent` was **already** in `GATE_OUT_SECURITY_ROLES`,
+so the API always accepted it — but `ROLE_TABS.security_agent` had **no `security-workspace` tab**, and the
+only caller of `POST /api/gate-out/gate-out` is `SecurityWorkspace.tsx:63`, rendered solely on that tab id.
+**The role held the authority and could not exercise it.**
+
+- `security_agent` **and** `gate_personnel` now have the `security-workspace` tab — the exit step has its
+  proper operator. Tab set and API role set are kept aligned deliberately: a tab without the API role is a
+  button that 403s, an API role without the tab is unusable authority. Both shipped as bugs here.
+- **`"reception"` removed** from `GATE_OUT_SECURITY_ROLES`, and the tab removed from `ROLE_TABS.reception`.
+- The journey was unaffected: the GM (`sayeed_dp`) holds `security-workspace` and `cashier-workspace`, so one
+  login still covers payment → gate pass → gate-out.
+
+### New: staff activity reporting
+
+- `GET /api/admin/user-activity/staff?days=N` — the roster: last sign-in, sign-in and **failed** sign-in
+  counts, attendance punches/late/overtime for the month, action counts, usage score.
+- `GET /api/admin/user-activity/:userId?days=N` — drill-down: recent sign-ins with IP, recent punches, recent
+  job-card and audit actions.
+- New screen `StaffActivityHub.tsx` at `/staff-activity`, registered for **admin, developer, gm_service** and
+  enforced independently in the router. There is **no `hr` role** in `roles`; the HR account `hr_dapl`
+  carries `admin`. Deliberately **not** widened to `workshop_manager`/`floor_supervisor` — this is personal
+  performance data about named employees.
+- Handlers live in `src/api/routes/user-activity.routes.ts`, built by a `createXRouter` factory (the auth
+  helpers are closure-local in `server.ts`) and **mounted**.
+- Assembled from **five grouped queries merged in JS**, not one wide join: the sources key on `employee_id`,
+  `user_id` and `actor_user_id` differently, so a join multiplies rows and produces counts that look
+  plausible and are wrong.
+- Attendance queries list columns **explicitly**. `workforce_attendance` carries `face_photo_in`/`out` as
+  **LONGTEXT base64**; `SELECT *` would pull hundreds of KB per row (the trap that once hung
+  `/api/employees`), and a performance report is no place to surface someone's biometric capture.
+
+### New: logins are recorded at all — `login_history` could never have worked
+
+`login_history` has existed since the first schema with exactly the right shape and held **0 rows**. It could
+not have held any: `user_id` is **NOT NULL with an FK to `users`**, but the app authenticates against
+`user_access_master`, and **only 19 of 61** production accounts exist in `users`. An insert for the other 42
+would have failed with `ER_NO_REFERENCED_ROW`. Confirmed for the accounts that matter: **29 (HR/admin),
+45 (security), 50 (biller), 95 (advisor), 96 (floor supervisor) are all absent from `users`.**
+
+**Migration 32 `login_history_relax_fk`** drops that FK — an append-only log should not refuse to record a
+sign-in because the subject sits in the other identity table — and adds
+`idx_login_history_user_time (user_id, login_at)`. `/api/auth/login` and `/api/auth/verify-otp` now record
+**success and failure**, and the write **never throws**: an audit side-effect must not deny a valid user
+access.
+
+**There is no backfill, deliberately.** Past sign-ins are unrecoverable, so `last_login_at` is null for almost
+everyone until they next sign in. The screen says "Never recorded" and explains why. Inventing that history
+would be fabrication.
+
+**Verified end-to-end against production:** a deliberate failed sign-in for `suryakant` (user 45, absent from
+`users`) returned 401 and wrote row 1 — an insert that would have been rejected hours earlier.
+
+### Fixed: Employee Performance "Completed" column was permanently 0
+
+It compared job status to the literal `"completed"`, which **cannot exist** — `job_status` is an ENUM of
+`Open / In Progress / Waiting Parts / Ready / Delivered / Carry Forward / Assigned / Unassigned / In Queue`.
+Now uses `isWorkCompleteStatus()` from `src/types.ts`, whose own docstring says it replaces exactly that
+comparison. The name match is also trimmed and case-insensitive now: production stores names with trailing
+spaces (`'ranjeet '`), so the exact compare was attributing zero jobs to real people.
+
+---
+
 ## v1.1.0-rc.14 — a permission with no screen, and a hardening profile that was never running — **RELEASE**
 
 **Release type:** PRODUCTION
