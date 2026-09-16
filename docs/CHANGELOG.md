@@ -9,6 +9,78 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.14 — a permission with no screen, and two nav filters that disagreed — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Reported by the owner:** *"while this is the developer login everything here needs every access"*.
+
+The premise was wrong, and checking it found two real defects.
+
+### First: which login
+
+The tab was signed in as **`sayeed_dp` (user 21, `gm_service`)** — not the developer login. Confirmed by
+reading `dwip_auth_user` out of localStorage, not by assumption. The only **active** developer account is
+`wmsdmworkshop@gmail.com` (user 48); the older `developer` account (user 30) is deactivated. The GM and the
+developer are both named Sayeed, which is how the two get confused.
+
+### Defect 1 — "every access" is three layers, and two of them disagreed
+
+| Layer | Developer |
+| --- | --- |
+| API routes | **Full.** `AuthorizationService.checkPermission` short-circuits `admin`/`developer` before any lookup |
+| Tab permissions | **Full.** `isTabPermitted()` returns `true` immediately for developer |
+| Sidebar nav | **Six tabs stripped in production** |
+
+Production builds with `VITE_WORKFORCE_PROFILE=rc1`, and `excludedTabs` was written out **twice with
+different behaviour**:
+
+- the redirect guard exempted `admin`, `developer`, `dealer_principal`, `gm_service`, `workshop_manager`;
+- the sidebar filter exempted **nobody**.
+
+So a privileged user could deep-link to a screen the nav never offered them, and `developer` — the widest
+`ROLE_TABS` in the file, with a full API override — silently lost six tabs with no way to tell why.
+
+The clearest evidence the filter was over-broad: the `ROLE_TABS` loop **explicitly splices a Breakdowns tab
+in** for developer and the managers, and the filter then deleted it again. Two parts of the same file
+fighting each other.
+
+**Fix:** one definition. `RC1_EXCLUDED_TABS` + `RC1_TAB_EXEMPT_ROLES` behind `isRc1TabHidden()`, used by
+both call sites, so they cannot diverge again. `AGENTS.md` records this as a landmine — *"change both
+occurrences or neither"* — and a single definition removes the choice.
+
+**To revert the visibility change:** empty `RC1_TAB_EXEMPT_ROLES`. That restores the old "hidden from every
+role" behaviour in one place instead of two.
+
+### Defect 2 — this one was mine
+
+**rc.13 granted reception a permission with no way to use it.**
+
+`POST /api/gate-out/gate-out` — the call that actually releases a vehicle — has **exactly one caller in the
+entire repository**: `SecurityWorkspace.tsx:63`, which renders only on
+`activeTab === "security-workspace"`. And `ROLE_TABS.reception` held only `vehicle-lookup` and `gate-entry`.
+`MyWorkspace.tsx` has **zero** gate or security references, so there was no fallback path either.
+
+Reception held the authority and had nowhere to use it. A permission is only real if the role also has a way
+to reach the screen that exercises it.
+
+**Fix:** `security-workspace` added to `ROLE_TABS.reception` — to `reception` **only**, not `receptionist`.
+Granting the tab to a role the API does not authorise would create the inverse defect: a button that 403s.
+(`security-workspace` is absent from `TAB_MODULE_MAPPING`, so `isTabPermitted()` passes it through.)
+
+### Also learned
+
+`security_agent` and `gate_personnel` do **not** have that tab either. Only `admin`, `developer`,
+`workshop_manager`, `service_manager`, `gm_service` and `dealer_principal` do — so gate-out has in practice
+been worked by admin and the GM, not by security.
+
+**Held back for the owner, not changed:** `service_manager`, `supervisor` and `floor_supervisor` also have
+`breakdown` spliced in by the `ROLE_TABS` loop and are not exempt, so they still lose it in production.
+Widening that list is a policy decision about who sees Breakdowns in production, so it was left alone rather
+than expanded silently.
+
+---
+
 ## v1.1.0-rc.13 — reception works the exit step, because nobody else could — **RELEASE**
 
 **Release type:** PRODUCTION
