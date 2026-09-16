@@ -2426,13 +2426,61 @@ async function startServer() {
     });
   });
 
-  // Rate limiter: 10 login attempts per IP per 15 minutes
+  // Login attempt limiter.
+  //
+  // ── WHY THE KEY IS THE USERNAME, NOT `req.ip` ──────────────────────────────
+  // This limiter used express-rate-limit's DEFAULT key, which is `req.ip`. On
+  // Cloud Run `req.ip` is not the client: `trust proxy` is never set in this file
+  // (there is no `app.set("trust proxy", ...)` anywhere), so Express ignores
+  // X-Forwarded-For and returns the front-end's own address — identical for EVERY
+  // caller. That silently turned "10 attempts per IP" into one shared budget of 10
+  // attempts per 15 minutes for the whole company, staff on mobile data included.
+  //
+  // OBSERVED 2026-09-16: nine failed attempts from two different phones (users 91
+  // and 68) between 12:43 and 12:46 consumed that shared budget and locked out
+  // everyone else. The library reports the misconfiguration on every request —
+  // ERR_ERL_UNEXPECTED_X_FORWARDED_FOR ("X-Forwarded-For is set but the Express
+  // 'trust proxy' setting is false") and ERR_ERL_FORWARDED_HEADER.
+  //
+  // This is the SAME hazard src/middleware/rate-limiter.ts already documents and
+  // deliberately avoids for the AI routes — "staff share the dealership's NAT egress
+  // IP on site WiFi, the whole workshop would have collapsed into one bucket and
+  // throttled each other". The login limiter was left on the library default.
+  //
+  // Keying on the username instead:
+  //   • one person's typos can no longer shut anybody else out;
+  //   • it still throttles brute force against a single account, which is what this
+  //     limit is FOR;
+  //   • it does not depend on the proxy chain at all, so it is correct whether or
+  //     not `trust proxy` is ever configured.
+  // The key is a grouping label only, never an authorisation input, and it is
+  // length-capped so a huge body value cannot be used to bloat the store.
+  //
+  // `trust proxy` is deliberately NOT set here. Choosing a value needs the real
+  // X-Forwarded-For hop count measured against production first — a wrong number
+  // either preserves this bug or lets a caller spoof its own address. Fix the key,
+  // not the hop count, until that has been measured.
   const loginRateLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 10,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: "Too many login attempts from this IP. Please try again after 15 minutes." },
+    // A SUCCESSFUL sign-in must never count against the budget: a correct
+    // credential is proof the caller is not the attacker this guards against, and
+    // counting it would let one account's failures delay a legitimate sign-in.
+    skipSuccessfulRequests: true,
+    keyGenerator: (req: any): string => {
+      const raw = req?.body?.username;
+      const username = typeof raw === "string" ? raw.trim().toLowerCase().slice(0, 255) : "";
+      if (username) return `user:${username}`;
+      // No username in the body (a malformed request). Falls back to the socket
+      // peer rather than `req.ip` so the library's trust-proxy validation cannot
+      // fire, and so it reads as the same value with trust proxy off. Such a
+      // request cannot target an account, so a coarse bucket here cannot lock a
+      // real user out of signing in.
+      return `peer:${String(req?.socket?.remoteAddress || "unknown")}`;
+    },
+    message: { error: "Too many failed sign-in attempts for this account. Please try again after 15 minutes." },
     skip: (req) => {
       // Allow unlimited in non-production environments for developer convenience
       return process.env.NODE_ENV !== "production";
