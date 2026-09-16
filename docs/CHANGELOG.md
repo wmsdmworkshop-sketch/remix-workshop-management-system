@@ -9,6 +9,129 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.22 — Approving attendance was destroying the evidence; face verification has been dead since 2026-09-14 — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Reported by the owner:** *"ok lets come to attendance"*, then *"we need the image also to be viewed while
+approving also the location"*, then — looking at Shashi Kumar's row — *"it shows punched inside the workshop
+then why manual approve is required what blocks auto approve"*.
+
+### 1. APPROVING A PUNCH WAS OVERWRITING THE PUNCH — data-integrity bug, already corrupting live data
+
+`POST /api/workforce/attendance` ends its branch chain with `else { record.check_in = check_in || timestampStr; }`.
+An **approval** payload carries `is_approved` and no `check_in`/`check_out`/`face_photo`, so `is_edit`,
+`is_break*` and `is_check_out` were all false and the approval **fell through to that branch**, which then
+wrote the *current* IST wall-clock over the recorded arrival time and set `check_in_lat/lng`,
+`face_photo_in` and `face_match_score_in` to `null`.
+
+Proven from `tbl_edit_audit` for `attendance_id` 40 (ABDUL GANI SHEK, 2026-09-16) — in every row the recorded
+`check_in` equals the IST wall-clock *at the moment of that write*:
+
+| created_at (UTC) | = IST | action | `check_in` written | by |
+| --- | --- | --- | --- | --- |
+| 03:51:22Z | **09:21** | SELF_PUNCH | 09:21 | ABDUL GANI SHEK |
+| 07:37:34Z | **13:07** | APPROVE_ATTENDANCE | 13:07 | sayeed (`gm_service`) |
+| 12:51:53Z | **18:21** | APPROVE_ATTENDANCE | 18:21 | AHMED HUSSAIN (`workshop_manager`) |
+
+**His genuine 09:21 punch now reads 18:21**, with no face photo and no GPS — the approval destroyed the
+evidence it approved. Five approved rows carry that signature and **two have `check_in` LATER than
+`check_out`**, which no real punch can produce.
+
+**Fix:** approvals no longer reach that branch. A new `else if (isApprovalAction)` arm handles a pure
+approval as the governance action it is — it flips `is_approved` (and may carry `status`/`notes`) and
+touches nothing else. `is_edit` remains the one sanctioned path for changing a recorded time, which is
+what keeps the rule that **nobody may rewrite their own punch** intact.
+
+### 2. Every attendance audit row was unreviewable — `before_json` was never captured
+
+`logEdit` supports `before:` and the user / employee / job-card call sites all pass it; the attendance call
+site did not, so **0 of 112** attendance audit rows carried a `before_json`. You could see who changed a
+punch and what they set, but never what it had been. Now the record is snapshotted before any mutation.
+
+### 3. The approver could not see the photo or the location they were vouching for
+
+`ATT_READ_COLS` deliberately omits `face_photo_in`/`face_photo_out` to keep the day payload small, but the
+screen rendered an `<img>` from `r.face_photo_in` anyway — so the "Verif. Face" column was **permanently
+dead**. And "Approve" posted immediately, showing nothing.
+
+- The list now returns cheap **existence flags** (`has_face_photo_in`/`has_face_photo_out`), so the column
+  offers the photo on demand instead of a dead "—".
+- **New `GET /api/workforce/attendance/:attendanceId/evidence`** returns, for one record: both punch photos,
+  the enrolled reference photo, the match scores, both GPS fixes, the **real geofence verdict** (computed
+  from the configured polygon — reported as `null` when no perimeter is configured, never a fabricated
+  "inside"), the distance from the perimeter centre, and the record's amendment trail. RBAC is enforced
+  server-side: the employee may see their own, and `ATTENDANCE_APPROVE_ROLES` may see it too.
+- **Approve now opens a review panel** showing the punch photo beside the enrolled reference it was compared
+  against, the location with a map link, the geofence verdict and the amendment history — then the Approve
+  button. The panel states plainly that approving changes the flag only, not the recorded time.
+- `ATTENDANCE_APPROVE_ROLES` was hoisted to one shared definition so the POST handler and the evidence route
+  cannot drift apart.
+
+### 4. **"Pending Override" could never appear** — `is_approved` is a NUMBER
+
+`workforce_attendance.is_approved` is `tinyint(1)`, and mysql2 returns **`0`/`1`, not `false`/`true`**. The
+badge tested `r.is_approved === false`, so that branch was **dead** and every punch whose verification did
+not pass displayed as **"Manual Entry"** — i.e. "a supervisor typed this in" — mislabelling *exactly* the
+rows a manager must review. `null` is the only value that genuinely means a manual entry. Normalised with
+`Number(v) === 1`, and the badge now reads **Approved / Pending Review / Manual Entry**. It also said
+**"Auto-Approved"** on manager-approved rows; "Approved" is true either way.
+
+### 5. WHY AUTO-APPROVAL IS BLOCKED — and it cannot be fixed by changing the model
+
+The owner's question was exactly right and the location was never the reason. Auto-approval is
+`matched === true && faceMatchScore >= 0.7 && isWithinGeofence`, so a good GPS fix is only ever a
+**necessary** term; being inside the perimeter can never approve anything on its own.
+
+The real blocker: the face check sends **two images in one prompt** (reference + punch photo) and the
+provider rejects it —
+
+```
+Face verification unavailable: Nemotron returned HTTP 400.
+{"error":{"message":"At most 1 image(s) may be provided in one prompt. (parameter=image)","code":400}}
+```
+
+The catch block then sets `faceMatchScore = 0.0; autoApproved = false`. **That fail-safe is correct and
+deliberate** — a check that cannot run must never read as a check that passed — so every affected punch is
+sent to a manager, with the reason visible only in Cloud Logging.
+
+**Dated regression.** `face_match_score_in` is `0.95` (a real comparison) from 2026-09-06 to 2026-09-13, and
+**`0` from 2026-09-14 onward**. Commit `877d3de` — *"feat(ai): move every AI feature to NVIDIA Nemotron,
+remove Gemini and DeepSeek"* — introduced `NEMOTRON_VISION_MODEL = nvidia/nemotron-parse-2.0`, a **document
+parser**, which — like every model tested — accepts only one image. From that commit, **no punch with an
+enrolled reference photo can auto-approve.**
+
+Verified by direct 2-image calls against the live API (1×1 placeholder images; no employee data sent):
+`nvidia/nemotron-parse-2.0` → 400, and `meta/llama-3.2-11b-vision-instruct` → **400 with the identical
+request-validation message**. Two independent model families, one error carrying a `param` field ⇒ this is a
+**provider-route constraint, not a model choice**; swapping the model will not fix it. Restoring face-based
+auto-approval needs a stitched single image (no image library is installed) or a different provider.
+**Not fixed here — it needs a product decision, and no behaviour was faked to hide it.**
+
+### 6. Score semantics — a `0` is not a mismatch and a `1` is not a perfect match
+
+| score | rows | actual meaning |
+| --- | --- | --- |
+| `1` | 22, approved | the **unrun default** — `!employee.profile_photo`, so the **first check-in enrolled the photo and auto-approved with no verification at all** |
+| `0.95` | 17 approved + 2 pending | a real comparison (approved); the 2 pending are correctly **blocked by the geofence** — `attendance_id` 6 and 32 sit at 17.385/76.861 and 17.190/77.037, far from the workshop (~17.315/76.902) |
+| `0` | 7 pending | the provider 400 |
+
+So the highest scores belong to the *least* verified records. The review panel therefore **shows the match
+percentage only when a punch photo actually exists** — otherwise the stored `1` would read as a "100% match"
+next to "no photo", a claim that never happened. `review_reason` is now derived from the record's own stored
+values so a manager is told *why* each flag exists instead of having to ask.
+
+### Also
+
+`NEMOTRON_VISION_MODEL` is shared by five call sites (OCR and document parsing send one image and work fine),
+so it was deliberately **not** changed — that is why the fix must be scoped to the face check.
+
+**Gates:** `lint:fabrication` PASS (889 files, 0 errors). `tsc --noEmit` — **the same 9 pre-existing errors**
+(2× `EmployeeDirectory.tsx`, 6× `engines/vehicle-passport/index.ts`, 1× `lib/auth.ts`), none in the files
+touched here.
+
+---
+
 ## v1.1.0-rc.21 — Staff Activity now live-refreshes, and punches vs sign-ins explained — **RELEASE**
 
 **Release type:** PRODUCTION
