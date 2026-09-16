@@ -20,8 +20,7 @@ import {
   MapPin,
   ShieldCheck,
   ShieldAlert,
-  ThumbsUp,
-  Maximize2
+  ThumbsUp
 } from "lucide-react";
 import { Employee, User } from "../types";
 import { getStaffToken } from "../lib/authToken";
@@ -46,9 +45,17 @@ interface AttendanceRecord {
   check_out_lng?: number | null;
   face_photo_in?: string | null;
   face_photo_out?: string | null;
+  // Existence flags from the day-list endpoint — the base64 bytes themselves are
+  // fetched per record from /api/workforce/attendance/:id/evidence.
+  has_face_photo_in?: boolean;
+  has_face_photo_out?: boolean;
   face_match_score_in?: number | null;
   face_match_score_out?: number | null;
-  is_approved?: boolean;
+  is_approved?: boolean | null;
+  is_late?: boolean;
+  late_reason?: string | null;
+  is_overtime?: boolean;
+  overtime_hours?: number | null;
 }
 
 interface TodaySummary {
@@ -69,6 +76,29 @@ interface AttendanceShiftLogProps {
   jobCards?: any[];
 }
 
+// The MySQL pool is configured with dateStrings:true, so a TIMESTAMP arrives as a
+// bare "YYYY-MM-DD HH:MM:SS" in UTC with no zone marker. `new Date(...)` would read
+// it as the VIEWER's local time and shift it (5h30m early for an IST site), so the
+// Z is added explicitly before rendering in the site's timezone.
+const fmtIst = (v?: string | null) => {
+  if (!v) return "—";
+  let iso = v;
+  // Only a BARE datetime (no trailing Z or +offset) needs the UTC marker added.
+  // Appending it blindly would produce "...Z.000Z" for a value that already had
+  // one, which parses as Invalid Date.
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(v)) {
+    iso = `${v.replace(" ", "T")}Z`;
+  }
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return v;
+  return d.toLocaleString("en-GB", {
+    timeZone: "Asia/Kolkata", day: "2-digit", month: "short",
+    hour: "2-digit", minute: "2-digit", hour12: true,
+  });
+};
+
+const safeJson = (v: any) => { try { return v ? JSON.parse(v) : null; } catch { return null; } };
+
 export default function AttendanceShiftLog({ employees, currentUser, token, jobCards }: AttendanceShiftLogProps) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
@@ -77,6 +107,17 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+  // Approval review. Approving a punch is the act of vouching for someone's
+  // recorded arrival, so the Approve button opens a panel that first SHOWS the
+  // evidence: the punch photo, the enrolled reference it was compared against,
+  // the GPS fix and the real geofence verdict — plus what has already happened
+  // to the record. The day list ships only photo-EXISTENCE flags, not the bytes,
+  // so the evidence is fetched for the single record under review.
+  const [reviewRow, setReviewRow] = useState<any | null>(null);
+  const [evidence, setEvidence] = useState<any | null>(null);
+  const [evidenceError, setEvidenceError] = useState<string | null>(null);
+  const [loadingEvidence, setLoadingEvidence] = useState(false);
+  const [approving, setApproving] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<"attendance" | "overtime" | "overtime-approvals">("attendance");
   const isRc1 = import.meta.env.VITE_WORKFORCE_PROFILE === "rc1";
 
@@ -168,23 +209,63 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
     }
   };
 
-  const handleApprove = async (record: AttendanceRecord) => {
+  const openReview = async (record: AttendanceRecord) => {
+    const id = Number(record.attendance_id);
+    // A synthetic "Not Marked" roster row carries a negative placeholder id and
+    // has no punch behind it, so there is no evidence to fetch.
+    if (!Number.isInteger(id) || id <= 0) return;
+    setReviewRow(record);
+    setEvidence(null);
+    setEvidenceError(null);
+    setLoadingEvidence(true);
+    try {
+      const res = await fetch(`/api/workforce/attendance/${id}/evidence`, {
+        headers: { Authorization: `Bearer ${token || getStaffToken()}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setEvidenceError(data?.error || `Could not load punch evidence (HTTP ${res.status}).`);
+      } else {
+        setEvidence(data);
+      }
+    } catch (err: any) {
+      setEvidenceError(err?.message || "Network error while loading punch evidence.");
+    } finally {
+      setLoadingEvidence(false);
+    }
+  };
+
+  // Approval submits the AUTHORITATIVE values read back from the server, never the
+  // possibly-stale roster row. The payload is deliberately an approval and nothing
+  // else — no check_in/check_out/face_photo — so the server sees it as a pure
+  // approval flip and leaves the recorded punch untouched.
+  const handleApprove = async () => {
+    const rec = evidence?.record;
+    if (!rec) return;
+    setApproving(true);
     try {
       const res = await fetch("/api/workforce/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token || getStaffToken()}` },
         body: JSON.stringify({
-          employee_id: record.employee_id,
-          shift_date: record.shift_date,
-          status: record.status,
+          employee_id: rec.employee_id,
+          shift_date: rec.shift_date,
+          status: rec.status,
           is_approved: true
         })
       });
       if (res.ok) {
+        setReviewRow(null);
+        setEvidence(null);
         await fetchData();
+      } else {
+        const d = await res.json().catch(() => ({}));
+        alert(d.error || "Failed to approve this record.");
       }
-    } catch (err) {
-      console.error("Failed to approve record:", err);
+    } catch (err: any) {
+      alert(err?.message || "Network error while approving.");
+    } finally {
+      setApproving(false);
     }
   };
 
@@ -585,15 +666,27 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
                 const StatusIcon = sc.icon;
                 const ShiftIcon = shiftIcon[r.shift_type] || Sun;
 
-                // Biometric Match Scores
-                const hasInPhoto = !!r.face_photo_in;
-                const hasOutPhoto = !!r.face_photo_out;
+                // Biometric Match Scores. `has_face_photo_*` is the list endpoint's
+                // existence flag; `face_photo_*` remains a fallback for any caller
+                // that still sends the bytes inline.
+                const hasInPhoto = !!(r.has_face_photo_in || r.face_photo_in);
+                const hasOutPhoto = !!(r.has_face_photo_out || r.face_photo_out);
                 const scoreIn = r.face_match_score_in !== undefined && r.face_match_score_in !== null ? Math.round(r.face_match_score_in * 100) : null;
                 const scoreOut = r.face_match_score_out !== undefined && r.face_match_score_out !== null ? Math.round(r.face_match_score_out * 100) : null;
 
                 // Geolocation Links
                 const hasInGps = r.check_in_lat && r.check_in_lng;
                 const hasOutGps = r.check_out_lat && r.check_out_lng;
+
+                // is_approved is a MySQL tinyint(1), so it arrives as the NUMBER 0 or
+                // 1 — never `false`. The old `r.is_approved === false` test therefore
+                // never matched, and every punch whose verification did not pass was
+                // displayed as "Manual Entry", i.e. "a supervisor typed this in",
+                // which mislabels precisely the rows a manager has to review. null is
+                // the one state that really does mean a manual entry: no verification
+                // was ever attempted.
+                const approved = r.is_approved === true || Number(r.is_approved) === 1;
+                const verificationPending = !approved && r.is_approved !== null && r.is_approved !== undefined;
 
                 return (
                   <tr key={r.attendance_id} className="ds-table-row border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
@@ -640,30 +733,20 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
                     <td className="ds-td px-4 py-3 text-center">
                       <div className="flex justify-center gap-1">
                         {hasInPhoto && (
-                          <div className="relative group cursor-pointer" onClick={() => setSelectedPhoto(r.face_photo_in || null)}>
-                            <img
-                              src={`data:image/jpeg;base64,${r.face_photo_in}`}
-                              alt="In Face"
-                              className="w-6 h-6 rounded object-cover border border-slate-700 group-hover:border-blue-500 transition-all"
-                            />
-                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                              <Maximize2 className="h-2 w-2 text-white" />
-                            </div>
-                            <span className="block text-[8px] text-slate-500 text-center font-bold mt-0.5">IN: {scoreIn ?? "—"}%</span>
-                          </div>
+                          <button type="button" onClick={() => openReview(r)}
+                            className="px-1.5 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 rounded transition-all"
+                            title="View the check-in photo, its location and the verification result">
+                            <span className="block text-[9px] font-black leading-none">IN</span>
+                            <span className="block text-[8px] leading-none mt-0.5">{scoreIn ?? "—"}%</span>
+                          </button>
                         )}
                         {hasOutPhoto && (
-                          <div className="relative group cursor-pointer" onClick={() => setSelectedPhoto(r.face_photo_out || null)}>
-                            <img
-                              src={`data:image/jpeg;base64,${r.face_photo_out}`}
-                              alt="Out Face"
-                              className="w-6 h-6 rounded object-cover border border-slate-700 group-hover:border-blue-500 transition-all"
-                            />
-                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                              <Maximize2 className="h-2 w-2 text-white" />
-                            </div>
-                            <span className="block text-[8px] text-slate-500 text-center font-bold mt-0.5">OUT: {scoreOut ?? "—"}%</span>
-                          </div>
+                          <button type="button" onClick={() => openReview(r)}
+                            className="px-1.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded transition-all"
+                            title="View the check-out photo, its location and the verification result">
+                            <span className="block text-[9px] font-black leading-none">OUT</span>
+                            <span className="block text-[8px] leading-none mt-0.5">{scoreOut ?? "—"}%</span>
+                          </button>
                         )}
                         {!hasInPhoto && !hasOutPhoto && <span className="text-slate-600 text-xs">—</span>}
                       </div>
@@ -701,33 +784,45 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
                       </div>
                     </td>
 
-                    {/* Approved/Verification Status */}
+                    {/* Verification / approval status */}
                     <td className="ds-td px-4 py-3 text-center">
-                      {r.is_approved ? (
-                        <span className="ds-button-success inline-flex items-center gap-1 text-[10px] font-black text-emerald-400  /10 px-2 py-0.5 rounded border border-emerald-500/25 uppercase">
+                      {approved ? (
+                        <span
+                          className="ds-button-success inline-flex items-center gap-1 text-[10px] font-black text-emerald-400  /10 px-2 py-0.5 rounded border border-emerald-500/25 uppercase"
+                          title="Verified or approved. Open Review to see who approved it and whether verification actually ran."
+                        >
                           <ShieldCheck className="h-3 w-3" />
-                          Auto-Approved
+                          Approved
                         </span>
-                      ) : r.is_approved === false ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/25 uppercase">
+                      ) : verificationPending ? (
+                        <span
+                          className="inline-flex items-center gap-1 text-[10px] font-black text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/25 uppercase"
+                          title="Verification did not pass or could not run. Open Review to see the photo, the location and the reason."
+                        >
                           <ShieldAlert className="h-3 w-3 animate-pulse" />
-                          Pending Override
+                          Pending Review
                         </span>
                       ) : (
-                        <span className="text-[10px] font-bold text-slate-500 uppercase">Manual Entry</span>
+                        <span
+                          className="text-[10px] font-bold text-slate-500 uppercase"
+                          title="No verification was attempted for this record."
+                        >
+                          Manual Entry
+                        </span>
                       )}
                     </td>
 
                     {/* Quick supervisor actions */}
                     <td className="ds-td px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        {r.is_approved !== true && r.check_in && canApprove && (
+                        {!approved && r.check_in && canApprove && (
                           <button
-                            onClick={() => handleApprove(r)}
+                            onClick={() => openReview(r)}
                             className="ds-button-success ds-button-success flex items-center gap-1.5 px-2 py-1   hover:  text-white rounded text-[10px] font-black uppercase tracking-wider transition-all"
+                            title="See the punch photo and location before approving"
                           >
                             <ThumbsUp className="h-3 w-3" />
-                            Approve
+                            Review
                           </button>
                         )}
                         {canEditTime && (
@@ -797,6 +892,279 @@ export default function AttendanceShiftLog({ employees, currentUser, token, jobC
                 Save Time
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Approver review panel — photo + location + what already happened */}
+      {reviewRow && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto bg-black/85 backdrop-blur-sm"
+          onClick={() => !approving && setReviewRow(null)}
+        >
+          <div
+            className="relative w-full max-w-2xl my-8 bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-black text-white uppercase tracking-wide">Review Punch Evidence</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {reviewRow.employee_name} • {reviewRow.employee_role} • {reviewRow.shift_date}
+                </p>
+              </div>
+              <button
+                onClick={() => setReviewRow(null)}
+                disabled={approving}
+                className="ds-button-secondary w-8 h-8 rounded-full text-white border border-slate-700 font-bold flex items-center justify-center disabled:opacity-50"
+              >
+                ✕
+              </button>
+            </div>
+
+            {loadingEvidence && (
+              <div className="flex items-center justify-center gap-2 py-10 text-xs text-slate-400">
+                <FunnySpinner className="h-4 w-4" /> Loading punch evidence…
+              </div>
+            )}
+
+            {evidenceError && (
+              <div className="flex items-start gap-2 p-3 bg-rose-500/10 border border-rose-500/25 rounded-lg">
+                <ShieldAlert className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-rose-300">{evidenceError}</p>
+              </div>
+            )}
+
+            {evidence && (
+              <>
+                {/* Why this record is sitting here at all. A failed verification
+                    stores only a 0 score, so the flag is otherwise unexplainable
+                    to the person being asked to clear it. */}
+                {evidence.review_reason && (
+                  <div className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/25 rounded-lg">
+                    <ShieldAlert className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Why this needs review</p>
+                      <p className="text-xs text-amber-200/90 mt-0.5">{evidence.review_reason}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* What the punch looked like, against what it is compared to. */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="bg-slate-950 border border-slate-800 rounded-lg p-2">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Check-in photo</div>
+                    {evidence.photos?.check_in ? (
+                      <img
+                        src={`data:image/jpeg;base64,${evidence.photos.check_in}`}
+                        alt="Check-in punch photo"
+                        onClick={() => setSelectedPhoto(evidence.photos.check_in)}
+                        className="w-full h-44 object-cover rounded border border-slate-800 cursor-pointer"
+                      />
+                    ) : (
+                      <div className="w-full h-44 rounded border border-slate-800 flex flex-col items-center justify-center text-center px-3">
+                        <ShieldAlert className="h-5 w-5 text-amber-400 mb-1.5" />
+                        <p className="text-[11px] text-amber-400 font-bold">No punch photo recorded</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">
+                          This punch carries no biometric capture, so no face match could run.
+                        </p>
+                      </div>
+                    )}
+                    <p className="text-[11px] text-slate-400 mt-1.5">
+                      Captured at <span className="font-mono text-slate-200">{evidence.record?.check_in || "—"}</span>
+                      {/* The match score is only meaningful when a photo exists to
+                          compare. With no photo the stored score is the unrun
+                          default (100%), so reporting it would claim a match that
+                          never happened. */}
+                      {!!evidence.photos?.check_in && evidence.record?.face_match_score_in != null && (
+                        <> • match <span className="font-mono text-slate-200">{Math.round(Number(evidence.record.face_match_score_in) * 100)}%</span></>
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-950 border border-slate-800 rounded-lg p-2">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Enrolled reference photo</div>
+                    {evidence.photos?.reference ? (
+                      <img
+                        src={`data:image/jpeg;base64,${evidence.photos.reference}`}
+                        alt="Enrolled reference photo"
+                        onClick={() => setSelectedPhoto(evidence.photos.reference)}
+                        className="w-full h-44 object-cover rounded border border-slate-800 cursor-pointer"
+                      />
+                    ) : (
+                      <div className="w-full h-44 rounded border border-slate-800 flex flex-col items-center justify-center text-center px-3">
+                        <AlertCircle className="h-5 w-5 text-slate-500 mb-1.5" />
+                        <p className="text-[11px] text-slate-400 font-bold">No reference photo enrolled</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">
+                          The face match has nothing to compare against — a common reason a punch is left unverified.
+                        </p>
+                      </div>
+                    )}
+                    <p className="text-[11px] text-slate-400 mt-1.5">
+                      {evidence.employee?.full_name || "—"} • {evidence.employee?.designation || evidence.employee?.role || "—"}
+                    </p>
+                  </div>
+                </div>
+
+                {evidence.photos?.check_out && (
+                  <div className="bg-slate-950 border border-slate-800 rounded-lg p-2">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Check-out photo</div>
+                    <img
+                      src={`data:image/jpeg;base64,${evidence.photos.check_out}`}
+                      alt="Check-out punch photo"
+                      onClick={() => setSelectedPhoto(evidence.photos.check_out)}
+                      className="w-full h-40 object-cover rounded border border-slate-800 cursor-pointer"
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { k: "Check-in", v: evidence.record?.check_in || "—" },
+                    { k: "Check-out", v: evidence.record?.check_out || "—" },
+                    { k: "Shift", v: evidence.record?.shift_type || "—" },
+                    { k: "Status", v: evidence.record?.status || "—" },
+                  ].map((f) => (
+                    <div key={f.k} className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2">
+                      <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{f.k}</div>
+                      <div className="text-xs font-mono text-slate-200 mt-0.5">{f.v}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {(evidence.record?.is_late || evidence.record?.is_overtime || evidence.record?.late_reason) && (
+                  <div className="flex flex-wrap gap-2">
+                    {evidence.record?.is_late && (
+                      <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/25 px-2 py-1 rounded">
+                        Marked late{evidence.record.late_reason ? `: ${evidence.record.late_reason}` : ""}
+                      </span>
+                    )}
+                    {evidence.record?.is_overtime && (
+                      <span className="text-[10px] font-bold text-blue-400 bg-blue-500/10 border border-blue-500/25 px-2 py-1 rounded">
+                        Overtime {evidence.record.overtime_hours || 0}h
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Location — the GPS fix the punch was recorded at, and the REAL
+                    geofence verdict. With no perimeter configured there is no
+                    verdict, and that is stated rather than shown as a pass. */}
+                <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5 text-blue-400" />
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Recorded location at check-in</span>
+                  </div>
+                  {evidence.record?.check_in_lat != null && evidence.record?.check_in_lng != null ? (
+                    <>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-mono text-slate-200">
+                          {Number(evidence.record.check_in_lat).toFixed(6)}, {Number(evidence.record.check_in_lng).toFixed(6)}
+                        </span>
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${evidence.record.check_in_lat},${evidence.record.check_in_lng}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] font-bold text-blue-400 hover:text-blue-300 underline"
+                        >
+                          Open in Google Maps ↗
+                        </a>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {evidence.geofence?.configured ? (
+                          evidence.geofence.inside_on_check_in === true ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2 py-1 rounded">
+                              <ShieldCheck className="h-3 w-3" /> Inside the workshop perimeter
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-400 bg-rose-500/10 border border-rose-500/25 px-2 py-1 rounded">
+                              <ShieldAlert className="h-3 w-3" /> Outside the workshop perimeter
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-[10px] text-slate-500">
+                            No workshop perimeter is configured, so no geofence verdict exists for this punch.
+                          </span>
+                        )}
+                        {evidence.geofence?.distance_from_centre_m != null && (
+                          <span className="text-[10px] text-slate-400">
+                            {evidence.geofence.distance_from_centre_m} m from the perimeter centre
+                          </span>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-amber-400">
+                      No GPS fix was recorded with this punch — the location cannot be verified.
+                    </p>
+                  )}
+                </div>
+
+                {Array.isArray(evidence.audit_trail) && evidence.audit_trail.length > 0 && (
+                  <div className="bg-slate-950 border border-slate-800 rounded-lg p-3">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                      What has already happened to this record
+                    </div>
+                    <div className="space-y-1.5">
+                      {evidence.audit_trail.map((a: any, i: number) => {
+                        const after = safeJson(a.after_json);
+                        return (
+                          <div key={i} className="text-[11px] text-slate-400 flex flex-wrap items-baseline gap-x-2">
+                            <span className="font-mono text-slate-500">{fmtIst(a.created_at)}</span>
+                            <span className="font-bold text-slate-300">{String(a.action || "EDIT").replace(/_/g, " ")}</span>
+                            {a.changed_by && <span>by {a.changed_by}</span>}
+                            {after && (
+                              <span className="text-slate-500">
+                                → in <span className="font-mono">{after.check_in || "—"}</span>, out{" "}
+                                <span className="font-mono">{after.check_out || "—"}</span>
+                              </span>
+                            )}
+                            {!a.before_json && (
+                              <span className="text-slate-600 italic">(no previous value captured)</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-3 border-t border-slate-800">
+                  <p className="text-[10px] text-slate-500 max-w-md">
+                    Approving flips the approval flag only. It does{" "}
+                    <span className="text-slate-300 font-bold">not</span> change the recorded check-in time, photo or
+                    location.
+                  </p>
+                  <div className="flex justify-end gap-2 shrink-0">
+                    <button
+                      onClick={() => setReviewRow(null)}
+                      disabled={approving}
+                      className="ds-button-secondary px-4 py-2 text-slate-300 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    {evidence.record?.is_approved === true ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-2 text-[11px] font-bold text-emerald-400">
+                        <ShieldCheck className="h-3.5 w-3.5" /> Already approved
+                      </span>
+                    ) : evidence.viewer?.may_approve && evidence.record?.check_in ? (
+                      <button
+                        onClick={handleApprove}
+                        disabled={approving}
+                        className="ds-button-success flex items-center gap-1.5 px-4 py-2 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+                      >
+                        {approving ? <FunnySpinner className="h-3 w-3" /> : <ThumbsUp className="h-3 w-3" />}
+                        Approve Attendance
+                      </button>
+                    ) : (
+                      <span className="inline-flex items-center px-3 py-2 text-[11px] text-slate-500">
+                        Your role cannot approve attendance.
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

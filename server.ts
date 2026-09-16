@@ -4884,10 +4884,26 @@ async function startServer() {
   // workforce_attendance fixes that. Face photos are excluded to keep the payload
   // small (the screen never renders stored punch photos). Falls back to in-memory
   // only if the DB read itself fails.
+  // Face photos are LONGTEXT base64 — returning them for every row of a day
+  // would bloat the list payload, so only their EXISTENCE is reported here. That
+  // is enough for the screen to offer the photo on demand (see the /evidence
+  // route below) instead of rendering a permanently dead "—".
   const ATT_READ_COLS =
     "attendance_id, employee_id, shift_date, check_in, check_out, shift_type, status, notes, created_at, " +
     "check_in_lat, check_in_lng, check_out_lat, check_out_lng, face_match_score_in, face_match_score_out, " +
-    "is_approved, break_start, break_end, is_late, late_reason, is_overtime, overtime_hours";
+    "is_approved, break_start, break_end, is_late, late_reason, is_overtime, overtime_hours, " +
+    "(face_photo_in IS NOT NULL) AS has_face_photo_in, (face_photo_out IS NOT NULL) AS has_face_photo_out";
+
+  // Who may APPROVE a flagged attendance record. Declared once, here, rather than
+  // inside the POST handler, because the evidence route must apply exactly the
+  // same rule: approving means vouching for a punch, so whoever may vouch for one
+  // may also see the photo and location they are vouching for.
+  //
+  // gm_service is included per the confirmed reporting structure — Floor Incharge,
+  // Spare Parts Manager, Warranty Manager, Workshop Manager, BD Incharge/Assistant
+  // and the CSC team all report up to GM Service, who previously had no way to
+  // approve any of their flagged attendance.
+  const ATTENDANCE_APPROVE_ROLES = ["workshop_manager", "service_manager", "gm_service", "admin", "developer"];
 
   app.get("/api/workforce/attendance", async (req, res) => {
     const db = getDB();
@@ -5048,11 +5064,8 @@ async function startServer() {
     //  - Managers + superadmin may APPROVE a flagged record (is_approved flip
     //    with no new punch payload).
     const ATTENDANCE_MARK_OTHERS_ROLES = ["admin", "developer"];
-    // gm_service added per confirmed reporting structure: Floor Incharge,
-    // Spare Parts Manager, Warranty Manager, Workshop Manager, BD
-    // Incharge/Assistant and the CSC team all report up to GM Service, who
-    // previously had no way to approve any of their flagged attendance.
-    const ATTENDANCE_APPROVE_ROLES = ["workshop_manager", "service_manager", "gm_service", "admin", "developer"];
+    // ATTENDANCE_APPROVE_ROLES is declared once in the attendance section above,
+    // so this handler and the evidence route cannot drift apart.
     const callerRole = String(req.user?.role || "").toLowerCase().trim();
     const callerEmpId = req.user?.employee_id;
     const markingSelf = callerEmpId != null && Number(callerEmpId) === Number(employee_id);
@@ -5226,6 +5239,19 @@ async function startServer() {
 
     if (existingIdx !== -1) {
       const record = db.workforceAttendance[existingIdx];
+      // Snapshot BEFORE anything mutates it. logEdit supports before_json and the
+      // user/employee/job-card call sites all pass it; attendance did not, so an
+      // edit was attributable but not reviewable — you could see who changed a
+      // punch time and what they set, but never what it was. Confirmed against
+      // production: 0 of the 112 attendance audit rows carried a before_json.
+      const beforeSnapshot = {
+        employee_id: record.employee_id,
+        shift_date: record.shift_date,
+        status: record.status,
+        check_in: record.check_in,
+        check_out: record.check_out,
+        is_approved: record.is_approved,
+      };
       if (is_edit) {
         // Admin/superadmin manual correction — set exactly what was sent and
         // preserve the existing verification/approval (no photo/geofence here).
@@ -5252,6 +5278,24 @@ async function startServer() {
         record.status = status || record.status;
         if (is_overtime !== undefined) record.is_overtime = is_overtime;
         if (overtime_hours !== undefined) record.overtime_hours = overtime_hours;
+      } else if (isApprovalAction) {
+        // ── AN APPROVAL IS A GOVERNANCE ACTION, NOT A PUNCH ─────────────────
+        // It flips is_approved on an EXISTING record and must touch nothing
+        // else. Without this branch an approval fell through to the check-in
+        // branch below — an approval carries no face_photo, no check_in and no
+        // check_out, so is_edit, is_break* and is_check_out were all false —
+        // and that branch then ran `record.check_in = check_in || timestampStr`,
+        // writing the CURRENT TIME over the recorded punch, and set
+        // check_in_lat/lng, face_photo_in and face_match_score_in to null.
+        //
+        // Observed in production 2026-09-16: attendance_id 40 (employee 1)
+        // punched at 09:21, was approved at 13:07 by gm_service and again at
+        // 18:21 by workshop_manager, and now reads check_in 18:21 with no face
+        // photo and no GPS — the approval DESTROYED the evidence it approved.
+        // Five approved rows carry that signature; two have check_in LATER than
+        // check_out, which no real punch can produce.
+        if (status !== undefined && status) record.status = status;
+        if (notes !== undefined) record.notes = notes || record.notes;
       } else {
         record.check_in = check_in || timestampStr;
         record.check_in_lat = latitude || null;
@@ -5281,7 +5325,8 @@ async function startServer() {
           : markingSelf
           ? `Self ${is_check_out ? "check-out" : (is_break ? "break" : "check-in")} (${record.status})`
           : `Attendance updated for employee #${employee_id} (${record.status}) by role ${callerRole}`,
-        after: { employee_id, shift_date: targetDate, status: record.status, check_in: record.check_in, check_out: record.check_out, is_approved: record.is_approved }
+        after: { employee_id, shift_date: targetDate, status: record.status, check_in: record.check_in, check_out: record.check_out, is_approved: record.is_approved },
+        before: beforeSnapshot
       });
       return res.json({ success: true, updated: true, record, matchReason, distanceToWorkshop });
     }
@@ -5362,6 +5407,157 @@ async function startServer() {
         const emp = db.employees.find((e: Employee) => e.employee_id === r.employee_id);
         return { ...r, employee_name: emp ? emp.full_name : "Unknown" };
       })
+    });
+  });
+
+  // --- ATTENDANCE PUNCH EVIDENCE (one record, fetched on demand) -------------
+  // Approving a flagged punch is the act of vouching for someone's recorded
+  // arrival, so the approver must be shown what they are vouching for: the punch
+  // photo(s), the exact capture time, the GPS fix, and whether that fix sits
+  // inside the configured workshop perimeter. The day list cannot carry this
+  // (base64 photos per row), so it is fetched for the single record under review.
+  //
+  // Authorisation is enforced HERE, server-side: the employee may view their own
+  // evidence, and anyone in ATTENDANCE_APPROVE_ROLES may view it too. The client
+  // hides the button for other roles; that check is cosmetic only.
+  app.get("/api/workforce/attendance/:attendanceId/evidence", authenticateToken, async (req: any, res) => {
+    const id = Number(req.params.attendanceId);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: "A numeric attendance id is required." });
+    }
+    const callerRole = String(req.user?.role || "").toLowerCase().trim();
+
+    let row: any = null;
+    try {
+      const [rows]: any = await dbPool.query(
+        "SELECT attendance_id, employee_id, shift_date, check_in, check_out, shift_type, status, notes, created_at, " +
+        "check_in_lat, check_in_lng, check_out_lat, check_out_lng, face_match_score_in, face_match_score_out, " +
+        "is_approved, break_start, break_end, is_late, late_reason, is_overtime, overtime_hours, " +
+        "face_photo_in, face_photo_out " +
+        "FROM workforce_attendance WHERE attendance_id = ? LIMIT 1", [id]);
+      row = rows && rows[0] ? rows[0] : null;
+    } catch (e: any) {
+      console.error("[attendance evidence] DB read failed:", e?.message);
+      return res.status(500).json({ error: "Could not read the attendance record." });
+    }
+    if (!row) return res.status(404).json({ error: "Attendance record not found." });
+
+    const isOwnRecord = req.user?.employee_id != null && Number(req.user.employee_id) === Number(row.employee_id);
+    const isApprover = ATTENDANCE_APPROVE_ROLES.includes(callerRole);
+    if (!isOwnRecord && !isApprover) {
+      return res.status(403).json({ error: "You may only view your own attendance evidence." });
+    }
+
+    // Employee master is read from the DB rather than instance memory here, so the
+    // name and reference photo an approver is shown are never a stale snapshot.
+    let employee: any = null;
+    try {
+      const [empRows]: any = await dbPool.query(
+        "SELECT employee_id, full_name, role, designation, department, profile_photo " +
+        "FROM employees WHERE employee_id = ? LIMIT 1", [row.employee_id]);
+      employee = empRows && empRows[0] ? empRows[0] : null;
+    } catch (e: any) {
+      console.error("[attendance evidence] employee read failed:", e?.message);
+    }
+
+    // Real geometry, never a guess. The perimeter is only enforced once a valid
+    // polygon (>=3 corners) is configured, so with no perimeter the verdict is
+    // reported as null ("not configured") rather than a fabricated "inside".
+    const poly = await readGeofencePolygon();
+    const geofence: any = { configured: poly.length >= 3, inside_on_check_in: null, distance_from_centre_m: null };
+    if (poly.length >= 3 && row.check_in_lat != null && row.check_in_lng != null) {
+      const lat = Number(row.check_in_lat), lng = Number(row.check_in_lng);
+      geofence.inside_on_check_in = pointInPolygon(lat, lng, poly);
+      // The polygon centroid is the perimeter's centre point, and the value is
+      // labelled as distance FROM THAT CENTRE so the label is literally true —
+      // it is not "distance from the gate" and must not be shown as such.
+      const cLat = poly.reduce((s: number, p: number[]) => s + Number(p[0]), 0) / poly.length;
+      const cLng = poly.reduce((s: number, p: number[]) => s + Number(p[1]), 0) / poly.length;
+      geofence.distance_from_centre_m = Math.round(getDistanceMeters(lat, lng, cLat, cLng));
+    }
+
+    // What has already happened to this record — an approver about to vouch for a
+    // punch should be able to see that it was, say, already approved once and then
+    // had its time edited. before_json is null on older rows written before the
+    // attendance call site captured it, which is itself worth showing.
+    let trail: any[] = [];
+    try {
+      const [auditRows]: any = await dbPool.query(
+        "SELECT action, justification, before_json, after_json, changed_by, created_at " +
+        "FROM tbl_edit_audit WHERE entity_type = 'workforce_attendance' AND entity_id = ? " +
+        "ORDER BY created_at DESC LIMIT 10", [String(row.attendance_id)]);
+      trail = auditRows || [];
+    } catch (e: any) {
+      console.error("[attendance evidence] audit read failed:", e?.message);
+    }
+
+    res.json({
+      success: true,
+      // WHY THIS RECORD NEEDS REVIEW, derived strictly from values stored against
+      // this punch. A failed verification stores only a 0 score, so without this a
+      // manager sees an unexplained flag and has to ask why. Each branch names the
+      // specific recorded condition; nothing here is inferred beyond the data.
+      review_reason: (() => {
+        if (row.is_approved) return null;
+        if (!row.face_photo_in) {
+          return "No punch photo was captured, so no face check could run.";
+        }
+        const score = row.face_match_score_in;
+        if (score == null) {
+          return "A punch photo exists but no face-match result was stored with it.";
+        }
+        if (Number(score) === 0) {
+          return "The face check could not be completed, so this punch was sent for review instead of being approved. A failed check is never treated as a passed one.";
+        }
+        if (Number(score) < 0.7) {
+          return `Face match ${Math.round(Number(score) * 100)}% is below the 70% threshold required for automatic approval.`;
+        }
+        return "The face match passed, so this punch was flagged by the location check or by the weekly-off/holiday rule.";
+      })(),
+      record: {
+        attendance_id: Number(row.attendance_id),
+        employee_id: Number(row.employee_id),
+        shift_date: row.shift_date,
+        check_in: row.check_in ?? null,
+        check_out: row.check_out ?? null,
+        shift_type: row.shift_type ?? null,
+        status: row.status ?? null,
+        notes: row.notes ?? "",
+        created_at: row.created_at ?? null,
+        is_approved: row.is_approved == null ? null : !!row.is_approved,
+        is_late: !!row.is_late,
+        late_reason: row.late_reason ?? "",
+        is_overtime: !!row.is_overtime,
+        overtime_hours: Number(row.overtime_hours ?? 0),
+        break_start: row.break_start ?? null,
+        break_end: row.break_end ?? null,
+        check_in_lat: row.check_in_lat ?? null,
+        check_in_lng: row.check_in_lng ?? null,
+        check_out_lat: row.check_out_lat ?? null,
+        check_out_lng: row.check_out_lng ?? null,
+        face_match_score_in: row.face_match_score_in ?? null,
+        face_match_score_out: row.face_match_score_out ?? null,
+      },
+      employee: employee && {
+        employee_id: Number(employee.employee_id),
+        full_name: employee.full_name ?? null,
+        role: employee.role ?? null,
+        designation: employee.designation ?? null,
+        department: employee.department ?? null,
+        // Only 13 of 51 employees have an enrolled reference photo, so "no
+        // reference photo enrolled" is a real and common explanation for a punch
+        // sitting unapproved. Report it instead of leaving a low face score
+        // unexplained.
+        has_reference_photo: !!employee.profile_photo,
+      },
+      photos: {
+        check_in: row.face_photo_in || null,
+        check_out: row.face_photo_out || null,
+        reference: (employee && employee.profile_photo) || null,
+      },
+      geofence,
+      audit_trail: trail,
+      viewer: { role: callerRole || null, is_own_record: isOwnRecord, may_approve: isApprover },
     });
   });
 
