@@ -9,6 +9,72 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.19 — timestamps rendered 5h30m early; instants and wall-clock separated — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Reported by the owner:** *"there is something with the time issue check the time and synchronise with the
+the location we live and match timezone of server, db, everything accordingly"*.
+
+### The clock, measured
+
+| Layer | Timezone |
+| --- | --- |
+| Cloud SQL | `@@system_time_zone = UTC`, `NOW() == UTC_TIMESTAMP()`, offset `00:00:00` |
+| Cloud Run container | UTC |
+| Viewer's browser | `Asia/Calcutta`, UTC+05:30 |
+
+**The database and server agree and are correct.** The defect is that the UTC-ness is discarded on the wire:
+`src/db/index.ts` sets `dateStrings: true`, so MySQL returns a DATETIME as `"2026-09-16 06:45:20"` with **no
+timezone marker**, and JavaScript parses a bare string like that as **local** time. Measured in the live
+browser:
+
+```
+new Date("2026-09-16 06:45:20")  →  2026-09-16T01:15:20.000Z     ← 5h30m early
+```
+
+A sign-in that really happened at **12:15 IST** was displayed as **06:45**.
+
+### The blanket fix was written, then reverted — and why
+
+The obvious fix is one Express JSON replacer labelling every `YYYY-MM-DD HH:mm:ss` as UTC, which would repair
+~300 call sites across 97 files at a stroke. It was written, then checked against the data before shipping,
+and **reverted**, because this schema holds **both kinds of datetime in the same table**:
+
+- `job_card_master.created_at` / `updated_at` span hours **0–6** → UTC **instants** (09:30–15:30 IST)
+- `job_card_master.crm_arrival_at` / `crm_jc_started_at` / `crm_jc_completed_at` hold **10:00, 11:15, 15:15,
+  17:30** → **local wall-clock**, because `/api/job-cards/:no/crm-timestamps` parses the literal CRM digits
+  precisely to avoid `Date()` re-interpreting them. Its own comment says *"Wall-clock, never an instant"*.
+
+Labelling those wall-clock columns as UTC would have shifted them **+5h30m**, breaking values that read
+correctly today. The blanket rule would have traded one wrong-screen class for another, silently.
+
+### What was fixed instead — surgically
+
+1. The three fields that are **genuine instants** — `login_history.login_at`, `jc_activity_log.created_at`,
+   `security_audit_logs.created_at`, all written by `NOW()`/`CURRENT_TIMESTAMP` — now carry their UTC label.
+2. The report's **calendar maths uses the site's timezone**, not the server's UTC clock. "Working days
+   elapsed" and "this month" previously disagreed with the shop floor for the first 5h30m of every day and
+   every month.
+3. `StaffActivityHub` formats **explicitly in `Asia/Kolkata`** rather than the viewer's device timezone, so
+   the same event cannot read differently on two machines. The punch list is labelled as gate wall-clock and
+   is deliberately **not** converted.
+
+**Verified live through the owner's own session:** `GET /api/admin/user-activity/staff` now returns
+`login_at: "2026-09-16T06:45:20Z"` (renders **12:15 IST**, previously 06:45) and `working_days_elapsed: 14`
+for September — correct for 1–16 Sep excluding two Sundays.
+
+### Still open — this needs a decision, not a sweep
+
+~300 call sites in 97 files still render a bare DB datetime through `new Date(v).toLocaleString()`, so most
+screens still show instants 5h30m early. Live example: `gate_out_time = 2026-09-06 22:15:00` UTC is really
+**07 Sep 03:45 IST**, and it displays as 22:15.
+
+The correct fix is to **classify every datetime column once** as instant-or-wall-clock, then normalise on
+that basis — a schema-semantics exercise, not a regex. Recorded rather than guessed.
+
+---
+
 ## v1.1.0-rc.18 — the top-bar search box, which had never been wired — **RELEASE**
 
 **Release type:** PRODUCTION
