@@ -9,6 +9,56 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.18 — the top-bar search box, which had never been wired — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Reported by the owner:** *"what use it of that search tab on the top besides back button"*.
+
+**Answer: none.** Verbatim, the input was:
+
+```jsx
+<input type="text" placeholder="Search..." className="..." />
+```
+
+No `value`, no `onChange`, no handler, no state — and nothing in `App.tsx` or `AppShell.tsx` referenced any search variable. It had never been wired. Typing in it and pressing Enter did nothing, and never had.
+
+**Fix:** it is now a **jump-to-screen launcher**. It filters the screens *this role can already see*, matching on screen label or workspace label, with Enter opening the first match, Escape clearing, and an honest "No screens match." empty state.
+
+**Deliberately scoped to `permittedTabs`** rather than a cross-database search. That gives no new endpoints, no new permissions, and no data semantics to guess at — and because it can only reach a screen the role already has, **it cannot become an access path**, so it needs no server-side enforcement of its own.
+
+The wider search the owner may have wanted — job cards by number/VRN, people, vehicles — needs endpoint and matching decisions, so it is left open rather than half-built.
+
+---
+
+## v1.1.0-rc.17 — Staff Activity existed but was unreachable — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Reported by the owner:** *"where can i find staff activity"*.
+
+Fair question — the tab had shipped in rc.15. It was in `ROLE_TABS` for admin/developer/gm_service, it had a render block, and it was verifiably present in the served bundle. **It was still unreachable.**
+
+It had never been added to `WORKSPACE_MAPPING` in `AppShell.tsx`, and the sub-nav renders only tabs whose mapping equals the active workspace:
+
+```js
+permittedTabs.filter(t => WORKSPACE_MAPPING[t.id] === activeWorkspace)
+```
+
+An unmapped tab matches **no** workspace, so it appeared in **no menu at all** and could only be opened by typing `/staff-activity` into the address bar. That is the fourth condition for a screen being reachable — the role has the tab, nothing filters it, a render block exists, **and the tab is assigned to a workspace** — and it is the one that lives in a different file from the other three.
+
+**Fix:** mapped to `hr`, alongside `employees` / `employee-performance` / `productivity`. All three intended roles already carried other `hr` tabs, so the workspace was already visible to them. Verified in the served bundle:
+
+```
+...grievance:"hr","staff-activity":"hr",assistant:"admin",...
+```
+
+**Audited for the same mistake elsewhere:** every tab id referenced in `App.tsx` (44 of them) was compared against the workspace map. The **only** one without a mapping is `logout-deep-link`, the intentional Logout pseudo-tab that the nav excludes by design. Staff Activity was the only invisible screen, so this was a single mistake rather than a class.
+
+**Note for anyone adding a tab:** `src/lib/tabRoutes.ts` needs no change — a tab id *is* its path. `WORKSPACE_MAPPING` does.
+
+---
+
 ## v1.1.0-rc.16 — the login trail recorded an internal address, not the client — **RELEASE**
 
 **Release type:** PRODUCTION
