@@ -140,6 +140,49 @@ function darkenColor(hex: string, percent: number): string {
   return "#" + (0x1000000 + (R < 255 ? R < 0 ? 0 : R : 255) * 0x10000 + (G < 255 ? G < 0 ? 0 : G : 255) * 0x100 + (B < 255 ? B < 0 ? 0 : B : 255)).toString(16).slice(1);
 }
 
+/**
+ * RC1 (production workforce) tab exclusions.
+ *
+ * `npm run build:rc1` — the profile `deployment/Dockerfile` deploys — sets
+ * VITE_WORKFORCE_PROFILE=rc1, which hides these six tabs in production.
+ *
+ * WHY THIS IS ONE DEFINITION AND NOT TWO. This list used to be written out twice
+ * in this file with different behaviour: the redirect guard exempted
+ * admin/developer/dealer_principal/gm_service/workshop_manager, while the
+ * sidebar filter exempted nobody. The two disagreed, so a privileged user could
+ * deep-link to a screen the nav never offered — and `developer`, the role with
+ * the widest ROLE_TABS and a full API override, silently lost six tabs with no
+ * way to tell why. AGENTS.md records this as a trap ("change both occurrences or
+ * neither"); a single definition removes the choice.
+ *
+ * The exemption list is the one the guard already used. To hide these screens
+ * from production for every role, empty RC1_TAB_EXEMPT_ROLES — that restores the
+ * old filter behaviour deliberately rather than by accident.
+ *
+ * `breakdown` is the clearest case that the old filter was over-broad: the
+ * ROLE_TABS loop below explicitly splices a Breakdowns tab in for developer,
+ * admin and the managers, and the filter then silently removed it again.
+ */
+const RC1_EXCLUDED_TABS = [
+  "breakdown",
+  "customer-portal",
+  "assistant",
+  "live-support",
+  "mobile-platform",
+  "certification",
+];
+
+const RC1_TAB_EXEMPT_ROLES = [
+  "admin", "developer", "dealer_principal", "gm_service", "workshop_manager",
+];
+
+/** True when the rc1 profile should hide `tabId` from this role. */
+function isRc1TabHidden(tabId: string, role: string | undefined): boolean {
+  if (import.meta.env.VITE_WORKFORCE_PROFILE !== "rc1") return false;
+  if (role && RC1_TAB_EXEMPT_ROLES.includes(role)) return false;
+  return RC1_EXCLUDED_TABS.includes(tabId);
+}
+
 export default function App() {
   // ─── URL-BACKED NAVIGATION ────────────────────────────────────────────────
   //
@@ -247,24 +290,12 @@ export default function App() {
 
   // Production hardening tab access guard
   useEffect(() => {
-    const isRc1 = import.meta.env.VITE_WORKFORCE_PROFILE === "rc1";
-    const isAdminOrDev = user?.role && ["admin", "developer", "dealer_principal", "gm_service", "workshop_manager"].includes(user.role);
-    if (isRc1 && !isAdminOrDev) {
-      const excludedTabs = [
-        "breakdown",
-        "customer-portal",
-        "assistant",
-        "live-support",
-        "mobile-platform",
-        "certification"
-      ];
-      if (excludedTabs.includes(activeTab)) {
-        console.warn(`[SECURITY] Access to blocked tab '${activeTab}' prevented under RC1 profile.`);
-        // replace, not push: a blocked URL must not become a history entry the
-        // Back button lands on again. This guard already ran on [activeTab],
-        // so it covers a typed or pasted URL as well as a nav click.
-        navigate(pathFromTab(DEFAULT_TAB), { replace: true });
-      }
+    if (isRc1TabHidden(activeTab, user?.role)) {
+      console.warn(`[SECURITY] Access to blocked tab '${activeTab}' prevented under RC1 profile.`);
+      // replace, not push: a blocked URL must not become a history entry the
+      // Back button lands on again. This guard already ran on [activeTab],
+      // so it covers a typed or pasted URL as well as a nav click.
+      navigate(pathFromTab(DEFAULT_TAB), { replace: true });
     }
   }, [activeTab, user, navigate]);
 
@@ -718,6 +749,15 @@ export default function App() {
     reception: [
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
+      // TEMPORARY PILOT OVERRIDE, 2026-09-15 — pairs with the "reception" entry
+      // in GATE_OUT_SECURITY_ROLES (server.ts). Production has no security_agent
+      // and no gate_personnel ACCOUNT, so nothing could be gated out at all.
+      // Receiving the API permission alone was not enough: the ONLY caller of
+      // POST /api/gate-out/gate-out is SecurityWorkspace, which renders only on
+      // this tab id — so without this line reception held the authority and had
+      // nowhere to use it. Remove this together with GATE_OUT_SECURITY_ROLES'
+      // "reception" entry once a real security account exists.
+      { id: "security-workspace", label: "Security Gate Out", icon: ShieldAlert },
     ],
     receptionist: [
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
@@ -1716,18 +1756,7 @@ export default function App() {
   const baseTabs = tabsForRole(user?.role).filter(
     t => {
       if (t.id === "assistant" && !aiModeEnabled) return false;
-      const isRc1 = import.meta.env.VITE_WORKFORCE_PROFILE === "rc1";
-      if (isRc1) {
-        const excludedTabs = [
-          "breakdown",
-          "customer-portal",
-          "assistant",
-          "live-support",
-          "mobile-platform",
-          "certification"
-        ];
-        if (excludedTabs.includes(t.id)) return false;
-      }
+      if (isRc1TabHidden(t.id, user?.role)) return false;
       return isTabPermitted(t.id);
     }
   );
