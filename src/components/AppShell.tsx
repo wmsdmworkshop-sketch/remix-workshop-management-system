@@ -129,6 +129,8 @@ export default function AppShell({
   const [notifications, setNotifications] = React.useState<any[]>([]);
   const [userMenuOpen, setUserMenuOpen] = React.useState(false);
   const [showChangePassword, setShowChangePassword] = React.useState(false);
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [searchOpen, setSearchOpen] = React.useState(false);
 
   const fetchNotifications = React.useCallback(async () => {
     try {
@@ -190,7 +192,44 @@ export default function AppShell({
   React.useEffect(() => {
     setUserMenuOpen(false);
     setNotifOpen(false);
+    setSearchOpen(false);
+    setSearchQuery("");
   }, [activeTab]);
+
+  /**
+   * Header search — a jump-to-screen launcher.
+   *
+   * The input previously had no value, no onChange and no handler, so typing in
+   * it did nothing at all. Rather than leave a dead control or invent a
+   * cross-database search (which would need new endpoints, new permissions and
+   * decisions about what matches what), it now filters the screens THIS ROLE can
+   * already see and navigates to the chosen one.
+   *
+   * Deliberately scoped to `permittedTabs`: the search can only ever reach a
+   * screen the role already has, so it cannot become an access path, and it needs
+   * no server-side enforcement of its own. Matching includes the workspace label,
+   * so typing "hr" or "workshop" surfaces that whole group.
+   */
+  const searchResults = React.useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return (permittedTabs || [])
+      .filter((t) => t.id !== "logout-deep-link")
+      .filter((t) => {
+        const ws = WORKSPACES.find((w) => w.id === WORKSPACE_MAPPING[t.id]);
+        return (
+          String(t.label || "").toLowerCase().includes(q) ||
+          String(ws?.label || "").toLowerCase().includes(q)
+        );
+      })
+      .slice(0, 8);
+  }, [searchQuery, permittedTabs]);
+
+  const goToTab = (tabId: string) => {
+    setActiveTab(tabId);
+    setSearchOpen(false);
+    setSearchQuery("");
+  };
 
   // Determine current active workspace
   const activeWorkspace = WORKSPACE_MAPPING[activeTab] || "dashboard";
@@ -401,11 +440,51 @@ export default function AppShell({
 
             <div className="relative w-40 sm:w-64">
               <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-zinc-500" />
-              <input 
+              <input
                 type="text"
-                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => { setSearchQuery(e.target.value); setSearchOpen(true); }}
+                onFocus={() => setSearchOpen(true)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && searchResults.length > 0) {
+                    e.preventDefault();
+                    goToTab(searchResults[0].id);
+                  } else if (e.key === "Escape") {
+                    setSearchOpen(false);
+                    setSearchQuery("");
+                  }
+                }}
+                placeholder="Search screens…"
                 className="w-full bg-black border border-zinc-800 rounded-lg py-1.5 pl-9 pr-3 text-xs text-white focus:outline-none focus:border-orange-500"
               />
+              {searchOpen && searchQuery.trim() !== "" && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setSearchOpen(false)} />
+                  <div
+                    className="absolute left-0 right-0 top-full mt-2 z-50 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden"
+                    role="listbox"
+                  >
+                    {searchResults.length === 0 ? (
+                      <div className="px-3 py-4 text-xs text-zinc-500">No screens match.</div>
+                    ) : (
+                      searchResults.map((t) => {
+                        const ws = WORKSPACES.find((w) => w.id === WORKSPACE_MAPPING[t.id]);
+                        return (
+                          <button
+                            key={t.id}
+                            onClick={() => goToTab(t.id)}
+                            role="option"
+                            className="w-full text-left px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-800 flex items-center justify-between gap-2"
+                          >
+                            <span className="truncate">{t.label}</span>
+                            <span className="text-[10px] text-zinc-500 shrink-0">{ws?.label || ""}</span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
