@@ -9,13 +9,19 @@ file does not stand in for them.
 
 ---
 
-## v1.1.0-rc.14 — a permission with no screen, and two nav filters that disagreed — **RELEASE**
+## v1.1.0-rc.14 — a permission with no screen, and a hardening profile that was never running — **RELEASE**
 
 **Release type:** PRODUCTION
 
 **Reported by the owner:** *"while this is the developer login everything here needs every access"*.
 
-The premise was wrong, and checking it found two real defects.
+The premise was wrong. Checking it properly turned up three things: one of the owner's assumptions was
+mistaken, one defect was mine, and one **production-wide misconfiguration** had been invisible since it was
+written.
+
+> **This entry was corrected on 2026-09-16, the same day, after verifying the deployed bundle rather than
+> the source.** The correction is left visible rather than quietly rewritten, because the original claim
+> was the kind that sounds plausible and is easy to repeat.
 
 ### First: which login
 
@@ -24,35 +30,60 @@ reading `dwip_auth_user` out of localStorage, not by assumption. The only **acti
 `wmsdmworkshop@gmail.com` (user 48); the older `developer` account (user 30) is deactivated. The GM and the
 developer are both named Sayeed, which is how the two get confused.
 
-### Defect 1 — "every access" is three layers, and two of them disagreed
+**And the developer login already had everything.** See Defect 2 — nothing was being hidden from it.
 
-| Layer | Developer |
-| --- | --- |
-| API routes | **Full.** `AuthorizationService.checkPermission` short-circuits `admin`/`developer` before any lookup |
-| Tab permissions | **Full.** `isTabPermitted()` returns `true` immediately for developer |
-| Sidebar nav | **Six tabs stripped in production** |
+### Defect 1 — two nav filters disagreed, but neither of them was running
 
-Production builds with `VITE_WORKFORCE_PROFILE=rc1`, and `excludedTabs` was written out **twice with
-different behaviour**:
+`excludedTabs` was written out **twice with different behaviour**:
 
 - the redirect guard exempted `admin`, `developer`, `dealer_principal`, `gm_service`, `workshop_manager`;
 - the sidebar filter exempted **nobody**.
-
-So a privileged user could deep-link to a screen the nav never offered them, and `developer` — the widest
-`ROLE_TABS` in the file, with a full API override — silently lost six tabs with no way to tell why.
-
-The clearest evidence the filter was over-broad: the `ROLE_TABS` loop **explicitly splices a Breakdowns tab
-in** for developer and the managers, and the filter then deleted it again. Two parts of the same file
-fighting each other.
 
 **Fix:** one definition. `RC1_EXCLUDED_TABS` + `RC1_TAB_EXEMPT_ROLES` behind `isRc1TabHidden()`, used by
 both call sites, so they cannot diverge again. `AGENTS.md` records this as a landmine — *"change both
 occurrences or neither"* — and a single definition removes the choice.
 
-**To revert the visibility change:** empty `RC1_TAB_EXEMPT_ROLES`. That restores the old "hidden from every
-role" behaviour in one place instead of two.
+> **⚠ CORRECTION, 2026-09-16.** This entry first claimed that `developer` was *"silently losing six tabs in
+> production"*. **That was wrong**, and it was disproved by checking the deployed artifact rather than the
+> source. See the next section. The dedup is real and worth keeping, but **it is a no-op in production.**
 
-### Defect 2 — this one was mine
+### Defect 2 — the rc1 hardening profile is dead code in production
+
+Found while verifying that rc.14 had actually shipped. The served bundle contains **zero** occurrences of
+`"rc1"` and **zero** of `"dev"`, and the excluded-tabs array literal is absent entirely.
+
+**Cause:** `.dockerignore` **and** `.gcloudignore` both carry:
+
+```
+.env
+.env.*
+!.env.example
+```
+
+`.env.rc1` — the only file that sets `VITE_WORKFORCE_PROFILE=rc1` — is excluded from the Cloud Build upload
+and from the Docker context, **and** is gitignored as well. `npm run build:rc1` runs `vite build --mode rc1`,
+which loads no env file at all, so `VITE_WORKFORCE_PROFILE` is `undefined`, `undefined === "rc1"` folds to
+`false`, and esbuild eliminates the guard as dead code.
+
+Every `VITE_WORKFORCE_PROFILE === "rc1"` check in the codebase is therefore permanently false in
+production — the `App.tsx` tab guard **and** `AttendanceShiftLog.tsx`.
+
+**This is not an outage.** The net effect is permissive: nothing is hidden, which is why nobody noticed. But
+it means the production-hardening configuration has been **documentation rather than behaviour**, and
+`.agents/AGENTS.md:158` (which states production builds with the rc1 profile) is factually wrong.
+
+**Held for the owner — deliberately NOT changed.** There are two honest resolutions:
+
+1. pass `VITE_WORKFORCE_PROFILE` through a Docker `ARG`/`ENV` or a Cloud Build substitution, so the flag
+   survives the context exclusion; **or**
+2. accept that rc1 is inert and remove the dead checks.
+
+Option 1 would **hide** six tabs in production — the opposite of what was asked for — so switching it on is
+an owner decision, not a silent fix. `.env.*` must stay dockerignored either way: excluding env files from
+the image is the right instinct, and `.env.rc1` merely happens to carry no secret, which is the only reason
+a build flag could ride along with it.
+
+### Defect 3 — this one was mine
 
 **rc.13 granted reception a permission with no way to use it.**
 
@@ -74,10 +105,13 @@ Granting the tab to a role the API does not authorise would create the inverse d
 `workshop_manager`, `service_manager`, `gm_service` and `dealer_principal` do — so gate-out has in practice
 been worked by admin and the GM, not by security.
 
-**Held back for the owner, not changed:** `service_manager`, `supervisor` and `floor_supervisor` also have
-`breakdown` spliced in by the `ROLE_TABS` loop and are not exempt, so they still lose it in production.
-Widening that list is a policy decision about who sees Breakdowns in production, so it was left alone rather
-than expanded silently.
+**Verified in the live artifact, not just in source:** the served bundle contains
+`reception:[{vehicle-lookup},{gate-entry},{security-workspace}]` while `receptionist` immediately after it
+does not — exactly as intended, and it proves rc.14's nav half actually shipped.
+
+**The open question this raised, for the owner:** `service_manager`, `supervisor` and `floor_supervisor` also
+have `breakdown` spliced in by the `ROLE_TABS` loop but are not in `RC1_TAB_EXEMPT_ROLES`. That only matters
+if rc1 is ever switched on (see Defect 2) — today nothing is hidden from anyone.
 
 ---
 
