@@ -98,6 +98,7 @@ import HolidaysManagement from "./components/HolidaysManagement";
 import TrainingDevelopment from "./components/TrainingDevelopment";
 import GrievanceManagement from "./components/GrievanceManagement";
 import EmployeePerformanceHub from "./components/EmployeePerformanceHub";
+import StaffActivityHub from "./components/StaffActivityHub";
 import DmsImporter from "./components/DmsImporter";
 import EnterpriseMasterDataHub from "./components/EnterpriseMasterDataHub";
 import AppShell from "./components/AppShell";
@@ -557,6 +558,12 @@ export default function App() {
       { id: "live-support", label: "Live Support", icon: HelpCircle },
       { id: "ai-brains", label: "AI Brains", icon: Brain },
       { id: "jc-audit-log", label: "JC Activity Log", icon: ScrollText },
+      // Owner instruction 2026-09-16: staff activity is visible to the
+      // developer, GM Service and HR (the admin account) only. Deliberately NOT
+      // given to workshop_manager or floor_supervisor — this is personal
+      // performance data about named employees. The server enforces the same
+      // three roles independently.
+      { id: "staff-activity", label: "Staff Activity", icon: ShieldCheck },
     ],
     admin: [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -592,6 +599,7 @@ export default function App() {
       { id: "assistant", label: "Gemini Copilot", icon: Sparkles },
       { id: "live-support", label: "Live Support", icon: HelpCircle },
       { id: "jc-audit-log", label: "JC Activity Log", icon: ScrollText },
+      { id: "staff-activity", label: "Staff Activity", icon: ShieldCheck },
     ],
     billing: [
       { id: "billing-exit", label: "Billing & Exit", icon: DollarSign },
@@ -721,6 +729,9 @@ export default function App() {
       { id: "mobile-platform", label: "Mobile Platform", icon: Smartphone },
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
+      // GM Service shares the activity report with admin/developer — see the
+      // note on the developer entry above.
+      { id: "staff-activity", label: "Staff Activity", icon: ShieldCheck },
     ],
     spares_manager: [
       { id: "parts-incharge-workspace", label: "Parts Desk (Mobile)", icon: Package },
@@ -749,15 +760,13 @@ export default function App() {
     reception: [
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
-      // TEMPORARY PILOT OVERRIDE, 2026-09-15 — pairs with the "reception" entry
-      // in GATE_OUT_SECURITY_ROLES (server.ts). Production has no security_agent
-      // and no gate_personnel ACCOUNT, so nothing could be gated out at all.
-      // Receiving the API permission alone was not enough: the ONLY caller of
-      // POST /api/gate-out/gate-out is SecurityWorkspace, which renders only on
-      // this tab id — so without this line reception held the authority and had
-      // nowhere to use it. Remove this together with GATE_OUT_SECURITY_ROLES'
-      // "reception" entry once a real security account exists.
-      { id: "security-workspace", label: "Security Gate Out", icon: ShieldAlert },
+      // The temporary "Security Gate Out" entry added here on 2026-09-15 has been
+      // REMOVED. It was granted because the exit step appeared to have no
+      // operator — production was believed to have zero security accounts. That
+      // was wrong: `suryakant` (user 45) is an active security_agent with a valid
+      // password. The real defect was that security_agent had no gate-out TAB,
+      // which is fixed above. Reception is a front-desk role and must not be able
+      // to release vehicles; see GATE_OUT_SECURITY_ROLES in server.ts.
     ],
     receptionist: [
       { id: "vehicle-lookup", label: "Vehicle History", icon: History },
@@ -770,6 +779,13 @@ export default function App() {
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
       { id: "delivery-workspace", label: "Vehicle Delivery", icon: Truck },
+      // THE GATE-OUT SCREEN. `security_agent` was in GATE_OUT_SECURITY_ROLES —
+      // so the API always accepted it — but had no tab reaching
+      // SecurityWorkspace, the ONLY caller of POST /api/gate-out/gate-out. The
+      // role held the authority and could not exercise it, which is why the exit
+      // step looked like it had no operator at all. Security owns this step; the
+      // temporary reception override existed only because of that gap.
+      { id: "security-workspace", label: "Security Gate Out", icon: ShieldAlert },
     ],
     breakdown: [
       { id: "breakdown", label: "Breakdowns", icon: AlertTriangle },
@@ -820,6 +836,12 @@ export default function App() {
     gate_personnel: [
       { id: "gate-entry", label: "Gate Entry", icon: Truck },
       { id: "bay-tat", label: "Bay Monitor", icon: Clock },
+      // Listed in GATE_OUT_SECURITY_ROLES, so given the tab that reaches the
+      // gate-out screen. Tab set and API role set are kept aligned on purpose:
+      // a tab without the API role is a button that 403s, and an API role
+      // without the tab is an authority nobody can use — both bugs have already
+      // shipped once in this feature.
+      { id: "security-workspace", label: "Security Gate Out", icon: ShieldAlert },
     ],
     technician: [
       { id: "tech-kpi", label: "My KPI", icon: TrendingUp },
@@ -2219,6 +2241,14 @@ export default function App() {
 
           {activeTab === "employee-performance" && (
             <EmployeePerformanceHub employees={employees} jobCards={jobCards} />
+          )}
+
+          {/* Staff Activity — per-person sign-ins, attendance and platform usage.
+              Self-fetching: it reads /api/admin/user-activity/* directly, which
+              independently enforces the same admin/developer/gm_service gate, so
+              the tab registration below is convenience, not the boundary. */}
+          {activeTab === "staff-activity" && (
+            <StaffActivityHub />
           )}
 
       {/* Bottom Navigation Bar - Mobile */}

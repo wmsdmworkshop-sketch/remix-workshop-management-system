@@ -42,6 +42,7 @@ import handoffSlaMissingColumns from "./028_handoff_sla_missing_columns.ts";
 import missingPermissionModules from "./029_missing_permission_modules.ts";
 import evidenceGateoutColumns from "./030_evidence_gateout_columns.ts";
 import saPreInvoiceModule from "./031_sa_pre_invoice_module.ts";
+import loginHistoryRelaxFk from "./032_login_history_relax_fk.ts";
 export const allMigrations: Migration[] = [
   baseline,
   modulesMasterSeeding,
@@ -73,5 +74,6 @@ export const allMigrations: Migration[] = [
   handoffSlaMissingColumns,
   missingPermissionModules,
   evidenceGateoutColumns,
-  saPreInvoiceModule
+  saPreInvoiceModule,
+  loginHistoryRelaxFk
 ];

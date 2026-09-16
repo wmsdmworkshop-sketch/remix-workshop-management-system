@@ -2456,6 +2456,48 @@ async function startServer() {
   app.use(/^\/api\/job-cards\/[^/]+\/invoice-ocr$/, aiRateLimiter);
 
   // AUTH API: Login (Email + Password only)
+  //
+  // ── LOGIN TRAIL ────────────────────────────────────────────────────────────
+  // `login_history` has existed since the first schema with exactly the right
+  // shape — user_id, login_at (DEFAULT CURRENT_TIMESTAMP), ip_address,
+  // status enum('success','failed') — and has never held a row, because nothing
+  // wrote to it. Its `user_id` FK pointed at `users`, while this route resolves
+  // accounts from `user_access_master` first (only 19 of 61 production accounts
+  // exist in `users`), so an insert would have been rejected for most real staff.
+  // Migration 032 drops that FK.
+  //
+  // WHY A FAILED LOGIN IS RECORDED TOO: an audit trail that only holds successes
+  // cannot answer "is someone trying to get in", and a run of failures against
+  // one account is the signal worth seeing. Both outcomes are recorded, and the
+  // status column distinguishes them.
+  //
+  // WHY THIS NEVER THROWS: this is an audit side-effect on the sign-in path. If
+  // it failed loudly it could deny access to a valid user, which is worse than a
+  // missing log line. Failures are warned and swallowed, matching how the rest of
+  // this file treats non-critical writes.
+  const recordLoginAttempt = async (
+    userId: unknown,
+    req: any,
+    status: "success" | "failed"
+  ): Promise<void> => {
+    const id = Number(userId);
+    // user_id is NOT NULL in the table, so an unresolved username (no account at
+    // all) cannot be recorded without inventing an id. Skipped rather than
+    // fabricated — a guessed row would attribute an attack to a real person.
+    if (!Number.isInteger(id) || id <= 0) return;
+    try {
+      // TRUST_PROXY=1 is set on the Cloud Run service, so req.ip already resolves
+      // the real client through the load balancer. Trimmed to the column width.
+      const ip = String(req.ip || req.socket?.remoteAddress || "").trim().slice(0, 45) || null;
+      await dbPool.execute(
+        "INSERT INTO login_history (user_id, login_at, ip_address, status) VALUES (?, NOW(), ?, ?)",
+        [id, ip, status]
+      );
+    } catch (e: any) {
+      console.warn("[LOGIN-HISTORY] could not record login attempt:", e.message);
+    }
+  };
+
   app.post("/api/auth/login", loginRateLimiter, async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
@@ -2517,11 +2559,13 @@ async function startServer() {
 
       const isUserActive = user.is_active === 1 || user.is_active === true || user.is_active === "1";
       if (!isUserActive) {
+        await recordLoginAttempt(user.user_id, req, "failed");
         return res.status(401).json({ error: "This user account has been deactivated." });
       }
 
       const match = await bcrypt.compare(password, user.password_hash);
       if (!match) {
+        await recordLoginAttempt(user.user_id, req, "failed");
         return res.status(401).json({ error: "Invalid username or password." });
       }
 
@@ -2540,6 +2584,8 @@ async function startServer() {
       );
 
       const mustChangePassword = user.must_change_password === 1 || user.must_change_password === true;
+
+      await recordLoginAttempt(user.user_id, req, "success");
 
       res.json({
         token,
@@ -2630,6 +2676,7 @@ async function startServer() {
 
       const match = await bcrypt.compare(otp, user.otp_hash);
       if (!match) {
+        await recordLoginAttempt(user.user_id, req, "failed");
         return res.status(401).json({ error: "Invalid OTP code. Please check and try again." });
       }
 
@@ -2644,6 +2691,10 @@ async function startServer() {
       } catch (e) {
         // ignore
       }
+
+      // A verified OTP mints a JWT, so this is a real sign-in and belongs in the
+      // trail alongside the password route above.
+      await recordLoginAttempt(user.user_id, req, "success");
 
       const token = jwt.sign(
         {
@@ -6801,19 +6852,20 @@ time from another field.`;
   // normalize+match, single-gate-out lock, revoke rules) against the real schema.
   // ===========================================================================
   const GATE_PASS_ISSUE_ROLES = ["admin", "developer", "gm_service", "workshop_manager", "service_manager", "cashier"];
-  // "reception" is a TEMPORARY PILOT OVERRIDE, added on the owner's instruction
-  // (2026-09-15): production has NO security_agent and NO gate_personnel ACCOUNT —
-  // verified, zero active users in either role — so the exit step had no operator
-  // and no vehicle could be gated out at all. Reception (AFROZ, dev-328) works it
-  // instead until a real security login exists.
+  // "reception" was added here on 2026-09-15 as a temporary pilot override, on the
+  // belief that production had NO security account at all so the exit step had no
+  // operator. THAT BELIEF WAS WRONG AND THE OVERRIDE IS REVERTED (2026-09-16):
+  // `suryakant` (user 45) is an active security_agent with a valid password hash.
+  // The real defect was never a missing account — it was that security_agent had
+  // no TAB reaching SecurityWorkspace, the only caller of POST /api/gate-out/gate-out.
+  // That is fixed in ROLE_TABS (src/App.tsx) by giving security_agent and
+  // gate_personnel the "security-workspace" tab.
   //
-  // NOTE THE AUTHORITY THIS GRANTS. Reception can now call POST /api/gate-out/gate-out,
-  // which RELEASES A VEHICLE, and POST /api/gate-out/evidence, which records the
-  // rear-plate capture behind it — and can claim the SECURITY task in claim-task.
-  // That is a security control handed to a front-desk role. Delete "reception" from
-  // this list the moment a security_agent account is created; the correct fix is an
-  // account in the right role, not a widened role list.
-  const GATE_OUT_SECURITY_ROLES = ["admin", "developer", "gm_service", "workshop_manager", "security_agent", "gate_personnel", "reception"];
+  // Do NOT re-add "reception" to widen this: that hands a front-desk role the
+  // ability to RELEASE A VEHICLE, which is a security control, not a convenience.
+  // If the security account ever becomes unusable, create a proper account in the
+  // right role.
+  const GATE_OUT_SECURITY_ROLES = ["admin", "developer", "gm_service", "workshop_manager", "security_agent", "gate_personnel"];
   const normVrn = (s: any) => String(s ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const genId = (prefix: string) => `${prefix}-${Date.now().toString(36).toUpperCase()}${Math.floor(100 + Math.random() * 900)}`;
 
@@ -11956,6 +12008,19 @@ Respond with valid JSON only:
   app.use("/api/floor-execution", floorExecutionRouter);
   app.use("/api/qc", qcRoutes);
   app.use("/api/billing", billingRouter);
+
+  // --- STAFF ACTIVITY & COMPLIANCE ---
+  // Per-person sign-in, attendance and platform-usage reporting. Visible to
+  // admin / developer / gm_service only, by the owner's instruction of
+  // 2026-09-16: "this to be showing only to the developer and gm service and
+  // hr/admin". There is no `hr` role in `roles`; the HR account (hr_dapl, 29)
+  // carries `admin`, so those three roles are the intended audience.
+  //
+  // Handlers live in src/api/routes/user-activity.routes.ts and are mounted here
+  // because authenticateToken / requireRoles are consts inside THIS closure and
+  // are not exportable — injecting them keeps one RBAC implementation.
+  const { createUserActivityRouter } = await import("./src/api/routes/user-activity.routes.ts");
+  app.use("/api", createUserActivityRouter({ authenticateToken, requireRoles }));
 
   // --- AI BRAINS: SIGNA (L1 Tactical) / SETU (L2 Coordination) / DISHA (L3 Strategic) ---
   // Handlers now live in src/api/routes/ai.routes.ts. They are mounted here

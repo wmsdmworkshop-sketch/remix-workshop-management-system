@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { TrendingUp, Search } from "lucide-react";
+import { isWorkCompleteStatus } from "../types";
 
 export interface EmployeePerformanceHubProps {
   employees: any[];
@@ -20,11 +21,22 @@ export const EmployeePerformanceHub: React.FC<EmployeePerformanceHubProps> = ({ 
     return employees
       .filter((e: any) => e.is_active !== false)
       .map((e: any) => {
-        const matched = jobCards.filter((j: any) =>
-          (j.technician_name && j.technician_name.includes(e.full_name)) ||
-          j.service_advisor === e.full_name
-        );
-        const completed = matched.filter((j: any) => String(j.status || "").toLowerCase() === "completed").length;
+        // Case-insensitive and trimmed on BOTH sides. Production stores names
+        // with trailing spaces and mixed casing — the advisor exists literally
+        // as 'ranjeet ' in employees, users and user_access_master — and the
+        // previous exact compare silently attributed zero jobs to real people.
+        const name = String(e.full_name || "").trim().toLowerCase();
+        const matched = jobCards.filter((j: any) => {
+          const tech = String(j.technician_name || "").trim().toLowerCase();
+          const sa = String(j.service_advisor || "").trim().toLowerCase();
+          return (name !== "" && tech !== "" && tech.includes(name)) || (name !== "" && sa === name);
+        });
+        // isWorkCompleteStatus, NOT a literal comparison. job_status is an ENUM
+        // of Open / In Progress / Waiting Parts / Ready / Delivered / Carry
+        // Forward / Assigned / Unassigned / In Queue — "Completed" is not one of
+        // them, so `status === "completed"` matched nothing and this column read
+        // 0 for every employee, forever. See the helpers in src/types.ts.
+        const completed = matched.filter((j: any) => isWorkCompleteStatus(j.status)).length;
         const reworked = matched.filter((j: any) => (j.rework_count || 0) > 0).length;
         const total = matched.length;
         const ftr = total > 0 ? Math.round(((total - reworked) / total) * 100) : null;
@@ -41,7 +53,7 @@ export const EmployeePerformanceHub: React.FC<EmployeePerformanceHubProps> = ({ 
           targetRevenue: e.target_revenue,
         };
       })
-      .filter((r) => !search.trim() || r.full_name.toLowerCase().includes(search.toLowerCase()) || r.role.toLowerCase().includes(search.toLowerCase()));
+      .filter((r) => !search.trim() || r.full_name.toLowerCase().includes(search.toLowerCase()) || String(r.role || "").toLowerCase().includes(search.toLowerCase()));
   }, [employees, jobCards, search]);
 
   return (
