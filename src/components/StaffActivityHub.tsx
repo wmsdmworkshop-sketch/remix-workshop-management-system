@@ -9,7 +9,7 @@ import {
   AlertTriangle,
   X,
 } from "lucide-react";
-import { staffAuthHeaders, isSessionExpiredResponse, endExpiredSession } from "../lib/authToken";
+import { staffAuthHeaders, isSessionExpiredResponse, endExpiredSession, getStaffUserId } from "../lib/authToken";
 
 /**
  * Staff Activity & Compliance — per-person sign-in, attendance and platform usage.
@@ -163,6 +163,10 @@ const Pill: React.FC<{ tone: "ok" | "warn" | "bad" | "muted"; children: React.Re
 };
 
 export default function StaffActivityHub() {
+  // Who is looking at this page — used to explain their OWN empty row rather
+  // than leaving a bare "Never recorded" that reads as "you have never used the
+  // system".
+  const myUserId = React.useMemo(() => getStaffUserId(), []);
   const [data, setData] = useState<StaffResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -300,15 +304,22 @@ export default function StaffActivityHub() {
         </div>
       )}
 
-      {/* The first days of a new trail look empty. Say why, so it does not read
-          as "nobody works here". */}
-      {data && data.rows.every((r) => !r.last_login_at) && (
+      {/* Shown while ANY account still has no recorded sign-in — not only when
+          ALL of them do. The first version required every row to be empty, so the
+          moment a few people signed in the explanation disappeared and the
+          remaining rows read as bare "Never recorded", which looks like those
+          people have never used the system. They are usually signed in RIGHT NOW:
+          a session is a 24-hour JWT, so anyone who was already logged in when
+          recording began keeps showing this until they next sign in. */}
+      {data && data.rows.some((r) => !r.last_login_at) && (
         <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
           <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
           <p className="text-[11px] text-amber-200/90">
-            Sign-ins are only recorded from <strong>16 September 2026</strong> onward — the `login_history` table
-            existed but nothing wrote to it until then. Past logins cannot be recovered, so "Never recorded" below
-            is expected until each person signs in once. Attendance and activity figures cover the full period.
+            Sign-ins are recorded from <strong>16 September 2026, 12:06 IST</strong> onward. The login-history
+            table existed before that but nothing wrote to it, and past sign-ins cannot be recovered. Because a
+            session is a <strong>24-hour token</strong>, anyone already signed in when this began — including
+            you, if your row is empty — keeps showing <em>Never recorded</em> until they next sign out and back
+            in. Attendance and activity figures cover the full period and are unaffected.
           </p>
         </div>
       )}
@@ -379,6 +390,7 @@ export default function StaffActivityHub() {
                   <td className="p-3">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-slate-200">{r.full_name || r.username}</span>
+                      {r.user_id === myUserId && <Pill tone="ok">you</Pill>}
                       {!r.is_active && <Pill tone="muted">off</Pill>}
                     </div>
                     <span className="text-[10px] text-slate-500 font-mono">{r.username}</span>
@@ -390,6 +402,13 @@ export default function StaffActivityHub() {
                         <div className="text-slate-300">{fmtDateTime(r.last_login_at)}</div>
                         <div className="text-[10px] text-slate-500">{fmtAge(r.last_login_at)}</div>
                       </div>
+                    ) : r.user_id === myUserId ? (
+                      <span
+                        className="text-amber-300/90 italic text-[11px]"
+                        title="Your session was issued before sign-in recording began. Sign out and back in to record one."
+                      >
+                        This session predates recording
+                      </span>
                     ) : (
                       <span className="text-slate-500 italic">Never recorded</span>
                     )}
