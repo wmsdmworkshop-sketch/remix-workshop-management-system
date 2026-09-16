@@ -51,6 +51,13 @@ export const WORKSPACE_MAPPING: Record<string, string> = {
   "employee-performance": "hr",
   "training-development": "hr",
   grievance: "hr",
+  // Staff Activity belongs with the other people-facing screens. WITHOUT THIS
+  // LINE THE TAB IS INVISIBLE: the sub-nav renders only tabs whose mapping
+  // equals the active workspace (`WORKSPACE_MAPPING[t.id] === activeWorkspace`),
+  // and an unmapped tab matches no workspace at all — it is unreachable except by
+  // typing the URL. Registering a tab in ROLE_TABS and adding its render block is
+  // NOT enough; it must also be assigned to a workspace here.
+  "staff-activity": "hr",
   assistant: "admin",
   "live-support": "admin",
   "ai-brains": "admin",
