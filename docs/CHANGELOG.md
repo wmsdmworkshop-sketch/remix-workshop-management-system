@@ -9,6 +9,68 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.23 — One person's typos could lock the whole workshop out of login — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Reported by the owner:** a phone screenshot of `Too many login attempts from this IP. Please try again after 15 minutes.`
+
+### Nobody chose this. It is a default key generator meeting an unconfigured proxy
+
+The login limiter used `express-rate-limit`'s **default key, `req.ip`**. `trust proxy` is never set in `server.ts`
+(there is no `app.set("trust proxy", …)` anywhere, and `TRUST_PROXY` — which
+[ENVIRONMENT_VARIABLES.md](../deployment/ENVIRONMENT_VARIABLES.md) documents as "Value: 1" — **is not on the
+service at all**, so even reading it would do nothing). Express therefore ignores `X-Forwarded-For` and `req.ip`
+returns the **Cloud Run front-end's own address, identical for every caller**.
+
+That silently turned "10 attempts per IP" into **one shared budget of 10 attempts per 15 minutes for the entire
+company**, staff on mobile data included.
+
+**The library has been reporting it on every request**, and we did not act on it:
+
+```
+ValidationError: The 'Forwarded' header (standardized X-Forwarded-For) is set but currently being ignored.
+Add a custom keyGenerator to use a value from this header.
+code: 'ERR_ERL_FORWARDED_HEADER'   (also ERR_ERL_UNEXPECTED_X_FORWARDED_FOR)
+```
+
+**OBSERVED 2026-09-16:** nine failed attempts from **two different phones** (users 91 and 68) between 12:43 and
+12:46 consumed that shared budget and locked out everyone else. The `login_history` rows prove the two devices
+were on different IPv6 addresses, i.e. the bucket is not per-workshop either — it is per front-end.
+
+**WHERE IT CAME FROM:** commit `b331acd`, 2026-07-09, whose message is *"Merge attendance/overtime tabs, fix user
+management font color, fix vehicle lookup token header, fix layout alignment bugs"* — a UI-fixes bundle, not a
+security decision. There is no ADR and no decision-log entry; `docs/` mentions rate limiting exactly once, in an
+unrelated line. The `max: 10` / 15-minute figures are a conventional snippet, not a tuned value.
+
+**AND THE CODEBASE ALREADY KNEW.** `src/middleware/rate-limiter.ts` documents this exact hazard and deliberately
+avoids it for the AI routes:
+
+> *"since staff share the dealership's NAT egress IP on site WiFi, the whole workshop would have collapsed into
+> one bucket and throttled each other."*
+
+The login limiter was left on the library default.
+
+### The fix
+
+- `keyGenerator` now keys on the **normalised username**. One person's typos can no longer shut anybody else out,
+  while brute force against a single account is still throttled — which is what the limit is for. It also no
+  longer depends on the proxy chain at all, so it is correct whether or not `trust proxy` is ever configured.
+- The fallback for a body with no username uses the **socket peer rather than `req.ip`**, so the library's
+  trust-proxy validation cannot fire and such a request cannot lock a real user out.
+- **`skipSuccessfulRequests`** — a correct credential is proof the caller is not the attacker this guards
+  against, so it no longer counts against the budget.
+- The message no longer claims to be IP-based: *"Too many failed sign-in attempts for this account."*
+
+**`trust proxy` is deliberately NOT set in this change.** Choosing a value needs the real `X-Forwarded-For` hop
+count measured against production first; a wrong number either preserves this bug or lets a caller spoof its own
+address. Fix the key, not the hop count.
+
+**Gates:** `lint:fabrication` PASS (889 files, 0 errors). `tsc --noEmit` — the same 9 pre-existing errors, none
+in `server.ts`.
+
+---
+
 ## v1.1.0-rc.22 — Approving attendance was destroying the evidence; face verification has been dead since 2026-09-14 — **RELEASE**
 
 **Release type:** PRODUCTION
