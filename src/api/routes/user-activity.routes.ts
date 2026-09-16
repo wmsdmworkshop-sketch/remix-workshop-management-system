@@ -63,31 +63,88 @@ function resolveDays(raw: unknown): number {
 const clampPct = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
 
 /**
+ * Label a genuine UTC instant so the browser stops guessing.
+ *
+ * The stack is UTC end to end — Cloud SQL reports @@system_time_zone = UTC with
+ * NOW() == UTC_TIMESTAMP(), and the container is UTC. But src/db/index.ts sets
+ * `dateStrings: true`, so MySQL returns DATETIME/TIMESTAMP as
+ * "2026-09-16 06:45:20" with NO timezone marker, and JavaScript parses a bare
+ * string like that as LOCAL time. Measured live: a viewer in Asia/Kolkata
+ * (UTC+05:30) saw every timestamp 5h30m EARLY — a sign-in that really happened at
+ * 12:15 IST displayed as 06:45. Appending the Z makes the instant unambiguous.
+ *
+ * ── APPLIED PER FIELD, DELIBERATELY — NOT A BLANKET RULE ──
+ * Some datetime columns in this schema hold LOCAL WALL-CLOCK, not instants, and
+ * they live in the SAME table as UTC ones. job_card_master is the proof:
+ * `created_at`/`updated_at` span hours 0-6 (UTC instants — 09:30-15:30 IST),
+ * while `crm_arrival_at`/`crm_jc_started_at`/`crm_jc_completed_at` hold business
+ * hours (10:00, 11:15, 15:15, 17:30) because /api/job-cards/:no/crm-timestamps
+ * parses the literal CRM digits specifically to avoid Date() re-interpreting
+ * them. A blanket "any YYYY-MM-DD HH:mm:ss is UTC" rule would shift those
+ * wall-clock values by +5h30m and BREAK something that reads correctly today.
+ * So each field below is classified on purpose. Everything this router returns
+ * from `login_history.login_at`, `jc_activity_log.created_at` and
+ * `security_audit_logs.created_at` is written by NOW()/CURRENT_TIMESTAMP, so all
+ * three are genuine instants.
+ *
+ * NOT converted, and must never be: `shift_date` (a date), `check_in` /
+ * `check_out` (the IST wall-clock punched at the gate).
+ */
+function asUtcInstant(v: string | null | undefined): string | null {
+  if (!v) return null;
+  return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(v) ? v.replace(" ", "T") + "Z" : v;
+}
+
+/**
+ * The workshop's timezone. Everyone at this site works in IST, and the server
+ * clock is UTC — so "today", "this month" and "working days elapsed" must be
+ * computed from the SITE's calendar, not the server's. Using the server clock
+ * makes the report disagree with the shop floor for the first 5h30m of every day
+ * (and for the first 5h30m of every month, for the month boundary).
+ */
+const SITE_TIME_ZONE = "Asia/Kolkata";
+const SITE_OFFSET_MINUTES = 330;
+
+/**
+ * "Now" as the site sees it. Returns a Date whose UTC fields ARE the IST
+ * wall-clock fields, so read it with getUTC* (see the two helpers below).
+ */
+function siteNow(): Date {
+  return new Date(Date.now() + SITE_OFFSET_MINUTES * 60 * 1000);
+}
+
+/**
  * Working days elapsed so far this month, Sundays excluded — the SAME basis the
  * My Workspace attendance component uses, so a person's attendance figure does
  * not differ between the two screens.
  */
 function workingDaysElapsed(): number {
-  const now = new Date();
+  const now = siteNow();
   let n = 0;
-  for (let d = 1; d <= now.getDate(); d++) {
-    if (new Date(now.getFullYear(), now.getMonth(), d).getDay() !== 0) n++;
+  for (let d = 1; d <= now.getUTCDate(); d++) {
+    if (new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), d)).getUTCDay() !== 0) n++;
   }
   return n;
 }
 
-/** First day of the current month, as a shift_date-comparable string. */
+/** First day of the current month IN SITE TIME, as a shift_date-comparable string. */
 function monthStart(): string {
-  const now = new Date();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  return `${now.getFullYear()}-${m}-01`;
+  const now = siteNow();
+  const m = String(now.getUTCMonth() + 1).padStart(2, "0");
+  return `${now.getUTCFullYear()}-${m}-01`;
 }
 
-/** `YYYY-MM-DD HH:mm:ss` for a lookback window, matching MySQL datetime literals. */
+/**
+ * `YYYY-MM-DD HH:mm:ss` for a lookback window.
+ *
+ * Deliberately UTC, NOT site time: this value is compared against DATETIME
+ * columns that store UTC, so it must be expressed in the same frame. Only the
+ * calendar maths above needs the site's timezone.
+ */
 function windowStart(days: number): string {
   const d = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   const p = (x: number) => String(x).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
 }
 
 type Row = Record<string, any>;
@@ -224,7 +281,7 @@ export function createUserActivityRouter(deps: UserActivityRouterDependencies): 
           username: s.username,
           role: s.user_role,
           is_active: s.is_active === 1 || s.is_active === true || s.is_active === "1",
-          last_login_at: last ? last.last_login_at : null, // null = never recorded
+          last_login_at: last ? asUtcInstant(last.last_login_at) : null, // null = never recorded
           logins_in_window: Number(lg.ok || 0),
           failed_logins_in_window: Number(lg.failed || 0),
           login_days_in_window: Number(lg.login_days || 0),
@@ -234,7 +291,7 @@ export function createUserActivityRouter(deps: UserActivityRouterDependencies): 
           last_punch_date: at.last_punch_date || null,
           jc_actions_in_window: jcN,
           audit_actions_in_window: auN,
-          last_action_at: jc.last_at || au.last_at || null,
+          last_action_at: asUtcInstant(jc.last_at || au.last_at || null),
           usage_score: parts.length ? clampPct(parts.reduce((a, b) => a + b, 0) / parts.length) : null,
         };
       });
@@ -385,7 +442,7 @@ export function createUserActivityRouter(deps: UserActivityRouterDependencies): 
           success: Number((loginTotals || [])[0]?.ok || 0),
           failed: Number((loginTotals || [])[0]?.failed || 0),
         },
-        recent_logins: logins || [],
+        recent_logins: (logins || []).map((l: Row) => ({ ...l, login_at: asUtcInstant(l.login_at) })),
         attendance_summary: {
           present_days: presentDays,
           late_days: Number(at.late_days || 0),
@@ -393,8 +450,8 @@ export function createUserActivityRouter(deps: UserActivityRouterDependencies): 
           last_punch_date: at.last_punch_date || null,
         },
         recent_punches: punches || [],
-        recent_jc_actions: jcLog || [],
-        recent_audit_actions: auditLog || [],
+        recent_jc_actions: (jcLog || []).map((a: Row) => ({ ...a, created_at: asUtcInstant(a.created_at) })),
+        recent_audit_actions: (auditLog || []).map((a: Row) => ({ ...a, created_at: asUtcInstant(a.created_at) })),
         usage: {
           overall: measured.length ? clampPct(measured.reduce((a, b) => a + b, 0) / measured.length) : null,
           components: [

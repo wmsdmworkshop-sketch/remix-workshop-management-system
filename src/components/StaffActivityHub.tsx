@@ -109,12 +109,32 @@ interface DetailResponse {
   };
 }
 
-/** Local time, or an honest dash when the server sent null. */
+/**
+ * The workshop works in IST, and the server runs on UTC.
+ *
+ * Timestamps now arrive from the API as explicitly-labelled UTC
+ * ("2026-09-16T06:45:20Z"), so they parse to the true instant. They are then
+ * rendered in the SITE's timezone explicitly rather than the viewer's machine —
+ * a laptop in another region would otherwise silently show a different time for
+ * the same event, which is exactly the kind of quiet disagreement this report
+ * exists to settle.
+ *
+ * NOTE the shift columns are NOT instants and are deliberately left as-is:
+ * `check_in` / `check_out` are the IST wall-clock recorded at the gate ("09:38")
+ * and `shift_date` is a plain date. Converting either would corrupt them.
+ */
+const SITE_TIME_ZONE = "Asia/Kolkata";
+
+/** Local site time, or an honest dash when the server sent null. */
 function fmtDateTime(v: string | null | undefined): string {
   if (!v) return "—";
   const d = new Date(v);
   if (isNaN(d.getTime())) return "—";
-  return d.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  return d.toLocaleString("en-IN", {
+    timeZone: SITE_TIME_ZONE,
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }
 
 /** "3 days ago" style relative age for the last sign-in column. */
@@ -511,6 +531,9 @@ export default function StaffActivityHub() {
                   <h3 className="flex items-center gap-1.5 text-[11px] font-bold uppercase text-slate-400 mb-2">
                     <CalendarCheck className="h-3.5 w-3.5" /> Attendance this month
                   </h3>
+                  <p className="text-[10px] text-slate-500 mb-2">
+                    Punch times are the wall-clock recorded at the gate (IST), not converted.
+                  </p>
                   {detail.recent_punches.length === 0 ? (
                     <p className="text-[11px] text-slate-500 italic">No punches recorded this month.</p>
                   ) : (
