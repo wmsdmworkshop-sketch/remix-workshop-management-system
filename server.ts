@@ -13,6 +13,7 @@ import { createRevenueWithDetails, replaceRevenueWithDetails } from "./src/db/re
 import { runMigrations, validateSchema } from "./src/db/migrate.ts";
 import { allMigrations } from "./src/db/migrations/index.ts";
 import { calculateRevenueAllocation } from "./src/lib/revenue-split-engine.ts";
+import { resolveJobTechnicians } from "./src/core/workshop/technician-attribution.ts";
 import { WebSocketServer } from "ws";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -8900,10 +8901,23 @@ time from another field.`;
     const { labour_amount, parts_amount } = req.body;
     const total_amount = parseFloat(labour_amount) + parseFloat(parts_amount);
 
-    // Get assigned technicians
-    const maps = db.jobTechnicianMaps.filter((m: JobTechnicianMap) => m.job_id === jobId);
-    if (maps.length === 0) {
-      return res.status(400).json({ error: "No technicians assigned to this job card." });
+    // Who gets paid for this job. An explicit allocation row wins; otherwise fall
+    // back to job_card_master.assigned_to — the column the floor allocation
+    // actually writes, and where 537 of 671 production job cards record their
+    // technician. Reading only job_technician_maps meant this route answered
+    // "No technicians assigned" on every job in the database.
+    const revenueJobCard: any = (db.jobCards || []).find((j: any) => Number(j.job_id) === jobId);
+    const attribution = resolveJobTechnicians({
+      maps: db.jobTechnicianMaps.filter((m: JobTechnicianMap) => m.job_id === jobId),
+      assignedTo: revenueJobCard?.assigned_to ?? revenueJobCard?.technician_assignments?.[0]?.technician_id ?? null,
+      employees: db.employees,
+    });
+    if (attribution.technicians.length === 0) {
+      return res.status(400).json({
+        error: attribution.unresolved.length > 0
+          ? `No technician could be resolved for this job card — employee id ${attribution.unresolved.join(", ")} matches nobody on the roster. Nothing was allocated.`
+          : "No technician is recorded against this job card yet.",
+      });
     }
 
     const nextRevId = db.jobRevenues.reduce((max: number, r: JobRevenue) => Math.max(max, r.revenue_id), 0) + 1;
@@ -8929,16 +8943,7 @@ time from another field.`;
     let nextDetailId = db.jobRevenueSplitDetails.reduce((max: number, d: JobRevenueSplitDetail) => Math.max(max, d.detail_id), 0) + 1;
     const details: JobRevenueSplitDetail[] = [];
 
-    const techsList = maps.map((m: JobTechnicianMap) => {
-      const emp = db.employees.find((e: Employee) => e.employee_id === m.employee_id);
-      return {
-        employee_id: m.employee_id,
-        full_name: emp ? emp.full_name : "Unknown",
-        role: emp ? emp.role : m.tech_role || "Technician",
-        employee_grade: emp ? emp.employee_grade : "Junior",
-        basic_salary: emp ? emp.basic_salary : 0
-      };
-    });
+    const techsList = attribution.technicians;
 
     const allocations = calculateRevenueAllocation(jobId, techsList, parseFloat(labour_amount));
     allocations.forEach(alloc => {
@@ -9435,13 +9440,10 @@ time from another field.`;
       // If resolved as Matched, sync the revenue to the job card!
       if (match_status === "Matched" && matched_job_id) {
         const row = db.dmsImportRows[rowIndex];
-        // Trigger calculating split revenue automatically from imports
-        const maps = db.jobTechnicianMaps.filter((m: JobTechnicianMap) => m.job_id === matched_job_id);
-        if (maps.length > 0) {
-          // Trigger split logic inside database
-          // We can call a helper directly
-          calculateAndSaveSplit(db, matched_job_id, row.labour_amount, row.parts_amount);
-        }
+        // No job_technician_maps guard here any more. calculateAndSaveSplit now
+        // resolves the technician itself and returns early when there genuinely is
+        // nobody. Guarding on that table meant this path never ran at all.
+        calculateAndSaveSplit(db, matched_job_id, row.labour_amount, row.parts_amount);
       }
 
       setDB(db);
@@ -9453,8 +9455,16 @@ time from another field.`;
 
   // Helper inside server to run revenue calculation
   function calculateAndSaveSplit(db: any, jobId: number, labour: number, parts: number) {
-    const maps = db.jobTechnicianMaps.filter((m: JobTechnicianMap) => m.job_id === jobId);
-    if (maps.length === 0) return;
+    // Same precedence as the /revenue route: an explicit allocation row first, else
+    // the job card's assigned_to. This used to return early on every job in the
+    // database, because job_technician_maps is empty.
+    const dmsJobCard: any = (db.jobCards || []).find((j: any) => Number(j.job_id) === jobId);
+    const attribution = resolveJobTechnicians({
+      maps: db.jobTechnicianMaps.filter((m: JobTechnicianMap) => m.job_id === jobId),
+      assignedTo: dmsJobCard?.assigned_to ?? dmsJobCard?.technician_assignments?.[0]?.technician_id ?? null,
+      employees: db.employees,
+    });
+    if (attribution.technicians.length === 0) return;
 
     const nextRevId = db.jobRevenues.reduce((max: number, r: JobRevenue) => Math.max(max, r.revenue_id), 0) + 1;
     const newRevenue = {
@@ -9477,16 +9487,7 @@ time from another field.`;
 
     let nextDetailId = db.jobRevenueSplitDetails.reduce((max: number, d: JobRevenueSplitDetail) => Math.max(max, d.detail_id), 0) + 1;
 
-    const techsList = maps.map((m: JobTechnicianMap) => {
-      const emp = db.employees.find((e: Employee) => e.employee_id === m.employee_id);
-      return {
-        employee_id: m.employee_id,
-        full_name: emp ? emp.full_name : "Unknown",
-        role: emp ? emp.role : m.tech_role || "Technician",
-        employee_grade: emp ? emp.employee_grade : "Junior",
-        basic_salary: emp ? emp.basic_salary : 0
-      };
-    });
+    const techsList = attribution.technicians;
 
     const allocations = calculateRevenueAllocation(jobId, techsList, labour);
     allocations.forEach(alloc => {
