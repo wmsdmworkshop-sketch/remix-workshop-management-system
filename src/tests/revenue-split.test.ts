@@ -3,6 +3,7 @@ import {
   calculateRevenueAllocation,
   getSeniorityScore,
   classifyRole,
+  verticalOfRole,
   type TechnicianInput,
 } from "../lib/revenue-split-engine";
 
@@ -16,12 +17,14 @@ import {
  * paid the pair evenly. That is a pay rule, so it is pinned here rather than
  * left to a docstring.
  *
- * The spec also defines a multi-vertical layer (mechanical vs electrical, 50/50
- * between verticals, with a vendor's payment deducted first) and a >4 headcount
- * override. NONE of that is implemented — there is no vertical on
- * job_technician_maps, and no vendor cost column exists to deduct. These tests
- * deliberately assert only the in-house rules that ARE implemented, so a green
- * suite here must not be read as "the full spec works".
+ * The spec also defines a multi-vertical layer and a >4 headcount override, and a
+ * vendor/outsourced vertical whose payment is deducted before the vertical split.
+ *
+ * STATUS: the in-house rules and the two-vertical layer ARE implemented and pinned
+ * here. The VENDOR vertical is NOT — there is no vendor cost column anywhere in the
+ * schema and job_technician_maps.employee_id is a foreign key to employees, so a
+ * non-employee vendor cannot be recorded on a job at all. A green suite here must
+ * not be read as "the full spec works".
  */
 
 const tech = (
@@ -199,7 +202,120 @@ describe("seniority — who is offered the larger share", () => {
     expect(classifyRole("mechanical_helper")).toBe("Mechanic");
     // Only a role matching no bucket at all falls through.
     expect(classifyRole("helper")).toBe("Additional Tech");
-    // NOTE: no vertical is derived from classifyRole — it returns four buckets and
-    // the owner spec has two in-house verticals (mechanics, electrical).
+    // classifyRole still returns four buckets; the two-way vertical is derived
+    // separately, by verticalOfRole.
+  });
+});
+
+describe("verticalOfRole — the two in-house pay verticals", () => {
+  it("puts every technician in MECHANICS — that is the owner's ruling", () => {
+    expect(verticalOfRole("Technician")).toBe("MECHANICS");
+    expect(verticalOfRole("Sr. Technician")).toBe("MECHANICS");
+    expect(verticalOfRole("Jr. technician")).toBe("MECHANICS");
+  });
+
+  it("puts electricians in ELECTRICAL", () => {
+    expect(verticalOfRole("Electrician")).toBe("ELECTRICAL");
+    expect(verticalOfRole("Sr. Electrician")).toBe("ELECTRICAL");
+    expect(verticalOfRole("Asst Electrician")).toBe("ELECTRICAL");
+  });
+
+  it("catches the live misspelling 'Jr. elecrician'", () => {
+    // Production employee 21 carries this exact typo. Matching on the full word
+    // "electrician" would silently move them into MECHANICS and pay them the
+    // wrong half of the job, so the test is on "elec".
+    expect(verticalOfRole("Jr. elecrician")).toBe("ELECTRICAL");
+  });
+
+  it("keeps the mechanical support roles in MECHANICS", () => {
+    // The owner did not name these explicitly. They are recorded here as a
+    // decision to be confirmed, not as something that was verified.
+    expect(verticalOfRole("Wheel Alignment")).toBe("MECHANICS");
+    expect(verticalOfRole("Mechanical Helper")).toBe("MECHANICS");
+    expect(verticalOfRole("Denter")).toBe("MECHANICS");
+  });
+});
+
+describe("calculateRevenueAllocation — two verticals on one job", () => {
+  const mech = (id: number, name: string, grade = "Senior", salary = 25000) =>
+    tech(id, name, "Technician", grade, salary);
+  const elec = (id: number, name: string, grade = "Senior", salary = 25000) =>
+    tech(id, name, "Electrician", grade, salary);
+
+  it("1 mechanic + 1 electrician: exactly 50/50 across the verticals", () => {
+    const rows = calculateRevenueAllocation(9, [mech(1, "M1"), elec(2, "E1")], TOTAL);
+    expect(rows.map((r) => r.split_amount)).toEqual([500, 500]);
+    // And NOT the flat 60/40 a single-vertical ladder would have produced.
+    expect(pctsOf(rows)).not.toEqual([60, 40]);
+  });
+
+  it("2 mechanics + 2 electricians: 50/50 across, then 60/40 inside each", () => {
+    const rows = calculateRevenueAllocation(
+      10,
+      [
+        mech(1, "M1"),
+        mech(2, "M2", "Junior", 12000),
+        elec(3, "E1"),
+        elec(4, "E2", "Junior", 12000),
+      ],
+      TOTAL
+    );
+    // Asserted by name, not by position: the output stays in seniority order, so
+    // the two verticals interleave. Each vertical gets 500, split 60/40 within it.
+    const byName = Object.fromEntries(rows.map((r) => [r.full_name, r.split_amount]));
+    expect(byName).toEqual({ M1: 300, M2: 200, E1: 300, E2: 200 });
+  });
+
+  it("3 mechanics + 1 electrician: the vertical split is still 50/50", () => {
+    // Implemented exactly as specified. Worth the owner's eye: the single
+    // electrician takes the same half as all three mechanics combined.
+    const rows = calculateRevenueAllocation(
+      11,
+      [mech(1, "M1"), mech(2, "M2"), mech(3, "M3"), elec(4, "E1")],
+      TOTAL
+    );
+    expect(rows.map((r) => r.split_amount)).toEqual([200, 150, 150, 500]);
+  });
+
+  it("more than 4 in-house heads: the taper stops, each vertical splits equally", () => {
+    const rows = calculateRevenueAllocation(
+      12,
+      [mech(1, "M1"), mech(2, "M2"), elec(3, "E1"), elec(4, "E2"), elec(5, "E3")],
+      TOTAL
+    );
+    expect(pctsOf(rows)).toEqual([25, 25, 16.67, 16.67, 16.67]);
+  });
+
+  it("every mixed-vertical split still sums to the exact labour amount", () => {
+    const cases: TechnicianInput[][] = [
+      [mech(1, "M1"), elec(2, "E1")],
+      [mech(1, "M1"), mech(2, "M2"), elec(3, "E1")],
+      [mech(1, "M1"), elec(2, "E1"), elec(3, "E2"), elec(4, "E3")],
+      [mech(1, "M1"), mech(2, "M2"), mech(3, "M3"), mech(4, "M4"), elec(5, "E1")],
+    ];
+    for (const team of cases) {
+      const rows = calculateRevenueAllocation(13, team, 999.99);
+      const sum = rows.reduce((s, r) => s + r.split_amount, 0);
+      expect(sum, `${team.length} people: ${JSON.stringify(pctsOf(rows))}`).toBeCloseTo(999.99, 2);
+    }
+  });
+
+  it("an all-mechanic job is completely unaffected by the vertical layer", () => {
+    // Regression guard. This is the common case and must still be the plain ladder.
+    const rows = calculateRevenueAllocation(
+      14,
+      [mech(1, "M1"), mech(2, "M2", "Junior", 12000)],
+      TOTAL
+    );
+    expect(pctsOf(rows)).toEqual([60, 40]);
+  });
+
+  it("an all-electrical job is unaffected too — it is a single vertical", () => {
+    const rows = calculateRevenueAllocation(
+      15,
+      [elec(1, "E1"), elec(2, "E2", "Junior", 12000)],
+      TOTAL
+    );
+    expect(pctsOf(rows)).toEqual([60, 40]);
   });
 });

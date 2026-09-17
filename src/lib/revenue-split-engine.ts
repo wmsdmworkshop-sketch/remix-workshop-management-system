@@ -72,6 +72,51 @@ export function getSeniorityScore(tech: TechnicianInput): number {
 }
 
 /**
+ * The two IN-HOUSE pay verticals.
+ *
+ * Owner ruling, 2026-09-17, verbatim: "technicians are all mechanics but
+ * electricians are different". So the split is binary and there is no
+ * 'Mechanic' role to look for — production has no employee with that role at
+ * all (21 Technician, 7 Electrician, 2 Wheel Alignment, 2 Mechanical Helper).
+ *
+ * The test is on 'elec' rather than 'electrician' deliberately: one production
+ * record carries the misspelling "Jr. elecrician", which a longer substring
+ * would miss.
+ *
+ * A third vertical — outsourced/vendor — is specified but cannot exist yet: see
+ * the note in calculateRevenueAllocation. Vendors are NOT silently folded into
+ * MECHANICS here; they simply cannot be represented.
+ */
+export type PayVertical = 'MECHANICS' | 'ELECTRICAL';
+
+export function verticalOfRole(roleStr: string): PayVertical {
+  const r = (roleStr || '').toLowerCase();
+  if (r.includes('elec')) return 'ELECTRICAL';
+  return 'MECHANICS';
+}
+
+/** The taper ladder WITHIN one vertical (percentages sum to 100). */
+function taperFor(n: number): { pcts: number[]; roles: string[] } {
+  if (n === 1) return { pcts: [100], roles: ['Primary Technician'] };
+  if (n === 2) return { pcts: [60, 40], roles: ['Lead Technician', 'Assistant Technician'] };
+  if (n === 3) return { pcts: [40, 30, 30], roles: ['Senior Lead', 'Co-Technician', 'Co-Technician'] };
+  if (n === 4) {
+    return {
+      pcts: [25, 25, 25, 25],
+      roles: ['Co-Technician', 'Co-Technician', 'Co-Technician', 'Co-Technician'],
+    };
+  }
+  const equalShare = 100 / n;
+  return { pcts: Array(n).fill(equalShare), roles: Array(n).fill('Co-Technician') };
+}
+
+/** The >4-headcount override: no taper, everyone in the vertical gets the same. */
+function equalFor(n: number): { pcts: number[]; roles: string[] } {
+  const equalShare = 100 / n;
+  return { pcts: Array(n).fill(equalShare), roles: Array(n).fill('Co-Technician') };
+}
+
+/**
  * Calculates the revenue allocation splits for a job based on the technicians assigned.
  *
  * Owner spec (2026-09-17). In-house rules implemented here:
@@ -88,19 +133,27 @@ export function getSeniorityScore(tech: TechnicianInput): number {
  * fixing it needs the vertical mapping the owner is still specifying.
  *
  * NOT YET IMPLEMENTED (do not assume otherwise):
- *  - the multi-vertical layer (mechanical vs electrical -> 50/50 between verticals
- *    first, each vertical then subdivided by the rules above). There is no vertical
- *    on job_technician_maps and no way to classify a technician into one.
- *  - the vendor/outsourced vertical: its payment must be deducted from total labour
- *    revenue BEFORE the 50/50. Nothing can be deducted today — there is no vendor
+ *  - the vendor/outsourced vertical. Its payment must be deducted from total labour
+ *    revenue BEFORE the 50/50. Nothing can be deducted today: there is no vendor
  *    cost column anywhere in the schema, and job_technician_maps.employee_id has a
- *    FOREIGN KEY to employees, so a non-employee vendor cannot even be recorded.
- *  - the >4 in-house headcount override (equal split WITHIN each vertical).
- *    N>=5 currently splits equally across all technicians flat, which coincides with
- *    the owner rule only when a single vertical is involved.
+ *    FOREIGN KEY to employees, so a non-employee vendor cannot even be recorded on
+ *    a job. When a vendor model exists it slots in ahead of the vertical split, not
+ *    inside it.
  *  - mid-job changes (technician added late, or pulled off early by the floor
  *    in-charge): the owner spec has no formula — the floor in-charge decides. No
  *    manual entry point exists for that yet.
+ *
+ * IMPLEMENTED 2026-09-17 — the multi-vertical layer. Owner ruling: technicians are
+ * all mechanics, electricians are different. When ONLY ONE vertical is on the job
+ * the ladder above is applied unchanged, so an all-mechanic job is unaffected. When
+ * BOTH verticals are present the labour splits 50/50 between them and each vertical
+ * then subdivides internally by the same ladder — or equally, if the TOTAL in-house
+ * headcount across both verticals exceeds 4, which is the owner's override.
+ *
+ * Worth the owner's eye: with 3 mechanics and 1 electrician, the ladder gives the
+ * single electrician 50% of the labour and each mechanic ~16.7%. That is what the
+ * spec says, and it is implemented as specified rather than quietly softened — but
+ * it is a large swing, so flag it if the intent was headcount-weighted verticals.
  *
  * DATA DISCONTINUITY: revenue rows already persisted were computed with the old
  * 50/50 rule and are deliberately never rewritten (the backfill treats existing
@@ -124,35 +177,38 @@ export function calculateRevenueAllocation(
   const N = sortedTechs.length;
   const results: AllocationResult[] = [];
 
-  // Determine split percentages based on user's exact business logic
-  let pcts: number[] = [];
-  let roles: string[] = [];
+  // --- vertical layer ------------------------------------------------------
+  // One vertical present (an all-mechanic job, the common case): ladder as before.
+  // Both present: 50/50 between the verticals, then subdivide inside each.
+  const mechanics = sortedTechs.filter((t) => verticalOfRole(t.role) === 'MECHANICS');
+  const electrical = sortedTechs.filter((t) => verticalOfRole(t.role) === 'ELECTRICAL');
+  const isMixedVertical = mechanics.length > 0 && electrical.length > 0;
 
-  if (N === 1) {
-    pcts = [100];
-    roles = ['Primary Technician'];
-  } else if (N === 2) {
-    // Technician 60 / assistant 40 — owner spec 2026-09-17. Was 50/50.
-    pcts = [60, 40];
-    roles = ['Lead Technician', 'Assistant Technician'];
-  } else if (N === 3) {
-    pcts = [40, 30, 30];
-    roles = ['Senior Lead', 'Co-Technician', 'Co-Technician'];
-  } else if (N === 4) {
-    pcts = [25, 25, 25, 25];
-    roles = ['Co-Technician', 'Co-Technician', 'Co-Technician', 'Co-Technician'];
+  // keyed by the TechnicianInput object identity, which filter() preserves.
+  const assignment = new Map<TechnicianInput, { pct: number; roleLabel: string }>();
+
+  if (!isMixedVertical) {
+    const { pcts, roles } = taperFor(N);
+    sortedTechs.forEach((t, i) => assignment.set(t, { pct: pcts[i], roleLabel: roles[i] }));
   } else {
-    // N >= 5: Equal share
-    const equalShare = 100 / N;
-    pcts = Array(N).fill(equalShare);
-    roles = sortedTechs.map(() => 'Co-Technician');
+    // >4 in-house heads in TOTAL: the taper stops applying and each vertical
+    // divides its own share equally among its own people.
+    const useEqualShares = N > 4;
+    for (const group of [mechanics, electrical]) {
+      const { pcts, roles } = useEqualShares ? equalFor(group.length) : taperFor(group.length);
+      group.forEach((t, i) => {
+        // pcts[i] is a share of THIS vertical; halve it to get the share of the job.
+        assignment.set(t, { pct: pcts[i] / 2, roleLabel: roles[i] });
+      });
+    }
   }
 
-  // Allocate split amounts
-  for (let i = 0; i < N; i++) {
-    const tech = sortedTechs[i];
-    const pct = pcts[i];
-    const roleLabel = roles[i];
+  // Allocate split amounts. Iterate sortedTechs, NOT the vertical groups, so the
+  // output stays in seniority order exactly as it was before the vertical layer —
+  // callers zip this array against their own input, and re-ordering it to put
+  // mechanics first would silently reattribute names to amounts in their UI.
+  for (const tech of sortedTechs) {
+    const { pct, roleLabel } = assignment.get(tech)!;
     
     // Round percentages to 2 decimal places for display
     const splitPctRounded = Math.round(pct * 100) / 100;
