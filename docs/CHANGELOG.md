@@ -9,6 +9,144 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.24 — Four things the UI was quietly lying about — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Asked for:** "clean the UI, make it more simple to use, reduce any extra items."
+
+That is what the work started as. Auditing what was actually there turned up four
+defects that were not untidiness. Each one is recorded below with the evidence that
+established it, because in every case the code looked fine and the *behaviour* was wrong.
+
+### 1. CCTV cameras could not deliver a single alert
+
+`/api/cctv/alerts/ingest` was **not** in `PUBLIC_API_PATHS`. The global JWT gate is
+registered *before* that route, so the route answered `401` before its own `X-CCTV-Key`
+check ever executed. The endpoint existed, was correct, and was unreachable.
+
+Now whitelisted. It still **fails closed**: `503` with no key, `401` on a wrong key,
+`503` when the integration is disabled. Proven by `cctv_ingest.e2e.spec.ts`, which posts
+with only `X-CCTV-Key` and no `Authorization` header and asserts `200`.
+
+The same feature had a second, quieter bug: `dedupeSecondsOrDefault` used
+`Number(raw || 60)`. Because `0` is falsy, a configured `0` became `60`, making the
+documented "0 disables dedupe" commissioning branch **unreachable**. Rather than reason
+about it, this was found by writing the test first.
+
+### 2. Chain of custody read "Not recorded" on practically every job card
+
+`tbl_handoff_sla.entity_id` is **polymorphic across four different things**:
+
+| Stage | `entity_id` holds |
+| --- | --- |
+| `GATE_TO_RECEPTION` | `gateEntryId` |
+| `RECEPTION_TO_MANAGER`, `SLA_MANAGER_TO_SA` | `intakeId` |
+| later stages | job card number, or job card id |
+
+The route searched only the last two forms, so roughly **591 of 626** production rows were
+unreachable. The panel was not failing — it was faithfully reporting that it could not see
+the history.
+
+`src/core/workshop/custody-entity-keys.ts` now builds the whole search space: job card
+number and numeric id, bridged through `tbl_sa_intake` to `gate_entry_id` and `intake_id`,
+plus a VRN fallback that resolves **only when the registration maps to exactly one gate
+entry**. Ambiguity resolves nothing, deliberately — guessing would attribute one vehicle's
+handoffs to another.
+
+### 3. And a false negative inside that same panel
+
+`breached` and `escalated` initialised to `false`, and the UI rendered `false` as **"No"**.
+So a card whose clock had almost certainly run out was shown as *not escalated* — an
+assertion nobody had the data to make. They now initialise to `null` and render
+"Not recorded", with an explicit `holder_known` flag.
+
+### 4. Two technicians were paid 50/50; the owner's rule is 60/40
+
+Corrected in `src/lib/revenue-split-engine.ts`. The roles are now labelled
+`Lead Technician` / `Assistant Technician`.
+
+**Read this before comparing pay across the change:** rows already persisted in
+`job_revenues` / `job_revenue_split_details` still say 50/50 and are **never rewritten**.
+The backfill treats existing revenue as authoritative, and rewriting money is an owner
+decision, not a cleanup. Only newly calculated splits use 60/40, so any report spanning
+this date will show a mix.
+
+Also worth knowing: the *larger* share follows `getSeniorityScore()` — salary, grade and
+role keywords — not the technician-vs-assistant role. A low-paid lead paired with a
+better-paid assistant is currently credited backwards. That is pinned by a named
+`KNOWN LIMITATION` test so the eventual fix is deliberate rather than accidental.
+
+### Removed: the login page was advertising four endpoints that do not exist
+
+`EnterpriseGateway` rendered a Developer Console — three AI Doctor cards and a
+"Developer Login Unlock" — wired to:
+
+```
+POST /api/system/ai-doctor/login
+POST /api/system/ai-doctor/ui
+POST /api/system/ai-doctor/deployment
+POST /api/system/auth-recovery/unlock
+```
+
+None of these exists anywhere in the codebase; the only matches were the `fetch` calls
+themselves. Because they were unwhitelisted, the `401` came back and the `catch` block
+rendered it as a **diagnostic verdict** — `"Unlock action failed"`, `overallHealth:
+CRITICAL`. A feature that was never built presented as one that had been checked and
+failed. This is the third instance of this class pruned since 2026-09-06.
+
+The console is gone, along with its `AI Login Doctor available for diagnostics` login
+error, three `AppShell` sidebar buttons that had no `onClick` at all, and a duplicate
+mobile bottom nav that sat at `z-40` underneath the `App.tsx` tab bar at `z-50`.
+
+### Fixed: a notification linking to a tab that did not exist
+
+`server.ts` raised a bell entry with `link: "cctv-safety"`. No such tab was registered, so
+clicking it silently bounced to the role's first tab. This is the one place where the fix
+is a genuine new feature rather than a repair: `CctvFloorSafety.tsx` (alert feed, cameras,
+bay view, settings) now exists, registered for `developer`, `admin` and `gm_service`.
+
+### Also on this branch: the Android toolchain was two majors behind
+
+Committed separately as `chore(android)`. AGP `8.13.0 → 9.4.0`, Gradle `9.1.0 → 9.6.0`,
+verified by a full `assembleStaffRelease`: **BUILD SUCCESSFUL, 6m36s, 188 tasks**, with R8
+minification, resource shrinking and release signing all executing.
+
+One flag is load-bearing, not cosmetic: `android.newDsl=false`. `@capacitor/camera` still
+calls the legacy variant API (`libraryVariants` / `testVariants` / `unitTestVariants`),
+which AGP 9 disables by default. Removing that flag breaks the build.
+
+All ten `android.*` flags are deprecated and **scheduled for removal in AGP 10**, and the
+build itself warns that deprecated Gradle features make it incompatible with Gradle 10.
+This migration buys headroom; it does not finish the job.
+
+**And the APK reinstall everyone assumes is needed is not.** `capacitor.config.ts` sets
+`server.url: "https://devanand.aivaahan.com"` — the app is a **remote-URL WebView shell**.
+Web deploys reach installed apps immediately; only a new *native plugin* requires a new
+APK. Conversely, three orphaned files in `public/downloads/` still exist and cannot help:
+`dwip-customer-v2.0.0.apk` and `dwip-driver-v1.2.0.apk` are **byte-identical** (one file
+under two names, both `com.aivaahan.dwip` v1.1.0-rc.1), and `dwip-executive-v2.4.0.apk` is
+the **retired** `management` flavor. Distribution is the Play listing for
+`devanand.aivaahan.com`, which is what `PLAY_URL` points at.
+
+### Gates
+
+- `npm run lint:fabrication` — **PASS**, 891 files, 0 errors, 0 warnings
+- `tsc --noEmit` — the same **9 pre-existing** errors, none in a file this release touches
+- `vitest` — **65 passed** across the four suites added here
+
+### Still open, deliberately not guessed at
+
+The three-vertical rule — mechanics, electrical and outsourced, splitting labour 50-50
+across verticals and then subdividing within each, with the vendor's cost deducted before
+the split — **remains a specification only**. There is no vertical column anywhere in the
+schema, and `job_technician_maps.employee_id` carries a foreign key to `employees`, so a
+non-employee vendor cannot currently be recorded on a job at all. Four questions are
+outstanding with the owner; see `/memories/repo/productivity-splits.md` for the full gap
+list. Nothing was invented to fill them.
+
+---
+
 ## v1.1.0-rc.23 — One person's typos could lock the whole workshop out of login — **RELEASE**
 
 **Release type:** PRODUCTION
