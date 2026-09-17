@@ -9,6 +9,101 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.25 — The payroll rule was right, but nothing was feeding it — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Owner ruling, verbatim:** *"technicians are all mechanics but electricians are different."*
+
+### The feature: two in-house verticals, 50/50 across them
+
+`src/lib/revenue-split-engine.ts` now derives a binary vertical — `verticalOfRole()`
+returns `MECHANICS` or `ELECTRICAL`. When **both** are on a job the labour splits **50/50
+between the verticals**, and each vertical then subdivides internally by the existing
+ladder. When the **total in-house headcount exceeds 4** the taper stops and each vertical
+divides its own half equally.
+
+A **single-vertical job — the common case — is bit-for-bit unchanged**, pinned by a
+regression test. The vertical is deliberately *not* derived from `classifyRole()`, which
+still returns four buckets and serves a different purpose.
+
+The electrician test matches on `elec`, not `electrician`, on purpose: production
+employee 21 is spelled **`Jr. elecrician`**, and the longer substring would have silently
+paid them out of the wrong half.
+
+**25 tests pass**, 11 of them new, including a money sweep asserting every mixed split
+still sums to the exact labour amount.
+
+### Why this is corroboration, not interpretation
+
+The vertical split was not invented here — it was already in the database. The production
+table `revenue_splits` held exactly these rules as configured reference data:
+
+| code | label | tech | co_tech | **electrician** |
+| --- | --- | --- | --- | --- |
+| `T1` | 1 Tech | 100 | 0 | 0 |
+| `T2` | 2 Techs (60-40) | **60** | **40** | 0 |
+| `T1_E1` | 1 Tech + 1 Elec | **50** | 0 | **50** |
+
+Both the 60/40 shipped in rc.24 and the 50/50 across verticals here match a matrix that was
+**already in the database**. The engine reads none of it.
+
+### The finding: the split engine has never produced a single production split
+
+Measured, not inferred:
+
+| | rows |
+| --- | --- |
+| `job_revenues` · `job_revenue_split_details` · `job_revenue_split` | **0 · 0 · 0** |
+| `job_technician_maps` · `job_card_technician` | **1 · 0** |
+| `technician_productivity` · `technician_kpi_daily` · `productivity_alerts` | **0 · 0 · 0** |
+| `job_card_master` — of **671** rows, `tech_slot_1`…`tech_slot_5` populated | **0** |
+
+**Not one job card in production has a technician assigned to it.** And `revenue_split_log`
+holds 13 rows with real job cards, invoices and labour/spare amounts — but every derived
+column reads `0.00` and `recorded_by` is NULL. The log was written; the split never was.
+
+**This corrects an earlier claim** in this build line: that the runtime path uses
+`job_technician_maps`, so splits *are* produced for new work and only the historical
+backfill was thin. **That was wrong.** Nothing is produced.
+
+**Consequence:** neither the 60/40 of rc.24 nor the vertical layer in this release changes
+any existing row, because no such row exists. The risk was never retroactive — it is that
+the feature is not wired end to end. The gap between *a correct rule* and *a technician
+actually getting paid* is the pipeline from technician assignment through
+`calculateRevenueAllocation` into `job_revenues`.
+
+### Assumed and awaiting the owner — not verified
+
+- **`Wheel Alignment` and `Mechanical Helper` both classify as `MECHANICS`.** The owner did
+  not name them. Recorded in the tests as a decision to confirm.
+- **3 mechanics + 1 electrician:** the ladder gives the lone electrician **50%** of the
+  labour while each mechanic receives ~16.7%. That is the specification implemented
+  exactly, not quietly softened — but it is a large swing, and if the intent was
+  headcount-weighted verticals, it needs saying.
+
+### Still not implementable: the vendor vertical
+
+There is **no vendor cost column anywhere in the schema**, and
+`job_technician_maps.employee_id` carries a `FOREIGN KEY` to `employees` — so a
+non-employee vendor **cannot be recorded on a job at all**. Nothing was invented to paper
+over this.
+
+### Gates
+
+- `npm run lint:fabrication` — **PASS**
+- `tsc --noEmit` — unchanged; the same **9 pre-existing** errors, none in a file this
+  release touches
+- `vitest` revenue-split suite — **25 passed**
+
+### Still open from rc.24, not fixed here
+
+The served `/version.json` reports **build 127**, because it is copied from
+`public/version.json` — a different file, with a different schema, that no step in the
+release process updates.
+
+---
+
 ## v1.1.0-rc.24 — Four things the UI was quietly lying about — **RELEASE**
 
 **Release type:** PRODUCTION
