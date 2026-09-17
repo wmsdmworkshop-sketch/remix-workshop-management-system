@@ -173,7 +173,21 @@ function CustodyBlock({ summary }: { summary?: any }) {
         <DetailRow label="At stage" value={summary.holder_stage} />
         <DetailRow label="Holding since" value={fmtStamp(summary.holder_since)} />
         <DetailRow label="SLA due" value={fmtStamp(summary.sla_due_at)} />
-        <DetailRow label="Escalated" value={summary.escalated ? "Yes — past target" : "No"} />
+        {/* "No" is a CLAIM, and when no handoff row could be matched we cannot
+            make it. An unresolved clock used to render as "No" — telling an
+            operator nothing was escalating while an intake clock was in fact
+            probably breached. Unknown renders as an explicit absence instead.
+            Fallback keeps older/other callers behaving exactly as before. */}
+        <DetailRow
+          label="Escalated"
+          value={
+            summary.holder_known === false
+              ? null
+              : summary.escalated
+                ? "Yes — past target"
+                : "No"
+          }
+        />
         <DetailRow label="Promised (ETD)" value={fmtStamp(summary.etd)} />
         <DetailRow label="Handoff" value={summary.handoff_status} />
       </div>

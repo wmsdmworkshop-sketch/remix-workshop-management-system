@@ -1,34 +1,57 @@
 /**
  * =============================================================================
- * DWIP Enterprise V1.1.0 — Enterprise Operations Gateway
- * Modes: Operator Login | Administrator Health Console | Developer Recovery & AI Doctor
+ * DWIP Enterprise — Enterprise Operations Gateway (the sign-in screen)
+ * Modes: Operator Login | Administrator Health Console
+ * =============================================================================
+ *
+ * WHY THERE IS NO "DEVELOPER CONSOLE" TAB ANY MORE — removed 2026-09-17
+ *
+ * It was a "Developer Recovery Console & AI Doctor Engine": three AI Doctor
+ * cards and a "Developer Login Unlock", each wired to an endpoint that DOES
+ * NOT EXIST anywhere in this repository:
+ *
+ *   POST /api/system/ai-doctor/login
+ *   POST /api/system/ai-doctor/ui
+ *   POST /api/system/ai-doctor/deployment
+ *   POST /api/system/auth-recovery/unlock
+ *
+ * Grep for `ai-doctor` / `auth-recovery` returns no router, mounted or
+ * otherwise — the only hits were the four fetch() calls that used to live in
+ * this file. Those paths are also absent from PUBLIC_API_PATHS in server.ts, so
+ * the global JWT gate answered 401 first, and this component caught that and
+ * rendered it as a DIAGNOSTIC VERDICT — `{overallHealth: 'CRITICAL'}` or
+ * "Unlock action failed" — so a feature that was never built PRESENTED AS A
+ * FAILED CHECK. That is the worst possible failure mode for a diagnostics tool.
+ *
+ * It could not have worked as designed either: its stated purpose is rescuing a
+ * LOCKED-OUT account, but the request carried no credential, so the auth gate
+ * would have refused it even if the route existed.
+ *
+ * This is the same defect class AGENTS.md already pruned twice on 2026-09-06 —
+ * `OperationsCommandCenter.tsx` and `DevOpsDashboard.tsx`, both removed for
+ * "calling API endpoints that don't exist". This instance survived that sweep
+ * because it lives on the login page, which nobody re-audited.
+ *
+ * DO NOT RE-ADD a control here until its endpoint exists and is covered by a
+ * test. This screen is served to anyone, unauthenticated, at any app path.
+ *
+ * The THEME ENGINE was NOT dead and was kept — it moved into Administrator Mode
+ * below. It is client-side only: applyTheme() sets the theme class on <html> and
+ * persists the choice in localStorage, so no server call is involved.
  * =============================================================================
  */
 
 import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, 
-  Cpu, 
-  Database, 
   Activity, 
   Lock, 
-  Unlock, 
   Eye, 
   EyeOff, 
-  Stethoscope, 
-  Type, 
   Palette, 
   RefreshCw, 
-  CheckCircle2, 
   AlertCircle, 
-  Terminal, 
-  Zap, 
-  Wrench, 
-  UserCheck, 
-  HelpCircle,
-  Clock,
-  Layers,
-  Server
+  UserCheck
 } from 'lucide-react';
 import { THEME_CONFIGS, ThemeName, applyTheme, getStoredTheme, inspectFontStack } from '../services/themeEngine';
 import { PlayQr, PLAY_URL } from './PlayStoreQr';
@@ -39,7 +62,7 @@ interface EnterpriseGatewayProps {
 
 export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuccess }) => {
   // Navigation Tabs: 'operator' | 'administrator' | 'developer'
-  const [activeTab, setActiveTab] = useState<'operator' | 'administrator' | 'developer'>('operator');
+  const [activeTab, setActiveTab] = useState<'operator' | 'administrator'>('operator');
 
   // Operator Login Form State
   const [identifier, setIdentifier] = useState('');
@@ -56,16 +79,6 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
   // Administrator & Health Gateway Data
   const [healthData, setHealthData] = useState<any>(null);
   const [healthLoading, setHealthLoading] = useState(false);
-
-  // AI Doctor States
-  const [aiDoctorResult, setAiDoctorResult] = useState<any>(null);
-  const [aiDoctorLoading, setAiDoctorLoading] = useState(false);
-
-  // Developer Unlock State
-  const [unlockTarget, setUnlockTarget] = useState('');
-  const [unlockReason, setUnlockReason] = useState('');
-  const [unlockResult, setUnlockResult] = useState<string | null>(null);
-  const [unlockLoading, setUnlockLoading] = useState(false);
 
   // Forgot Password Modal State
   const [showForgotModal, setShowForgotModal] = useState(false);
@@ -145,7 +158,14 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
         setLoginError(data.error || 'Authentication failed. Please verify credentials.');
       }
     } catch (err: any) {
-      setLoginError('Network connection error. AI Login Doctor available for diagnostics.');
+      // Was: "...AI Login Doctor available for diagnostics." — that console was
+      // removed (see the header note), so the message pointed the operator at a
+      // panel that no longer exists on this screen. State the fact, offer the only
+      // action that actually exists (try again), and name who to call if it persists.
+      setLoginError(
+        'Could not reach the server. Check this device\'s network connection and try again — ' +
+        'if it still fails, tell the workshop IT/administrator that sign-in is not responding.'
+      );
     } finally {
       setLoginLoading(false);
     }
@@ -195,74 +215,6 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
     }
   };
 
-  const runAiLoginDoctor = async () => {
-    setAiDoctorLoading(true);
-    setAiDoctorResult(null);
-    try {
-      const res = await fetch('/api/system/ai-doctor/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: identifier })
-      });
-      const data = await res.json();
-      setAiDoctorResult(data);
-    } catch (err: any) {
-      setAiDoctorResult({ overallHealth: 'CRITICAL', error: err.message });
-    } finally {
-      setAiDoctorLoading(false);
-    }
-  };
-
-  const runAiUiDoctor = async () => {
-    setAiDoctorLoading(true);
-    setAiDoctorResult(null);
-    try {
-      const res = await fetch('/api/system/ai-doctor/ui', { method: 'POST' });
-      const data = await res.json();
-      setAiDoctorResult(data);
-    } catch (err: any) {
-      setAiDoctorResult({ overallHealth: 'CRITICAL', error: err.message });
-    } finally {
-      setAiDoctorLoading(false);
-    }
-  };
-
-  const runAiDeploymentDoctor = async () => {
-    setAiDoctorLoading(true);
-    setAiDoctorResult(null);
-    try {
-      const res = await fetch('/api/system/ai-doctor/deployment', { method: 'POST' });
-      const data = await res.json();
-      setAiDoctorResult(data);
-    } catch (err: any) {
-      setAiDoctorResult({ overallHealth: 'CRITICAL', error: err.message });
-    } finally {
-      setAiDoctorLoading(false);
-    }
-  };
-
-  const handleDevUnlock = async () => {
-    if (!unlockReason) {
-      setUnlockResult('Reason is required for Developer Unlock action.');
-      return;
-    }
-    setUnlockLoading(true);
-    setUnlockResult(null);
-    try {
-      const res = await fetch('/api/system/auth-recovery/unlock', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetUsername: unlockTarget, override_reason: unlockReason })
-      });
-      const data = await res.json();
-      setUnlockResult(data.message || data.error);
-    } catch (err: any) {
-      setUnlockResult('Unlock action failed: ' + err.message);
-    } finally {
-      setUnlockLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen w-full bg-slate-950 text-slate-100 flex flex-col justify-between p-4 sm:p-6 font-sans">
       {/* ── GATEWAY TOP NAVBAR ── */}
@@ -308,15 +260,6 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
           >
             <Activity className="h-3.5 w-3.5" />
             Administrator Mode
-          </button>
-          <button
-            onClick={() => setActiveTab('developer')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'developer' ? 'bg-orange-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Terminal className="h-3.5 w-3.5" />
-            Developer Console
           </button>
         </div>
       </header>
@@ -533,143 +476,37 @@ export const EnterpriseGateway: React.FC<EnterpriseGatewayProps> = ({ onLoginSuc
                 </div>
               ))}
             </div>
-          </div>
-        )}
 
-        {/* ========================================================================= */}
-        {/* 3. DEVELOPER MODE */}
-        {/* ========================================================================= */}
-        {activeTab === 'developer' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                  <Terminal className="h-5 w-5 text-indigo-400" />
-                  Developer Recovery Console & AI Doctor Engine
-                </h2>
-                <p className="text-xs text-slate-400">Diagnostic tools, AI Login Doctor, Font Manager, and Theme Engine</p>
+            {/* APPEARANCE — the surviving real control from the removed Developer
+                Console tab. Theme is a client-side preference (applyTheme() sets a
+                class on <html> and stores it in localStorage), so there is no
+                server call here and no reason to restrict it by role. */}
+            <div className="p-5 bg-slate-900/80 border border-slate-800 rounded-2xl space-y-3">
+              <div className="flex items-center gap-2 text-slate-300">
+                <Palette className="h-5 w-5 text-orange-400" />
+                <h3 className="font-bold text-sm">Theme</h3>
               </div>
-            </div>
-
-            {/* AI DOCTOR ACTION BUTTONS */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <button
-                onClick={runAiLoginDoctor}
-                disabled={aiDoctorLoading}
-                className="p-4 rounded-xl bg-slate-900 border border-indigo-900/50 hover:border-indigo-500 text-left cursor-pointer transition-all space-y-1.5 group"
-              >
-                <div className="flex items-center justify-between text-indigo-400">
-                  <Stethoscope className="h-5 w-5" />
-                  <span className="text-[10px] font-mono group-hover:underline">Run Analysis</span>
-                </div>
-                <h3 className="font-bold text-xs text-white">AI Login Doctor</h3>
-                <p className="text-[11px] text-slate-400">Inspects JWT, Rate Limiter, Session, User existence</p>
-              </button>
-
-              <button
-                onClick={runAiUiDoctor}
-                disabled={aiDoctorLoading}
-                className="p-4 rounded-xl bg-slate-900 border border-emerald-900/50 hover:border-emerald-500 text-left cursor-pointer transition-all space-y-1.5 group"
-              >
-                <div className="flex items-center justify-between text-emerald-400">
-                  <Type className="h-5 w-5" />
-                  <span className="text-[10px] font-mono group-hover:underline">Run Analysis</span>
-                </div>
-                <h3 className="font-bold text-xs text-white">AI UI & Font Doctor</h3>
-                <p className="text-[11px] text-slate-400">Inspects Inter font stack, CSS variables, Theme Engine</p>
-              </button>
-
-              <button
-                onClick={runAiDeploymentDoctor}
-                disabled={aiDoctorLoading}
-                className="p-4 rounded-xl bg-slate-900 border border-amber-900/50 hover:border-amber-500 text-left cursor-pointer transition-all space-y-1.5 group"
-              >
-                <div className="flex items-center justify-between text-amber-400">
-                  <Cpu className="h-5 w-5" />
-                  <span className="text-[10px] font-mono group-hover:underline">Run Analysis</span>
-                </div>
-                <h3 className="font-bold text-xs text-white">AI Deployment Doctor</h3>
-                <p className="text-[11px] text-slate-400">Inspects Cloud Run revision, RAM, Connection Pool</p>
-              </button>
-            </div>
-
-            {/* AI DOCTOR ANALYSIS RESULTS */}
-            {aiDoctorResult && (
-              <div className="p-5 bg-slate-900/90 border border-indigo-500/30 rounded-2xl space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                  <span className="font-bold text-xs uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
-                    <Stethoscope className="h-4 w-4" />
-                    AI Diagnostic Report ({aiDoctorResult.overallHealth || 'HEALTHY'})
-                  </span>
-                  <span className="text-[10px] text-slate-500 font-mono">
-                    {aiDoctorResult.inspectedAt ? new Date(aiDoctorResult.inspectedAt).toLocaleTimeString() : ''}
-                  </span>
-                </div>
-                <pre className="p-3 bg-slate-950 rounded-xl text-xs font-mono text-slate-300 overflow-x-auto border border-slate-800">
-                  {JSON.stringify(aiDoctorResult, null, 2)}
-                </pre>
-              </div>
-            )}
-
-            {/* THEME ENGINE & FONT MANAGEMENT */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* THEME ENGINE */}
-              <div className="p-5 bg-slate-900/80 border border-slate-800 rounded-2xl space-y-3">
-                <div className="flex items-center gap-2 text-slate-300">
-                  <Palette className="h-5 w-5 text-orange-400" />
-                  <h3 className="font-bold text-sm">Theme Engine Controls</h3>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.values(THEME_CONFIGS).map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => handleThemeChange(t.id)}
-                      className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
-                        currentTheme === t.id ? 'bg-orange-950/60 border-orange-500 text-orange-200' : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      <span className="block font-bold text-xs">{t.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* DEVELOPER RATE LIMIT UNLOCK */}
-              <div className="p-5 bg-slate-900/80 border border-slate-800 rounded-2xl space-y-3">
-                <div className="flex items-center gap-2 text-slate-300">
-                  <Unlock className="h-5 w-5 text-emerald-400" />
-                  <h3 className="font-bold text-sm">Developer Login Unlock</h3>
-                </div>
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    value={unlockTarget}
-                    onChange={(e) => setUnlockTarget(e.target.value)}
-                    placeholder="Target Identifier / IP (Optional)"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
-                  />
-                  <input
-                    type="text"
-                    value={unlockReason}
-                    onChange={(e) => setUnlockReason(e.target.value)}
-                    placeholder="Mandatory Audit Reason (e.g. Dev Support)"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
-                  />
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {Object.values(THEME_CONFIGS).map((t) => (
                   <button
-                    onClick={handleDevUnlock}
-                    disabled={unlockLoading}
-                    className="w-full h-9 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl cursor-pointer transition-colors"
+                    key={t.id}
+                    onClick={() => handleThemeChange(t.id)}
+                    className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
+                      currentTheme === t.id ? 'bg-orange-950/60 border-orange-500 text-orange-200' : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
                   >
-                    Execute Unlock & Log Audit
+                    <span className="block font-bold text-xs">{t.name}</span>
+                    <span className="block text-[10px] text-slate-500 mt-0.5">{t.description}</span>
                   </button>
-                  {unlockResult && (
-                    <p className="text-[11px] font-mono text-emerald-400 bg-emerald-950/40 p-2 rounded border border-emerald-800">{unlockResult}</p>
-                  )}
-                </div>
+                ))}
               </div>
             </div>
           </div>
         )}
+
+        {/* Developer Console removed 2026-09-17 — all four of its actions called an
+            endpoint that does not exist. See the file header for the full record. */}
+
         </>
         )}
       </main>

@@ -73,12 +73,39 @@ export function getSeniorityScore(tech: TechnicianInput): number {
 
 /**
  * Calculates the revenue allocation splits for a job based on the technicians assigned.
- * Uses the exact rules specified by the user:
- * Scenario 1 (N=1): 100% allocation
- * Scenario 2 (N=2): 50% / 50% split
- * Scenario 3 (N=3): 40% for the highest senior (grade/salary), 30% and 30% for others
- * Scenario 4 (N=4): 25% each
- * Scenario 5 (N>=5): Divided equally
+ *
+ * Owner spec (2026-09-17). In-house rules implemented here:
+ *   N=1 -> 100%
+ *   N=2 -> 60 / 40   (technician takes 60, assistant 40)
+ *   N=3 -> 40 / 30 / 30
+ *   N=4 -> 25 each
+ *   N>=5 -> equal shares
+ *
+ * WHO GETS THE LARGER SHARE is decided by getSeniorityScore(), i.e. by salary /
+ * grade / role keywords. The owner spec instead assigns the big share by ROLE
+ * (technician vs ASSISTANT technician), so a low-paid lead paired with a
+ * better-paid assistant is currently credited backwards. Left as-is here because
+ * fixing it needs the vertical mapping the owner is still specifying.
+ *
+ * NOT YET IMPLEMENTED (do not assume otherwise):
+ *  - the multi-vertical layer (mechanical vs electrical -> 50/50 between verticals
+ *    first, each vertical then subdivided by the rules above). There is no vertical
+ *    on job_technician_maps and no way to classify a technician into one.
+ *  - the vendor/outsourced vertical: its payment must be deducted from total labour
+ *    revenue BEFORE the 50/50. Nothing can be deducted today — there is no vendor
+ *    cost column anywhere in the schema, and job_technician_maps.employee_id has a
+ *    FOREIGN KEY to employees, so a non-employee vendor cannot even be recorded.
+ *  - the >4 in-house headcount override (equal split WITHIN each vertical).
+ *    N>=5 currently splits equally across all technicians flat, which coincides with
+ *    the owner rule only when a single vertical is involved.
+ *  - mid-job changes (technician added late, or pulled off early by the floor
+ *    in-charge): the owner spec has no formula — the floor in-charge decides. No
+ *    manual entry point exists for that yet.
+ *
+ * DATA DISCONTINUITY: revenue rows already persisted were computed with the old
+ * 50/50 rule and are deliberately never rewritten (the backfill treats existing
+ * revenue as authoritative — see the W-6 restart-duplication note in server.ts).
+ * So historic rows keep 50/50 and only newly-calculated ones use 60/40.
  */
 export function calculateRevenueAllocation(
   jobId: number,
@@ -105,8 +132,9 @@ export function calculateRevenueAllocation(
     pcts = [100];
     roles = ['Primary Technician'];
   } else if (N === 2) {
-    pcts = [50, 50];
-    roles = ['Co-Technician', 'Co-Technician'];
+    // Technician 60 / assistant 40 — owner spec 2026-09-17. Was 50/50.
+    pcts = [60, 40];
+    roles = ['Lead Technician', 'Assistant Technician'];
   } else if (N === 3) {
     pcts = [40, 30, 30];
     roles = ['Senior Lead', 'Co-Technician', 'Co-Technician'];

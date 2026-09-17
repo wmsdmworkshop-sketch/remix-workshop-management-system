@@ -81,6 +81,23 @@ async function ensureTables(dbPool: any): Promise<void> {
 
 const nowSql = () => new Date().toISOString().slice(0, 19).replace("T", " ");
 
+/**
+ * The duplicate-suppression window, in seconds.
+ *
+ * 0 IS A MEANINGFUL VALUE, not "unset": it turns suppression off, which is what
+ * a device is set to while it is being commissioned (see the `dedupeSeconds > 0`
+ * guard in ingestAlert). The previous `Number(x || 60)` collapsed a configured 0
+ * into 60, because 0 is falsy in JS — so that guard could never fire for 0, the
+ * commissioning setting was silently impossible, and a chatty camera had every
+ * repeat after the first swallowed. `??`-style handling is required here; `||`
+ * is not. Anything non-numeric or negative still falls back to the default.
+ */
+function dedupeSecondsOrDefault(raw: unknown): number {
+  if (raw === null || raw === undefined || raw === "") return 60;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : 60;
+}
+
 // --- Settings (webhook secret) ---------------------------------------------
 
 async function getSettingsRow(dbPool: any): Promise<any> {
@@ -89,7 +106,7 @@ async function getSettingsRow(dbPool: any): Promise<any> {
   if (rows && rows.length) return rows[0];
   await dbPool.execute(
     "INSERT INTO cctv_settings (id, webhook_key, dedupe_seconds, enabled, updated_at) VALUES (1, ?, ?, 1, NOW())",
-    [process.env.CCTV_WEBHOOK_KEY || "", Number(process.env.CCTV_DEDUPE_SECONDS || 60)]
+    [process.env.CCTV_WEBHOOK_KEY || "", dedupeSecondsOrDefault(process.env.CCTV_DEDUPE_SECONDS)]
   );
   const [again] = await dbPool.query("SELECT * FROM cctv_settings WHERE id = 1") as any[];
   return again[0];
@@ -98,7 +115,7 @@ async function getSettingsRow(dbPool: any): Promise<any> {
 export async function getCctvConfig(dbPool: any) {
   const row = await getSettingsRow(dbPool);
   return {
-    dedupe_seconds: Number(row.dedupe_seconds || 60),
+    dedupe_seconds: dedupeSecondsOrDefault(row.dedupe_seconds),
     enabled: !!Number(row.enabled),
     has_webhook_key: !!(row.webhook_key || process.env.CCTV_WEBHOOK_KEY),
     alert_types: ALERT_TYPES,
@@ -164,7 +181,7 @@ export async function deleteCamera(dbPool: any, cameraId: number) {
 export async function ingestAlert(dbPool: any, body: any): Promise<{ status: "created" | "duplicate"; alert_id?: number }> {
   await ensureTables(dbPool);
   const settings = await getSettingsRow(dbPool);
-  const dedupeSeconds = Number(settings.dedupe_seconds || 60);
+  const dedupeSeconds = dedupeSecondsOrDefault(settings.dedupe_seconds);
 
   const rawType = String(body.alert_type || body.type || "custom").toLowerCase().trim();
   const known = ALERT_TYPES.find(t => t.value === rawType);

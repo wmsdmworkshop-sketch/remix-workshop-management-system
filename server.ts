@@ -61,6 +61,7 @@ import { ocrFallbackService } from "./src/services/ocr-fallback.service.ts";
 import vehiclePassportFacade from "./src/engines/vehicle-passport/index.ts";
 import serviceScheduleEvaluator from "./src/services/service-schedule-evaluator.ts";
 import { pipelineRouter } from "./src/api/routes/pipeline.routes.ts";
+import { buildCustodyEntityIndex, mergeCustodyHandoffs, normaliseVrn } from "./src/core/workshop/custody-entity-keys.ts";
 import { saIntakeRouter } from "./src/api/routes/sa-intake.routes.ts";
 import { floorExecutionRouter } from "./src/api/routes/floor-execution.routes.ts";
 import { registerJobCardCache } from "./src/core/jobcard-cache-bridge.ts";
@@ -2027,30 +2028,59 @@ async function startServer() {
         visIds
       );
 
-      // The most recent handoff still in flight is who currently holds the vehicle.
+      // entity_id is POLYMORPHIC, and in MORE forms than the two below.
       //
-      // entity_id is POLYMORPHIC: it carries either the job card number
-      // ("JC-29267") or the numeric job_card_id as text ("6774"), depending on
-      // which engine opened the clock. openSla writes both job_id and entity_id,
-      // but the billing, QC and realtime-ownership engines write entity_id only —
-      // and `job_id` is NULL on all 626 rows in production. Keying on job_id (as
-      // this query did) therefore matched nothing, so NO job card ever reported a
-      // holder. Match both forms of entity_id instead.
+      // GATE_TO_RECEPTION is keyed on the GATE ENTRY id, and both
+      // RECEPTION_TO_MANAGER and SLA_MANAGER_TO_SA on the INTAKE id
+      // (realtime-ownership-pipeline.ts:218/509/750) — neither of which is the
+      // job card number or the numeric job_card_id. Searching only the job card
+      // forms therefore made the whole intake half of the journey invisible:
+      // a vehicle between gate-in and SA intake showed "Not recorded" for
+      // holder, stage, holding-since, SLA due and handoff while a clock ran.
       //
-      // ACCEPTED counts as still-held: it is written when the receiving role takes
-      // the handoff, so they hold it until the clock COMPLETES. Only COMPLETED and
-      // MET mean nobody is currently holding it.
-      const entityKeys: string[] = [];
-      const jobIdByEntity = new Map<string, number>();
-      for (const r of visible) {
-        const jid = Number(r.job_card_id);
-        if (r.job_card_no) {
-          entityKeys.push(String(r.job_card_no));
-          jobIdByEntity.set(String(r.job_card_no).toUpperCase(), jid);
-        }
-        entityKeys.push(String(jid));
-        jobIdByEntity.set(String(jid), jid);
-      }
+      // The bridge is tbl_sa_intake, which holds all three identities;
+      // job_card_master itself carries no gate_entry_id or intake_id column.
+      // It writes the job card NUMBER into its job_card_id column
+      // (sa-technical-intake.ts:687 writes that same value as job_card_no).
+      //
+      // COLLATE is required and load-bearing: these tables are not all on the
+      // same collation, and comparing them bare raises
+      // ER_CANT_AGGREGATE_2COLLATIONS — the same trap the settlement check hit.
+      const jcNos = visible
+        .map((r: any) => String(r.job_card_no || "").trim())
+        .filter(Boolean);
+      const [intakeRows]: any = jcNos.length
+        ? await dbPool.query(
+            `SELECT job_card_id, gate_entry_id, intake_id, vrn
+               FROM tbl_sa_intake
+              WHERE job_card_id COLLATE utf8mb4_0900_ai_ci IN (${jcNos.map(() => "?").join(",")})`,
+            jcNos
+          )
+        : [[]];
+
+      // Registration fallback, for a card that was created but never taken
+      // through SA intake so tbl_sa_intake has no row for it. This is a
+      // prefilter only — the index resolves it to exactly one gate entry or
+      // nothing, so a repeat-visit VRN yields a blank rather than a wrong holder.
+      const vrnFilters = visible
+        .map((r: any) => normaliseVrn(r.vehicle_reg))
+        .filter(Boolean);
+      const [gateRows]: any = vrnFilters.length
+        ? await dbPool.query(
+            `SELECT ge.gate_entry_id, ri.intake_id, ge.vin
+               FROM tbl_gate_entry ge
+               LEFT JOIN tbl_reception_intake ri ON ri.gate_entry_id = ge.gate_entry_id
+              WHERE UPPER(REPLACE(REPLACE(REPLACE(ge.vin, '-', ''), ' ', ''), '.', ''))
+                    IN (${vrnFilters.map(() => "?").join(",")})`,
+            vrnFilters
+          )
+        : [[]];
+
+      const { entityKeys, jobIdByEntity } = buildCustodyEntityIndex(
+        visible,
+        intakeRows || [],
+        gateRows || []
+      );
       const [handoffRows]: any = entityKeys.length
         ? await dbPool.query(
             `SELECT entity_id, stage_name, owner_role, status, sla_due_at, opened_at, escalation_level
@@ -2069,8 +2099,11 @@ async function startServer() {
           actors: 0,
           holder: null,
           holder_stage: null,
-          breached: false,
-          escalated: false,
+          // null, not false: with no matched clock there is no supportable
+          // answer to "is this escalated". See mergeCustodyHandoffs.
+          breached: null as boolean | null,
+          escalated: null as boolean | null,
+          holder_known: false,
           // Promised delivery time — a real, nullable column, surfaced as-is.
           etd: r.etd ?? null,
           // How long the current holder has had it, and when the handoff is due.
@@ -2087,19 +2120,9 @@ async function startServer() {
         const k = String(r.job_id);
         if (summaries[k]) summaries[k].actors = Number(r.n) || 0;
       }
-      for (const r of (handoffRows || [])) {
-        const jobId = jobIdByEntity.get(String(r.entity_id || "").toUpperCase());
-        const k = jobId != null ? String(jobId) : null;
-        if (!k || !summaries[k]) continue;
-        // Ordered ascending, so the last write wins = most recent handoff in flight.
-        summaries[k].holder = r.owner_role ?? null;
-        summaries[k].holder_stage = r.stage_name ?? null;
-        summaries[k].holder_since = r.opened_at ?? null;
-        summaries[k].sla_due_at = r.sla_due_at ?? null;
-        summaries[k].handoff_status = r.status ?? null;
-        if (r.status === "BREACHED") summaries[k].breached = true;
-        if (Number(r.escalation_level) > 0) summaries[k].escalated = true;
-      }
+      // Ordered ascending inside the helper, so the last write per card is the
+      // most recent clock still in flight — that is who holds the vehicle now.
+      mergeCustodyHandoffs(summaries, handoffRows || [], jobIdByEntity);
 
       res.json({ success: true, summaries });
     } catch (err: any) {
@@ -2376,6 +2399,16 @@ async function startServer() {
     // GCS-stored photos load at all. Keys are random EVD- ids, and the route
     // refuses any row flagged is_deleted.
     "/api/media",
+    // CCTV ingest webhook — authenticated by the DEVICE shared-secret
+    // (X-CCTV-Key, matched against CCTV_WEBHOOK_KEY or cctv_settings.webhook_key),
+    // NOT by a user JWT: a camera, NVR or edge-AI box cannot log in.
+    //
+    // Without this entry the global JWT gate above rejected every device POST
+    // with 401 BEFORE the route's own key check ran, so no camera could ever
+    // reach the feature no matter how it was configured. The route was written
+    // device-authenticated from the start and fails closed: 503 when no key is
+    // configured at all, 401 on a wrong key, 503 when ingestion is disabled.
+    "/api/cctv/alerts/ingest",
   ];
 
   app.use("/api", (req: any, res: any, next: any) => {

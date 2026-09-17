@@ -1,7 +1,7 @@
 import React from "react";
 import { 
   LayoutDashboard, Truck, Wrench, Package, Users, TrendingUp, Settings, 
-  HelpCircle, User, LogOut, ChevronRight, Bell, Search, Activity, Sparkles, Building,
+  LogOut, ChevronRight, Bell, Search, Sparkles,
   Menu, X, KeyRound, ClipboardCheck, ArrowLeft
 } from "lucide-react";
 import ChangePasswordModal from "./ChangePasswordModal";
@@ -72,6 +72,11 @@ export const WORKSPACE_MAPPING: Record<string, string> = {
   "health-dashboard": "admin",
   "integration-config": "admin",
   "jc-audit-log": "admin",
+  // CCTV & Floor Safety belongs with the other operator/oversight screens in
+  // Administration. WITHOUT THIS LINE THE TAB IS INVISIBLE: the sub-nav renders
+  // only tabs whose mapping equals the active workspace, and an unmapped tab is
+  // unreachable except by typing the URL.
+  "cctv-safety": "admin",
 };
 
 export const WORKSPACES = [
@@ -239,14 +244,13 @@ export default function AppShell({
     t => WORKSPACE_MAPPING[t.id] === activeWorkspace && t.id !== "logout-deep-link"
   );
 
-  // Workspaces the user can actually reach — powers the mobile bottom nav bar.
-  const accessibleWorkspaces = WORKSPACES.filter(
-    ws => (permittedTabs || []).some(t => WORKSPACE_MAPPING[t.id] === ws.id)
-  );
-  // On a phone, show up to 4 primary workspaces in the thumb bar + a "More" that opens
-  // the full drawer; if 5 or fewer, show them all.
-  const bottomBarPrimary = accessibleWorkspaces.length <= 5 ? accessibleWorkspaces : accessibleWorkspaces.slice(0, 4);
-  const bottomBarHasMore = accessibleWorkspaces.length > 5;
+  // NOTE: this file used to render a second mobile bottom bar here (workspace
+  // switcher, z-40). App.tsx already renders one (tab switcher, z-50, same
+  // `fixed bottom-0 inset-x-0` position) and covers it completely, so on a phone
+  // the workspace bar was unreachable and the two just stacked. The bar was
+  // removed rather than the App.tsx one because the tab bar navigates straight to
+  // a screen, carries the open-job badge, and drives the "All Modules" grid.
+  // Workspace switching on a phone stays available through the drawer above.
 
   const handleWorkspaceClick = (workspaceId: string) => {
     // Find first permitted sub-tab in this workspace
@@ -386,20 +390,15 @@ export default function AppShell({
           </nav>
         </div>
 
-        {/* Bottom Workspace settings */}
+        {/* Bottom sidebar actions.
+            "Settings", "Help" and "Profile" used to sit here with NO onClick at
+            all — three controls that did nothing when clicked. They were removed
+            rather than wired up, because each already has a live entry point:
+            account menu (top right) for settings/password, the `tech-profile` and
+            `live-support` tabs for profile/help. Logout stays: on desktop the
+            sidebar is the primary console nav, and it is the only action here
+            that was ever connected. */}
         <div className="pt-4 border-t border-zinc-800/80 space-y-1">
-          <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold text-zinc-400 hover:bg-zinc-900 hover:text-white">
-            <Settings className="h-4 w-4" />
-            <span>Settings</span>
-          </button>
-          <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold text-zinc-400 hover:bg-zinc-900 hover:text-white">
-            <HelpCircle className="h-4 w-4" />
-            <span>Help</span>
-          </button>
-          <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold text-zinc-400 hover:bg-zinc-900 hover:text-white">
-            <User className="h-4 w-4" />
-            <span>Profile</span>
-          </button>
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold text-rose-400 hover:bg-rose-500/10"
@@ -703,39 +702,6 @@ export default function AppShell({
           </div>
         </main>
       </div>
-
-      {/* 6. MOBILE BOTTOM NAV — thumb-reachable primary workspace switcher (phones only) */}
-      <nav
-        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 flex items-stretch justify-around"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-      >
-        {bottomBarPrimary.map(ws => {
-          const Icon = ws.icon;
-          const isActive = activeWorkspace === ws.id;
-          return (
-            <button
-              key={ws.id}
-              onClick={() => handleWorkspaceClick(ws.id)}
-              className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[3.5rem] transition-colors ${
-                isActive ? "text-orange-400" : "text-zinc-400 active:text-white"
-              }`}
-            >
-              <Icon className={`h-5 w-5 ${isActive ? "text-orange-400" : ""}`} />
-              <span className="text-[9px] font-bold leading-none truncate max-w-[4.5rem]">{ws.label.split(" ")[0]}</span>
-              {isActive && <span className="absolute top-0 h-0.5 w-8 bg-orange-400 rounded-full" />}
-            </button>
-          );
-        })}
-        {bottomBarHasMore && (
-          <button
-            onClick={() => setMobileMenuOpen(true)}
-            className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[3.5rem] text-zinc-400 active:text-white"
-          >
-            <Menu className="h-5 w-5" />
-            <span className="text-[9px] font-bold leading-none">More</span>
-          </button>
-        )}
-      </nav>
 
     </div>
   );

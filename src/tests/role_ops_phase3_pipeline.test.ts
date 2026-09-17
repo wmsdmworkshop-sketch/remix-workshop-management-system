@@ -166,17 +166,37 @@ const mockDbProvider = {
       return [[{ cnt }], []];
     }
 
+    // ── Advisor validation (assignServiceAdvisor) ──────────────────────────
+    // The engine no longer trusts the client-supplied assignedSaName: it resolves
+    // the NAME from user_access_master by user_id and fails closed when the id
+    // does not name an active service_advisor, so a stale UI label can never
+    // re-route a job card to the wrong advisor.
+    //
+    // Without this branch the mock fell through to `[[], []]`, the engine threw
+    // "not a valid active advisor", and this test failed on a validation it was
+    // never intended to exercise. The row returned here is the ONLY source of the
+    // name asserted below, which is the point of the check.
+    if (sqlUpper.includes("FROM USER_ACCESS_MASTER")) {
+      const match =
+        params[0] === "usr_sa_1"
+          ? [{ full_name: "Shashi Patil", crm_id: "CRM-SA-1" }]
+          : [];
+      return [match, []];
+    }
+
     // ── Bridge into the app-wide `job_cards` table (assignServiceAdvisor step 4b) ──
     // Matched by VRN, not job_id/intake_id — job_cards has no column linking
     // back to tbl_reception_intake/tbl_gate_entry.
+    //
+    // Mirrors the production statement exactly: `UPDATE job_cards SET
+    // service_advisor = ? WHERE vrn = ?`. It used to also require
+    // current_workflow_state = 'GATE_IN' and then SET that column to
+    // 'WAITING_ADVISOR' — a write no engine performs any more, which meant the
+    // test was asserting its own mock rather than the bridge.
     if (sqlUpper.includes("UPDATE JOB_CARDS SET SERVICE_ADVISOR")) {
-      const match = mockRealJobCards.find(
-        j => j.vrn === params[1] && j.current_workflow_state === "GATE_IN" &&
-             (!j.service_advisor || j.service_advisor === "" || j.service_advisor === "Unassigned")
-      );
+      const match = mockRealJobCards.find(j => j.vrn === params[1]);
       if (match) {
         match.service_advisor = params[0];
-        match.current_workflow_state = "WAITING_ADVISOR";
       }
       return [{ affectedRows: match ? 1 : 0 }, []];
     }
@@ -301,9 +321,19 @@ describe("Phase 3 — Gate-In → Reception → Manager Assignment Real-Time Own
     // every other screen in the app (JobCardManager, Dashboard, billing, QC)
     // actually reads, unlike the tbl_job_card write above which nothing
     // outside this pipeline sees.
+    //
+    // Asserts service_advisor and ONLY that, because it is the whole of what the
+    // engine writes here: `UPDATE job_cards SET service_advisor = ? WHERE vrn = ?`.
+    // This used to also assert current_workflow_state = 'WAITING_ADVISOR', which
+    // no engine writes — the mock set that column itself, so the assertion was
+    // checking the mock, not the bridge.
+    //
+    // The name is also now proof of the validation above: the request carried
+    // "Shashi Patil" *and* the id, but the engine stamps the name it resolved from
+    // user_access_master, so a request naming the wrong advisor fails closed
+    // instead of writing a plausible-but-wrong name onto the card.
     const bridged = mockRealJobCards.find(j => j.job_id === 601);
     expect(bridged.service_advisor).toBe("Shashi Patil");
-    expect(bridged.current_workflow_state).toBe("WAITING_ADVISOR");
   });
 
   it("6. SECURITY: Rejects unauthorized SA self-assignment", async () => {

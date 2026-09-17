@@ -110,6 +110,7 @@ import AttendanceShiftLog from "./components/AttendanceShiftLog";
 import OvertimeEmployeeDashboard from "./components/OvertimeEmployeeDashboard";
 import OvertimeApprovalPortal from "./components/OvertimeApprovalPortal";
 import BreakdownManagement from "./components/BreakdownManagement";
+import CctvFloorSafety from "./components/CctvFloorSafety";
 
 const GateEntryManager = React.lazy(() => import("./components/GateEntryManager"));
 const BillingExit = React.lazy(() => import("./components/billing-exit"));
@@ -558,6 +559,13 @@ export default function App() {
       { id: "live-support", label: "Live Support", icon: HelpCircle },
       { id: "ai-brains", label: "AI Brains", icon: Brain },
       { id: "jc-audit-log", label: "JC Activity Log", icon: ScrollText },
+      // CCTV & Floor Safety. The backend (src/integrations/cctv-analytics.ts +
+      // 9 routes) has always been real; the screen was deleted in the
+      // 2026-09-06 Administration prune, which also left the notification bell
+      // raising a "Floor-Safety Alerts" alert whose link had no destination.
+      // Tab id MUST stay "cctv-safety" — that is the link value server.ts
+      // already sends.
+      { id: "cctv-safety", label: "CCTV & Floor Safety", icon: Video },
       // Owner instruction 2026-09-16: staff activity is visible to the
       // developer, GM Service and HR (the admin account) only. Deliberately NOT
       // given to workshop_manager or floor_supervisor — this is personal
@@ -599,6 +607,7 @@ export default function App() {
       { id: "assistant", label: "Gemini Copilot", icon: Sparkles },
       { id: "live-support", label: "Live Support", icon: HelpCircle },
       { id: "jc-audit-log", label: "JC Activity Log", icon: ScrollText },
+      { id: "cctv-safety", label: "CCTV & Floor Safety", icon: Video },
       { id: "staff-activity", label: "Staff Activity", icon: ShieldCheck },
     ],
     billing: [
@@ -732,6 +741,7 @@ export default function App() {
       // GM Service shares the activity report with admin/developer — see the
       // note on the developer entry above.
       { id: "staff-activity", label: "Staff Activity", icon: ShieldCheck },
+      { id: "cctv-safety", label: "CCTV & Floor Safety", icon: Video },
     ],
     spares_manager: [
       { id: "parts-incharge-workspace", label: "Parts Desk (Mobile)", icon: Package },
@@ -1841,6 +1851,10 @@ export default function App() {
 
           {activeTab === "oem-integrations" && (
             <ExternalIntegrations />
+          )}
+
+          {activeTab === "cctv-safety" && (
+            <CctvFloorSafety showToast={showToast} />
           )}
 
           {activeTab === "dashboard" && (
