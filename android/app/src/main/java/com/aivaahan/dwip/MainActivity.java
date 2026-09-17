@@ -14,6 +14,7 @@ import com.getcapacitor.BridgeActivity;
  * kills on low-RAM devices, particularly during resource-intensive operations like
  * using the native camera.
  */
+@SuppressWarnings("TextBlockMigration")
 public class MainActivity extends BridgeActivity {
 
     private static final String TAG = "DWIP.MainActivity";
