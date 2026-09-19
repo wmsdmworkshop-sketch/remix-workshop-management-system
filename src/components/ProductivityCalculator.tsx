@@ -112,8 +112,12 @@ export default function ProductivityCalculator({
         throw new Error(data.error);
       }
 
-      setInvoiceNo(data.invoice_no || `INV-${Math.floor(Math.random()*90000)}`);
-      setJcNo(data.job_card_no || `JC${Math.floor(Math.random()*900)}`);
+      // No invented fallbacks. This used to generate `INV-${Math.random()}` and
+      // `JC${Math.random()}` when extraction returned nothing, and those values are
+      // written back to the job card — a fabricated invoice number is impossible to
+      // tell from a real one once stored (EAR-001).
+      setInvoiceNo(data.invoice_no || "");
+      setJcNo(data.job_card_no || "");
       setLabourAmount(String(data.labour_amount || 0));
       setPartsAmount(String(data.parts_amount || 0));
       setCustomerName(data.customer_name || "");

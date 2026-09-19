@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveJobTechnicians } from "../core/workshop/technician-attribution";
+import { resolveJobTechnicians, matchTechniciansByName } from "../core/workshop/technician-attribution";
 import { calculateRevenueAllocation } from "../lib/revenue-split-engine";
 
 /**
@@ -135,5 +135,96 @@ describe("attribution feeds the split engine end to end", () => {
     const attribution = resolveJobTechnicians({ maps: [], assignedTo: 999, employees: ROSTER });
     const rows = calculateRevenueAllocation(42, attribution.technicians, 2500);
     expect(rows).toEqual([]);
+  });
+});
+
+describe("matchTechniciansByName — reading the technician list off an invoice", () => {
+  // Two names share the "MD " prefix on purpose. Real production data does this,
+  // and the whole safety of this function rests on refusing rather than picking.
+  const ROSTER_MD = [
+    { employee_id: 17, full_name: "MD JAVEED", role: "Technician" },
+    { employee_id: 16, full_name: "MD GOUSE", role: "Technician" },
+    { employee_id: 57, full_name: "LOKU", role: "Technician" },
+    { employee_id: 5, full_name: "ASIF", role: "Electrician" },
+  ];
+
+  it("resolves an exact full-name match", () => {
+    const r = matchTechniciansByName(["MD JAVEED"], ROSTER_MD);
+    expect(r.resolved).toEqual([{ name: "MD JAVEED", employee_id: 17, full_name: "MD JAVEED" }]);
+    expect(r.unmatched).toEqual([]);
+    expect(r.ambiguous).toEqual([]);
+  });
+
+  it("ignores case and collapsing whitespace, which OCR output never respects", () => {
+    const r = matchTechniciansByName(["  md   javeed  "], ROSTER_MD);
+    expect(r.resolved.map((x) => x.employee_id)).toEqual([17]);
+  });
+
+  it("accepts a UNIQUE partial name", () => {
+    const r = matchTechniciansByName(["LOKU"], ROSTER_MD);
+    expect(r.resolved.map((x) => x.employee_id)).toEqual([57]);
+  });
+
+  it("REFUSES an ambiguous name instead of guessing", () => {
+    // "MD" matches both MD JAVEED and MD GOUSE. Picking one would pay the wrong
+    // person; the caller must fall back rather than use a partial team.
+    const r = matchTechniciansByName(["MD"], ROSTER_MD);
+    expect(r.resolved).toEqual([]);
+    expect(r.ambiguous).toEqual(["MD"]);
+  });
+
+  it("reports a name that matches nobody", () => {
+    const r = matchTechniciansByName(["RANDOM PERSON"], ROSTER_MD);
+    expect(r.resolved).toEqual([]);
+    expect(r.unmatched).toEqual(["RANDOM PERSON"]);
+  });
+
+  it("resolves a two-person invoice — the only route to a multi-technician job", () => {
+    const r = matchTechniciansByName(["LOKU", "ASIF"], ROSTER_MD);
+    expect(r.resolved.map((x) => x.employee_id)).toEqual([57, 5]);
+    expect(r.unmatched).toEqual([]);
+    expect(r.ambiguous).toEqual([]);
+  });
+
+  it("reports the good and the bad together so the caller can see the whole picture", () => {
+    const r = matchTechniciansByName(["LOKU", "NOBODY HERE"], ROSTER_MD);
+    expect(r.resolved.map((x) => x.employee_id)).toEqual([57]);
+    expect(r.unmatched).toEqual(["NOBODY HERE"]);
+  });
+
+  it("returns nothing for an empty or non-string list", () => {
+    expect(matchTechniciansByName([], ROSTER_MD)).toEqual({ resolved: [], unmatched: [], ambiguous: [] });
+    expect(matchTechniciansByName(["", "   "], ROSTER_MD).resolved).toEqual([]);
+  });
+
+  it("feeds a two-technician job through the split engine as 60/40", () => {
+    // End to end on the multi-technician path that has never been reachable: the
+    // invoice names two mechanics, so the ladder finally has two people to split.
+    const staff = [
+      { employee_id: 57, full_name: "LOKU", role: "Technician", employee_grade: "Senior", basic_salary: 25000 },
+      { employee_id: 17, full_name: "MD JAVEED", role: "Technician", employee_grade: "Junior", basic_salary: 12000 },
+    ];
+    const r = matchTechniciansByName(["LOKU", "MD JAVEED"], staff);
+    const attribution = resolveJobTechnicians({
+      maps: r.resolved.map((x) => ({ employee_id: x.employee_id })),
+      employees: staff,
+    });
+    expect(attribution.source).toBe("tech_map");
+    const rows = calculateRevenueAllocation(7, attribution.technicians, 1000);
+    expect(rows.map((row) => row.split_amount)).toEqual([600, 400]);
+  });
+
+  it("splits a mechanic + electrician invoice 50/50 across the verticals", () => {
+    const staff = [
+      { employee_id: 57, full_name: "LOKU", role: "Technician", employee_grade: "Senior", basic_salary: 25000 },
+      { employee_id: 5, full_name: "ASIF", role: "Electrician", employee_grade: "Senior", basic_salary: 25000 },
+    ];
+    const r = matchTechniciansByName(["LOKU", "ASIF"], staff);
+    const attribution = resolveJobTechnicians({
+      maps: r.resolved.map((x) => ({ employee_id: x.employee_id })),
+      employees: staff,
+    });
+    const rows = calculateRevenueAllocation(8, attribution.technicians, 1000);
+    expect(rows.map((row) => row.split_amount)).toEqual([500, 500]);
   });
 });

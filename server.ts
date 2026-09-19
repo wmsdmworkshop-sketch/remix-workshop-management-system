@@ -13,7 +13,7 @@ import { createRevenueWithDetails, replaceRevenueWithDetails } from "./src/db/re
 import { runMigrations, validateSchema } from "./src/db/migrate.ts";
 import { allMigrations } from "./src/db/migrations/index.ts";
 import { calculateRevenueAllocation } from "./src/lib/revenue-split-engine.ts";
-import { resolveJobTechnicians } from "./src/core/workshop/technician-attribution.ts";
+import { resolveJobTechnicians, matchTechniciansByName } from "./src/core/workshop/technician-attribution.ts";
 import { WebSocketServer } from "ws";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -1759,7 +1759,9 @@ async function startServer() {
     if (!user || !user.role) {
       return res.status(401).json({ error: "Authentication required." });
     }
-    const id = parseInt(req.params.id);
+    // `id` serves /api/job-cards/:id/...; the invoice-ocr route names the same
+    // parameter :jobId, so accept either rather than fork this audited guard.
+    const id = parseInt(req.params.id ?? req.params.jobId);
     let jc = (getDB().jobCards || []).find((j: any) => Number(j.job_id) === id);
 
     // AUDIT P0: this used to read `if (jc && !canEditJobCard(...))` — when the job
@@ -4466,25 +4468,116 @@ async function startServer() {
   });
 
   // --- INVOICE OCR DATA ENDPOINT ---
-  app.post("/api/job-cards/:jobId/invoice-ocr", express.json(), async (req, res) => {
+  // The invoice is the document that carries BOTH the labour figure and the
+  // technician list, so this is the point at which attribution can be derived for
+  // a job that already exists. Previously this route accepted only the raw ocrText
+  // blob and discarded the parsed fields — including assigned_technicians — so
+  // nothing downstream could ever use them. It also had no authorization guard of
+  // its own; it now uses the same audited guard as POST /:id/revenue.
+  app.post("/api/job-cards/:jobId/invoice-ocr", express.json(), jobCardEditGuard, async (req, res) => {
     const { jobId } = req.params;
-    const { ocrText } = req.body;
+    const { ocrText, invoice_no, labour_amount, parts_amount, assigned_technicians } = req.body || {};
     const db = getDB();
     const id = parseInt(jobId);
 
-    const job = db.jobCards.find((j: any) => j.job_id === id);
-    if (job) {
+    if (!ocrText && labour_amount == null) {
+      return res.status(400).json({ error: "Nothing to record — supply ocrText and/or a labour_amount." });
+    }
+
+    const job: any = (db.jobCards || []).find((j: any) => Number(j.job_id) === id);
+    if (job && ocrText) {
       job.invoice_ocr_data = ocrText;
       setDB(db);
     }
 
     try {
-      await dbPool.execute("UPDATE job_cards SET invoice_ocr_data = ? WHERE job_id = ?", [ocrText, id]);
-      await dbPool.execute("UPDATE job_card_master SET invoice_ocr_data = ? WHERE job_card_id = ?", [ocrText, id]);
-      res.json({ success: true });
+      if (ocrText) {
+        await dbPool.execute("UPDATE job_cards SET invoice_ocr_data = ? WHERE job_id = ?", [ocrText, id]);
+        await dbPool.execute("UPDATE job_card_master SET invoice_ocr_data = ? WHERE job_card_id = ?", [ocrText, id]);
+      }
+      if (invoice_no) {
+        await dbPool.execute("UPDATE job_card_master SET invoice_no = ? WHERE job_card_id = ?", [invoice_no, id]);
+      }
     } catch (e: any) {
       console.error("Failed to save invoice_ocr_data:", e);
-      res.status(500).json({ error: e.message || "Failed to save invoice ocr data" });
+      return res.status(500).json({ error: e.message || "Failed to save invoice ocr data" });
+    }
+
+    // Persistence-only call: behave exactly as this route always has.
+    if (labour_amount == null) {
+      return res.json({ success: true, calculated: false });
+    }
+
+    const labour = Number(labour_amount);
+    const parts = Number(parts_amount || 0);
+    if (!Number.isFinite(labour) || labour <= 0) {
+      return res.status(400).json({ error: "labour_amount must be a positive number to calculate a split." });
+    }
+
+    // The invoice's own technician list wins, but ONLY when every name resolves.
+    // It is the only route to a two-technician job, because assigned_to is a single
+    // scalar. A partial match is refused rather than used, because allocating to
+    // some of the people named on the invoice would silently over-pay them.
+    const names: string[] = Array.isArray(assigned_technicians)
+      ? assigned_technicians.filter((n: any) => typeof n === "string")
+      : [];
+    const nameMatch = names.length
+      ? matchTechniciansByName(names, db.employees || [])
+      : { resolved: [], unmatched: [] as string[], ambiguous: [] as string[] };
+
+    let attribution; let technicianSource: string;
+    if (names.length && nameMatch.resolved.length > 0 && nameMatch.unmatched.length === 0 && nameMatch.ambiguous.length === 0) {
+      attribution = resolveJobTechnicians({
+        maps: nameMatch.resolved.map((r) => ({ employee_id: r.employee_id })),
+        employees: db.employees || [],
+      });
+      technicianSource = "invoice";
+    } else {
+      attribution = resolveJobTechnicians({
+        maps: db.jobTechnicianMaps.filter((m: JobTechnicianMap) => m.job_id === id),
+        assignedTo: job?.assigned_to ?? job?.technician_assignments?.[0]?.technician_id ?? null,
+        employees: db.employees || [],
+      });
+      technicianSource = attribution.source === "none" ? "none" : attribution.source;
+    }
+
+    if (attribution.technicians.length === 0) {
+      return res.status(409).json({
+        error: "The invoice was saved, but no split was calculated because no technician could be resolved. Nothing was allocated.",
+        invoice_technicians_unmatched: nameMatch.unmatched,
+        invoice_technicians_ambiguous: nameMatch.ambiguous,
+        unresolved_employee_ids: attribution.unresolved,
+      });
+    }
+
+    const invoiceAllocations = calculateRevenueAllocation(id, attribution.technicians, labour);
+    try {
+      const written = await replaceRevenueWithDetails({
+        job_id: id,
+        labour_amount: labour,
+        parts_amount: parts,
+        total_amount: labour + parts,
+        split_id: 1,
+        calculated_at: new Date().toISOString(),
+        details: invoiceAllocations.map((a) => ({
+          employee_id: a.employee_id,
+          tech_role: a.allocated_role,
+          split_pct: a.split_pct,
+          split_amount: a.split_amount,
+        })),
+      });
+      res.json({
+        success: true,
+        calculated: true,
+        technician_source: technicianSource,
+        revenue_id: written.revenue_id,
+        allocations: invoiceAllocations,
+        invoice_technicians_unmatched: nameMatch.unmatched,
+        invoice_technicians_ambiguous: nameMatch.ambiguous,
+      });
+    } catch (e: any) {
+      console.error("[InvoiceOCR] split write failed:", e.message);
+      return res.status(500).json({ error: "Revenue could not be saved. Nothing was changed." });
     }
   });
 

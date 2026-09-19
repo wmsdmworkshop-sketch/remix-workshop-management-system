@@ -137,3 +137,71 @@ export function resolveJobTechnicians(params: {
   // 3. Genuinely nobody recorded.
   return { technicians: [], source: 'none', unresolved: [] };
 }
+
+export interface NamedMatchResult {
+  /** Names that matched exactly one employee, in the order given. */
+  resolved: Array<{ name: string; employee_id: number; full_name: string }>;
+  /** Names that matched nobody on the roster. */
+  unmatched: string[];
+  /** Names that matched more than one employee — deliberately NOT guessed at. */
+  ambiguous: string[];
+}
+
+const norm = (s: string) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+/**
+ * Matches invoice technician NAMES to employees.
+ *
+ * The OCR already extracts `assigned_technicians` as a name list from the invoice
+ * (`ocr-fallback.service.ts` asks the model for exactly that). Names are the only
+ * route to a TWO-technician job, because `job_card_master.assigned_to` is a single
+ * scalar — so without this, the 60/40 and the mechanic/electrician 50/50 rules can
+ * never apply to anything.
+ *
+ * Matching is deliberately conservative:
+ *   - exact full-name match wins outright;
+ *   - otherwise a substring match is accepted ONLY if exactly one employee matches;
+ *   - anything else is reported, never guessed at. Two technicians sharing or
+ *     sub-stringing a name is a real hazard here — `jobcard-relevance.ts` warns
+ *     about the same thing for `assigned_to`.
+ *
+ * Callers must treat a non-empty `unmatched`/`ambiguous` as "cannot use the
+ * invoice list" and fall back, rather than allocating to a partial team.
+ */
+export function matchTechniciansByName(
+  names: string[],
+  employees: AttributionEmployee[]
+): NamedMatchResult {
+  const resolved: NamedMatchResult['resolved'] = [];
+  const unmatched: string[] = [];
+  const ambiguous: string[] = [];
+
+  for (const raw of names || []) {
+    const n = norm(raw);
+    if (!n) continue;
+
+    const exact = employees.filter((e) => norm(e.full_name) === n);
+    if (exact.length === 1) {
+      resolved.push({ name: raw, employee_id: Number(exact[0].employee_id), full_name: exact[0].full_name });
+      continue;
+    }
+    if (exact.length > 1) {
+      ambiguous.push(raw);
+      continue;
+    }
+
+    const partial = employees.filter((e) => {
+      const full = norm(e.full_name);
+      return full.includes(n) || n.includes(full);
+    });
+    if (partial.length === 1) {
+      resolved.push({ name: raw, employee_id: Number(partial[0].employee_id), full_name: partial[0].full_name });
+    } else if (partial.length > 1) {
+      ambiguous.push(raw);
+    } else {
+      unmatched.push(raw);
+    }
+  }
+
+  return { resolved, unmatched, ambiguous };
+}

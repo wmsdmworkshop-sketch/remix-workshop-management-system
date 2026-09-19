@@ -281,18 +281,26 @@ export class OcrFallbackService {
     const prompt = `Analyze this raw invoice OCR text from a Tata Motors DMS/CRM invoice:\n\n${rawText}\n\n` +
       `Extract into JSON: invoice_no, job_card_no, labour_amount (number), parts_amount (number), customer_name, vrn, chassis_no, engine_no, mileage (integer), invoice_date (YYYY-MM-DD), assigned_technicians (string array). Return valid JSON only.`;
 
+    // NOTHING IS INVENTED HERE. This object is what the caller receives when the
+    // parsing step fails, so every field that cannot genuinely be read is left null
+    // and the UI must render "not extracted". It previously generated
+    // `INV-${Date.now()}` as an invoice number, "JC000" as a job card number, and
+    // the placeholders "Walk-in Customer" / "Unknown" — EAR-001 forbids all three,
+    // and a fabricated invoice number is indistinguishable from a real one once it
+    // is stored. `extraction_failed` lets a caller tell the two apart explicitly.
     let extractedFields: any = {
-      invoice_no: `INV-${Date.now().toString().slice(-6)}`,
-      job_card_no: "JC000",
-      labour_amount: 0,
-      parts_amount: 0,
-      customer_name: "Walk-in Customer",
-      vrn: extractJobCardFields(rawText).vrn || "Unknown",
-      chassis_no: extractJobCardFields(rawText).chassisNo || "",
-      engine_no: "",
-      mileage: extractJobCardFields(rawText).odometer || 0,
-      invoice_date: new Date().toISOString().split("T")[0],
+      invoice_no: null,
+      job_card_no: null,
+      labour_amount: null,
+      parts_amount: null,
+      customer_name: null,
+      vrn: extractJobCardFields(rawText).vrn || null,
+      chassis_no: extractJobCardFields(rawText).chassisNo || null,
+      engine_no: null,
+      mileage: extractJobCardFields(rawText).odometer ?? null,
+      invoice_date: null,
       assigned_technicians: [],
+      extraction_failed: true,
     };
 
     try {
