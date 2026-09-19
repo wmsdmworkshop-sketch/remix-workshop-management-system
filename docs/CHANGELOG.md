@@ -9,6 +9,89 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.26 — The invoice is where a technician finally gets paid — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Owner's rule, stated 2026-09-18:** *"we would add/calculate once the invoice is uploaded."*
+
+That is the right place for it. The invoice is the document carrying **both** the labour figure
+and the technician list, so it is where attribution can be derived for a job that already exists.
+
+### Two of the three pieces were already there. The middle was missing.
+
+| | |
+| --- | --- |
+| OCR extractor | asks the model for `labour_amount` **and** `assigned_technicians` — ✅ |
+| UI consumer | maps those names to employee ids, then calls `/assign` and `/revenue` — ✅ |
+| **the middle** | **missing** |
+
+`POST /api/job-cards/:jobId/invoice-ocr` accepted only `{ ocrText }` — the **raw text blob** — and
+discarded every parsed field, including `assigned_technicians`. It had also **never been called
+once**: `invoice_ocr_data` is NULL on all 671 job cards.
+
+It now accepts `invoice_no`, `labour_amount`, `parts_amount` and `assigned_technicians`, persists
+them, and when a `labour_amount` is supplied it attributes the job and writes the split through the
+existing transactional writer. A call without a `labour_amount` behaves exactly as before.
+
+### The technician list, and why both sources are supported
+
+The invoice's name list wins — but **only when every name resolves**. It is the only route to a
+two-technician job, because `job_card_master.assigned_to` is a single scalar. Without it, the 60/40
+shipped in rc.24 and the mechanic/electrician 50/50 shipped in rc.25 **could never apply to
+anything**. That is now reachable.
+
+Matching is deliberately conservative — an exact full-name match, otherwise a substring match
+**only if exactly one employee matches**, otherwise the name is reported. A partial match is refused
+in favour of `assigned_to`, because allocating to only some of the people named on an invoice would
+silently over-pay them. Two technicians sharing a name prefix is a real hazard here; the tests use
+two real ones (`MD JAVEED`, `MD GOUSE`).
+
+### The endpoint had no authorization guard of its own
+
+It now uses `jobCardEditGuard` — the same audited guard as `/:id/revenue` — rather than a second,
+divergent check. That guard read `req.params.id` only, and this route names the same parameter
+`:jobId`, so it now accepts either. It still **fails closed**.
+
+### EAR-001 fixes in the same path
+
+- `extractInvoiceWithAzure` returned **`INV-${Date.now()}`** as an invoice number, **`"JC000"`** as a
+  job card number, and the placeholders **"Walk-in Customer"** / **"Unknown"** whenever parsing
+  failed. A generated invoice number is indistinguishable from a real one once stored — and this
+  endpoint now *writes* `invoice_no` to the database. Every unreadable field is now `null`, with
+  `extraction_failed: true` so a caller can tell the two cases apart.
+- `ProductivityCalculator` generated `INV-${Math.random()}` and `JC${Math.random()}` for the same
+  reason, and those values were written back to the job card.
+
+### Gates
+
+- `npm run lint:fabrication` — **PASS**, 892 files, 0 errors, 0 warnings
+- `tsc --noEmit` — clean on every file this release touches
+- `vitest` — **92 passed** across four suites
+
+New coverage includes the ambiguity refusal, and two end-to-end cases that reach the
+multi-technician rules for the first time: a two-mechanic invoice producing **60/40**, and a
+mechanic + electrician invoice producing **50/50**.
+
+### Deliberately not addressed — each historical and money-bearing
+
+- **123 job cards** carry `assigned_to = 74`, and **employee 74 does not exist**. It is the single
+  most common value in the column, and every one of those rows also has `created_by = 74` — the
+  column was stamped with the *creator*. All 123 sit at `Waiting` / `GATE_ENTRY_DONE`, i.e. never
+  allocated. They now fail closed and get no attribution.
+- **442 completed `GATE_OUT` jobs** — 404 with a resolvable technician, **₹22,91,988** of recorded
+  revenue — have **no attribution at all**. Backfilling them creates payroll records, which is an
+  owner decision, not a cleanup.
+- **10 job cards sit at `Assigned` status with no technician recorded at all** — the status says
+  allocated, the column disagrees. (`Unassigned`, correctly, has 0 of 31.) Unexplained.
+
+### Still open from rc.24
+
+The served `/version.json` reports **build 127**, because it is copied from `public/version.json` —
+a different file, with a different schema, that no step in the release process updates.
+
+---
+
 ## v1.1.0-rc.25 — The payroll rule was right, but nothing was feeding it — **RELEASE**
 
 **Release type:** PRODUCTION
