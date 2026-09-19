@@ -140,10 +140,25 @@ export default function Dashboard({
   const vehiclesInsideCount = bays.filter(b => b.status === "Active").length;
   const openJobCardsCount = jobCards.filter(j => isOpenJobStatus(j.status)).length;
   const todayStr = new Date().toDateString();
-  const todayDeliveryCount = jobCards.filter(j =>
+  const deliveredTodayJobs = jobCards.filter(j =>
     isWorkCompleteStatus(j.status) &&
     (j.completed_at ? new Date(j.completed_at).toDateString() === todayStr : false)
-  ).length;
+  );
+  const todayDeliveryCount = deliveredTodayJobs.length;
+  // On-time for today's deliveries = completed at or before the promised ETD.
+  // Only job cards that actually carry an ETD can be judged, so those form the
+  // denominator. When there are none the rate is null and the tile says "not
+  // recorded" rather than showing a number — this replaced a hardcoded
+  // "98% On-Time" that was rendering under a "Today's Delivery: 0" tile, i.e.
+  // an on-time performance rate for a day with nothing delivered.
+  const deliveredTodayWithEtd = deliveredTodayJobs.filter(j => !!j.etd);
+  const onTimeRate: number | null = deliveredTodayWithEtd.length > 0
+    ? Math.round(
+        (deliveredTodayWithEtd.filter(j =>
+          new Date(j.completed_at as string).getTime() <= new Date(j.etd).getTime()
+        ).length / deliveredTodayWithEtd.length) * 100
+      )
+    : null;
   const activeTechs = employees.filter(e => ["Technician", "Electrician", "Add Tech"].includes(e.role) && e.is_active);
   // Attendance rate: active employees / total employees (excludes developer accounts)
   const totalStaff = employees.filter(e => e.role !== "developer").length;
@@ -356,7 +371,11 @@ export default function Dashboard({
                 ) : (
                   <div className="text-[10px] text-slate-500">Awaiting invoice data</div>
                 )}
-                <Sparkline points={[60, 62, 59, 68, 71, 74, generatedRevenue > 0 ? 80 : 0]} color="#10B981" />
+                {/* Real: today's realized revenue by two-hour bucket, from the same
+                    revenueTrend the main chart uses. This was an invented
+                    [60, 62, 59, 68, 71, 74, ...] series. It renders flat when
+                    nothing has been invoiced yet, which is the honest picture. */}
+                <Sparkline points={revenueTrend.map(p => p.generated)} color="#10B981" />
               </div>
             </motion.div>
 
@@ -375,11 +394,13 @@ export default function Dashboard({
                   <Car className="h-5 w-5" />
                 </div>
               </div>
-              <div className="flex items-center justify-between mt-4">
+              <div className="flex items-center mt-4">
                 <div className="flex items-center gap-1.5 text-xs text-blue-400 font-bold bg-blue-500/10 px-2 py-0.5 rounded-full">
                   <span>{activeBaysCount} Active Bays</span>
                 </div>
-                <Sparkline points={[4, 5, 6, 5, 7, 8, 9]} color="#2563EB" />
+                {/* A sparkline of invented points used to sit here. There is no
+                    per-hour "vehicles inside" history anywhere to draw, so it is
+                    removed rather than faked. */}
               </div>
             </motion.div>
 
@@ -447,11 +468,22 @@ export default function Dashboard({
                   <CheckCircle2 className="h-5 w-5" />
                 </div>
               </div>
-              <div className="flex items-center justify-between mt-4">
-                <div className="flex items-center gap-1.5 text-xs text-cyan-400 font-bold bg-cyan-500/10 px-2 py-0.5 rounded-full">
-                  <span>98% On-Time</span>
-                </div>
-                <Sparkline points={[10, 12, 11, 14, 15, 16, 18]} color="#06B6D4" />
+              <div className="flex items-center mt-4">
+                {onTimeRate === null ? (
+                  <div
+                    className="text-[10px] text-slate-500"
+                    title="On-time means completed at or before the promised ETD. No job card delivered today carries an ETD, so there is nothing to report."
+                  >
+                    On-time — not recorded
+                  </div>
+                ) : (
+                  <div
+                    className="flex items-center gap-1.5 text-xs text-cyan-400 font-bold bg-cyan-500/10 px-2 py-0.5 rounded-full"
+                    title={`${deliveredTodayWithEtd.length} delivered today with an ETD; completing at or before that ETD counts as on time.`}
+                  >
+                    <span>{onTimeRate}% On-Time</span>
+                  </div>
+                )}
               </div>
             </motion.div>
 

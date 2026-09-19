@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   AlertTriangle, 
   MapPin, 
@@ -26,7 +26,7 @@ import {
   Trash2,
   Edit2
 } from "lucide-react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
 
 interface Breakdown {
   breakdown_id: number;
@@ -98,6 +98,48 @@ interface VehicleHealthCard {
 export default function BreakdownManagement() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "tracking" | "qrt" | "reports">("dashboard");
   const [breakdowns, setBreakdowns] = useState<Breakdown[]>([]);
+
+  // Both charts in the Incident Dispatch Analytics panel are computed from the
+  // breakdowns actually loaded. They previously carried hardcoded literals: six
+  // invented months of parts/labour cost, and four invented teams named
+  // Alpha/Beta/Gamma/Delta with invented response and resolution times — under a
+  // heading that presented them as "Response efficiency metrics, SLA analysis and
+  // technician dispatcher tracking".
+  const monthlyCostSplit = useMemo(() => {
+    const buckets: Record<string, { month: string; parts: number; labour: number }> = {};
+    for (const b of breakdowns) {
+      const d = new Date(b.complaint_date);
+      if (isNaN(d.getTime())) continue;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      if (!buckets[key]) {
+        buckets[key] = { month: d.toLocaleString("en-IN", { month: "short" }), parts: 0, labour: 0 };
+      }
+      buckets[key].parts += Number(b.parts_amount || 0);
+      buckets[key].labour += Number(b.labour_amount || 0);
+    }
+    // Chart is labelled in ₹ lakhs, so convert once here rather than in the view.
+    return Object.keys(buckets).sort().map(k => ({
+      month: buckets[k].month,
+      parts: Math.round((buckets[k].parts / 100000) * 100) / 100,
+      labour: Math.round((buckets[k].labour / 100000) * 100) / 100,
+    }));
+  }, [breakdowns]);
+
+  // Response time = complaint logged to crew on site. Resolution time is NOT
+  // charted because no resolved-at timestamp exists on a breakdown record to
+  // compute it from — inventing one is what this replaces.
+  const responseTimes = useMemo(() => {
+    return breakdowns
+      .filter(b => b.complaint_date && b.actual_arrival_time)
+      .map(b => ({
+        name: b.sr_number || b.internal_breakdown_number || `#${b.breakdown_id}`,
+        response: Math.round(
+          (new Date(b.actual_arrival_time as string).getTime() - new Date(b.complaint_date).getTime()) / 60000
+        ),
+      }))
+      .filter(r => Number.isFinite(r.response) && r.response >= 0)
+      .slice(0, 12);
+  }, [breakdowns]);
 
   // Auth helper: always include JWT token in fetch calls
   const getAuthHeaders = (): Record<string, string> => {
@@ -1125,16 +1167,12 @@ export default function BreakdownManagement() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="ds-card   border  /80 rounded-[18px] p-5 backdrop-blur-md shadow-xl space-y-6">
               <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300 border-b border-slate-800 pb-3">Monthly Cost Split (₹ Lakhs)</h3>
+              {monthlyCostSplit.length === 0 && (
+                <p className="text-[11px] text-slate-500">No breakdown with a recorded date and cost yet.</p>
+              )}
               <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={[
-                    { month: "Jan", parts: 12, labour: 5 },
-                    { month: "Feb", parts: 18, labour: 8 },
-                    { month: "Mar", parts: 15, labour: 6 },
-                    { month: "Apr", parts: 22, labour: 10 },
-                    { month: "May", parts: 29, labour: 12 },
-                    { month: "Jun", parts: 24, labour: 11 }
-                  ]} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <AreaChart data={monthlyCostSplit} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" vertical={false} />
                     <XAxis dataKey="month" stroke="#6B7280" fontSize={10} />
                     <YAxis stroke="#6B7280" fontSize={10} />
@@ -1147,25 +1185,25 @@ export default function BreakdownManagement() {
             </div>
 
             <div className="ds-card   border  /80 rounded-[18px] p-5 backdrop-blur-md shadow-xl space-y-6">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300 border-b border-slate-800 pb-3">Response vs Resolution Trend (Mins)</h3>
+              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300 border-b border-slate-800 pb-3">Response Time by Breakdown (Mins)</h3>
+              <p className="text-[11px] text-slate-500">Complaint logged → crew on site.</p>
+              {responseTimes.length === 0 ? (
+                <div className="h-64 w-full flex items-center justify-center text-center text-xs text-slate-500 px-6">
+                  No breakdown has both a complaint time and an arrival time recorded yet.
+                </div>
+              ) : (
               <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={[
-                    { name: "Alpha", response: 32, resolution: 140 },
-                    { name: "Beta", response: 45, resolution: 180 },
-                    { name: "Gamma", response: 28, resolution: 120 },
-                    { name: "Delta", response: 50, resolution: 210 }
-                  ]}>
+                  <BarChart data={responseTimes}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" vertical={false} />
                     <XAxis dataKey="name" stroke="#6B7280" fontSize={10} />
                     <YAxis stroke="#6B7280" fontSize={10} />
                     <Tooltip contentStyle={{ backgroundColor: "#111827", borderColor: "#1F2937" }} />
-                    <Legend />
                     <Bar dataKey="response" fill="#06B6D4" name="Response Time" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="resolution" fill="#2563EB" name="Resolution Time" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              )}
             </div>
           </div>
         </div>
