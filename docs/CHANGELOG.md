@@ -9,6 +9,85 @@ file does not stand in for them.
 
 ---
 
+## v1.1.0-rc.27 — Six things the dashboard was making up — **RELEASE**
+
+**Release type:** PRODUCTION
+
+**Reported by the owner:** a screenshot of the live dashboard, asking *"what this dashboard says"*.
+
+Most of it was telling the truth. Cross-checked against the database:
+
+| Tile | Shows | Verified |
+| --- | --- | --- |
+| Team roster | **51** | ✅ `employees` holds 51 rows |
+| Staff active rate | **50/51 = 98%** | ✅ one inactive Electrician |
+| Technicians active | **27** | ✅ 21 Technician + 6 active Electrician |
+| Bay utilisation | **11%** | ✅ 1 of 9 bays |
+| Today's revenue | **₹0, "Awaiting invoice data"** | ✅ correct — `job_revenues` is empty, no invoice ever uploaded |
+
+**Six other things on screen were invented.**
+
+### Dashboard
+
+- **`98% On-Time` was a hardcoded literal**, rendering under a *Today's Delivery: 0* tile — an
+  on-time performance rate for a day with nothing delivered, on a number a manager could act on. It
+  is now computed: of job cards completed today that carry an ETD, the share finished at or before
+  it. When nothing delivered today has an ETD, the tile reads **"On-time — not recorded"** with a
+  tooltip explaining the basis, rather than showing a number.
+- **Three sparklines were hardcoded point arrays** — `[60,62,59,68,71,74,…]`, `[4,5,6,5,7,8,9]`,
+  `[10,12,11,14,15,16,18]`. The revenue one now plots the real `revenueTrend` series the main chart
+  already used. **The vehicles-inside and delivery ones are removed, not substituted** — no per-hour
+  history for either exists anywhere, and a plausible-looking line is worse than no line.
+
+### Breakdown Management
+
+The *Incident Dispatch Analytics* panel — subtitled *"Response efficiency metrics, SLA analysis, and
+technician dispatcher tracking"* — carried two entirely invented charts:
+
+- **"Monthly Cost Split"** had six made-up months of parts/labour in lakhs. Now computed from the
+  loaded breakdowns by month of `complaint_date`, summing real `parts_amount` and `labour_amount`.
+- **"Response vs Resolution Trend"** had four invented teams literally named **Alpha, Beta, Gamma
+  and Delta** with invented times. Now *"Response Time by Breakdown"*, computed from
+  `complaint_date` → `actual_arrival_time`. **The resolution series is dropped, not faked** — no
+  resolved-at timestamp exists on a breakdown record to compute it from.
+
+Both charts show an explicit empty state when there is nothing to plot.
+
+### What this says about the guard — recorded because I misrepresented it
+
+`npm run lint:fabrication` **passed on all six of these elements**, before and after. It scans source
+for known fabrication patterns; it does not catch a literal percentage in JSX or an inline array of
+points. I reported that gate as clean twice on 2026-09-19 and presented it as evidence. It is
+narrower than I said, and a passing gate is not the same as verified data.
+
+### Checked and not affected
+
+`ExecutiveDashboard`, `GMServiceCommandCenter`, `WorkshopDashboard` and the manager cockpit panels
+contain **no** hardcoded data arrays. The only remaining numeric literals in those paths are Recharts
+`radius` props and skeleton-loader arrays.
+
+### Also in this build — docs and metadata only, no runtime effect
+
+The **Workshop ERP v2** specification moved from the repository root to **`v2-rebuild/`**, with a
+README, a pointer from `AGENTS.md`, and exclusion from the Docker and Cloud Build contexts. It had
+ranked itself *above* current code and tests in its own source-of-truth hierarchy while sitting
+inside the system it describes as a rebuild target.
+
+### Gates
+
+- `npm run lint:fabrication` — PASS, 892 files
+- Component tests (jsdom) — **38 passed**
+- `tsc --noEmit` — clean on both changed files
+
+### Found while searching, deliberately not fixed here
+
+- `src/core/gateway/adapter/BaseOemAdapter.ts` has literal telemetry arrays (`tirePressurePsi`,
+  `brakeTemperatureC`) that may be fabricated sample data. Context not yet inspected.
+- `src/engines/technician-kpi-calculator.ts:174` increments `onTimeCount` with the comment *"assume
+  on-time if etd or completed_at not set properly"* — crediting a success when the data is missing.
+
+---
+
 ## v1.1.0-rc.26 — The invoice is where a technician finally gets paid — **RELEASE**
 
 **Release type:** PRODUCTION
