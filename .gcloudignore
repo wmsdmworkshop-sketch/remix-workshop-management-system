@@ -50,3 +50,7 @@ test_engine.js
 # deploys uploading the same set.
 _quarantine/
 
+# Workshop ERP v2 specification - a SEPARATE product, no code, not part of the
+# DWIP build. See v2-rebuild/README.md.
+v2-rebuild/
+

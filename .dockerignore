@@ -74,3 +74,7 @@ MH12TM9090.png
 
 # Dev environment
 .DS_Store
+
+# Workshop ERP v2 specification - a SEPARATE product, no code, not part of the
+# DWIP image. See v2-rebuild/README.md.
+v2-rebuild/

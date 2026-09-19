@@ -7,6 +7,7 @@ Workshop management system for a Tata Motors commercial-vehicle dealership: gate
 ## Read first
 
 - **[`.agents/AGENTS.md`](.agents/AGENTS.md)** — the binding DWIP "constitution" (EAR-001 rules, refactoring policy, model routing) plus a dated **session handover log** of live incidents, business rules and known gaps. Read it before any non-trivial change; it frequently explains *why* the code looks the way it does.
+- **[`v2-rebuild/`](v2-rebuild/README.md)** — the specification for **Workshop ERP v2**, a **separate product**. It is not DWIP, no code here implements it, and it must never be used to justify a change to live behaviour. It is excluded from the deploy image. See that folder's README before reading `PROJECT_MEMORY.md`.
 - [README.md](README.md) · [deployment/DEPLOY_DWIP_ENTERPRISE.md](deployment/DEPLOY_DWIP_ENTERPRISE.md) (**authoritative deploy runbook**) · [deployment/ENVIRONMENT_VARIABLES.md](deployment/ENVIRONMENT_VARIABLES.md) · [docs/CHANGELOG.md](docs/CHANGELOG.md) · [docs/releases/](docs/releases/)
 
 > **Stale links warning:** several paths referenced inside `.agents/AGENTS.md` (`docs/DOCUMENT_INDEX.md`, `docs/architecture/EAR-001_*`, `docs/11_Deployment_Guide.md`, `docs/Database/DWIP-DB-001.md`, `scripts/post_deployment_handover.ts`) were archived to `_quarantine/` in the 2026-08-31 cleanup and **no longer exist**. Trust the links in this file.
