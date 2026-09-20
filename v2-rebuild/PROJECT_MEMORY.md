@@ -357,6 +357,14 @@ Rules:
 
 ## 5.4 Service Adviser
 
+-   **Ownership (owner-confirmed 2026-09-20): the job card's owner is always
+    the Service Adviser.** "Job card owner" resolves to this one field and
+    nothing else. `created_by` is a creation stamp and is never ownership.
+-   Store the owner as an employee identifier, with the display name derived
+    from it. DWIP stores the SA as a free-text name, which is what produced its
+    19-row `'ranjeet '` trailing-space defect and a case-sensitive name compare
+    in `EmployeePerformanceHub.tsx:25`; an owner that cannot be joined cannot be
+    reported on.
 -   Assignment suggestion uses equal distribution of current job count.
 -   SA reviews already-locked coverage information.
 -   SA logs complaints and prepares estimates from the parts price list.
@@ -948,6 +956,8 @@ The following must be tracked and not forgotten:
 
 Confirmed decisions:
 
+-   Job card ownership is the Service Adviser, always (owner-confirmed
+    2026-09-20). Held as an identifier, never as a free-text name.
 -   Technician fixed pairing is represented as a pair-ID tag on
     assignment records, not a standalone Pair entity.
 -   Breakdown is a job-card type/subtype, not a fully separate
