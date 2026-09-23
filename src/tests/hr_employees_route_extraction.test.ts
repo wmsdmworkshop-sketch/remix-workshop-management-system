@@ -28,11 +28,30 @@ describe("HR employees route extraction (server.ts -> hr.routes.ts)", () => {
     );
   });
 
-  it("3. hr.routes.ts GET /employees must require auth via authorize()", () => {
+  it("3a. hr.routes.ts must run authenticateJwt so req.user has id/roleId (matches billing.routes.ts's documented fix for the same bug)", () => {
     const code = fs.readFileSync(hrRoutesPath, "utf-8");
     assert.ok(
-      code.includes('authorize("user_management", "view")'),
-      'hr.routes.ts must keep the authorize("user_management", "view") guard on GET /employees'
+      /import\s*\{[^}]*\bauthenticateJwt\b[^}]*\}\s*from\s*["']\.\.\/middleware\/auth\.ts["']/.test(code),
+      "hr.routes.ts must import authenticateJwt from ../middleware/auth.ts"
+    );
+    assert.ok(
+      code.includes("hrRouter.use(authenticateJwt)"),
+      "hr.routes.ts must run hrRouter.use(authenticateJwt) — without it, authorize() runs on the global gate's req.user, " +
+      "which has no id/roleId, making AuthorizationService.checkPermission cache a single shared '_undefined_' key for every " +
+      "user (can both wrongly grant and wrongly deny). See src/api/routes/billing.routes.ts's own comment documenting this exact bug."
+    );
+  });
+
+  it("3b. GET /employees must NOT be restricted to the user_management module — App.tsx's fetchAllData calls this endpoint for every logged-in staff role, and a narrow module 403s most of them", () => {
+    const code = fs.readFileSync(hrRoutesPath, "utf-8");
+    assert.strictEqual(
+      code.includes('authorize("user_management"'),
+      false,
+      "GET /employees must not gate behind authorize(\"user_management\", ...) — that restricts the app-wide employee " +
+      "load (src/App.tsx fetchAllData, used by ~16 role workspaces) to only admin/service_manager/workshop_manager/" +
+      "dealer_principal/developer, a real regression versus the endpoint's actual prior audience (any authenticated staff " +
+      "member, enforced only by the global authenticateToken gate in server.ts). Field-level redaction for sensitive " +
+      "columns (basic_salary etc.) for non-manager roles is a separate, deliberate product decision, not bundled here."
     );
   });
 
