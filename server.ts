@@ -69,6 +69,7 @@ import { registerJobCardCache } from "./src/core/jobcard-cache-bridge.ts";
 import { qcRoutes } from "./src/api/routes/qc.routes.ts";
 import { billingRouter } from "./src/api/routes/billing.routes.ts";
 import { vosRouter } from "./src/api/routes/vos.routes.ts";
+import { hrRouter } from "./src/api/routes/hr.routes.ts";
 import { DeepSeekEngine } from "./src/engines/deepseek-engine.ts";
 import { EmployeeIdentityService, RoleService, AuditService } from "./src/core/identity.ts";
 import { EmployeeRepository, PermissionRepository, AuditRepository } from "./src/core/repositories.ts";
@@ -4582,47 +4583,8 @@ async function startServer() {
     }
   });
 
-  // --- EMPLOYEES ENDPOINTS: Authoritative Employee Directory Master ---
-  app.get("/api/employees", async (req, res) => {
-    try {
-      const includeLegacy = req.query.includeLegacy === "true";
-      const employees = await EmployeeIdentityService.getEmployees(includeLegacy);
-
-      // Query active user accounts mapped to employees to attach login account status
-      let userMap = new Map<number, { user_id: number; username: string; user_role: string }>();
-      try {
-        const [userRows] = await dbPool.query(
-          "SELECT user_id, employee_id, username, user_role, is_active FROM user_access_master WHERE employee_id IS NOT NULL AND is_active = 1"
-        ) as any[];
-        if (userRows) {
-          for (const u of userRows) {
-            userMap.set(Number(u.employee_id), {
-              user_id: u.user_id,
-              username: u.username,
-              user_role: u.user_role
-            });
-          }
-        }
-      } catch (e) {
-        // Safe fallback
-      }
-
-      const employeesWithDefaults = employees.map((e: any) => {
-        const linked = userMap.get(Number(e.employee_id)) || null;
-        return {
-          ...e,
-          target_revenue: e.target_revenue || ((e.basic_salary || 0) * 3),
-          has_login_account: !!linked,
-          linked_user_id: linked?.user_id || null,
-          linked_username: linked?.username || null,
-          linked_user_role: linked?.user_role || null
-        };
-      });
-      res.json(employeesWithDefaults);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || "Failed to fetch employees." });
-    }
-  });
+  // GET /api/employees moved to src/api/routes/hr.routes.ts (hrRouter,
+  // mounted below) — the inline version here had NO auth middleware at all.
 
   // Workforce management (create/update/delete employees) is restricted to
   // admins/managers — never reception, technicians, billing, etc.
@@ -12394,6 +12356,12 @@ Respond with valid JSON only:
   // pipelineRouter/floorExecutionRouter/billingRouter do, so it is safe to
   // mount as-is. No existing /api/vos path exists in server.ts to collide with.
   app.use("/api/vos", vosRouter);
+  // HR employees directory — fully built, never mounted. The inline
+  // server.ts GET /api/employees it replaces had NO auth middleware at all;
+  // this closes that gap. POST /api/employees and POST /api/employees/bulk
+  // stay inline (already authenticateToken-gated) — moving them needs the
+  // createXRouter(deps) factory pattern, out of scope for this slice.
+  app.use("/api", hrRouter);
 
   // --- STAFF ACTIVITY & COMPLIANCE ---
   // Per-person sign-in, attendance and platform-usage reporting. Visible to
