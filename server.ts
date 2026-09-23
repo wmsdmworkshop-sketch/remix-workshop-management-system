@@ -68,6 +68,7 @@ import { floorExecutionRouter } from "./src/api/routes/floor-execution.routes.ts
 import { registerJobCardCache } from "./src/core/jobcard-cache-bridge.ts";
 import { qcRoutes } from "./src/api/routes/qc.routes.ts";
 import { billingRouter } from "./src/api/routes/billing.routes.ts";
+import { vosRouter } from "./src/api/routes/vos.routes.ts";
 import { DeepSeekEngine } from "./src/engines/deepseek-engine.ts";
 import { EmployeeIdentityService, RoleService, AuditService } from "./src/core/identity.ts";
 import { EmployeeRepository, PermissionRepository, AuditRepository } from "./src/core/repositories.ts";
@@ -12388,6 +12389,11 @@ Respond with valid JSON only:
   app.use("/api/floor-execution", floorExecutionRouter);
   app.use("/api/qc", qcRoutes);
   app.use("/api/billing", billingRouter);
+  // VOS (Vehicle Operational Session) router — fully built, never mounted.
+  // Brings its own JWT auth (authenticateJwt) and role checks the same way
+  // pipelineRouter/floorExecutionRouter/billingRouter do, so it is safe to
+  // mount as-is. No existing /api/vos path exists in server.ts to collide with.
+  app.use("/api/vos", vosRouter);
 
   // --- STAFF ACTIVITY & COMPLIANCE ---
   // Per-person sign-in, attendance and platform-usage reporting. Visible to
