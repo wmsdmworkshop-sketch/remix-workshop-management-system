@@ -47,3 +47,4 @@ backups/
 # Spreadsheet exports staged for DMS/history import (contain real customer PII)
 imports/
 
+.superpowers/
