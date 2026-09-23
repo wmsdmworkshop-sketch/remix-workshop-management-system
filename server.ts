@@ -68,7 +68,6 @@ import { floorExecutionRouter } from "./src/api/routes/floor-execution.routes.ts
 import { registerJobCardCache } from "./src/core/jobcard-cache-bridge.ts";
 import { qcRoutes } from "./src/api/routes/qc.routes.ts";
 import { billingRouter } from "./src/api/routes/billing.routes.ts";
-import { vosRouter } from "./src/api/routes/vos.routes.ts";
 import { hrRouter } from "./src/api/routes/hr.routes.ts";
 import { DeepSeekEngine } from "./src/engines/deepseek-engine.ts";
 import { EmployeeIdentityService, RoleService, AuditService } from "./src/core/identity.ts";
@@ -12351,17 +12350,21 @@ Respond with valid JSON only:
   app.use("/api/floor-execution", floorExecutionRouter);
   app.use("/api/qc", qcRoutes);
   app.use("/api/billing", billingRouter);
-  // VOS (Vehicle Operational Session) router — fully built, never mounted.
-  // Brings its own JWT auth (authenticateJwt) and role checks the same way
-  // pipelineRouter/floorExecutionRouter/billingRouter do, so it is safe to
-  // mount as-is. No existing /api/vos path exists in server.ts to collide with.
-  app.use("/api/vos", vosRouter);
   // HR employees directory — fully built, never mounted. The inline
-  // server.ts GET /api/employees it replaces had NO auth middleware at all;
-  // this closes that gap. POST /api/employees and POST /api/employees/bulk
-  // stay inline (already authenticateToken-gated) — moving them needs the
+  // server.ts GET /api/employees it replaced was already login-gated by the
+  // global authenticateToken middleware above; its real gap was no role
+  // check (any authenticated user, including technicians, could read
+  // basic_salary for the whole directory) plus this router previously being
+  // missing entirely. POST /api/employees and POST /api/employees/bulk stay
+  // inline (already authenticateToken-gated) — moving them needs the
   // createXRouter(deps) factory pattern, out of scope for this slice.
   app.use("/api", hrRouter);
+  // NOTE: vos.routes.ts (VosCorePlatform) was mounted and then reverted in
+  // this branch — VosEngine's constructor unconditionally seeds a fabricated
+  // session (id vos_1001, a made-up VIN) that a live mount would have made
+  // reachable via GET /api/vos/all and /api/vos/:id, an EAR-001 violation.
+  // Do not remount until VosEngine is backed by real persistence and the
+  // seed is removed.
 
   // --- STAFF ACTIVITY & COMPLIANCE ---
   // Per-person sign-in, attendance and platform-usage reporting. Visible to
